@@ -1,0 +1,204 @@
+//
+// Created by Hayden Rivas on 10/12/25.
+//
+#include <mythril/CTXBuilder.h>
+#include <mythril/RenderGraphBuilder.h>
+
+#include <vector>
+
+#include <glm/glm.hpp>
+#include <glm/ext/matrix_transform.hpp>
+#include <glm/ext/matrix_clip_space.hpp>
+
+struct Vertex {
+	glm::vec3 position;
+};
+struct PushConstant {
+	alignas(16) glm::mat4 mvp;
+	alignas(8) VkDeviceAddress vertexBufferAddress;
+};
+struct Camera {
+	glm::vec3 position;
+	float aspectRatio;
+	float fov;
+	float nearPlane;
+	float farPlane;
+};
+
+const std::vector<Vertex> cubeVertices = {
+		// front face
+		{{-1.f, -1.f, -1.f}}, // A 0
+		{{ 1.f, -1.f, -1.f}}, // B 1
+		{{ 1.f,  1.f, -1.f}}, // C 2
+		{{-1.f,  1.f, -1.f}}, // D 3
+
+		// back face
+		{{-1.f, -1.f, 1.f}}, // E 4
+		{{ 1.f, -1.f, 1.f}}, // F 5
+		{{ 1.f,  1.f, 1.f}}, // G 6
+		{{-1.f,  1.f, 1.f}},  // H 7
+
+		// left face
+		{{-1.f,  1.f, -1.f}}, // D 8
+		{{-1.f, -1.f, -1.f}}, // A 9
+		{{-1.f, -1.f,  1.f}}, // E 10
+		{{-1.f,  1.f,  1.f}}, // H 11
+
+		// right face
+		{{1.f, -1.f, -1.f}}, // B 12
+		{{1.f,  1.f, -1.f}}, // C 13
+		{{1.f,  1.f,  1.f}}, // G 14
+		{{1.f, -1.f,  1.f}}, // F 15
+
+		// bottom face
+		{{-1.f, -1.f, -1.f}}, // A 16
+		{{ 1.f, -1.f, -1.f}}, // B 17
+		{{ 1.f, -1.f,  1.f}}, // F 18
+		{{-1.f, -1.f,  1.f}}, // E 19
+
+		// top face
+		{{ 1.f, 1.f, -1.f}}, // C 20
+		{{-1.f, 1.f, -1.f}}, // D 21
+		{{-1.f, 1.f,  1.f}}, // H 22
+		{{ 1.f, 1.f,  1.f}}, // G 23
+};
+
+const std::vector<uint32_t> cubeIndices = {
+		// front and back
+		0, 3, 2,
+		2, 1, 0,
+		4, 5, 6,
+		6, 7 ,4,
+		// left and right
+		11, 8, 9,
+		9, 10, 11,
+		12, 13, 14,
+		14, 15, 12,
+		// bottom and top
+		16, 17, 18,
+		18, 19, 16,
+		20, 21, 22,
+		22, 23, 20
+};
+
+glm::mat4 calculateViewMatrix(Camera camera) {
+	return glm::lookAt(camera.position, camera.position + glm::vec3(0, 0, -1), glm::vec3(0, 1, 0));
+}
+glm::mat4 calculateProjectionMatrix(Camera camera) {
+	return glm::perspective(glm::radians(camera.fov), camera.aspectRatio, camera.nearPlane, camera.farPlane);
+}
+
+int main() {
+	auto ctx = mythril::CTXBuilder{}
+	.set_info_spec({
+		.app_name = "Cool App Name",
+		.engine_name = "Cool Engine Name"
+	})
+	.set_window_spec({
+		.title = "Cool Window Name",
+		.mode = mythril::WindowMode::Windowed,
+		.width = 1280,
+		.height = 720,
+		.resizeable = true,
+		})
+		.build();
+
+	VkExtent2D extent2D = {1280*2, 720*2};
+	mythril::InternalTextureHandle colorTarget = ctx->createTexture({
+		.dimension = extent2D,
+		.usage = mythril::TextureUsageBits::TextureUsageBits_Attachment,
+		.format = VK_FORMAT_R8G8B8A8_UNORM,
+		.debugName = "Color Texture",
+	});
+	mythril::InternalTextureHandle depthTarget = ctx->createTexture({
+		.dimension = extent2D,
+		.usage = mythril::TextureUsageBits::TextureUsageBits_Attachment,
+		.format = VK_FORMAT_D32_SFLOAT_S8_UINT,
+		.debugName = "Depth Texture"
+	});
+
+	mythril::InternalShaderHandle standardShader = ctx->createShader({
+		.filePath = "assets/shaders/BasicRed.slang",
+		.debugName = "Red Object Shader"
+	});
+	mythril::InternalPipelineHandle mainPipeline = ctx->createPipeline({
+		.stages = {
+				{standardShader, "vs_main", mythril::ShaderStages::Vertex},
+				{standardShader, "fs_main", mythril::ShaderStages::Fragment}
+		},
+		.topology = mythril::TopologyMode::TRIANGLE,
+		.polygon = mythril::PolygonMode::FILL,
+		.blend = mythril::BlendingMode::OFF,
+		.multisample = mythril::SampleCount::X1,
+		.debugName = "Main Pipeline"
+	});
+
+	mythril::InternalBufferHandle cubeVertexBuffer = ctx->createBuffer({
+		.size = sizeof(Vertex) * cubeVertices.size(),
+		.usage = mythril::BufferUsageBits::BufferUsageBits_Storage,
+		.storage = mythril::StorageType::Device,
+		.data = cubeVertices.data(),
+		.debugName = "Cube Vertex Buffer"
+	});
+	mythril::InternalBufferHandle cubeIndexBuffer = ctx->createBuffer({
+		.size = sizeof(uint32_t) * cubeIndices.size(),
+		.usage = mythril::BufferUsageBits::BufferUsageBits_Index,
+		.storage = mythril::StorageType::Device,
+		.data = cubeIndices.data(),
+		.debugName = "Cube Index Buffer"
+	});
+
+
+	auto startTime = std::chrono::high_resolution_clock::now();
+
+	mythril::RenderGraph graph;
+	graph.addPass("main", mythril::PassSource::Type::Graphics)
+	.write({
+		.texture = colorTarget,
+		.clearValue = {0.2f, 0.2f, 0.2f, 1.f},
+		.loadOp = mythril::LoadOperation::CLEAR,
+	})
+	.write({
+		.texture = depthTarget,
+		.clearValue = {0, 1},
+		.loadOp = mythril::LoadOperation::CLEAR,
+	})
+	.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
+		cmd.cmdBindRenderPipeline(mainPipeline);
+
+		mythril::Extent2D size = ctx->getWindowSize();
+		Camera camera = {
+				.position = { 0.f, 0.f, 5.f },
+				.aspectRatio = (float)size.width/(float)size.height,
+				.fov = 80.f,
+				.nearPlane = 0.1f,
+				.farPlane = 100.f
+		};
+
+		// rotating cube!
+		auto currentTime = std::chrono::high_resolution_clock::now();
+		float time = std::chrono::duration<float>(currentTime - startTime).count();
+		glm::mat4 model = glm::rotate(glm::mat4(1.0f), time, glm::vec3(0.0f, 1.0f, 0.0f));
+		model = glm::rotate(model, time * 0.5f, glm::vec3(1.0f, 0.0f, 0.0f));
+		PushConstant constants = {
+				.mvp = calculateProjectionMatrix(camera) * calculateViewMatrix(camera) * model,
+				.vertexBufferAddress = ctx->gpuAddress(cubeVertexBuffer)
+		};
+		cmd.cmdPushConstants(constants);
+		cmd.cmdBindIndexBuffer(cubeIndexBuffer);
+		cmd.cmdDrawIndexed(cubeIndices.size());
+	});
+	graph.compile(*ctx);
+
+
+	bool quit = false;
+	while(!quit) {
+		if (ctx->pollAndCheck()) quit = true;
+
+		mythril::CommandBuffer& cmd = ctx->openCommand(mythril::CommandBuffer::Type::Graphics);
+		graph.execute(cmd);
+		ctx->submitCommand(cmd);
+	}
+
+	return 0;
+}
