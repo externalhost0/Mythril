@@ -8,7 +8,7 @@ option(RUN_SAMPLES "Enable sample apps" ON)
 
 
 # -------------------- cmake related options ------------
-set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 if (CMAKE_BUILD_TYPE STREQUAL "Release")
@@ -84,6 +84,12 @@ CPMAddPackage(
         "SDL_DISABLE_INSTALL_DOCS=ON"
         "SDL_INSTALL_TESTS=OFF"
 )
+# ------------------------ FMT ---------------------------------
+CPMAddPackage(
+        NAME fmt
+        GITHUB_REPOSITORY "fmtlib/fmt"
+        GIT_TAG 12.0.0
+)
 
 # ------------------------- IMGUI -----------------------------
 CPMAddPackage(
@@ -138,6 +144,7 @@ target_include_directories(${PARENT_PROJECT_NAME}
 target_compile_definitions(${PARENT_PROJECT_NAME} PUBLIC VK_NO_PROTOTYPES)
 target_link_libraries(${PARENT_PROJECT_NAME}
         PUBLIC
+        fmt
         GPUOpen::VulkanMemoryAllocator
         volk
         SDL3::SDL3

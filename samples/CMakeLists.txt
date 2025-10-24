@@ -1,8 +1,4 @@
-cmake_minimum_required(VERSION 3.28)
 project(${PARENT_PROJECT_NAME}_Samples LANGUAGES C CXX)
-
-set(CMAKE_CXX_STANDARD 23)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 macro(ADD_SAMPLE sample_name)
     add_executable(${sample_name} "${sample_name}.cpp")

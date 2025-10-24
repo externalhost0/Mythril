@@ -43,11 +43,6 @@ namespace mythril {
 
 		VkCommandBufferSubmitInfo requestSubmitInfo() const;
 	public:
-		// plugins
-#ifdef MYTH_ENABLED_IMGUI
-		void cmdDrawImGui();
-#endif
-
 		void cmdBindRenderPipeline(InternalPipelineHandle handle);
 		void cmdBindIndexBuffer(InternalBufferHandle buffer);
 		// we can pass in structs of any type for push constants!!
@@ -65,9 +60,13 @@ namespace mythril {
 
 		void cmdDraw(uint32_t vertexCount, uint32_t instanceCount = 1, uint32_t firstVertex = 0, uint32_t firstInstance = 0);
 		void cmdDrawIndexed(uint32_t indexCount, uint32_t instanceCount = 1, uint32_t firstIndex = 0, int32_t vertexOffset = 0, uint32_t baseInstance = 0);
-		void cmdDrawInstanced();
-		void cmdDrawIndexedInstanced();
+		void cmdDrawIndirect();
+		void cmdDrawIndexedIndirect();
 
+		// plugins
+#ifdef MYTH_ENABLED_IMGUI
+		void cmdDrawImGui();
+#endif
 	private:
 		void cmdBeginRendering();
 		void cmdEndRendering();

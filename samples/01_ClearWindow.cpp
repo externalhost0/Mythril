@@ -4,6 +4,8 @@
 #include <mythril/CTXBuilder.h>
 #include <mythril/RenderGraphBuilder.h>
 
+#include <SDL3/SDL.h>
+
 int main() {
 	auto ctx = mythril::CTXBuilder{}
 	.set_info_spec({
@@ -19,7 +21,7 @@ int main() {
 	})
 	.build();
 
-	VkExtent2D extent2D = {1280, 720};
+	VkExtent2D extent2D = ctx->getWindow().getFramebufferSize();
 	mythril::InternalTextureHandle colorTarget = ctx->createTexture({
 		.dimension = extent2D,
 		.usage = mythril::TextureUsageBits::TextureUsageBits_Attachment,

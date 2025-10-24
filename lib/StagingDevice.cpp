@@ -360,7 +360,7 @@ namespace mythril {
 		// seems to be gone
 		waitAndReset();
 		// deallocate the previous staging buffer
-		_stagingBuffer = nullptr;
+		_ctx.destroy(_stagingBuffer);
 		// if the combined size of the new staging buffer and the existing one is larger than the limit imposed by some architectures on buffers
 		// that are device and host visible, we need to wait for the current buffer to be destroyed before we can allocate a new one
 		if ((sizeNeeded + _stagingBufferSize) > _maxBufferSize) {
@@ -371,8 +371,7 @@ namespace mythril {
 			AllocatedBuffer obj = _ctx.createBufferImpl(_stagingBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
 			snprintf(obj._debugName, sizeof(obj._debugName) - 1, "staging buffer %u", _stagingBufferCounter++);
 			vmaSetAllocationName(_ctx._vmaAllocator, obj._vmaAllocation, obj._debugName);
-			InternalBufferHandle handle = _ctx._bufferPool.create(std::move(obj));
-			_stagingBuffer = {&_ctx, handle};
+			_stagingBuffer = _ctx._bufferPool.create(std::move(obj));
 		}
 
 		ASSERT(!_stagingBuffer.empty());

@@ -43,7 +43,7 @@ namespace mythril {
 			compiled.executeCallback = source.executeCallback;
 			// TODO: scuffed
 			auto ex = ctx.getTexture(source.writeOperations.front().texture).getExtentAs2D();
-			LOG_USER(LogType::Info, "New pass extent2d is: {} x {} and sourced by: {}", ex.width, ex.height, ctx.getTexture(source.writeOperations.front().texture)._debugName);
+			LOG_DEBUG("New pass extent2d is: {} x {} and sourced by: {}", ex.width, ex.height, ctx.getTexture(source.writeOperations.front().texture)._debugName);
 			compiled.extent2D = ctx.getTexture(source.writeOperations.front().texture).getExtentAs2D();
 
 			// STEP 1: PROCESS READ OPERATIONS

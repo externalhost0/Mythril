@@ -110,11 +110,11 @@ namespace mythril {
 	void CommandBuffer::cmdDrawIndexed(uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex, int32_t vertexOffset, uint32_t baseInstance) {
 		vkCmdDrawIndexed(_wrapper->_cmdBuf, indexCount, instanceCount, firstIndex, vertexOffset, baseInstance);
 	}
-	void CommandBuffer::cmdDrawInstanced() {
-
+	void CommandBuffer::cmdDrawIndirect() {
+//		vkCmdDrawIndirect(_wrapper->_cmdBuf, );
 	}
-	void CommandBuffer::cmdDrawIndexedInstanced() {
-
+	void CommandBuffer::cmdDrawIndexedIndirect() {
+//		vkCmdDrawIndexedIndirect(_wrapper->_cmdBuf, );
 	}
 
 
@@ -287,7 +287,7 @@ namespace mythril {
 		}
 
 		if (_currentPipelineHandle.empty()) {
-			LOG_USER(LogType::Warning, "No pipeline currently bound, cannot perform push constants!");
+			LOG_USER(LogType::Warning, "No pipeline currently bound, will not perform push constants!");
 			return;
 		}
 

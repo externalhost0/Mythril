@@ -7,7 +7,6 @@
 
 #include "SubmitHandle.h"
 #include "ObjectHandles.h"
-#include "Holder.h"
 
 #include <cstdint>
 #include <vector>
@@ -28,7 +27,7 @@ namespace mythril {
 
 		StagingDevice(const StagingDevice&) = delete;
 		StagingDevice& operator=(const StagingDevice&) = delete;
-		Holder<InternalBufferHandle> _stagingBuffer;
+		InternalBufferHandle _stagingBuffer;
 	public:
 		void bufferSubData(AllocatedBuffer& buffer, size_t dstOffset, size_t size, const void* data);
 		void imageData2D(AllocatedTexture& image,

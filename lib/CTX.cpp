@@ -167,7 +167,7 @@ namespace mythril {
 			_swapchain = std::make_unique<Swapchain>(*this, res.width, res.height);
 			_timelineSemaphore = vkutil::CreateTimelineSemaphore(_vkDevice, _swapchain->getNumOfSwapchainImages()-1);
 		} else {
-			LOG_USER(LogType::Warning, "Resizing of Swapchain called when Swapchain isn't even dirty.");
+			LOG_USER(LogType::Warning, "Cleaning (resizing) of Swapchain called when Swapchain isn't even dirty.");
 		}
 	}
 	void CTX::checkAndUpdateDescriptorSets() {
@@ -1068,13 +1068,7 @@ namespace mythril {
 		// might return the submit handle no clue
 		return handle;
 	}
-	// to make smart object happy in its header file
-	// we only implement bufferhandle because we only use the smart holder type for the staging buffer
-	void destroy(CTX* ctx, InternalBufferHandle handle) {
-		if (ctx) {
-			ctx->destroy(handle);
-		}
-	}
+
 	void CTX::destroy(InternalBufferHandle handle) {
 		AllocatedBuffer* buf = _bufferPool.get(handle);
 		if (!buf) {

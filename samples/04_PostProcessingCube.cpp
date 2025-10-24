@@ -10,6 +10,8 @@
 #include <glm/ext/matrix_transform.hpp>
 #include <glm/ext/matrix_clip_space.hpp>
 
+#include <SDL3/SDL.h>
+
 struct Vertex {
 	glm::vec3 position;
 };
@@ -100,7 +102,7 @@ int main() {
 		})
 		.build();
 
-	VkExtent2D extent2D = {1280, 720};
+	VkExtent2D extent2D = ctx->getWindow().getFramebufferSize();
 	mythril::InternalTextureHandle colorTarget = ctx->createTexture({
 		.dimension = extent2D,
 		.samples = mythril::SampleCount::X4,
@@ -152,7 +154,6 @@ int main() {
 				{postProcessingShader, "vs_main", mythril::ShaderStages::Vertex},
 				{postProcessingShader, "fs_main", mythril::ShaderStages::Fragment}
 		},
-		.cull = mythril::CullMode::OFF,
 		.debugName = "Post Processing Pipeline"
 	});
 

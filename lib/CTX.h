@@ -13,7 +13,6 @@
 #include "ObjectHandles.h"
 #include "RenderPipeline.h"
 #include "Window.h"
-#include "SDL3/SDL_events.h"
 
 #include <future>
 #include <filesystem>
@@ -150,13 +149,14 @@ namespace mythril {
 		const AllocatedTexture& getTexture(InternalTextureHandle handle) const { return *_texturePool.get(handle); };
 		const AllocatedBuffer& getBuffer(InternalBufferHandle handle) const { return *_bufferPool.get(handle); }
 
+	private:
 		// for automatic cleanup of resources
 		void destroy(InternalBufferHandle handle);
 		void destroy(InternalTextureHandle handle);
 		void destroy(InternalSamplerHandle handle);
 		void destroy(InternalPipelineHandle handle);
 		void destroy(InternalShaderHandle handle);
-	private:
+
 		// helpers
 		void generateMipmaps(InternalTextureHandle handle);
 		RenderPipeline* resolveRenderPipeline(InternalPipelineHandle handle);

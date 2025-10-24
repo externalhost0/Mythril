@@ -10,6 +10,8 @@
 #include <glm/ext/matrix_transform.hpp>
 #include <glm/ext/matrix_clip_space.hpp>
 
+#include <SDL3/SDL.h>
+
 struct Vertex {
 	glm::vec3 position;
 };
@@ -102,7 +104,7 @@ int main() {
 	})
 	.build();
 
-	VkExtent2D extent2D = {1280, 720};
+	VkExtent2D extent2D = ctx->getWindow().getFramebufferSize();
 	mythril::InternalTextureHandle colorTarget = ctx->createTexture({
 		.dimension = extent2D,
 		.usage = mythril::TextureUsageBits::TextureUsageBits_Attachment,

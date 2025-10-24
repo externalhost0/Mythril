@@ -4,15 +4,15 @@
 
 #pragma once
 
-#include <print>
 #include <csignal>
+#include <fmt/printf.h>
 
 #ifdef DEBUG
 #define VK_CHECK(x) \
     do { \
         VkResult errorResult = x; \
         if (errorResult) { \
-            std::println(stderr, "[VULKAN] Detected Vulkan error: {}:{} -> {} \n\t", __FILE__, __LINE__, __func__); \
+            fmt::print(stderr, "[VULKAN] Detected Vulkan error: {}:{} -> {} \n\t", __FILE__, __LINE__, __func__); \
             std::raise(SIGABRT); \
         } \
     } while (0)
@@ -33,7 +33,7 @@
 // DO NOT PASS SIDE EFFECT FUNCTIONS
 #define ASSERT_MSG(ERROR, FORMAT, ...) do { \
     if (!(ERROR)) {                         \
-        std::println(stderr, "[ASSERT_MSG] | {}:{} -> {} -> Error:\n\t" FORMAT "\n", __FILE__, __LINE__, __func__ __VA_OPT__(,) __VA_ARGS__); \
+        fmt::print(stderr, "[ASSERT_MSG] | {}:{} -> {} -> Error:\n\t" FORMAT "\n", __FILE__, __LINE__, __func__ __VA_OPT__(,) __VA_ARGS__); \
         std::raise(SIGABRT); \
     } \
     ASSUME_(ERROR); \
@@ -45,7 +45,7 @@
 #ifdef DEBUG
 #define ASSERT(ERROR) do { \
     if (!(ERROR)) {        \
-        std::println(stderr, "[ASSERT] | {}:{} -> {}\n", __FILE__, __LINE__, __func__); \
+        fmt::print(stderr, "[ASSERT] | {}:{} -> {}\n", __FILE__, __LINE__, __func__); \
         std::raise(SIGABRT); \
     } \
     ASSUME_(ERROR); \
