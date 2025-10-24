@@ -36,6 +36,8 @@ namespace mythril {
 
 #ifdef DEBUG
 #define LOG_DEBUG(message, ...) fmt::print(fg(fmt::color::medium_spring_green), "[DEBUG] Source: \"{}\" | {}\n", __PRETTY_FUNCTION__, fmt::format(message __VA_OPT__(, __VA_ARGS__)))
+#else
+#define LOG_DEBUG(message, ...) ((void)0)
 #endif
 
 #define LOG_USER(level, message, ...) fmt::print(fg(GetLogLevelAsColor(level)), "[{}] Source: \"{}\" | {}\n", GetLogLevelAsString(level), __PRETTY_FUNCTION__, fmt::format(message __VA_OPT__(, __VA_ARGS__)))

@@ -3,8 +3,9 @@ set(PARENT_PROJECT_NAME mythril)
 project(${PARENT_PROJECT_NAME} LANGUAGES C CXX)
 
 # ------------------- IMPORTANT | User Options ---------------------------
+# default options
 option(MYTH_ENABLE_IMGUI "Enable ImGui Plugin" ON)
-option(RUN_SAMPLES "Enable sample apps" ON)
+option(MYTH_RUN_SAMPLES "Enable sample apps" ON)
 
 
 # -------------------- cmake related options ------------
@@ -113,6 +114,7 @@ target_include_directories(imgui PUBLIC
 )
 target_compile_definitions(imgui PUBLIC
         IMGUI_IMPL_VULKAN_USE_VOLK
+        IMGUI_DEFINE_MATH_OPERATORS
         IMGUI_DISABLE_OBSOLETE_FUNCTIONS
 )
 target_link_libraries(imgui PRIVATE volk SDL3::SDL3)
@@ -144,10 +146,10 @@ target_include_directories(${PARENT_PROJECT_NAME}
 target_compile_definitions(${PARENT_PROJECT_NAME} PUBLIC VK_NO_PROTOTYPES)
 target_link_libraries(${PARENT_PROJECT_NAME}
         PUBLIC
+        SDL3::SDL3
         fmt
         GPUOpen::VulkanMemoryAllocator
         volk
-        SDL3::SDL3
         vk-bootstrap
         Slang::slang
 )
@@ -163,6 +165,6 @@ if(MYTH_ENABLE_IMGUI)
 endif()
 
 # -------------------- samples -----------------------------
-if(RUN_SAMPLES)
+if(MYTH_RUN_SAMPLES)
     add_subdirectory(samples)
 endif()

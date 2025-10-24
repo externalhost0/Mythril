@@ -1,10 +1,9 @@
 # Mythril Framework
-Mythril is C++23 Vulkan rendering framework for Windows, Linux, and MacOS. 
+Mythril is C++20 Vulkan rendering framework for Windows, Linux, and MacOS. 
 It aims to provide a easy to setup and use frontfacing API for Vulkan, aswell as some bonus features described below.
 
-
 ### Features:
-* Rendergraph implementation.
+* Render Graph implementation.
 * [BARELY] Shader reflection.
 * [NOT YET DONE] Tracy, profiles the rendering logic. Learn more about Tracy [here](https://github.com/wolfpld/tracy).
 
@@ -13,6 +12,8 @@ It aims to provide a easy to setup and use frontfacing API for Vulkan, aswell as
 ```
 #include <mythril/CTXBuilder.h>
 #include <mythril/RenderGraphBuilder.h>
+
+#include <SDL3/SDL.h>
 
 int main() {
 	auto ctx = mythril::CTXBuilder{}
@@ -67,6 +68,7 @@ int main() {
 	return 0;
 }
 ```
+![Minimal Example Screenshot][basic_window_img]
 
 ## Building
 * C++ 20
@@ -75,3 +77,10 @@ int main() {
 
 ## Installing
 idk use cmake
+
+## License
+This project is distributed under the **Mozilla Public License Version 2.0**, please see `LICENSE.txt` for more.
+
+
+<!-- image definitions -->
+[basic_window_img]: docs/img/basic_window.png

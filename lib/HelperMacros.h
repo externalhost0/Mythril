@@ -39,7 +39,7 @@
     ASSUME_(ERROR); \
 } while(0)
 #else
-#define ASSERT_MSG(ERROR, FORMAT)
+#define ASSERT_MSG(ERROR, FORMAT, ...) ((void)0)
 #endif
 
 #ifdef DEBUG
@@ -51,5 +51,5 @@
     ASSUME_(ERROR); \
 } while(0)
 #else
-#define ASSERT(ERROR)
+#define ASSERT(ERROR) ((void)0)
 #endif
