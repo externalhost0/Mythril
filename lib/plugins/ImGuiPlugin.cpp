@@ -7,12 +7,12 @@
 #include <array>
 #include <cstdio>
 
-#include "imgui.h"
-#include "backends/imgui_impl_vulkan.h"
-#include "backends/imgui_impl_glfw.h"
+#include <imgui.h>
+#include <backends/imgui_impl_vulkan.h>
+#include <backends/imgui_impl_sdl3.h>
 
 namespace mythril {
-	void ImGuiPlugin::onInit(CTX& ctx) {
+	void ImGuiPlugin::onInit(CTX& ctx, SDL_Window* sdlWindow) {
 		_ctx = &ctx;
 		IMGUI_CHECKVERSION();
 		ImGui::CreateContext();
@@ -72,14 +72,14 @@ namespace mythril {
 					if (err < 0) abort();
 				},
 		};
-		ImGui_ImplGlfw_InitForVulkan(ctx._glfwWindow, true);
+		ImGui_ImplSDL3_InitForVulkan(sdlWindow);
 		ImGui_ImplVulkan_Init(&vulkanInitInfo);
 	}
 	void ImGuiPlugin::onDispose() {
 		ImGui_ImplVulkan_Shutdown();
 		// destroying the descriptor pool we made must come after ImplVulkan_Shutdown()
 		vkDestroyDescriptorPool(_ctx->_vkDevice, _descriptorPool, nullptr);
-		ImGui_ImplGlfw_Shutdown();
+		ImGui_ImplSDL3_Shutdown();
 		ImGui::DestroyContext();
 	}
 }

@@ -45,12 +45,14 @@ namespace mythril {
 
 		VkImageLayout _vkCurrentImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 		VkImageType _vkImageType = VK_IMAGE_TYPE_MAX_ENUM;
+		VkImageViewType _vkImageViewType = VK_IMAGE_VIEW_TYPE_MAX_ENUM;
 		VkImageUsageFlags _vkUsageFlags = 0;
 		VkSampleCountFlagBits _vkSampleCountFlagBits = VK_SAMPLE_COUNT_1_BIT;
+		VkMemoryPropertyFlags _vkMemoryPropertyFlags = 0;
 
 		VmaAllocation _vmaAllocation = nullptr;
 
-		void *_mappedPtr = nullptr;
+		void* _mappedPtr = nullptr;
 		bool _isResolveAttachment = false;
 		bool _isSwapchainImage = false;
 		bool _isOwning = true;

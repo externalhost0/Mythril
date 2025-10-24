@@ -1,6 +1,16 @@
-//
-// Created by Hayden Rivas on 10/4/25.
-//
+# Mythril Framework
+Mythril is C++23 Vulkan rendering framework for Windows, Linux, and MacOS. 
+It aims to provide a easy to setup and use frontfacing api for Vulkan, aswell as some bonus features.
+Aswell as Vulkan
+
+These features include:
+* Rendergraph implementation.
+* Shader reflection.
+* Tracy, profiles the rendering logic. Learn more about Tracy [here](https://github.com/wolfpld/tracy).
+
+
+### Minimal Example:
+```
 #include <mythril/CTXBuilder.h>
 #include <mythril/RenderGraphBuilder.h>
 
@@ -13,15 +23,14 @@ int main() {
 	.set_window_spec({
 		.title = "Cool Window Name",
 		.mode = mythril::WindowMode::Windowed,
-		.width = 640,
-		.height = 480,
-		.resizeable = false,
+		.width = 1280,
+		.height = 720,
+		.resizeable = true,
 	})
 	.build();
 
-	VkExtent2D extent2D = {1280, 720};
 	mythril::InternalTextureHandle colorTarget = ctx->createTexture({
-		.dimension = extent2D,
+		.dimension = {1280, 720},
 		.usage = mythril::TextureUsageBits::TextureUsageBits_Attachment,
 		.storage = mythril::StorageType::Device,
 		.format = VK_FORMAT_R8G8B8A8_UNORM,
@@ -34,7 +43,7 @@ int main() {
 		.texture = colorTarget,
 		.clearValue = {1, 0, 0, 1},
 		.loadOp = mythril::LoadOperation::CLEAR,
-		.storeOp = mythril::StoreOperation::STORE
+		.storeOp = mythril::StoreOperation::STORE,
 	})
 	.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
 		// do absolutely nothing, just begin and end a pass
@@ -44,10 +53,7 @@ int main() {
 
 	bool quit = false;
 	while(!quit) {
-		SDL_Event e;
-		while (SDL_PollEvent(&e)) {
-			if (e.type == SDL_EVENT_QUIT) quit = true;
-		}
+		if (ctx->cleanSwapchain()) quit = true;
 
 		mythril::CommandBuffer& cmd = ctx->openCommand(mythril::CommandBuffer::Type::Graphics);
 		graph.execute(cmd);
@@ -56,3 +62,4 @@ int main() {
 
 	return 0;
 }
+```

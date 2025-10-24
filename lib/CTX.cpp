@@ -8,12 +8,15 @@
 #include "PipelineBuilder.h"
 #include "RenderPipeline.h"
 #include "Plugins.h"
+#include "mythril/CTXBuilder.h"
 
 #define VMA_STATIC_VULKAN_FUNCTIONS 0
 #define VMA_DYNAMIC_VULKAN_FUNCTIONS 0
 #include <vk_mem_alloc.h>
 
-#include <GLFW/glfw3.h>
+#include <SDL3/SDL.h>
+#include <SDL3/SDL_vulkan.h>
+
 #include <slang/slang.h>
 #include <slang/slang-com-ptr.h>
 
@@ -144,28 +147,28 @@ namespace mythril {
 #ifdef DEBUG
 		vkDestroyDebugUtilsMessengerEXT(_vkInstance, _vkDebugMessenger, nullptr);
 #endif
-		vkDestroySurfaceKHR(_vkInstance, _vkSurfaceKHR, nullptr);
+		SDL_Vulkan_DestroySurface(_vkInstance, _vkSurfaceKHR, nullptr);
 		vkDestroyInstance(_vkInstance, nullptr);
 
-		if (_glfwWindow != nullptr) glfwDestroyWindow(_glfwWindow);
-		glfwTerminate();
+		this->_window.destroy();
+		SDL_Quit();
 	}
-	bool CTX::pollAndCheck() {
-		glfwSwapBuffers(_glfwWindow);
-		glfwPollEvents();
-		if (glfwWindowShouldClose(_glfwWindow)) {
-			return true;
-		}
+	bool CTX::isSwapchainDirty() {
+		return _swapchain->isDirty();
+	}
+	void CTX::cleanSwapchain() {
 		if (_swapchain->isDirty()) {
-			int w, h;
-			glfwGetFramebufferSize(_glfwWindow, &w, &h);
-			vkDeviceWaitIdle(_vkDevice);
+			VkExtent2D res = this->_window.getFramebufferSize();
+			LOG_USER(LogType::Info, "New Swapchain Extent: {} {}", res.width, res.height);
+
+			VK_CHECK(vkDeviceWaitIdle(_vkDevice));
 			_swapchain.reset(nullptr);
 			vkDestroySemaphore(_vkDevice, _timelineSemaphore, nullptr);
-			_swapchain = std::make_unique<Swapchain>(*this, w, h);
+			_swapchain = std::make_unique<Swapchain>(*this, res.width, res.height);
 			_timelineSemaphore = vkutil::CreateTimelineSemaphore(_vkDevice, _swapchain->getNumOfSwapchainImages()-1);
+		} else {
+			LOG_USER(LogType::Warning, "Resizing of Swapchain called when Swapchain isn't even dirty.");
 		}
-		return false;
 	}
 	void CTX::checkAndUpdateDescriptorSets() {
 		if (!_awaitingCreation) {
@@ -596,6 +599,63 @@ namespace mythril {
 		}
 		return buf;
 	}
+
+	void CTX::resizeTexture(InternalTextureHandle handle, VkExtent2D newExtent) {
+		AllocatedTexture* image = _texturePool.get(handle);
+		if (!image) return;
+
+		// copies destroy for Texture logic
+		deferTask(std::packaged_task<void()>([device = _vkDevice, imageView = image->_vkImageView]() {
+			vkDestroyImageView(device, imageView, nullptr);
+		}));
+		if (image->_vkImageViewStorage) {
+			deferTask(std::packaged_task<void()>([device = _vkDevice, imageView = image->_vkImageViewStorage]() {
+				vkDestroyImageView(device, imageView, nullptr);
+			}));
+		}
+		if (image->_isOwning) {
+			if (image->_mappedPtr) {
+				vmaUnmapMemory(_vmaAllocator, image->_vmaAllocation);
+			}
+			deferTask(std::packaged_task<void()>([vma = _vmaAllocator, image = image->_vkImage, allocation = image->_vmaAllocation]() {
+				vmaDestroyImage(vma, image, allocation);
+			}));
+		}
+
+		VkImageCreateFlags createFlags = 0;
+		// resolve createFlags without having it stored
+		if (image->_vkImageViewType == VK_IMAGE_VIEW_TYPE_CUBE ||
+		image->_vkImageViewType == VK_IMAGE_VIEW_TYPE_CUBE_ARRAY) {
+			createFlags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
+		}
+
+		VkExtent3D extent3D = { newExtent.width, newExtent.height, 1 };
+
+		AllocatedTexture newImage = this->createTextureImpl(
+				image->_vkUsageFlags,
+				image->_vkMemoryPropertyFlags,
+				extent3D,
+				image->_vkFormat,
+				image->_vkImageType,
+				image->_vkImageViewType,
+				image->_numLevels,
+				image->_numLayers,
+				image->_vkSampleCountFlagBits,
+				createFlags
+				);
+
+		// update extent!
+		image->_vkExtent = extent3D;
+
+		// new opaque objects
+		image->_vkImage = newImage._vkImage;
+		image->_vkImageView = newImage._vkImageView;
+		image->_vkImageViewStorage = newImage._vkImageViewStorage;
+		image->_vmaAllocation = newImage._vmaAllocation;
+		// reset of state
+		image->_vkCurrentImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		image->_mappedPtr = newImage._mappedPtr;
+	}
 	InternalTextureHandle CTX::createTexture(TextureSpec spec) {
 		ASSERT(spec.usage);
 		// resolve usage flags
@@ -630,12 +690,8 @@ namespace mythril {
 		// resolve memory flags
 		const VkMemoryPropertyFlags mem_flags = StorageTypeToVkMemoryPropertyFlags(spec.storage);
 		// resolve extent3D
-		VkExtent3D extent3D;
-		if (spec.resolutionMode == ResolutionMode::Physical) {
-			extent3D = { spec.dimension.width, spec.dimension.height, 1 };
-		} else {
-			extent3D = { static_cast<uint32_t>(static_cast<float>(spec.dimension.width) * contentScale), static_cast<uint32_t>(static_cast<float>(spec.dimension.height) * contentScale), 1 };
-		}
+
+		VkExtent3D extent3D = { spec.dimension.width, spec.dimension.height, 1};
 
 		// resolve actions based on texture type
 		uint32_t _numLayers = spec.numLayers;
@@ -662,6 +718,9 @@ namespace mythril {
 		}
 
 		AllocatedTexture obj = createTextureImpl(usage_flags, mem_flags, extent3D, spec.format, _imagetype, _imageviewtype, 1, _numLayers, sample_bits, _imageCreateFlags);
+		// members that are only needed for recreation
+		obj._vkMemoryPropertyFlags = mem_flags;
+		obj._vkImageViewType = _imageviewtype;
 		snprintf(obj._debugName, sizeof(obj._debugName) - 1, "%s", spec.debugName);
 		InternalTextureHandle handle = _texturePool.create(std::move(obj));
 		// if we have some data we want to upload, do that
@@ -1084,15 +1143,5 @@ namespace mythril {
 		}));
 		_pipelinePool.destroy(handle);
 	}
-
-	Extent2D CTX::getWindowSize() {
-		int w, h;
-		glfwGetWindowSize(_glfwWindow, &w, &h);
-		return {static_cast<uint32_t>(w), static_cast<uint32_t>(h)};
-	}
-	Extent2D CTX::getRenderSize() {
-		return _swapchain->getSwapchainExtent();
-	}
-
 
 }

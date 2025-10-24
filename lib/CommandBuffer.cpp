@@ -146,6 +146,9 @@ namespace mythril {
 		cmdTransitionLayout(source, _ctx->getTexture(source)._vkCurrentImageLayout, newLayout);
 	}
 	void CommandBuffer::cmdTransitionLayout(InternalTextureHandle source, VkImageLayout currentLayout, VkImageLayout newLayout) {
+		if (_ctx->getTexture(source)._vkCurrentImageLayout == newLayout) {
+			LOG_USER(LogType::Warning, "Image ({}) is already in the requested layout.", _ctx->getTexture(source)._debugName);
+		}
 
 		vkutil::StageAccess srcStage = vkutil::getPipelineStageAccess(currentLayout);
 		vkutil::StageAccess dstStage = vkutil::getPipelineStageAccess(newLayout);

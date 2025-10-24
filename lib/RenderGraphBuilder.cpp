@@ -10,6 +10,7 @@
 
 #include "mythril/RenderGraphBuilder.h"
 #include "vkutil.h"
+#include "Logger.h"
 
 namespace mythril {
 
@@ -30,17 +31,19 @@ namespace mythril {
 		_graphRef._hasCompiled = false;
 	}
 
-	void RenderGraph::compile(CTX& ctx) {
+	void RenderGraph::compile(const CTX& ctx) {
 		// remove past compilations
 		this->_compiledPasses.clear();
 
-		for (const PassSource &source: this->_sourcePasses) {
+		for (const PassSource& source: this->_sourcePasses) {
 			PassCompiled compiled;
 			// first set some basic info
 			compiled.name = source.name;
 			compiled.type = source.type;
 			compiled.executeCallback = source.executeCallback;
 			// TODO: scuffed
+			auto ex = ctx.getTexture(source.writeOperations.front().texture).getExtentAs2D();
+			LOG_USER(LogType::Info, "New pass extent2d is: {} x {} and sourced by: {}", ex.width, ex.height, ctx.getTexture(source.writeOperations.front().texture)._debugName);
 			compiled.extent2D = ctx.getTexture(source.writeOperations.front().texture).getExtentAs2D();
 
 			// STEP 1: PROCESS READ OPERATIONS

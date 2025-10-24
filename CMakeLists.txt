@@ -70,16 +70,21 @@ CPMAddPackage(
         GITHUB_REPOSITORY  "charles-lunarg/vk-bootstrap"
         GIT_TAG main
 )
-# ------------------------ GLFW ---------------------------------
+# ------------------------ SDL3 ---------------------------------
 CPMAddPackage(
-        NAME glfw
-        GITHUB_REPOSITORY "glfw/glfw"
-        GIT_TAG 3.3.8
+        NAME SDL3
+        GITHUB_REPOSITORY "libsdl-org/SDL"
+        GIT_TAG release-3.2.24
         OPTIONS
-        "GLFW_BUILD_TESTS OFF"
-        "GLFW_BUILD_EXAMPLES OFF"
-        "GLFW_BULID_DOCS OFF"
+        "SDL_SHARED=OFF"
+        "SDL_STATIC=ON"
+        "SDL_TEST_LIBRARY=OFF"
+        "SDL_TESTS=OFF"
+        "SDL_DISABLE_INSTALL=ON"
+        "SDL_DISABLE_INSTALL_DOCS=ON"
+        "SDL_INSTALL_TESTS=OFF"
 )
+
 # ------------------------- IMGUI -----------------------------
 CPMAddPackage(
         NAME imgui
@@ -92,10 +97,11 @@ add_library(imgui STATIC
         ${imgui_SOURCE_DIR}/imgui_draw.cpp
         ${imgui_SOURCE_DIR}/imgui_widgets.cpp
         ${imgui_SOURCE_DIR}/imgui_tables.cpp
-        ${imgui_SOURCE_DIR}/backends/imgui_impl_glfw.cpp
+        ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp
         ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp
 )
 target_include_directories(imgui PUBLIC
+        ${SDL3_INCLUDE_DIRS}
         ${imgui_SOURCE_DIR}
         ${imgui_SOURCE_DIR}/backends
 )
@@ -103,7 +109,7 @@ target_compile_definitions(imgui PUBLIC
         IMGUI_IMPL_VULKAN_USE_VOLK
         IMGUI_DISABLE_OBSOLETE_FUNCTIONS
 )
-target_link_libraries(imgui PRIVATE volk glfw)
+target_link_libraries(imgui PRIVATE volk SDL3::SDL3)
 # --------------- connecting source and includes -----------------------
 
 add_library(${PARENT_PROJECT_NAME} STATIC
@@ -119,6 +125,7 @@ add_library(${PARENT_PROJECT_NAME} STATIC
         lib/VulkanObjects.cpp
         lib/PipelineBuilder.cpp
         lib/RenderGraphBuilder.cpp
+        lib/Window.cpp
         lib/plugins/ImGuiPlugin.cpp
 )
 target_include_directories(${PARENT_PROJECT_NAME}
@@ -133,7 +140,7 @@ target_link_libraries(${PARENT_PROJECT_NAME}
         PUBLIC
         GPUOpen::VulkanMemoryAllocator
         volk
-        glfw
+        SDL3::SDL3
         vk-bootstrap
         Slang::slang
 )

@@ -15,7 +15,6 @@
 namespace mythril {
 	Swapchain::Swapchain(CTX& ctx, uint16_t width, uint16_t height)
 	: _ctx(ctx) {
-
 		// PRIMARY SWAPCHAIN DATA CREATION //
 		vkb::SwapchainBuilder swapchainBuilder{_ctx._vkPhysicalDevice, _ctx._vkDevice, _ctx._vkSurfaceKHR};
 		auto swapchain_result = swapchainBuilder
@@ -32,6 +31,9 @@ namespace mythril {
 		// things we assign to the class itself
 		this->_vkSwapchain = vkbswapchain.swapchain;
 		this->_vkExtent2D = vkbswapchain.extent;
+		if (_vkExtent2D.width != width || _vkExtent2D.height != height) {
+			LOG_USER(LogType::Warning, "Requested swapchain size did not take place! \n Requested: {} x {} vs Actual: {} x {}", width, height, _vkExtent2D.width, _vkExtent2D.height);
+		}
 		this->_vkImageFormat = vkbswapchain.image_format;
 		if (vkbswapchain.image_count > kMAX_SWAPCHAIN_IMAGES) {
 			LOG_USER(LogType::FatalError, "Swapchain image count ({}) exceeds max supported swapchain images ({})!", (int) vkbswapchain.image_count, (int) kMAX_SWAPCHAIN_IMAGES);

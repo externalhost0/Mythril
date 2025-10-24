@@ -11,7 +11,7 @@
 
 #include <VkBootstrap.h>
 
-class GLFWwindow;
+class SDL_Window;
 
 namespace mythril {
 	class BasePlugin;
@@ -21,7 +21,7 @@ namespace mythril {
 		const char* engine_name = "Untitled Engine";
 	};
 
-	enum class WindowMode { Windowed, Borderless, Fullscreen };
+	enum class WindowMode { Windowed, Fullscreen };
 	struct WindowSpec {
 		std::string title = "Untitled Window";
 		WindowMode mode = WindowMode::Windowed;
@@ -60,6 +60,6 @@ namespace mythril {
 		void _createVulkanLogicalDevice(CTX& ctx, vkb::PhysicalDevice& vkb_physdevice, vkb::Device& vkb_device_EMPTY) const;
 		void _createMemoryAllocator(CTX& ctx) const;
 		void _createVulkanQueues(CTX& ctx, vkb::Device& vkb_device) const;
-		void _createVulkanSurface(CTX& ctx, GLFWwindow* glfwWindow) const;
+		void _createVulkanSurface(CTX& ctx, SDL_Window* sdlWindow) const;
 	};
 }

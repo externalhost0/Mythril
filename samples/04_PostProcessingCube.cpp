@@ -96,7 +96,7 @@ int main() {
 		.mode = mythril::WindowMode::Windowed,
 		.width = 1280,
 		.height = 720,
-		.resizeable = true,
+		.resizeable = false,
 		})
 		.build();
 
@@ -191,7 +191,7 @@ int main() {
 	.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
 		cmd.cmdBindRenderPipeline(mainPipeline);
 
-		mythril::Extent2D windowSize = ctx->getWindowSize();
+		VkExtent2D windowSize = ctx->getWindow().getWindowSize();
 		Camera camera = {
 				.position = {0.f, 0.f, 5.f},
 				.aspectRatio = (float) windowSize.width / (float) windowSize.height,
@@ -245,7 +245,10 @@ int main() {
 
 	bool quit = false;
 	while (!quit) {
-		if (ctx->pollAndCheck()) quit = true;
+		SDL_Event e;
+		while (SDL_PollEvent(&e)) {
+			if (e.type == SDL_EVENT_QUIT) quit = true;
+		}
 
 		mythril::CommandBuffer& cmd = ctx->openCommand(mythril::CommandBuffer::Type::Graphics);
 		graph.execute(cmd);

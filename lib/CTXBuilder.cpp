@@ -8,63 +8,33 @@
 #include "CTX.h"
 #include "Plugins.h"
 #include "vkutil.h"
+#include "Logger.h"
 
 #include <volk.h>
 #include <vk_mem_alloc.h>
-#include <GLFW/glfw3.h>
 
-const char* glfwGetErrorString() {
-	const char* string = nullptr;
-	glfwGetError(&string);
-	if (string) {
-		return string;
-	}
-	return "EMPTY";
-}
+#include <SDL3/SDL.h>
+#include <SDL3/SDL_vulkan.h>
 
 namespace mythril {
 	std::unique_ptr<CTX> CTXBuilder::build() {
 		std::unique_ptr<CTX> ctx = std::make_unique<CTX>();
 
+		// mythril should only provide graphics related things
+		if (!SDL_Init(SDL_INIT_VIDEO)) {
+			ASSERT_MSG(true, "SDL could not be initialized!");
+		}
+
+		ctx->_window.create(_window_spec);
+
 		// volk init
 		VkResult volk_result = volkInitialize();
 		ASSERT_MSG(volk_result == VK_SUCCESS, "Volk failed to initialize!");
 
-		glfwInit();
-		glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-		glfwWindowHint(GLFW_COCOA_RETINA_FRAMEBUFFER, GLFW_TRUE);
-
-		// variable hints
-		glfwWindowHint(GLFW_RESIZABLE, _window_spec.resizeable);
-		GLFWmonitor* monitor = glfwGetPrimaryMonitor();
-		const GLFWvidmode* mode = glfwGetVideoMode(monitor);
-		glfwWindowHint(GLFW_RED_BITS, mode->redBits);
-		glfwWindowHint(GLFW_GREEN_BITS, mode->greenBits);
-		glfwWindowHint(GLFW_BLUE_BITS, mode->blueBits);
-		// determine window mode automatically
-		int w = mode->width;
-		int h = mode->height;
-		if (_window_spec.mode == WindowMode::Borderless) {
-			monitor = nullptr;
-		} else if (_window_spec.mode == WindowMode::Windowed) {
-			monitor = nullptr;
-			w = static_cast<int>(_window_spec.width);
-			h = static_cast<int>(_window_spec.height);
-		}
-		GLFWwindow* glfwWindow = glfwCreateWindow(w, h, _window_spec.title.c_str(), monitor, nullptr);
-		ASSERT_MSG(glfwWindow != nullptr, "GLFW window could not be created! Error: {}", glfwGetErrorString());
-		ctx->_glfwWindow = glfwWindow;
-		int fbWidth, fbHeight;
-		glfwGetFramebufferSize(ctx->_glfwWindow, &fbWidth, &fbHeight);
-		ctx->physicalWidth = static_cast<uint32_t>(fbWidth);
-		ctx->physicalHeight = static_cast<uint32_t>(fbHeight);
-		ctx->contentScale = static_cast<float>(fbWidth) / static_cast<float>(_window_spec.width);
-
-
 		// build vulkan
 		vkb::Instance tempVKBInstance;
 		_createVulkanInstance(*ctx, tempVKBInstance);
-		_createVulkanSurface(*ctx, ctx->_glfwWindow);
+		_createVulkanSurface(*ctx, ctx->_window._getSDLwindow());
 		vkb::PhysicalDevice tempVKBPhysDevice;
 		_createVulkanPhysDevice(*ctx, tempVKBInstance, tempVKBPhysDevice);
 		vkb::Device tempVKBDevice;
@@ -114,14 +84,15 @@ namespace mythril {
 		}
 		// swapchain must be built after default texture has been made
 		// or else the fallback texture is the swapchain's texture
-		ctx->_swapchain = std::make_unique<Swapchain>(*ctx, fbWidth, fbHeight);
+		VkExtent2D framebufferSize = ctx->getWindow().getFramebufferSize();
+		ctx->_swapchain = std::make_unique<Swapchain>(*ctx, framebufferSize.width, framebufferSize.height);
 		// timeline semaphore is closely kept to vulkan swapchain
 		ctx->_timelineSemaphore = vkutil::CreateTimelineSemaphore(ctx->_vkDevice, ctx->_swapchain->getNumOfSwapchainImages() - 1);
 		ctx->growDescriptorPool(ctx->_currentMaxTextureCount, ctx->_currentMaxSamplerCount);
 		// now we can build plugins!
 		if (_usingImGui) {
 			ImGuiPlugin imgui;
-			imgui.onInit(*ctx);
+			imgui.onInit(*ctx, ctx->getWindow()._sdlWindow);
 			ctx->_plugins.emplace_back(std::make_unique<ImGuiPlugin>(imgui));
 		}
 		return ctx;
@@ -151,11 +122,12 @@ namespace mythril {
 		ASSERT_MSG(systemInfoResult.has_value(), "Failed to get system info, Error: {}", instanceResult.error().message());
 		vkb::SystemInfo system_info = systemInfoResult.value();
 	}
-	void CTXBuilder::_createVulkanSurface(CTX& ctx, GLFWwindow* glfwWindow) const {
+
+	void CTXBuilder::_createVulkanSurface(CTX& ctx, SDL_Window* sdlWindow) const {
 		// Surface
 		VkSurfaceKHR surface = nullptr;
-		VkResult surface_success = glfwCreateWindowSurface(ctx._vkInstance, glfwWindow, nullptr, &surface);
-		ASSERT_MSG(surface_success == VK_SUCCESS, "Failed to create Vulkan surface with GLFW. Error: {}", glfwGetErrorString());
+		bool surface_success = SDL_Vulkan_CreateSurface(sdlWindow, ctx._vkInstance, nullptr, &surface);
+		ASSERT_MSG(surface_success, "Failed to create Vulkan surface with GLFW");
 		ctx._vkSurfaceKHR = surface;
 	}
 

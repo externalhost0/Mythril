@@ -12,13 +12,13 @@ namespace mythril {
 	class BasePlugin {
 	public:
 		virtual ~BasePlugin() = default;
-		virtual void onInit(CTX& ctx) {};
+		virtual void onInit(CTX& ctx, SDL_Window* sdlWindow) {};
 		virtual void onDispose() {};
-	private:
 	};
+
 	class ImGuiPlugin : public BasePlugin {
 	public:
-		void onInit(CTX& ctx) override;
+		void onInit(CTX& ctx, SDL_Window * sdlWindow) override;
 		void onDispose() override;
 	private:
 		CTX* _ctx;

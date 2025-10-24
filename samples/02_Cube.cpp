@@ -87,7 +87,6 @@ glm::mat4 calculateViewMatrix(Camera camera) {
 glm::mat4 calculateProjectionMatrix(Camera camera) {
 	return glm::perspective(glm::radians(camera.fov), camera.aspectRatio, camera.nearPlane, camera.farPlane);
 }
-
 int main() {
 	auto ctx = mythril::CTXBuilder{}
 	.set_info_spec({
@@ -99,16 +98,16 @@ int main() {
 		.mode = mythril::WindowMode::Windowed,
 		.width = 1280,
 		.height = 720,
-		.resizeable = true,
-		})
-		.build();
+		.resizeable = false
+	})
+	.build();
 
-	VkExtent2D extent2D = {1280*2, 720*2};
+	VkExtent2D extent2D = {1280, 720};
 	mythril::InternalTextureHandle colorTarget = ctx->createTexture({
 		.dimension = extent2D,
 		.usage = mythril::TextureUsageBits::TextureUsageBits_Attachment,
 		.format = VK_FORMAT_R8G8B8A8_UNORM,
-		.debugName = "Color Texture",
+		.debugName = "Color Texture"
 	});
 	mythril::InternalTextureHandle depthTarget = ctx->createTexture({
 		.dimension = extent2D,
@@ -148,7 +147,6 @@ int main() {
 		.debugName = "Cube Index Buffer"
 	});
 
-
 	auto startTime = std::chrono::high_resolution_clock::now();
 
 	mythril::RenderGraph graph;
@@ -157,6 +155,7 @@ int main() {
 		.texture = colorTarget,
 		.clearValue = {0.2f, 0.2f, 0.2f, 1.f},
 		.loadOp = mythril::LoadOperation::CLEAR,
+		.storeOp = mythril::StoreOperation::STORE
 	})
 	.write({
 		.texture = depthTarget,
@@ -166,10 +165,10 @@ int main() {
 	.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
 		cmd.cmdBindRenderPipeline(mainPipeline);
 
-		mythril::Extent2D size = ctx->getWindowSize();
+		VkExtent2D windowSize = ctx->getWindow().getWindowSize();
 		Camera camera = {
 				.position = { 0.f, 0.f, 5.f },
-				.aspectRatio = (float)size.width/(float)size.height,
+				.aspectRatio = (float)windowSize.width/(float)windowSize.height,
 				.fov = 80.f,
 				.nearPlane = 0.1f,
 				.farPlane = 100.f
@@ -193,7 +192,10 @@ int main() {
 
 	bool quit = false;
 	while(!quit) {
-		if (ctx->pollAndCheck()) quit = true;
+		SDL_Event e;
+		while (SDL_PollEvent(&e)) {
+			if (e.type == SDL_EVENT_QUIT) quit = true;
+		}
 
 		mythril::CommandBuffer& cmd = ctx->openCommand(mythril::CommandBuffer::Type::Graphics);
 		graph.execute(cmd);

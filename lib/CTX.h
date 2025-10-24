@@ -12,11 +12,12 @@
 #include "VulkanObjects.h"
 #include "ObjectHandles.h"
 #include "RenderPipeline.h"
+#include "Window.h"
+#include "SDL3/SDL_events.h"
 
 #include <future>
 #include <filesystem>
 #include <volk.h>
-#include <GLFW/glfw3.h>
 #include <slang/slang.h>
 #include <slang/slang-com-ptr.h>
 
@@ -119,8 +120,7 @@ namespace mythril {
 		const char* debugName = "Unnamed Shader";
 	};
 
-	typedef VkExtent2D Extent2D;
-	typedef VkExtent3D Extent3D;
+	enum class WindowMode;
 
 	class CTX final {
 	public:
@@ -131,16 +131,16 @@ namespace mythril {
 		CTX(CTX &&) noexcept = default;
 		CTX &operator=(CTX &&) noexcept = default;
 	public:
-		bool pollAndCheck();
-		Extent2D getWindowSize();
-		Extent2D getRenderSize();
-
+		void cleanSwapchain();
+		bool isSwapchainDirty();
+		Window& getWindow() { return _window; };
 
 		CommandBuffer& openCommand(CommandBuffer::Type type);
 		SubmitHandle submitCommand(CommandBuffer& cmd);
 
 		InternalBufferHandle createBuffer(BufferSpec spec);
 		InternalTextureHandle createTexture(TextureSpec spec);
+		void resizeTexture(InternalTextureHandle handle, VkExtent2D newExtent);
 		InternalSamplerHandle createSampler(SamplerSpec spec);
 		InternalPipelineHandle createPipeline(PipelineSpec spec);
 		InternalShaderHandle createShader(ShaderSpec spec);
@@ -188,10 +188,7 @@ namespace mythril {
 		void deferTask(std::packaged_task<void()>&& task, SubmitHandle handle = SubmitHandle()) const;
 		void processDeferredTasks();
 		void waitDeferredTasks();
-
 	private:
-		// GLFW
-		GLFWwindow* _glfwWindow = nullptr;
 		// Vulkan
 		VkInstance _vkInstance = VK_NULL_HANDLE;
 		VkDebugUtilsMessengerEXT _vkDebugMessenger = VK_NULL_HANDLE;
@@ -248,12 +245,10 @@ namespace mythril {
 		HandlePool<InternalPipelineHandle, RenderPipeline> _pipelinePool;
 		HandlePool<InternalShaderHandle, CompiledShaderData> _shaderPool;
 
+		// some rare stuff
 		std::vector<std::unique_ptr<class BasePlugin>> _plugins = {};
 		Slang::ComPtr<slang::ISession> _slangSession = nullptr;
-
-		// items set once during CTXBuilder
-		uint32_t physicalWidth, physicalHeight;
-		float contentScale;
+		Window _window;
 
 		friend class RenderGraph;
 		friend class CommandBuffer;
