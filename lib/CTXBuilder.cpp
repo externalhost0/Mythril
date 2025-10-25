@@ -90,11 +90,13 @@ namespace mythril {
 		ctx->_timelineSemaphore = vkutil::CreateTimelineSemaphore(ctx->_vkDevice, ctx->_swapchain->getNumOfSwapchainImages() - 1);
 		ctx->growDescriptorPool(ctx->_currentMaxTextureCount, ctx->_currentMaxSamplerCount);
 		// now we can build plugins!
+#ifdef MYTH_ENABLED_IMGUI
 		if (_usingImGui) {
 			ImGuiPlugin imgui;
 			imgui.onInit(*ctx, ctx->getWindow()._sdlWindow);
 			ctx->_plugins.emplace_back(std::make_unique<ImGuiPlugin>(imgui));
 		}
+#endif
 		return ctx;
 	}
 	void CTXBuilder::_createVulkanInstance(CTX& ctx, vkb::Instance& vkb_instance) const {

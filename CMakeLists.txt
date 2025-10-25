@@ -5,7 +5,7 @@ project(${PARENT_PROJECT_NAME} LANGUAGES C CXX)
 # ------------------- IMPORTANT | User Options ---------------------------
 # default options
 option(MYTH_ENABLE_IMGUI_STANDARD "Enable ImGui Plugin Main Branch" OFF)
-option(MYTH_ENABLE_IMGUI_DOCKING "Enable ImGui Plugin Docking Branch" ON)
+option(MYTH_ENABLE_IMGUI_DOCKING "Enable ImGui Plugin Docking Branch" OFF)
 option(MYTH_RUN_SAMPLES "Enable sample apps" ON)
 
 
@@ -22,6 +22,13 @@ elseif (CMAKE_BUILD_TYPE STREQUAL "Debug")
 endif ()
 
 include(cmake/CPM.cmake)
+
+
+# -------------------- samples -----------------------------
+if(MYTH_RUN_SAMPLES)
+    add_subdirectory(samples)
+endif()
+
 
 # -------------------------- VULKAN --------------------------------
 
@@ -135,7 +142,7 @@ endif ()
 # --------------- connecting source and includes -----------------------
 
 set(OPTIONAL_SOURCES)
-if (MYTH_ENABLE_IMGUI OR MYTH_ENABLE_IMGUI_DOCKING)
+if (MYTH_ENABLE_IMGUI_STANDARD OR MYTH_ENABLE_IMGUI_DOCKING)
     list(APPEND OPTIONAL_SOURCES lib/plugins/ImGuiPlugin.cpp)
 endif ()
 add_library(${PARENT_PROJECT_NAME} STATIC
@@ -191,7 +198,3 @@ if (MYTH_ENABLE_IMGUI_STANDARD OR MYTH_ENABLE_IMGUI_DOCKING)
     )
 endif ()
 
-# -------------------- samples -----------------------------
-if(MYTH_RUN_SAMPLES)
-    add_subdirectory(samples)
-endif()

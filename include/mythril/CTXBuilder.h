@@ -44,6 +44,9 @@ namespace mythril {
 			return *this;
 		};
 		CTXBuilder& with_ImGui() {
+#ifndef MYTH_ENABLED_IMGUI
+			ASSERT_MSG(false, "You can not use the ImGui Plugin unless you also enable it in CMake via the options 'MYTH_ENABLE_IMGUI_STANDARD ON' or 'MYTH_ENABLE_IMGUI_DOCKING ON'!");
+#endif
 			this->_usingImGui = true;
 			return *this;
 		}
