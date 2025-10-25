@@ -19,8 +19,8 @@ namespace mythril {
 		ImGuiIO& io = ImGui::GetIO();
 		io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 		io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
-#if defined(__APPLE__)
-		io.ConfigMacOSXBehaviors = true; // changes a ton of stuff, just click on it
+#ifdef MYTH_ENABLED_IMGUI_DOCKING
+		io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
 #endif
 
 		VkDescriptorPoolSize pool_sizes[] = {
@@ -44,6 +44,7 @@ namespace mythril {
 		pool_info.pPoolSizes = pool_sizes;
 		VK_CHECK(vkCreateDescriptorPool(ctx._vkDevice, &pool_info, nullptr, &this->_descriptorPool));
 
+		// TODO: resolve this from user decision
 		VkFormat format = VK_FORMAT_R8G8B8A8_UNORM;
 		ImGui_ImplVulkan_InitInfo vulkanInitInfo = {
 				.ApiVersion = VK_API_VERSION_1_3,

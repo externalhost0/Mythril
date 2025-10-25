@@ -16,6 +16,7 @@ namespace mythril {
 		virtual void onDispose() {};
 	};
 
+#ifdef MYTH_ENABLED_IMGUI
 	class ImGuiPlugin : public BasePlugin {
 	public:
 		void onInit(CTX& ctx, SDL_Window * sdlWindow) override;
@@ -24,4 +25,5 @@ namespace mythril {
 		CTX* _ctx;
 		VkDescriptorPool _descriptorPool = VK_NULL_HANDLE;
 	};
+#endif
 }

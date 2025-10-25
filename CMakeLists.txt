@@ -4,7 +4,8 @@ project(${PARENT_PROJECT_NAME} LANGUAGES C CXX)
 
 # ------------------- IMPORTANT | User Options ---------------------------
 # default options
-option(MYTH_ENABLE_IMGUI "Enable ImGui Plugin" ON)
+option(MYTH_ENABLE_IMGUI_STANDARD "Enable ImGui Plugin Main Branch" OFF)
+option(MYTH_ENABLE_IMGUI_DOCKING "Enable ImGui Plugin Docking Branch" ON)
 option(MYTH_RUN_SAMPLES "Enable sample apps" ON)
 
 
@@ -93,33 +94,50 @@ CPMAddPackage(
 )
 
 # ------------------------- IMGUI -----------------------------
-CPMAddPackage(
-        NAME imgui
-        GITHUB_REPOSITORY "ocornut/imgui"
-        GIT_TAG master
-)
-add_library(imgui STATIC
-        ${imgui_SOURCE_DIR}/imgui.cpp
-        ${imgui_SOURCE_DIR}/imgui_demo.cpp # optionally comment this out
-        ${imgui_SOURCE_DIR}/imgui_draw.cpp
-        ${imgui_SOURCE_DIR}/imgui_widgets.cpp
-        ${imgui_SOURCE_DIR}/imgui_tables.cpp
-        ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp
-        ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp
-)
-target_include_directories(imgui PUBLIC
-        ${SDL3_INCLUDE_DIRS}
-        ${imgui_SOURCE_DIR}
-        ${imgui_SOURCE_DIR}/backends
-)
-target_compile_definitions(imgui PUBLIC
-        IMGUI_IMPL_VULKAN_USE_VOLK
-        IMGUI_DEFINE_MATH_OPERATORS
-        IMGUI_DISABLE_OBSOLETE_FUNCTIONS
-)
-target_link_libraries(imgui PRIVATE volk SDL3::SDL3)
+if (MYTH_ENABLE_IMGUI_STANDARD AND MYTH_ENABLE_IMGUI_DOCKING)
+    message(FATAL_ERROR "Please have either 'MYTH_ENABLE_IMGUI_STANDARD' or 'MYTH_ENABLE_IMGUI_DOCKING' but not both ON!")
+endif()
+if (MYTH_ENABLE_IMGUI_STANDARD)
+    CPMAddPackage(
+            NAME imgui
+            GITHUB_REPOSITORY "ocornut/imgui"
+            GIT_TAG v1.92.4
+    )
+else (MYTH_ENABLE_IMGUI_DOCKING)
+    CPMAddPackage(
+            NAME imgui
+            GITHUB_REPOSITORY "ocornut/imgui"
+            GIT_TAG v1.92.4-docking
+    )
+endif ()
+if (MYTH_ENABLE_IMGUI_STANDARD OR MYTH_ENABLE_IMGUI_DOCKING)
+    add_library(imgui STATIC
+            ${imgui_SOURCE_DIR}/imgui.cpp
+            ${imgui_SOURCE_DIR}/imgui_demo.cpp # optionally comment this out
+            ${imgui_SOURCE_DIR}/imgui_draw.cpp
+            ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+            ${imgui_SOURCE_DIR}/imgui_tables.cpp
+            ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp
+            ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp
+    )
+    target_include_directories(imgui PUBLIC
+            ${SDL3_INCLUDE_DIRS}
+            ${imgui_SOURCE_DIR}
+            ${imgui_SOURCE_DIR}/backends
+    )
+    target_compile_definitions(imgui PUBLIC
+            IMGUI_IMPL_VULKAN_USE_VOLK
+            IMGUI_DEFINE_MATH_OPERATORS
+            IMGUI_DISABLE_OBSOLETE_FUNCTIONS
+    )
+    target_link_libraries(imgui PRIVATE volk SDL3::SDL3)
+endif ()
 # --------------- connecting source and includes -----------------------
 
+set(OPTIONAL_SOURCES)
+if (MYTH_ENABLE_IMGUI OR MYTH_ENABLE_IMGUI_DOCKING)
+    list(APPEND OPTIONAL_SOURCES lib/plugins/ImGuiPlugin.cpp)
+endif ()
 add_library(${PARENT_PROJECT_NAME} STATIC
         lib/vkinfo.cpp
         lib/Swapchain.cpp
@@ -134,7 +152,8 @@ add_library(${PARENT_PROJECT_NAME} STATIC
         lib/PipelineBuilder.cpp
         lib/RenderGraphBuilder.cpp
         lib/Window.cpp
-        lib/plugins/ImGuiPlugin.cpp
+
+        ${OPTIONAL_SOURCES}
 )
 target_include_directories(${PARENT_PROJECT_NAME}
         PUBLIC
@@ -153,16 +172,24 @@ target_link_libraries(${PARENT_PROJECT_NAME}
         vk-bootstrap
         Slang::slang
 )
-if(MYTH_ENABLE_IMGUI)
+if(MYTH_ENABLE_IMGUI_STANDARD)
     target_compile_definitions(${PARENT_PROJECT_NAME}
             PUBLIC
             MYTH_ENABLED_IMGUI
     )
+elseif(MYTH_ENABLE_IMGUI_DOCKING)
+    target_compile_definitions(${PARENT_PROJECT_NAME}
+            PUBLIC
+            MYTH_ENABLED_IMGUI
+            MYTH_ENABLED_IMGUI_DOCKING
+    )
+endif()
+if (MYTH_ENABLE_IMGUI_STANDARD OR MYTH_ENABLE_IMGUI_DOCKING)
     target_link_libraries(${PARENT_PROJECT_NAME}
             PUBLIC
             imgui
     )
-endif()
+endif ()
 
 # -------------------- samples -----------------------------
 if(MYTH_RUN_SAMPLES)
