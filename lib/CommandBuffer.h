@@ -63,6 +63,11 @@ namespace mythril {
 		void cmdDrawIndirect();
 		void cmdDrawIndexedIndirect();
 
+		void cmdTransitionLayout(InternalTextureHandle source, VkImageLayout newLayout);
+		void cmdCopyImage(InternalTextureHandle source, InternalTextureHandle destination);
+		void cmdBlitImage(InternalTextureHandle source, InternalTextureHandle destination);
+		void cmdCopyImageToBuffer(InternalTextureHandle source, InternalBufferHandle destination, const VkBufferImageCopy& region);
+
 		// plugins
 #ifdef MYTH_ENABLED_IMGUI
 		void cmdDrawImGui();
@@ -75,13 +80,9 @@ namespace mythril {
 		void cmdSetDepthBiasEnable(bool enable);
 		void cmdSetDepthBias(float constantFactor, float slopeFactor, float clamp);
 
-		void cmdTransitionLayout(InternalTextureHandle source, VkImageLayout newLayout);
 		void cmdTransitionLayout(InternalTextureHandle source, VkImageLayout currentLayout, VkImageLayout newLayout);
 		void cmdTransitionSwapchainLayout(VkImageLayout newLayout);
 
-		void cmdCopyImageToBuffer(InternalTextureHandle source, InternalBufferHandle destination, const VkBufferImageCopy& region);
-		void cmdCopyImage(InternalTextureHandle source, InternalTextureHandle destination);
-		void cmdBlitImage(InternalTextureHandle source, InternalTextureHandle destination);
 		void cmdBlitToSwapchain(InternalTextureHandle source);
 		void cmdPrepareToSwapchain(InternalTextureHandle source);
 
