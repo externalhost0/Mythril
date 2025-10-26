@@ -601,9 +601,6 @@ namespace mythril {
 	}
 
 	void CTX::resizeTexture(InternalTextureHandle handle, VkExtent2D newExtent) {
-		//fixme: find more performant solution for this, im just lazy rn
-		VK_CHECK(vkDeviceWaitIdle(_vkDevice));
-
 		AllocatedTexture* image = _texturePool.get(handle);
 		if (!image) return;
 

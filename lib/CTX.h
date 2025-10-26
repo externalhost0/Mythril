@@ -134,6 +134,11 @@ namespace mythril {
 		bool isSwapchainDirty();
 		Window& getWindow() { return _window; };
 
+		void waitIdle() {
+			//fixme: find more performant solution for this, im just lazy rn
+			VK_CHECK(vkDeviceWaitIdle(_vkDevice));
+		};
+
 		CommandBuffer& openCommand(CommandBuffer::Type type);
 		SubmitHandle submitCommand(CommandBuffer& cmd);
 
