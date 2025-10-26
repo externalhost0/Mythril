@@ -1041,7 +1041,9 @@ namespace mythril {
 	CommandBuffer& CTX::openCommand(CommandBuffer::Type type) {
 		ASSERT_MSG(!_currentCommandBuffer._ctx, "Cannot open more than 1 CommandBuffer simultaneously!");
 		_currentCommandBuffer = CommandBuffer(this, type);
-		_swapchain->acquire();
+		if (type == CommandBuffer::Type::Graphics) {
+			_swapchain->acquire();
+		}
 		return _currentCommandBuffer;
 	}
 	SubmitHandle CTX::submitCommand(CommandBuffer& cmd) {
@@ -1136,6 +1138,10 @@ namespace mythril {
 			vkDestroyPipelineLayout(device, layout, nullptr);
 		}));
 		_pipelinePool.destroy(handle);
+	}
+
+	void CTX::forceProcessTasks() {
+		processDeferredTasks();
 	}
 
 }

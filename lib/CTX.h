@@ -142,6 +142,8 @@ namespace mythril {
 		CommandBuffer& openCommand(CommandBuffer::Type type);
 		SubmitHandle submitCommand(CommandBuffer& cmd);
 
+		void forceProcessTasks();
+
 		InternalBufferHandle createBuffer(BufferSpec spec);
 		InternalTextureHandle createTexture(TextureSpec spec);
 		void resizeTexture(InternalTextureHandle handle, VkExtent2D newExtent);
