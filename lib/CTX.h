@@ -148,7 +148,10 @@ namespace mythril {
 
 		const AllocatedTexture& getTexture(InternalTextureHandle handle) const { return *_texturePool.get(handle); };
 		const AllocatedBuffer& getBuffer(InternalBufferHandle handle) const { return *_bufferPool.get(handle); }
+		const AllocatedSampler& getSampler(InternalSamplerHandle handle) const { return *_samplerPool.get(handle); }
 
+		const AllocatedSampler& getDefaultLinearSampler() const { return *_samplerPool.get(_linearSamplerHandle); }
+		const AllocatedSampler& getDefaultNearestSampler() const { return *_samplerPool.get(_nearestSamplerHandle); }
 	private:
 		// for automatic cleanup of resources
 		void destroy(InternalBufferHandle handle);

@@ -11,8 +11,13 @@ namespace mythril {
 	class CTX;
 
 	struct AllocatedSampler {
+	public:
+		[[nodiscard]] inline VkSampler getSampler() { return _vkSampler; }
+	private:
 		VkSampler _vkSampler = VK_NULL_HANDLE;
 		char _debugName[128] = {0};
+
+		friend class CTX;
 	};
 
 	struct AllocatedTexture {
@@ -32,6 +37,8 @@ namespace mythril {
 		[[nodiscard]] inline VkImageLayout getLayout() const { return _vkCurrentImageLayout; }
 		[[nodiscard]] inline VkExtent2D getExtentAs2D() const { return {_vkExtent.width, _vkExtent.height}; }
 
+		[[nodiscard]] inline VkImageView getImageView() { return _vkImageView; }
+		[[nodiscard]] inline VkFormat getFormat() const { return _vkFormat; }
 	private:
 		VkImage _vkImage = VK_NULL_HANDLE;
 		VkImageView _vkImageView = VK_NULL_HANDLE;
