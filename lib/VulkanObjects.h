@@ -12,7 +12,7 @@ namespace mythril {
 
 	struct AllocatedSampler {
 	public:
-		[[nodiscard]] inline VkSampler getSampler() { return _vkSampler; }
+		[[nodiscard]] inline VkSampler getSampler() const { return _vkSampler; }
 	private:
 		VkSampler _vkSampler = VK_NULL_HANDLE;
 		char _debugName[128] = {0};
@@ -37,7 +37,8 @@ namespace mythril {
 		[[nodiscard]] inline VkImageLayout getLayout() const { return _vkCurrentImageLayout; }
 		[[nodiscard]] inline VkExtent2D getExtentAs2D() const { return {_vkExtent.width, _vkExtent.height}; }
 
-		[[nodiscard]] inline VkImageView getImageView() { return _vkImageView; }
+		// FIXME: check this and above at getSampler() as really const
+		[[nodiscard]] inline VkImageView getImageView() const { return _vkImageView; }
 		[[nodiscard]] inline VkFormat getFormat() const { return _vkFormat; }
 	private:
 		VkImage _vkImage = VK_NULL_HANDLE;
