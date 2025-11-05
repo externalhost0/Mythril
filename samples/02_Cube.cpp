@@ -102,6 +102,9 @@ int main() {
 		.height = 720,
 		.resizeable = false
 	})
+	.set_shader_search_paths({
+		"assets/shaders/Common/"
+	})
 	.build();
 
 	VkExtent2D extent2D = ctx->getWindow().getFramebufferSize();
@@ -130,6 +133,7 @@ int main() {
 		.topology = mythril::TopologyMode::TRIANGLE,
 		.polygon = mythril::PolygonMode::FILL,
 		.blend = mythril::BlendingMode::OFF,
+		.cull = mythril::CullMode::BACK,
 		.multisample = mythril::SampleCount::X1,
 		.debugName = "Main Pipeline"
 	});

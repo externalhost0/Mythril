@@ -31,6 +31,19 @@ macro(ADD_SAMPLE sample_name)
             "$<TARGET_FILE_DIR:${sample_name}>/assets"
             DEPENDS ${SHADER_FILES}
     )
+
+    # for editing of shaders, as they are currently not hot reloadable
+    option(FORCE_REBUILD_SAMPLES "Always recompile samples" ON)
+    if(FORCE_REBUILD_SAMPLES)
+        add_custom_command(
+                TARGET ${sample_name}
+                PRE_BUILD
+                COMMAND ${CMAKE_COMMAND} -E echo "Forcing rebuild for ${sample_name}"
+                COMMAND ${CMAKE_COMMAND} -E touch "${CMAKE_CURRENT_SOURCE_DIR}/${sample_name}.cpp"
+                COMMENT "Touching source to trigger rebuild"
+        )
+    endif()
+
 endmacro()
 
 # for some of the examples
@@ -47,3 +60,4 @@ ADD_SAMPLE("02_Cube" LIBS glm)
 ADD_SAMPLE("03_CubeMSAA" LIBS glm)
 ADD_SAMPLE("04_PostProcessingCube" LIBS glm)
 ADD_SAMPLE("05_ImGui" OPTIONS MYTH_ENABLE_IMGUI_STANDARD=ON)
+ADD_SAMPLE("06_CustomShader" LIBS glm OPTIONS MYTH_ENABLE_IMGUI_STANDARD=ON)

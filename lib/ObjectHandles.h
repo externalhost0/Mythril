@@ -73,6 +73,7 @@ namespace mythril {
 
 		// FIXME: temp fix to _objects not being public
 		friend class CTX;
+		friend class CommandBuffer;
 	public:
 		HandleType create(ActualObject &&obj) {
 			uint32_t idx;

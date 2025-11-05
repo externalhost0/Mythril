@@ -43,6 +43,19 @@ namespace mythril {
 			this->_window_spec = spec;
 			return *this;
 		};
+		CTXBuilder& set_shader_search_paths(std::initializer_list<const char*> searchPaths) {
+			_searchpaths.clear();
+			for (auto path : searchPaths) {
+				_searchpaths.emplace_back(path);
+			}
+			return *this;
+		}
+		CTXBuilder& set_shader_search_paths(const std::vector<const char*>& searchPaths) {
+			for (auto path : searchPaths) {
+				_searchpaths.emplace_back(path);
+			}
+			return *this;
+		}
 		CTXBuilder& with_ImGui() {
 #ifndef MYTH_ENABLED_IMGUI
 			ASSERT_MSG(false, "You can not use the ImGui Plugin unless you also enable it in CMake via the options 'MYTH_ENABLE_IMGUI_STANDARD ON' or 'MYTH_ENABLE_IMGUI_DOCKING ON'!");
@@ -55,6 +68,7 @@ namespace mythril {
 	private:
 		bool _usingImGui = false;
 
+		std::vector<std::string> _searchpaths = {};
 		VulkanInfoSpec _vkinfo_spec;
 		WindowSpec _window_spec;
 

@@ -8,7 +8,7 @@
 #include "CTX.h"
 #include "vkutil.h"
 #include "Logger.h"
-#include "RenderPipeline.h"
+#include "GraphicsPipeline.h"
 
 #include <volk.h>
 #ifdef MYTH_ENABLED_IMGUI
@@ -57,7 +57,6 @@ namespace mythril {
 																				 attachmentInfo.storeOp));
 			}
 		}
-
 		const bool hasDepth = _activePass.depthAttachment.has_value();
 		VkRenderingAttachmentInfo depthAttachmentInfo = {};
 		if (hasDepth) {
@@ -68,8 +67,6 @@ namespace mythril {
 																		   attachmentInfo.loadOp,
 																		   attachmentInfo.storeOp);
 		}
-
-
 		// Step 2: Put it together in a renderingInfo struct
 		VkExtent2D renderExtent = _activePass.extent2D;
 		VkRenderingInfo info = {
@@ -91,7 +88,8 @@ namespace mythril {
 		_cmdSetViewport(renderExtent);
 		cmdBindDepthState({});
 
-		_ctx->checkAndUpdateDescriptorSets();
+		_ctx->checkAndUpdateBindlessDescriptorSet();
+//		_ctx->checkAndUpdateDescriptorSets();
 
 		vkCmdSetDepthCompareOp(_wrapper->_cmdBuf, VK_COMPARE_OP_ALWAYS);
 		vkCmdSetDepthBiasEnable(_wrapper->_cmdBuf, VK_FALSE);
@@ -119,7 +117,7 @@ namespace mythril {
 
 
 	void CommandBuffer::cmdBindIndexBuffer(InternalBufferHandle handle) {
-		const AllocatedBuffer& buffer = _ctx->getBuffer(handle);
+		const AllocatedBuffer& buffer = _ctx->viewBuffer(handle);
 		vkCmdBindIndexBuffer(_wrapper->_cmdBuf, buffer._vkBuffer, 0, VK_INDEX_TYPE_UINT32);
 	}
 
@@ -143,17 +141,18 @@ namespace mythril {
 		vkCmdSetScissor(_wrapper->_cmdBuf, 0, 1, &scissor);
 	}
 	void CommandBuffer::cmdTransitionLayout(InternalTextureHandle source, VkImageLayout newLayout) {
-		cmdTransitionLayout(source, _ctx->getTexture(source)._vkCurrentImageLayout, newLayout);
+		cmdTransitionLayout(source, _ctx->viewTexture(source)._vkCurrentImageLayout, newLayout);
 	}
 	void CommandBuffer::cmdTransitionLayout(InternalTextureHandle source, VkImageLayout currentLayout, VkImageLayout newLayout) {
-		if (_ctx->getTexture(source)._vkCurrentImageLayout == newLayout) {
-			LOG_USER(LogType::Warning, "Image ({}) is already in the requested layout.", _ctx->getTexture(source)._debugName);
+		auto& sourceTex = _ctx->viewTexture(source);
+		if (sourceTex._vkCurrentImageLayout == newLayout) {
+			LOG_USER(LogType::Warning, "Image ({}) is already in the requested layout.", sourceTex._debugName);
 		}
 
 		vkutil::StageAccess srcStage = vkutil::getPipelineStageAccess(currentLayout);
 		vkutil::StageAccess dstStage = vkutil::getPipelineStageAccess(newLayout);
 
-		if (_ctx->_texturePool.get(source)->_isResolveAttachment && vkutil::IsFormatDepthOrStencil(_ctx->getTexture(source)._vkFormat)) {
+		if (sourceTex._isResolveAttachment && vkutil::IsFormatDepthOrStencil(sourceTex._vkFormat)) {
 			// https://registry.khronos.org/vulkan/specs/latest/html/vkspec.html#renderpass-resolve-operations
 			srcStage.stage |= VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
 			srcStage.stage |= VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
@@ -176,8 +175,8 @@ namespace mythril {
 				.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
 				.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
 
-				.image = _ctx->getTexture(source)._vkImage,
-				.subresourceRange = vkinfo::CreateImageSubresourceRange(vkutil::AspectMaskFromFormat(_ctx->getTexture(source)._vkFormat))
+				.image = sourceTex._vkImage,
+				.subresourceRange = vkinfo::CreateImageSubresourceRange(vkutil::AspectMaskFromFormat(sourceTex._vkFormat))
 		};
 		VkDependencyInfo dependency_i = {
 				.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
@@ -190,13 +189,17 @@ namespace mythril {
 		_ctx->_texturePool.get(source)->_vkCurrentImageLayout = newLayout;
 	}
 	void CommandBuffer::cmdBlitImage(InternalTextureHandle source, InternalTextureHandle destination) {
-		if (_ctx->getTexture(source)._vkCurrentImageLayout != VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) {
+		auto& sourceTex = _ctx->viewTexture(source);
+		auto& destinationTex = _ctx->viewTexture(destination);
+		if (sourceTex._vkCurrentImageLayout != VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) {
+			LOG_USER(LogType::Warning, "Automatically resolved texture ({}) to be in correct layout (VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) before blitting.", sourceTex._debugName);
 			this->cmdTransitionLayout(source, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
 		}
-		if (_ctx->getTexture(destination)._vkCurrentImageLayout != VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
+		if (destinationTex._vkCurrentImageLayout != VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
+			LOG_USER(LogType::Warning, "Automatically resolved texture ({}) to be in correct layout (VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) before blitting.", destinationTex._debugName);
 			this->cmdTransitionLayout(destination, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 		}
-		_cmdBlitImage(source, destination, _ctx->getTexture(source).getExtentAs2D(), _ctx->getTexture(destination).getExtentAs2D());
+		_cmdBlitImage(source, destination, sourceTex.getExtentAs2D(), destinationTex.getExtentAs2D());
 	}
 	void CommandBuffer::_cmdBlitImage(InternalTextureHandle source, InternalTextureHandle destination, VkExtent2D srcSize, VkExtent2D dstSize) {
 		VkImageBlit2 blitRegion = { .sType = VK_STRUCTURE_TYPE_IMAGE_BLIT_2, .pNext = nullptr };
@@ -220,9 +223,9 @@ namespace mythril {
 		blitRegion.dstSubresource.mipLevel = 0;
 
 		VkBlitImageInfo2 blitInfo = { .sType = VK_STRUCTURE_TYPE_BLIT_IMAGE_INFO_2, .pNext = nullptr };
-		blitInfo.srcImage = _ctx->getTexture(source)._vkImage;
+		blitInfo.srcImage = _ctx->viewTexture(source)._vkImage;
 		blitInfo.srcImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-		blitInfo.dstImage = _ctx->getTexture(destination)._vkImage;
+		blitInfo.dstImage = _ctx->viewTexture(destination)._vkImage;
 		blitInfo.dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
 		blitInfo.filter = VK_FILTER_LINEAR;
 		blitInfo.regionCount = 1;
@@ -232,12 +235,14 @@ namespace mythril {
 	}
 	void CommandBuffer::cmdCopyImage(InternalTextureHandle source, InternalTextureHandle destination) {
 		// needs to be same so doesnt matter if we take source or destination size
-		_cmdCopyImage(source, destination, _ctx->getTexture(source).getExtentAs2D());
+		_cmdCopyImage(source, destination, _ctx->viewTexture(source).getExtentAs2D());
 	}
 	void CommandBuffer::_cmdCopyImage(InternalTextureHandle source, InternalTextureHandle destination, VkExtent2D size) {
-		ASSERT_MSG(_ctx->getTexture(source)._vkFormat == _ctx->getTexture(destination)._vkFormat, "The images being copied must be of the same VkFormat, (format)!");
-		ASSERT_MSG(_ctx->getTexture(source)._vkExtent.width == _ctx->getTexture(destination)._vkExtent.width, "The images being copied must be of the same width!");
-		ASSERT_MSG(_ctx->getTexture(source)._vkExtent.height == _ctx->getTexture(destination)._vkExtent.height, "The images being copied must be of the same height!");
+		auto& sourceTex = _ctx->viewTexture(source);
+		auto& destinationTex = _ctx->viewTexture(destination);
+		ASSERT_MSG(sourceTex._vkFormat == destinationTex._vkFormat, "The images being copied must be of the same VkFormat, (format)!");
+		ASSERT_MSG(sourceTex._vkExtent.width == destinationTex._vkExtent.width, "The images being copied must be of the same width!");
+		ASSERT_MSG(sourceTex._vkExtent.height == destinationTex._vkExtent.height, "The images being copied must be of the same height!");
 
 		VkImageCopy2 copyRegion = { .sType = VK_STRUCTURE_TYPE_IMAGE_COPY_2, .pNext = nullptr };
 
@@ -256,9 +261,9 @@ namespace mythril {
 		copyRegion.dstSubresource.mipLevel = 0;
 
 		VkCopyImageInfo2 copyinfo = { .sType = VK_STRUCTURE_TYPE_COPY_IMAGE_INFO_2, .pNext = nullptr };
-		copyinfo.dstImage = _ctx->getTexture(destination)._vkImage;
+		copyinfo.dstImage = destinationTex._vkImage;
 		copyinfo.dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-		copyinfo.srcImage = _ctx->getTexture(source)._vkImage;
+		copyinfo.srcImage = sourceTex._vkImage;
 		copyinfo.srcImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
 		copyinfo.regionCount = 1;
 		copyinfo.pRegions = &copyRegion;
@@ -291,7 +296,7 @@ namespace mythril {
 			return;
 		}
 
-		const RenderPipeline& pipeline = *_ctx->_pipelinePool.get(_currentPipelineHandle);
+		const GraphicsPipeline& pipeline = *_ctx->_graphicsPipelinePool.get(_currentPipelineHandle);
 		vkCmdPushConstants(_wrapper->_cmdBuf, pipeline._vkPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, offset, size, data);
 	}
 
@@ -312,11 +317,13 @@ namespace mythril {
 
 		_ctx->_swapchain->_vkCurrentImageLayout = newLayout;
 	}
+
+	// TODO: have this not repeat the logic already specified in cmdBlitImage, all you need is swapchains current texturehandle
 	void CommandBuffer::cmdBlitToSwapchain(InternalTextureHandle source) {
 		VkImageBlit2 blitRegion = { .sType = VK_STRUCTURE_TYPE_IMAGE_BLIT_2, .pNext = nullptr };
 
-		blitRegion.srcOffsets[1].x = static_cast<int32_t>(_ctx->getTexture(source)._vkExtent.width);
-		blitRegion.srcOffsets[1].y = static_cast<int32_t>(_ctx->getTexture(source)._vkExtent.height);
+		blitRegion.srcOffsets[1].x = static_cast<int32_t>(_ctx->viewTexture(source)._vkExtent.width);
+		blitRegion.srcOffsets[1].y = static_cast<int32_t>(_ctx->viewTexture(source)._vkExtent.height);
 		blitRegion.srcOffsets[1].z = 1;
 
 		blitRegion.dstOffsets[1].x = static_cast<int32_t>(_ctx->_swapchain->getSwapchainExtent().width);
@@ -334,7 +341,7 @@ namespace mythril {
 		blitRegion.dstSubresource.mipLevel = 0;
 
 		VkBlitImageInfo2 blitInfo { .sType = VK_STRUCTURE_TYPE_BLIT_IMAGE_INFO_2, .pNext = nullptr };
-		blitInfo.srcImage = _ctx->getTexture(source)._vkImage;
+		blitInfo.srcImage = _ctx->viewTexture(source)._vkImage;
 		blitInfo.srcImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
 		blitInfo.dstImage = _ctx->_swapchain->getCurrentSwapchainTexture()._vkImage;
 		blitInfo.dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
@@ -352,16 +359,31 @@ namespace mythril {
 		// use _currentPipeline
 		_currentPipelineHandle = handle;
 
-		const RenderPipeline* pipeline = _ctx->resolveRenderPipeline(_currentPipelineHandle);
+		const GraphicsPipeline* pipeline = _ctx->resolveRenderPipeline(_currentPipelineHandle);
+//		Shader* shader = _ctx->_shaderPool.get(pipeline->_spec.stages.front().handle);
 
+		// only bind pipeline if its not currently bound
 		if (_lastBoundvkPipeline != pipeline->_vkPipeline) {
 			_lastBoundvkPipeline = pipeline->_vkPipeline;
 			vkCmdBindPipeline(_wrapper->_cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->_vkPipeline);
-			_ctx->bindDefaultDescriptorSets(_wrapper->_cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->_vkPipelineLayout);
+			_ctx->bindDefaultBindlessDescriptorSets(_wrapper->_cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->_vkPipelineLayout);
+			vkCmdBindDescriptorSets(_wrapper->_cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->_vkPipelineLayout,
+									0,
+									pipeline->_nonbindlessDescriptorSets.size(),
+									pipeline->_nonbindlessDescriptorSets.data(),
+									0,
+									nullptr);
+//			_ctx->bindDefaultDescriptorSets(_wrapper->_cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->_vkPipelineLayout);
+//			vkCmdBindDescriptorSets(_wrapper->_cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->_vkPipelineLayout,
+//									0,
+//									shader->_vkDescriptorSets.size(),
+//									shader->_vkDescriptorSets.data(),
+//									0,
+//									nullptr);
 		}
 	}
 	void CommandBuffer::_bufferBarrier(InternalBufferHandle bufhandle, VkPipelineStageFlags2 srcStage, VkPipelineStageFlags2 dstStage) {
-		AllocatedBuffer* buf = _ctx->_bufferPool.get(bufhandle);
+		auto& buf = _ctx->viewBuffer(bufhandle);
 
 		VkBufferMemoryBarrier2 barrier = {
 				.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
@@ -371,7 +393,7 @@ namespace mythril {
 				.dstAccessMask = 0,
 				.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
 				.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-				.buffer = buf->_vkBuffer,
+				.buffer = buf._vkBuffer,
 				.offset = 0,
 				.size = VK_WHOLE_SIZE,
 		};
@@ -388,7 +410,7 @@ namespace mythril {
 		if (dstStage & VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT) {
 			barrier.dstAccessMask |= VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT;
 		}
-		if (buf->_vkUsageFlags & VK_BUFFER_USAGE_INDEX_BUFFER_BIT) {
+		if (buf._vkUsageFlags & VK_BUFFER_USAGE_INDEX_BUFFER_BIT) {
 			barrier.dstAccessMask |= VK_ACCESS_2_INDEX_READ_BIT;
 		}
 		const VkDependencyInfo depInfo = {
@@ -398,19 +420,21 @@ namespace mythril {
 		};
 		vkCmdPipelineBarrier2(_wrapper->_cmdBuf, &depInfo);
 	}
+
 	// current issues with host buffer
-	void CommandBuffer::cmdUpdateBuffer(InternalBufferHandle bufhandle, size_t offset, size_t size, const void* data) {
-		ASSERT(bufhandle.valid());
+	void CommandBuffer::cmdUpdateBuffer(InternalBufferHandle handle, size_t offset, size_t size, const void* data) {
+		ASSERT_MSG(!_isRendering, "You cannot update a buffer while rendering! Please move this command either before or after rendering.");
+		ASSERT(handle.valid());
 		ASSERT(size && size <= 65536);
 		ASSERT(size % 4 == 0);
 		ASSERT(offset % 4 == 0);
-		AllocatedBuffer* buf = _ctx->_bufferPool.get(bufhandle);
+		AllocatedBuffer* buf = _ctx->_bufferPool.get(handle);
 		if (!data) {
 			LOG_USER(LogType::Warning, "You are updating buffer '{}' with empty data.", std::string_view(buf->_debugName));
 			return;
 		}
 
-		_bufferBarrier(bufhandle, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT);
+		_bufferBarrier(handle, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT);
 
 		vkCmdUpdateBuffer(_wrapper->_cmdBuf, buf->_vkBuffer, offset, size, data);
 
@@ -418,15 +442,16 @@ namespace mythril {
 		if (buf->_vkUsageFlags & VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT) {
 			dstStage |= VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT;
 		}
-		_bufferBarrier(bufhandle, VK_PIPELINE_STAGE_2_TRANSFER_BIT, dstStage);
+		_bufferBarrier(handle, VK_PIPELINE_STAGE_2_TRANSFER_BIT, dstStage);
 	}
 	void CommandBuffer::cmdCopyImageToBuffer(InternalTextureHandle source, InternalBufferHandle destination, const VkBufferImageCopy& region) {
-		VkImageLayout currentLayout = _ctx->getTexture(source)._vkCurrentImageLayout;
-		if (currentLayout != VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL || currentLayout != VK_IMAGE_LAYOUT_GENERAL) {
+		auto& sourceTex = _ctx->viewTexture(source);
+		VkImageLayout currentLayout = sourceTex._vkCurrentImageLayout;
+		if (currentLayout != VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL && currentLayout != VK_IMAGE_LAYOUT_GENERAL) {
 			cmdTransitionLayout(source, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
 		}
-		VkImageLayout properLayout = _ctx->getTexture(source)._vkCurrentImageLayout;
-		vkCmdCopyImageToBuffer(_wrapper->_cmdBuf, _ctx->getTexture(source)._vkImage, properLayout, _ctx->getBuffer(destination)._vkBuffer, 1, &region);
+		VkImageLayout properLayout = sourceTex._vkCurrentImageLayout;
+		vkCmdCopyImageToBuffer(_wrapper->_cmdBuf, sourceTex._vkImage, properLayout, _ctx->viewBuffer(destination)._vkBuffer, 1, &region);
 	}
 	void CommandBuffer::cmdPrepareToSwapchain(InternalTextureHandle source) {
 		cmdTransitionLayout(source, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);

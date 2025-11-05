@@ -98,9 +98,12 @@ int main() {
 		.mode = mythril::WindowMode::Windowed,
 		.width = 1280,
 		.height = 720,
-		.resizeable = false,
-		})
-		.build();
+		.resizeable = false
+	})
+	.set_shader_search_paths({
+		"assets/shaders/Common/"
+	})
+	.build();
 
 	VkExtent2D extent2D = ctx->getWindow().getFramebufferSize();
 	mythril::InternalTextureHandle colorTarget = ctx->createTexture({
@@ -142,6 +145,7 @@ int main() {
 				{standardShader, "vs_main", mythril::ShaderStages::Vertex},
 				{standardShader, "fs_main", mythril::ShaderStages::Fragment}
 		},
+		.cull = mythril::CullMode::BACK,
 		.multisample = mythril::SampleCount::X4,
 		.debugName = "Main Pipeline"
 	});

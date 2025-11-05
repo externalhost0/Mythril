@@ -83,6 +83,9 @@ namespace mythril {
 
 		[[nodiscard]] inline bool isMapped() const { return _mappedPtr != nullptr; }
 		[[nodiscard]] inline uint8_t *getMappedPtr() const { return static_cast<uint8_t *>(_mappedPtr); }
+		[[nodiscard]] inline bool isStorageBuffer() const { return (_vkUsageFlags & VK_BUFFER_USAGE_STORAGE_BUFFER_BIT) > 0; }
+		[[nodiscard]] inline bool isUniformBuffer() const { return (_vkUsageFlags & VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT) > 0; }
+
 	private:
 		VkBuffer _vkBuffer = VK_NULL_HANDLE;
 		VkDeviceMemory _vkMemory = VK_NULL_HANDLE;

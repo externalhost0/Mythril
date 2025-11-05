@@ -4,7 +4,34 @@
 
 #pragma once
 
+#include <slang/slang.h>
+
 namespace mythril {
+	struct ShaderParameter {
+		struct LayoutUnits {
+			size_t bytes = 0;
+			uint32_t descriptorSets = 0;
+			uint32_t descriptorBinds = 0;
+		};
+		std::string name;
+		std::string typeName;
+		std::string completeName;
+
+		uint32_t set;
+		uint32_t binding;
+		LayoutUnits size;
+
+		// kind is what the type is supposed to be in the shader
+		slang::TypeReflection::Kind kind;
+		// category is how vulkan consumes the paramater
+		slang::ParameterCategory category;
+
+		VkDescriptorType descriptorType;
+		VkShaderStageFlags stages;
+
+		bool isBindless; // if arary and has size of 0
+	};
+
 	enum class ShaderStages {
 		Vertex,
 		Fragment,
@@ -22,8 +49,8 @@ namespace mythril {
 
 	struct PipelineSpec {
 		struct ShaderStage {
-			InternalShaderHandle handle = {};
-			const char* entryPoint = nullptr;
+			InternalShaderHandle handle;
+			const char* entryPoint;
 			ShaderStages stage;
 		};
 		std::vector<ShaderStage> stages = {};
@@ -31,13 +58,32 @@ namespace mythril {
 		TopologyMode topology = TopologyMode::TRIANGLE;
 		PolygonMode polygon = PolygonMode::FILL;
 		BlendingMode blend = BlendingMode::OFF;
-		CullMode cull = CullMode::OFF;
+		CullMode cull = CullMode::BACK;
 		SampleCount multisample = SampleCount::X1;
 		const char* debugName = "Unnamed Pipeline";
 	};
-	class RenderPipeline {
+
+	enum class PipelineType {
+		Graphics,
+		Compute,
+		RayTracing
+	};
+	class IPipeline {
+		VkPipeline _vkPipeline = VK_NULL_HANDLE;
+		VkPipelineLayout _vkPipelineLayout = VK_NULL_HANDLE;
+		PipelineType _type = PipelineType::Graphics;
+	};
+	class ComputePipeline : IPipeline {
+
+	};
+	class RayTracingPipeline : IPipeline {
+
+	};
+	class GraphicsPipeline : IPipeline {
 	private:
 		PipelineSpec _spec;
+
+		std::vector<VkDescriptorSet> _nonbindlessDescriptorSets = {};
 
 		VkPipeline _vkPipeline = VK_NULL_HANDLE;
 		VkPipelineLayout _vkPipelineLayout = VK_NULL_HANDLE;

@@ -10,6 +10,8 @@
 #include "vkutil.h"
 #include "Logger.h"
 
+#include <iostream>
+
 #include <volk.h>
 #include <vk_mem_alloc.h>
 
@@ -88,7 +90,9 @@ namespace mythril {
 		ctx->_swapchain = std::make_unique<Swapchain>(*ctx, framebufferSize.width, framebufferSize.height);
 		// timeline semaphore is closely kept to vulkan swapchain
 		ctx->_timelineSemaphore = vkutil::CreateTimelineSemaphore(ctx->_vkDevice, ctx->_swapchain->getNumOfSwapchainImages() - 1);
-		ctx->growDescriptorPool(ctx->_currentMaxTextureCount, ctx->_currentMaxSamplerCount);
+//		ctx->growDescriptorPool(ctx->_currentMaxTextureCount, ctx->_currentMaxSamplerCount);
+		ctx->growBindlessDescriptorPool(ctx->_currentMaxTextureCount, ctx->_currentMaxSamplerCount);
+		ctx->_shaderSearchPaths = std::move(this->_searchpaths);
 		// now we can build plugins!
 #ifdef MYTH_ENABLED_IMGUI
 		if (_usingImGui) {
@@ -106,6 +110,7 @@ namespace mythril {
 				.set_app_name(_vkinfo_spec.app_name)
 				.set_engine_name(_vkinfo_spec.engine_name)
 				.require_api_version(VK_API_VERSION_1_3)
+				.set_minimum_instance_version(1, 4, 304)
 				.request_validation_layers()
 #ifdef DEBUG
 				.use_default_debug_messenger()
@@ -158,6 +163,9 @@ namespace mythril {
 		features12.descriptorBindingVariableDescriptorCount = true;
 		features12.descriptorBindingPartiallyBound = true;
 		features12.runtimeDescriptorArray = true;
+		// for spirv, slang compiler capability
+		features12.vulkanMemoryModel = true;
+		features12.vulkanMemoryModelDeviceScope = true;
 		// vulkan 1.1 features
 		VkPhysicalDeviceVulkan11Features features11 = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES };
 		features11.storageBuffer16BitAccess = true;

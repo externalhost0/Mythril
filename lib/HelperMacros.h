@@ -7,6 +7,7 @@
 #include <csignal>
 #include <fmt/printf.h>
 
+// when not in DEBUG we do not delete x unlike the other macros, as this includes actual vulkan calls
 #ifdef DEBUG
 #define VK_CHECK(x) \
     do { \

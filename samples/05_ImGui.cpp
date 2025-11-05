@@ -90,7 +90,7 @@ int main() {
 		ImGui::Text("Framebuffer: %u, %u", framebufferSize.width, framebufferSize.height);
 		ImGui::Text("Windowsize: %u, %u", windowsize.width, windowsize.height);
 
-		VkExtent2D colorTargetExtent = ctx->getTexture(colorTarget).getExtentAs2D();
+		VkExtent2D colorTargetExtent = ctx->viewTexture(colorTarget).getExtentAs2D();
 		ImGui::Text("Color Texture Size: %.1u x %.1u", colorTargetExtent.width, colorTargetExtent.height);
 
 		ImGuiIO& io = ImGui::GetIO();

@@ -42,13 +42,14 @@ namespace mythril {
 			compiled.type = source.type;
 			compiled.executeCallback = source.executeCallback;
 			// TODO: scuffed
-			auto ex = ctx.getTexture(source.writeOperations.front().texture).getExtentAs2D();
-			LOG_DEBUG("New pass extent2d is: {} x {} and sourced by: {}", ex.width, ex.height, ctx.getTexture(source.writeOperations.front().texture)._debugName);
-			compiled.extent2D = ctx.getTexture(source.writeOperations.front().texture).getExtentAs2D();
+			auto ex = ctx.viewTexture(source.writeOperations.front().texture).getExtentAs2D();
+			LOG_DEBUG("New pass extent2d is: {} x {} and sourced by: {}", ex.width, ex.height,
+					  ctx.viewTexture(source.writeOperations.front().texture)._debugName);
+			compiled.extent2D = ctx.viewTexture(source.writeOperations.front().texture).getExtentAs2D();
 
 			// STEP 1: PROCESS READ OPERATIONS
 			for (const ReadSpec& readOperation: source.readOperations) {
-				const AllocatedTexture& currentTexture = ctx.getTexture(readOperation.texture);
+				const AllocatedTexture& currentTexture = ctx.viewTexture(readOperation.texture);
 				VkImageMemoryBarrier2 barrier = vkinfo::CreateImageMemoryBarrier2(
 						currentTexture._vkImage,
 						currentTexture._vkFormat,
@@ -59,7 +60,7 @@ namespace mythril {
 			}
 			// STEP 2: PROCESS WRITE OPERATIONS
 			for (const WriteSpec& writeOperation: source.writeOperations) {
-				const AllocatedTexture& currentTexture = ctx.getTexture(writeOperation.texture);
+				const AllocatedTexture& currentTexture = ctx.viewTexture(writeOperation.texture);
 				if (currentTexture.isDepthAttachment()) {
 					// we dont have to do much processing for DepthAttachments so just assign directly
 					compiled.depthAttachment = DepthAttachmentInfo{
@@ -104,7 +105,7 @@ namespace mythril {
 
 					// if color attachment is to resolve onto another
 					if (writeOperation.resolveTexture.has_value()) {
-						const AllocatedTexture& resolveTexture = ctx.getTexture(writeOperation.resolveTexture.value());
+						const AllocatedTexture& resolveTexture = ctx.viewTexture(writeOperation.resolveTexture.value());
 						colorInfo.resolveImageView = resolveTexture._vkImageView;
 						// resolve targets should always be in this layout before rendering, as far as i know
 						colorInfo.resolveImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;

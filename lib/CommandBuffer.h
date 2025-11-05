@@ -11,6 +11,8 @@
 
 #include <volk.h>
 
+#include <span>
+
 namespace mythril {
 	// forward declarations
 	class CTX;
@@ -33,6 +35,7 @@ namespace mythril {
 	class CommandBuffer final {
 	public:
 		enum class Type {
+			General = 0,
 			Graphics,
 			Compute,
 		};
@@ -52,12 +55,11 @@ namespace mythril {
 		void cmdPushConstants(const Struct& type, uint32_t offset = 0) {
 			cmdPushConstants(&type, (uint32_t)sizeof(Struct), offset);
 		}
-		void cmdUpdateBuffer(InternalBufferHandle bufhandle, size_t offset, size_t size, const void* data);
+		void cmdUpdateBuffer(InternalBufferHandle handle, size_t offset, size_t size, const void* data);
 		template<typename Struct>
-		void cmdUpdateBuffer(InternalBufferHandle buffer, const Struct& data, size_t bufferOffset = 0) {
-			cmdUpdateBuffer(buffer, bufferOffset, sizeof(Struct), &data);
+		void cmdUpdateBuffer(InternalBufferHandle handle, const Struct& data, size_t bufferOffset = 0) {
+			cmdUpdateBuffer(handle, bufferOffset, sizeof(Struct), &data);
 		}
-
 		void cmdDraw(uint32_t vertexCount, uint32_t instanceCount = 1, uint32_t firstVertex = 0, uint32_t firstInstance = 0);
 		void cmdDrawIndexed(uint32_t indexCount, uint32_t instanceCount = 1, uint32_t firstIndex = 0, int32_t vertexOffset = 0, uint32_t baseInstance = 0);
 		void cmdDrawIndirect();

@@ -9,7 +9,7 @@ It aims to provide a easy to setup and use frontfacing API for Vulkan, aswell as
 
 
 ### Minimal Example:
-```
+```cpp
 #include <mythril/CTXBuilder.h>
 #include <mythril/RenderGraphBuilder.h>
 
@@ -81,6 +81,9 @@ idk use cmake
 ## License
 This project is distributed under the **Mozilla Public License Version 2.0**, please see `LICENSE.txt` for more.
 
+# Acknowledgments
+
+https://www.youtube.com/watch?v=OxOZ81N3NKw
 
 <!-- image definitions -->
 [basic_window_img]: docs/img/basic_window.png

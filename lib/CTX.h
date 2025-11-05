@@ -11,7 +11,8 @@
 #include "CommandBuffer.h"
 #include "VulkanObjects.h"
 #include "ObjectHandles.h"
-#include "RenderPipeline.h"
+#include "Shader.h"
+#include "GraphicsPipeline.h"
 #include "Window.h"
 
 #include <future>
@@ -24,9 +25,16 @@ namespace mythril {
 	class CTXBuilder;
 
 
-	struct CompiledShaderData {
+	class CompiledShaderData {
+	public:
 		VkShaderModule vkShaderModule = VK_NULL_HANDLE;
+
+		std::vector<ShaderParameter> userParameters = {};
+		std::vector<VkDescriptorSetLayout> userDSLs = {};
+
 		size_t pushConstantSize = 0;
+	private:
+		friend class CTX;
 	};
 
 	struct DeferredTask {
@@ -119,7 +127,6 @@ namespace mythril {
 		const char* debugName = "Unnamed Shader";
 	};
 
-	enum class WindowMode;
 
 	class CTX final {
 	public:
@@ -134,15 +141,10 @@ namespace mythril {
 		bool isSwapchainDirty();
 		Window& getWindow() { return _window; };
 
-		void waitIdle() {
-			//fixme: find more performant solution for this, im just lazy rn
-			VK_CHECK(vkDeviceWaitIdle(_vkDevice));
-		};
-
 		CommandBuffer& openCommand(CommandBuffer::Type type);
 		SubmitHandle submitCommand(CommandBuffer& cmd);
 
-		void forceProcessTasks();
+		void updateDescriptorSet(InternalBufferHandle handle, const char* paramName);
 
 		InternalBufferHandle createBuffer(BufferSpec spec);
 		InternalTextureHandle createTexture(TextureSpec spec);
@@ -153,9 +155,10 @@ namespace mythril {
 
 		VkDeviceAddress gpuAddress(InternalBufferHandle handle, size_t offset = 0);
 
-		const AllocatedTexture& getTexture(InternalTextureHandle handle) const { return *_texturePool.get(handle); };
-		const AllocatedBuffer& getBuffer(InternalBufferHandle handle) const { return *_bufferPool.get(handle); }
-		const AllocatedSampler& getSampler(InternalSamplerHandle handle) const { return *_samplerPool.get(handle); }
+		const AllocatedTexture& viewTexture(InternalTextureHandle handle) const { return *_texturePool.get(handle); }
+		const AllocatedBuffer& viewBuffer(InternalBufferHandle handle) const { return *_bufferPool.get(handle); }
+		const AllocatedSampler& viewSampler(InternalSamplerHandle handle) const { return *_samplerPool.get(handle); }
+		const Shader& viewShader(InternalShaderHandle handle) const { return *_shaderPool.get(handle); }
 
 		const AllocatedSampler& getDefaultLinearSampler() const { return *_samplerPool.get(_linearSamplerHandle); }
 		const AllocatedSampler& getDefaultNearestSampler() const { return *_samplerPool.get(_nearestSamplerHandle); }
@@ -169,7 +172,7 @@ namespace mythril {
 
 		// helpers
 		void generateMipmaps(InternalTextureHandle handle);
-		RenderPipeline* resolveRenderPipeline(InternalPipelineHandle handle);
+		GraphicsPipeline* resolveRenderPipeline(InternalPipelineHandle handle);
 
 		void upload(InternalBufferHandle handle, const void* data, size_t size, size_t offset = 0);
 		void download(InternalBufferHandle handle, void* data, size_t size, size_t offset);
@@ -194,10 +197,18 @@ namespace mythril {
 		void bindDefaultDescriptorSets(VkCommandBuffer cmd, VkPipelineBindPoint bindPoint, VkPipelineLayout layout);
 		void checkAndUpdateDescriptorSets();
 		void growDescriptorPool(uint32_t newMaxTextureCount, uint16_t newMaxSamplerCount);
+
+
+		void bindDefaultBindlessDescriptorSets(VkCommandBuffer cmd, VkPipelineBindPoint bindPoint, VkPipelineLayout pipelineLayout);
+		void checkAndUpdateBindlessDescriptorSet();
+		void growBindlessDescriptorPool(uint32_t newMaxSamplerCount, uint32_t newMaxTextureCount);
+
 		// pack tasks
 		void deferTask(std::packaged_task<void()>&& task, SubmitHandle handle = SubmitHandle()) const;
 		void processDeferredTasks();
 		void waitDeferredTasks();
+
+		Slang::ComPtr<slang::ISession> createSlangSession();
 	private:
 		// Vulkan
 		VkInstance _vkInstance = VK_NULL_HANDLE;
@@ -241,6 +252,10 @@ namespace mythril {
 		VkDescriptorPool _vkDPool = VK_NULL_HANDLE;
 		VkDescriptorSet _vkDSet = VK_NULL_HANDLE;
 
+		VkDescriptorSetLayout _vkBindlessDSL = VK_NULL_HANDLE;
+		VkDescriptorPool _vkBindlessDPool = VK_NULL_HANDLE;
+		VkDescriptorSet _vkBindlessDSet = VK_NULL_HANDLE;
+
 		VkSemaphore _timelineSemaphore = VK_NULL_HANDLE;
 		CommandBuffer _currentCommandBuffer;
 	private:
@@ -252,10 +267,11 @@ namespace mythril {
 		HandlePool<InternalBufferHandle, AllocatedBuffer> _bufferPool;
 		HandlePool<InternalTextureHandle, AllocatedTexture> _texturePool;
 		HandlePool<InternalSamplerHandle, AllocatedSampler> _samplerPool;
-		HandlePool<InternalPipelineHandle, RenderPipeline> _pipelinePool;
-		HandlePool<InternalShaderHandle, CompiledShaderData> _shaderPool;
+		HandlePool<InternalPipelineHandle, GraphicsPipeline> _graphicsPipelinePool;
+		HandlePool<InternalShaderHandle, Shader> _shaderPool;
 
 		// some rare stuff
+		std::vector<std::string> _shaderSearchPaths = {};
 		std::vector<std::unique_ptr<class BasePlugin>> _plugins = {};
 		Slang::ComPtr<slang::ISession> _slangSession = nullptr;
 		Window _window;
@@ -268,6 +284,7 @@ namespace mythril {
 		friend class AllocatedBuffer;
 		friend class AllocatedTexture;
 		friend class ImGuiPlugin;
+
 	};
 
 }
