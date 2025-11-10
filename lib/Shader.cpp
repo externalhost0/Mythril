@@ -149,6 +149,7 @@ namespace mythril {
 			case SLANG_TEXTURE_2D_MULTISAMPLE:       return "SLANG_TEXTURE_2D_MULTISAMPLE";
 			case SLANG_TEXTURE_2D_MULTISAMPLE_ARRAY: return "SLANG_TEXTURE_2D_MULTISAMPLE_ARRAY";
 			case SLANG_TEXTURE_SUBPASS_MULTISAMPLE:  return "SLANG_TEXTURE_SUBPASS_MULTISAMPLE";
+			case SLANG_TEXTURE_COMBINED_FLAG:        return "SLANG_TEXTURE_COMBINED_FLAG";
 		}
 	}
 	const char* ResourceAccessToString(SlangResourceAccess access) {
@@ -187,6 +188,7 @@ namespace mythril {
 			case slang::TypeReflection::Kind::Specialized:          return "Specialized";
 			case slang::TypeReflection::Kind::Feedback:             return "Feedback";
 			case slang::TypeReflection::Kind::None:                 return "None";
+			case slang::TypeReflection::Kind::MeshOutput:           return "MeshOutput";
 		}
 	}
 
@@ -268,6 +270,28 @@ namespace mythril {
 			case SLANG_STAGE_MESH:           return "Mesh";
 			case SLANG_STAGE_AMPLIFICATION:  return "Amplification";
 			case SLANG_STAGE_COUNT:          return "Count";
+			case SLANG_STAGE_DISPATCH:       return "Dispatch";
+		}
+	}
+	VkShaderStageFlags SlangStageToVkShaderStage(SlangStage stage) {
+		switch (stage) {
+			case SLANG_STAGE_NONE: return 0;
+			case SLANG_STAGE_VERTEX: return VK_SHADER_STAGE_VERTEX_BIT;
+			case SLANG_STAGE_HULL: return VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
+			case SLANG_STAGE_DOMAIN: return VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
+			case SLANG_STAGE_GEOMETRY: return VK_SHADER_STAGE_GEOMETRY_BIT;
+			case SLANG_STAGE_FRAGMENT: return VK_SHADER_STAGE_FRAGMENT_BIT;
+			case SLANG_STAGE_COMPUTE: return VK_SHADER_STAGE_COMPUTE_BIT;
+			case SLANG_STAGE_RAY_GENERATION: return VK_SHADER_STAGE_RAYGEN_BIT_KHR;
+			case SLANG_STAGE_INTERSECTION: return VK_SHADER_STAGE_INTERSECTION_BIT_KHR;
+			case SLANG_STAGE_ANY_HIT: return VK_SHADER_STAGE_ANY_HIT_BIT_KHR;
+			case SLANG_STAGE_CLOSEST_HIT: return VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
+			case SLANG_STAGE_MISS: return VK_SHADER_STAGE_MISS_BIT_KHR;
+			case SLANG_STAGE_CALLABLE: return VK_SHADER_STAGE_CALLABLE_BIT_KHR;
+			case SLANG_STAGE_MESH: return VK_SHADER_STAGE_MESH_BIT_EXT;
+			case SLANG_STAGE_AMPLIFICATION: return VK_SHADER_STAGE_TASK_BIT_EXT;
+
+			default: return 0;
 		}
 	}
 
@@ -281,21 +305,6 @@ namespace mythril {
 		std::string fullName = resolveArrayName(typeLayout->getType());
 		return fullName;
 	}
-
-//	void addRangesForParameterBlockElement(PipelineLayoutBuilder& plBuilder, DescriptorSetLayoutBuilder& dslBuilder, slang::TypeLayoutReflection* elementTypeLayout);
-//	void addAutomaticallyIntroducedUniformBuffer(DescriptorSetLayoutBuilder& dslBuilder);
-//
-//	void addDescriptorSetForParameterBlock(PipelineLayoutBuilder& plBuilder, slang::TypeLayoutReflection* paramBlockTypeLayout);
-//	void addPushConstantRangeForConstantBuffer(PipelineLayoutBuilder& plBuilder, slang::TypeLayoutReflection* pushConstantBufferTypeLayout);
-//
-//
-//	void addRanges(PipelineLayoutBuilder& plBuilder, DescriptorSetLayoutBuilder& dslBuilder, slang::TypeLayoutReflection* typeLayout);
-//
-//	void addDescriptorRanges(DescriptorSetLayoutBuilder& dslBuilder, slang::TypeLayoutReflection* typeLayout);
-//	void addDescriptorRange(DescriptorSetLayoutBuilder& dslBuilder, slang::TypeLayoutReflection* typeLayout, int relativeSetIndex, int rangeIndex);
-//
-//	void addSubRanges(PipelineLayoutBuilder& plBuilder, slang::TypeLayoutReflection* typeLayout);
-//	void addSubRange(PipelineLayoutBuilder& plBuilder, slang::TypeLayoutReflection* typeLayout, int subRangeIndex);
 
 	OpaqueKind getOpaqueKind(slang::TypeLayoutReflection* typeLayout) {
 		auto type = typeLayout->getType();
@@ -439,13 +448,26 @@ namespace mythril {
 		plBuilder._dslBuilders.push_back(std::move(dslBuilder));
 	}
 
-	void ShaderTransformer::performReflection(Shader& shader, slang::ShaderReflection* reflectionData) {
+	void ShaderTransformer::performReflection(Shader& shader, slang::ProgramLayout* programLayout) {
+		printf(" ----- Entering Shader: %s ----- \n", shader._debugName);
 		_currentShader = &shader;
 		PipelineLayoutBuilder plBuilder;
 		DescriptorSetLayoutBuilder dslBuilder;
 		startBuildingDescriptorSetLayout(plBuilder, dslBuilder);
-		addRangesForParameterBlockElement(plBuilder, dslBuilder, reflectionData->getGlobalParamsTypeLayout());
+		// GLOBAL PARAMETERS
+		_currentStageFlags = VK_SHADER_STAGE_ALL;
+		printf(" -- Entering Global Params -- \n");
+		addRangesForParameterBlockElement(plBuilder, dslBuilder, programLayout->getGlobalParamsTypeLayout());
+		// ENTRY POINT PARAMETERS
+		printf(" -- Entering Entry Points -- \n");
+		int entryPointCount = static_cast<int>(programLayout->getEntryPointCount());
+		for (int i = 0; i < entryPointCount; i++) {
+			auto entryPointLayout = programLayout->getEntryPointByIndex(i);
+			_currentStageFlags = SlangStageToVkShaderStage(entryPointLayout->getStage());
+			addRangesForParameterBlockElement(plBuilder, dslBuilder, entryPointLayout->getTypeLayout());
+		}
 		finishBuildingDescriptorSetLayout(plBuilder, dslBuilder);
+		printf("\n");
 		_completePLB = std::move(plBuilder);
 	}
 
@@ -453,19 +475,19 @@ namespace mythril {
 															  DescriptorSetLayoutBuilder& dslBuilder,
 															  slang::TypeLayoutReflection* elementTypeLayout) {
 		if (elementTypeLayout->getSize() > 0) {
-			addAutomaticallyIntroducedUniformBuffer(dslBuilder, elementTypeLayout);
+			addAutomaticallyIntroducedUniformBuffer(dslBuilder);
 		}
 		addRanges(plBuilder, dslBuilder, elementTypeLayout);
 	}
 
 	// when the parameter block only contains ordinary data (no opaque items)
-	void ShaderTransformer::addAutomaticallyIntroducedUniformBuffer(DescriptorSetLayoutBuilder& dslBuilder, slang::TypeLayoutReflection* elementTypeLayout) {
+	void ShaderTransformer::addAutomaticallyIntroducedUniformBuffer(DescriptorSetLayoutBuilder &dslBuilder) {
 		auto vulkanBindingIndex = dslBuilder.getBindingCount();
-
 		dslBuilder.addBinding(vulkanBindingIndex, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
 	}
 
 	void ShaderTransformer::addRanges(PipelineLayoutBuilder& plBuilder, DescriptorSetLayoutBuilder& dslBuilder, slang::TypeLayoutReflection* typeLayout) {
+		printf("Adding Both Ranges - %s\n", typeLayout->getName());
 		addDescriptorRanges(dslBuilder, typeLayout);
 		addSubRanges(plBuilder, typeLayout);
 	}
@@ -478,8 +500,9 @@ namespace mythril {
 		}
 	}
 	void ShaderTransformer::addDescriptorRange(DescriptorSetLayoutBuilder& dslBuilder, slang::TypeLayoutReflection* typeLayout, int relativeSetIndex, int rangeIndex) {
+		printf("Adding Descriptor Range for %s\n", typeLayout->getName());
 		slang::BindingType bindingType = typeLayout->getDescriptorSetDescriptorRangeType(relativeSetIndex, rangeIndex);
-		uint32_t descriptorCount = typeLayout->getDescriptorSetDescriptorRangeDescriptorCount(relativeSetIndex, rangeIndex);
+		const uint32_t descriptorCount = typeLayout->getDescriptorSetDescriptorRangeDescriptorCount(relativeSetIndex, rangeIndex);
 
 		// avoid push constants, they cant fit in descriptors
 		if (bindingType == slang::BindingType::PushConstant) return;
@@ -489,6 +512,7 @@ namespace mythril {
 
 	void ShaderTransformer::addSubRanges(PipelineLayoutBuilder& plBuilder, slang::TypeLayoutReflection* typeLayout) {
 		int subRangeCount = typeLayout->getSubObjectRangeCount();
+		printf("SubRange Count: %d\n", subRangeCount);
 		for (int subRangeIndex = 0; subRangeIndex < subRangeCount; ++subRangeIndex) {
 			addSubRange(plBuilder, typeLayout, subRangeIndex);
 		}
@@ -510,11 +534,11 @@ namespace mythril {
 				bindingInfo.typeName = elementTypeLayout->getName();
 
 				Slang::ComPtr<slang::IBlob> nameBlob;
-				elementTypeLayout->getType()->getFullName(nameBlob.writeRef());
+				parameterBlockTypeLayout->getType()->getFullName(nameBlob.writeRef());
 				bindingInfo.completeSlangName = static_cast<const char*>(nameBlob->getBufferPointer());
 
 				bindingInfo.descriptorCount = 1;
-				bindingInfo.usedStages = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+				bindingInfo.usedStages = _currentStageFlags;
 				bindingInfo.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 
 				collectFieldsRecursively(bindingInfo.fields, elementTypeLayout);
@@ -524,7 +548,7 @@ namespace mythril {
 				const auto dslBuilder = plBuilder._dslBuilders.back();
 				auto vulkanBindingIndex = dslBuilder.getBindingCount()-1;
 				bindingInfo.bindingIndex = vulkanBindingIndex;
-				bindingInfo.setIndex = dslBuilder.setIndex;
+				bindingInfo.setIndex = parameterBlockVariableLayout->getOffset(slang::ParameterCategory::SubElementRegisterSpace);
 				_currentShader->_parameterBlocks.push_back(bindingInfo);
 			} break;
 			case slang::BindingType::PushConstant: {
@@ -539,7 +563,7 @@ namespace mythril {
 				Slang::ComPtr<slang::IBlob> nameBlob;
 				constantBufferTypeLayout->getType()->getFullName(nameBlob.writeRef());
 				info.completeSlangName = static_cast<const char*>(nameBlob->getBufferPointer());
-				info.usedStages = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+				info.usedStages = _currentStageFlags;
 				info.offset = 0;
 				info.size = constantBufferTypeLayout->getElementTypeLayout()->getSize();
 				// recurse into struct
@@ -553,6 +577,7 @@ namespace mythril {
 	}
 
 	void ShaderTransformer::addDescriptorSetForParameterBlock(PipelineLayoutBuilder& plBuilder, slang::TypeLayoutReflection* paramBlockTypeLayout) {
+		printf("Adding Set for ParameterBlock\n");
 		DescriptorSetLayoutBuilder newDSBuilder;
 		startBuildingDescriptorSetLayout(plBuilder, newDSBuilder);
 		addRangesForParameterBlockElement(plBuilder, newDSBuilder, paramBlockTypeLayout->getElementTypeLayout());
@@ -561,12 +586,12 @@ namespace mythril {
 
 	void ShaderTransformer::addPushConstantRangeForConstantBuffer(PipelineLayoutBuilder& plBuilder, slang::TypeLayoutReflection* pushConstantBufferTypeLayout) {
 		auto elementTypeLayout = pushConstantBufferTypeLayout->getElementTypeLayout();
-		uint32_t elementSize = elementTypeLayout->getSize();
+		const uint32_t elementSize = elementTypeLayout->getSize();
 
 		if (elementSize <= 0) return;
 
 		VkPushConstantRange range = {
-				.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+				.stageFlags = _currentStageFlags,
 				.offset = 0,
 				.size = elementSize
 		};

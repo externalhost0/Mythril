@@ -1,17 +1,12 @@
-import "Common.Math";
-import "Common.Sets";
+#include "GPUStructs.h"
 
 struct v2f {
     float4 ClipPos : SV_Position;
     float2 UV      : TEXCOORD0;
 };
 
-struct PushConstant {
-    uint imageTexId;
-    float time;
-}
 [[vk::push_constant]]
-PushConstant push;
+FullscreenPushConstant push;
 
 [shader("vertex")]
 v2f vs_main(uint VertexID : SV_VertexID) {
@@ -40,9 +35,9 @@ FSOutput fs_main(v2f input) {
 
 
     float3 col;
-    col.r = textureBindless2D(push.imageTexId, 0, input.UV + shift).r;
-    col.g = textureBindless2D(push.imageTexId, 0, input.UV).g;
-    col.b = textureBindless2D(push.imageTexId, 0, input.UV - shift).b;
+    col.r = push.colorTexture.Sample(push.linearSampler, input.UV + shift).r;
+    col.g = push.colorTexture.Sample(push.linearSampler, input.UV).g;
+    col.b = push.colorTexture.Sample(push.linearSampler, input.UV - shift).b;
     
     output.FragColor = float4(col, 1);
 

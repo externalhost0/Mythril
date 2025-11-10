@@ -32,10 +32,6 @@ struct CameraData {
     float4x4 view;
     float3 position;
 }
-struct FrameData {
-    float2 resolution;
-    float time;
-}
 
 struct Environment {
     uint backgroundId;
@@ -45,10 +41,13 @@ struct ObjectData {
     float3 color;
 }
 struct GlobalData {
-    FrameData frame;
     CameraData camera;
+    float2 resolution;
+    float time;
 }
 
+// unfortunately will have to do this until they add descriptor handle reflection support
+// https://github.com/shader-slang/slang/issues/8845
 enum HandleType {
     //sampled images
 	Texture1D,
@@ -72,8 +71,10 @@ struct MarkHandleAttribute {
 };
 
 struct MaterialData {
-    float4 tint;
-    float brightness;
+    float3 tint;
+    float roughness;
+    float normals;
+    float opacity;
 }
 
 ParameterBlock<MaterialData> perMaterial;
@@ -110,9 +111,14 @@ v2f vs_main(VSInput input) {
 FSOutput fs_main(v2f input) {
     FSOutput output;
 
-    float4 color = perObject.tex.Sample(perObject.sampler, input.UV);
+    float4 texture = perObject.tex.Sample(perObject.sampler, input.UV);
 
-    output.FragColor = (color + perMaterial.tint) + (perMaterial.brightness-0.5f);
+    float roughness = perMaterial.roughness;
+    float normals   = perMaterial.normals;
+    float ambient   = 0.1f;
+
+    float3 finalColor = texture.rgb + perMaterial.tint.rgb;
+    output.FragColor = float4(finalColor+perMaterial.roughness, perMaterial.opacity);
     
     return output;
 }

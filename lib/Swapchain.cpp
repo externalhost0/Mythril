@@ -32,11 +32,11 @@ namespace mythril {
 		this->_vkSwapchain = vkbswapchain.swapchain;
 		this->_vkExtent2D = vkbswapchain.extent;
 		if (_vkExtent2D.width != width || _vkExtent2D.height != height) {
-			LOG_USER(LogType::Warning, "Requested swapchain size did not take place! \n Requested: {} x {} vs Actual: {} x {}", width, height, _vkExtent2D.width, _vkExtent2D.height);
+			LOG_SYSTEM(LogType::Warning, "Requested swapchain size did not take place! \n Requested: {} x {} vs Actual: {} x {}", width, height, _vkExtent2D.width, _vkExtent2D.height);
 		}
 		this->_vkImageFormat = vkbswapchain.image_format;
 		if (vkbswapchain.image_count > kMAX_SWAPCHAIN_IMAGES) {
-			LOG_USER(LogType::FatalError, "Swapchain image count ({}) exceeds max supported swapchain images ({})!", (int) vkbswapchain.image_count, (int) kMAX_SWAPCHAIN_IMAGES);
+			LOG_SYSTEM(LogType::FatalError, "Swapchain image count ({}) exceeds max supported swapchain images ({})!", (int) vkbswapchain.image_count, (int) kMAX_SWAPCHAIN_IMAGES);
 		}
 		this->_numSwapchainImages = vkbswapchain.image_count;
 		// things we assign to the textures we will craete

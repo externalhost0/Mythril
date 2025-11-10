@@ -94,9 +94,6 @@ namespace mythril {
 
 		const std::vector<ParameterBlockInfo>& viewParameters() const { return _parameterBlocks; };
 		const std::vector<PushConstantInfo>& viewPushConstants() const { return _pushConstants; }
-
-		const ParameterBlockInfo& viewParamaterByName(const char* varName);
-		const PushConstantInfo& viewPushConstantByName(const char* varName);
 //	private:
 		// a shader defines not only the module obviously, but a pipelineLayout
 		VkShaderModule vkShaderModule;
@@ -114,6 +111,14 @@ namespace mythril {
 		friend class CTX;
 		friend class ShaderTransformer;
 		friend class CommandBuffer;
+	};
+
+	class Material {
+	public:
+
+	private:
+
+		friend class CTX;
 	};
 
 
@@ -160,8 +165,7 @@ namespace mythril {
 											   DescriptorSetLayoutBuilder& dslBuilder,
 											   slang::TypeLayoutReflection* elementTypeLayout);
 
-		void addAutomaticallyIntroducedUniformBuffer(DescriptorSetLayoutBuilder& dslBuilder,
-													 slang::TypeLayoutReflection* elementTypeLayout);
+		void addAutomaticallyIntroducedUniformBuffer(DescriptorSetLayoutBuilder &dslBuilder);
 
 		void addDescriptorSetForParameterBlock(PipelineLayoutBuilder& plBuilder,
 											   slang::TypeLayoutReflection* paramBlockTypeLayout);
@@ -194,5 +198,6 @@ namespace mythril {
 		Shader* _currentShader = nullptr;
 		PipelineLayoutBuilder _completePLB;
 
+		VkShaderStageFlags _currentStageFlags = VK_SHADER_STAGE_ALL;
 	};
 }

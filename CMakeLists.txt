@@ -117,7 +117,7 @@ else (MYTH_ENABLE_IMGUI_DOCKING)
     )
 endif ()
 if (MYTH_ENABLE_IMGUI_STANDARD OR MYTH_ENABLE_IMGUI_DOCKING)
-    add_library(my_imgui STATIC
+    add_library(imgui STATIC
             ${imgui_SOURCE_DIR}/imgui.cpp
             ${imgui_SOURCE_DIR}/imgui_demo.cpp # optionally comment this out
             ${imgui_SOURCE_DIR}/imgui_draw.cpp
@@ -126,51 +126,20 @@ if (MYTH_ENABLE_IMGUI_STANDARD OR MYTH_ENABLE_IMGUI_DOCKING)
             ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp
             ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp
     )
-    target_include_directories(my_imgui PUBLIC
+    target_include_directories(imgui PUBLIC
             ${SDL3_INCLUDE_DIRS}
             ${imgui_SOURCE_DIR}
             ${imgui_SOURCE_DIR}/backends
     )
-    target_compile_definitions(my_imgui PUBLIC
+    target_compile_definitions(imgui PUBLIC
             IMGUI_IMPL_VULKAN_USE_VOLK
             IMGUI_DEFINE_MATH_OPERATORS
             IMGUI_DISABLE_OBSOLETE_FUNCTIONS
     )
-    target_link_libraries(my_imgui PRIVATE volk SDL3::SDL3)
+    target_link_libraries(imgui PRIVATE volk SDL3::SDL3)
 
     set(SLANG_IMGUI_OVERRIDE_DIR "${imgui_SOURCE_DIR}")
 endif ()
-
-#CPMAddPackage(
-#        NAME slang
-#        GITHUB_REPOSITORY "shader-slang/slang"
-#        GIT_TAG v2025.19
-#        OPTIONS
-#        "SLANG_ENABLE_SLANG_RHI=FALSE"
-#        "SLANG_ENABLE_OPTIX=FALSE"
-#        "SLANG_ENABLE_NVAPI=FALSE"
-#        "SLANG_ENABLE_XLIB=FALSE"
-#        "SLANG_ENABLE_AFTERMATH=FALSE"
-#        "SLANG_ENABLE_DX_ON_VK=FALSE"
-#
-#        "SLANG_ENABLE_DXIL=FALSE"
-#        "SLANG_ENABLE_FULL_IR_VALIDATION=FALSE"
-#        "SLANG_ENABLE_IR_BREAK_ALLOC=FALSE"
-#        "SLANG_ENABLE_GFX=FALSE"
-#        "SLANG_ENABLE_SLANGD=FALSE"
-#        "SLANG_ENABLE_SLANGC=FALSE"
-#        "SLANG_ENABLE_SLANG_GLSLANG=FALSE"
-#
-#        "SLANG_ENABLE_TESTS=FALSE"
-#        "SLANG_ENABLE_EXAMPLES=FALSE"
-#
-#        "SLANG_LIB_TYPE=STATIC"
-#
-#        "SLANG_GITHUB_TOKEN=FALSE"
-#        "SLANG_ENABLE_REPLAYER=FALSE"
-#
-#        "SLANG_USE_SYSTEM_VULKAN_HEADERS=TRUE"
-#)
 
 # --------------- connecting source and includes -----------------------
 
@@ -193,6 +162,7 @@ add_library(${PARENT_PROJECT_NAME} STATIC
         lib/RenderGraphBuilder.cpp
         lib/Window.cpp
         lib/Shader.cpp
+        lib/SlangCompiler.cpp
 
         ${OPTIONAL_SOURCES}
 )
@@ -228,7 +198,7 @@ endif()
 if (MYTH_ENABLE_IMGUI_STANDARD OR MYTH_ENABLE_IMGUI_DOCKING)
     target_link_libraries(${PARENT_PROJECT_NAME}
             PUBLIC
-            my_imgui
+            imgui
     )
 endif ()
 

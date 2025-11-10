@@ -47,8 +47,10 @@ namespace mythril {
 	using InternalBufferHandle = ObjectHandle<struct BufferTag>;
 	using InternalTextureHandle = ObjectHandle<struct TextureTag>;
 	using InternalSamplerHandle = ObjectHandle<struct SamplerTag>;
-	using InternalPipelineHandle = ObjectHandle<struct PipelineTag>;
 	using InternalShaderHandle = ObjectHandle<struct ShaderTag>;
+	using InternalGraphicsPipelineHandle = ObjectHandle<struct GraphicsPipelineTag>;
+	using InternalComputePipelineHandle = ObjectHandle<struct ComputePipelineTag>;
+
 
 
 // https://github.com/corporateshark/lightweightvk/blob/87d12061688d6f69b8b2c2d9799f00143cb0ee01/lvk/Pool.h#L13
@@ -103,7 +105,7 @@ namespace mythril {
 			_numObjects--;
 		}
 
-		ActualObject *get(HandleType handle) {
+		ActualObject* get(HandleType handle) {
 			if (handle.empty()) return nullptr;
 
 			const uint32_t index = handle.index();
@@ -113,7 +115,7 @@ namespace mythril {
 			return &_objects[index]._obj;
 		}
 
-		const ActualObject *get(HandleType handle) const {
+		const ActualObject* get(HandleType handle) const {
 			if (handle.empty()) return nullptr;
 
 			const uint32_t index = handle.index();

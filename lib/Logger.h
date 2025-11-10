@@ -40,7 +40,14 @@ namespace mythril {
 #define LOG_DEBUG(message, ...) ((void)0)
 #endif
 
-#define LOG_USER(level, message, ...) fmt::print(fg(GetLogLevelAsColor(level)), "[{}] Source: \"{}\" | {}\n", GetLogLevelAsString(level), __PRETTY_FUNCTION__, fmt::format(message __VA_OPT__(, __VA_ARGS__)))
+#ifdef DEBUG
+#define LOG_CUSTOM(message, ...) fmt::print(fg(fmt::color::orange), "[CUSTOM] Source: \"{}\" | {}\n", __PRETTY_FUNCTION__, fmt::format(message __VA_OPT__(, __VA_ARGS__)))
+#else
+#define LOG_CUSTOM(message, ...) ((void)0)
+#endif
+
+
+#define LOG_SYSTEM(level, message, ...) fmt::print(fg(GetLogLevelAsColor(level)), "[{}] Source: \"{}\" | {}\n", GetLogLevelAsString(level), __PRETTY_FUNCTION__, fmt::format(message __VA_OPT__(, __VA_ARGS__)))
 #define LOG_EXCEPTION(exception) fmt::println(stderr, "[EXCEPTION] | {}", exception.what())
 }
 

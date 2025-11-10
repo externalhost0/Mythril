@@ -46,7 +46,16 @@ namespace mythril {
 
 		VkCommandBufferSubmitInfo requestSubmitInfo() const;
 	public:
-		void cmdBindRenderPipeline(InternalPipelineHandle handle);
+		// all possible commands user can call inside setExecuteCallback
+		// all commands in this section NEED to detect if they are being called while in a dryRun
+		// most commands will include: if (_isDryRun) return;
+
+		// ALL BELOW COMMANDS HAVE SPECIAL BEHAVIOR ON DRYRUN //
+
+		void cmdBindRenderPipeline(InternalGraphicsPipelineHandle handle);
+
+		// ALL BELOW COMMANDS SHOULD RETURN ON DRYRUN //
+
 		void cmdBindIndexBuffer(InternalBufferHandle buffer);
 		// we can pass in structs of any type for push constants!!
 		// make sure it is mirrored on the shader code
@@ -62,8 +71,6 @@ namespace mythril {
 		}
 		void cmdDraw(uint32_t vertexCount, uint32_t instanceCount = 1, uint32_t firstVertex = 0, uint32_t firstInstance = 0);
 		void cmdDrawIndexed(uint32_t indexCount, uint32_t instanceCount = 1, uint32_t firstIndex = 0, int32_t vertexOffset = 0, uint32_t baseInstance = 0);
-		void cmdDrawIndirect();
-		void cmdDrawIndexedIndirect();
 
 		void cmdTransitionLayout(InternalTextureHandle source, VkImageLayout newLayout);
 		void cmdCopyImage(InternalTextureHandle source, InternalTextureHandle destination);
@@ -75,38 +82,43 @@ namespace mythril {
 		void cmdDrawImGui();
 #endif
 	private:
-		void cmdBeginRendering();
-		void cmdEndRendering();
+		// all functions that still have equivalent Vulkan commands but should be abstracted away from user
+		void cmdBeginRenderingImpl();
+		void cmdEndRenderingImpl();
 
-		void cmdBindDepthState(const DepthState& state);
-		void cmdSetDepthBiasEnable(bool enable);
-		void cmdSetDepthBias(float constantFactor, float slopeFactor, float clamp);
+		void cmdBindDepthStateImpl(const DepthState& state);
+		void cmdSetDepthBiasEnableImpl(bool enable);
+		void cmdSetDepthBiasImpl(float constantFactor, float slopeFactor, float clamp);
 
-		void cmdTransitionLayout(InternalTextureHandle source, VkImageLayout currentLayout, VkImageLayout newLayout);
-		void cmdTransitionSwapchainLayout(VkImageLayout newLayout);
+		void cmdTransitionLayoutImpl(InternalTextureHandle source, VkImageLayout currentLayout, VkImageLayout newLayout);
+		void cmdTransitionSwapchainLayoutImpl(VkImageLayout newLayout);
 
-		void cmdBlitToSwapchain(InternalTextureHandle source);
-		void cmdPrepareToSwapchain(InternalTextureHandle source);
+		void cmdBlitToSwapchainImpl(InternalTextureHandle source);
+		void cmdPrepareToSwapchainImpl(InternalTextureHandle source);
 
-		void _cmdCopyImage(InternalTextureHandle source, InternalTextureHandle destination, VkExtent2D size);
-		void _cmdBlitImage(InternalTextureHandle source, InternalTextureHandle destination, VkExtent2D srcSize, VkExtent2D dstSize);
-		void _bufferBarrier(InternalBufferHandle bufhandle, VkPipelineStageFlags2 srcStage, VkPipelineStageFlags2 dstStage);
+		void cmdCopyImageImpl(InternalTextureHandle source, InternalTextureHandle destination, VkExtent2D size);
+		void cmdBlitImageImpl(InternalTextureHandle source, InternalTextureHandle destination, VkExtent2D srcSize, VkExtent2D dstSize);
 
-		void _cmdSetViewport(VkExtent2D extent2D);
-		void _cmdSetScissor(VkExtent2D extent2D);
+		void cmdSetViewportImpl(VkExtent2D extent2D);
+		void cmdSetScissorImpl(VkExtent2D extent2D);
 
+		void bufferBarrierImpl(InternalBufferHandle bufhandle, VkPipelineStageFlags2 srcStage, VkPipelineStageFlags2 dstStage);
 	private:
+		// pretty important members for communication to the rest of the renderer
 		CTX* _ctx = nullptr;
 		const ImmediateCommands::CommandBufferWrapper* _wrapper = nullptr;
 
-		bool _isRendering = false; // cmdBeginRendering
-
+		// all set via RenderGraph
 		VkPipeline _lastBoundvkPipeline = VK_NULL_HANDLE;
-		InternalPipelineHandle _currentPipelineHandle;
+		InternalGraphicsPipelineHandle _currentPipelineHandle;
 		PassCompiled _activePass;
 
+		bool _isRendering = false; // cmdBeginRendering
+
 		SubmitHandle _lastSubmitHandle = {};
-		Type _cmdType;
+		Type _cmdType = Type::General;
+
+		bool _isDryRun = true; // for dummy CommandBuffer
 
 		friend class RenderGraph; // for access to set _activePass
 		friend class CTX; // for injection of command buffer data

@@ -1,10 +1,10 @@
 //
 // Created by Hayden Rivas on 10/4/25.
 //
-#include <mythril/CTXBuilder.h>
-#include <mythril/RenderGraphBuilder.h>
+#include "mythril/CTXBuilder.h"
+#include "mythril/RenderGraphBuilder.h"
 
-#include <SDL3/SDL.h>
+#include "SDL3/SDL.h"
 
 int main() {
 	auto ctx = mythril::CTXBuilder{}

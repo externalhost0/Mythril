@@ -14,6 +14,7 @@
 #include "Shader.h"
 #include "GraphicsPipeline.h"
 #include "Window.h"
+#include "SlangCompiler.h"
 
 #include <future>
 #include <filesystem>
@@ -23,19 +24,6 @@
 
 namespace mythril {
 	class CTXBuilder;
-
-
-	class CompiledShaderData {
-	public:
-		VkShaderModule vkShaderModule = VK_NULL_HANDLE;
-
-		std::vector<ShaderParameter> userParameters = {};
-		std::vector<VkDescriptorSetLayout> userDSLs = {};
-
-		size_t pushConstantSize = 0;
-	private:
-		friend class CTX;
-	};
 
 	struct DeferredTask {
 		DeferredTask(std::packaged_task<void()>&& task, SubmitHandle handle) : _task(std::move(task)), _handle(handle) {}
@@ -96,7 +84,7 @@ namespace mythril {
 		size_t size = 0;
 		uint8_t usage = {};
 		StorageType storage = StorageType::HostVisible;
-		const void* data = nullptr;
+		const void* initialData = nullptr;
 		const char* debugName = "Unnamed Buffer";
 	};
 	enum class ResolutionMode {
@@ -117,7 +105,7 @@ namespace mythril {
 		TextureType type = TextureType::Type_2D;
 		VkFormat format = VK_FORMAT_UNDEFINED;
 
-		const void* data = nullptr;
+		const void* initialData = nullptr;
 		uint32_t dataNumMipLevels = 1; // how many mip-levels we want to upload
 		bool generateMipmaps = false;
 		const char* debugName = "Unnamed Texture";
@@ -125,6 +113,20 @@ namespace mythril {
 	struct ShaderSpec {
 		const char* filePath = nullptr;
 		const char* debugName = "Unnamed Shader";
+	};
+
+	class DescriptorSet {
+	public:
+		explicit DescriptorSet(CTX& ctxRef) : _ctxRef(ctxRef) {}
+		~DescriptorSet() = default;
+
+		void writeBuffer();
+		void updateSet();
+	private:
+		CTX& _ctxRef;
+
+		std::vector<VkWriteDescriptorSet> _writes;
+		std::queue<VkDescriptorBufferInfo> _bufferInfos;
 	};
 
 
@@ -150,29 +152,44 @@ namespace mythril {
 		InternalTextureHandle createTexture(TextureSpec spec);
 		void resizeTexture(InternalTextureHandle handle, VkExtent2D newExtent);
 		InternalSamplerHandle createSampler(SamplerSpec spec);
-		InternalPipelineHandle createPipeline(PipelineSpec spec);
+		InternalGraphicsPipelineHandle createGraphicsPipeline(GraphicsPipelineSpec spec);
 		InternalShaderHandle createShader(ShaderSpec spec);
 
 		VkDeviceAddress gpuAddress(InternalBufferHandle handle, size_t offset = 0);
 
-		const AllocatedTexture& viewTexture(InternalTextureHandle handle) const { return *_texturePool.get(handle); }
-		const AllocatedBuffer& viewBuffer(InternalBufferHandle handle) const { return *_bufferPool.get(handle); }
-		const AllocatedSampler& viewSampler(InternalSamplerHandle handle) const { return *_samplerPool.get(handle); }
-		const Shader& viewShader(InternalShaderHandle handle) const { return *_shaderPool.get(handle); }
+		inline const AllocatedTexture& viewTexture(InternalTextureHandle handle) const {
+			auto* ptr = _texturePool.get(handle);
+			ASSERT_MSG(ptr, "Invalid texture handle!");
+			return *ptr;
+		}
+		inline const AllocatedBuffer& viewBuffer(InternalBufferHandle handle) const {
+			auto* ptr = _bufferPool.get(handle);
+			ASSERT_MSG(ptr, "Invalid buffer handle!");
+			return *ptr;
+		}
+		inline const AllocatedSampler& viewSampler(InternalSamplerHandle handle) const {
+			auto* ptr = _samplerPool.get(handle);
+			ASSERT_MSG(ptr, "Invalid sampler handle!");
+			return *ptr;
+		}
+		inline const Shader& viewShader(InternalShaderHandle handle) const {
+			auto* ptr = _shaderPool.get(handle);
+			ASSERT_MSG(ptr, "Invalid shader handle!");
+			return *ptr;
+		}
 
-		const AllocatedSampler& getDefaultLinearSampler() const { return *_samplerPool.get(_linearSamplerHandle); }
-		const AllocatedSampler& getDefaultNearestSampler() const { return *_samplerPool.get(_nearestSamplerHandle); }
+		inline const AllocatedSampler& viewDefaultLinearSampler() const { return *_samplerPool.get(_dummyLinearSamplerHandle); }
 	private:
 		// for automatic cleanup of resources
 		void destroy(InternalBufferHandle handle);
 		void destroy(InternalTextureHandle handle);
 		void destroy(InternalSamplerHandle handle);
-		void destroy(InternalPipelineHandle handle);
+		void destroy(InternalGraphicsPipelineHandle handle);
 		void destroy(InternalShaderHandle handle);
 
 		// helpers
 		void generateMipmaps(InternalTextureHandle handle);
-		GraphicsPipeline* resolveRenderPipeline(InternalPipelineHandle handle);
+		GraphicsPipeline* resolveRenderPipeline(InternalGraphicsPipelineHandle handle);
 
 		void upload(InternalBufferHandle handle, const void* data, size_t size, size_t offset = 0);
 		void download(InternalBufferHandle handle, void* data, size_t size, size_t offset);
@@ -192,16 +209,9 @@ namespace mythril {
 										   VkSampleCountFlagBits sampleCountFlagBits,
 										   VkImageCreateFlags createFlags = 0);
 
-
-		// confusing things
-		void bindDefaultDescriptorSets(VkCommandBuffer cmd, VkPipelineBindPoint bindPoint, VkPipelineLayout layout);
-		void checkAndUpdateDescriptorSets();
-		void growDescriptorPool(uint32_t newMaxTextureCount, uint16_t newMaxSamplerCount);
-
-
-		void bindDefaultBindlessDescriptorSets(VkCommandBuffer cmd, VkPipelineBindPoint bindPoint, VkPipelineLayout pipelineLayout);
-		void checkAndUpdateBindlessDescriptorSet();
-		void growBindlessDescriptorPool(uint32_t newMaxSamplerCount, uint32_t newMaxTextureCount);
+		void bindDefaultBindlessDescriptorSetsImpl(VkCommandBuffer cmd, VkPipelineBindPoint bindPoint, VkPipelineLayout pipelineLayout);
+		void checkAndUpdateBindlessDescriptorSetImpl();
+		void growBindlessDescriptorPoolImpl(uint32_t newMaxSamplerCount, uint32_t newMaxTextureCount);
 
 		// pack tasks
 		void deferTask(std::packaged_task<void()>&& task, SubmitHandle handle = SubmitHandle()) const;
@@ -209,8 +219,7 @@ namespace mythril {
 		void waitDeferredTasks();
 
 		Slang::ComPtr<slang::ISession> createSlangSession();
-	private:
-		// Vulkan
+	private: // Vulkan Members //
 		VkInstance _vkInstance = VK_NULL_HANDLE;
 		VkDebugUtilsMessengerEXT _vkDebugMessenger = VK_NULL_HANDLE;
 		VkSurfaceKHR _vkSurfaceKHR = VK_NULL_HANDLE;
@@ -236,10 +245,9 @@ namespace mythril {
 		uint32_t _graphicsQueueFamilyIndex = -1;
 		VkQueue _vkPresentQueue = VK_NULL_HANDLE;
 		uint32_t _presentQueueFamilyIndex = -1;
-	private:
-		InternalSamplerHandle _linearSamplerHandle;
-		InternalSamplerHandle _nearestSamplerHandle;
+	private: // not really my stuff //
 		InternalTextureHandle _dummyTextureHandle;
+		InternalSamplerHandle _dummyLinearSamplerHandle;
 
 		mutable std::vector<DeferredTask> _deferredTasks;
 
@@ -248,18 +256,13 @@ namespace mythril {
 		uint32_t _currentMaxTextureCount = 16;
 		uint16_t _currentMaxSamplerCount = 16;
 
-		VkDescriptorSetLayout _vkDSL = VK_NULL_HANDLE;
-		VkDescriptorPool _vkDPool = VK_NULL_HANDLE;
-		VkDescriptorSet _vkDSet = VK_NULL_HANDLE;
-
 		VkDescriptorSetLayout _vkBindlessDSL = VK_NULL_HANDLE;
 		VkDescriptorPool _vkBindlessDPool = VK_NULL_HANDLE;
 		VkDescriptorSet _vkBindlessDSet = VK_NULL_HANDLE;
 
 		VkSemaphore _timelineSemaphore = VK_NULL_HANDLE;
 		CommandBuffer _currentCommandBuffer;
-	private:
-		// my stuff
+	private: // my stuff //
 		std::unique_ptr<ImmediateCommands> _imm = nullptr;
 		std::unique_ptr<Swapchain> _swapchain = nullptr;
 		std::unique_ptr<StagingDevice> _staging = nullptr;
@@ -267,13 +270,13 @@ namespace mythril {
 		HandlePool<InternalBufferHandle, AllocatedBuffer> _bufferPool;
 		HandlePool<InternalTextureHandle, AllocatedTexture> _texturePool;
 		HandlePool<InternalSamplerHandle, AllocatedSampler> _samplerPool;
-		HandlePool<InternalPipelineHandle, GraphicsPipeline> _graphicsPipelinePool;
 		HandlePool<InternalShaderHandle, Shader> _shaderPool;
+		HandlePool<InternalGraphicsPipelineHandle, GraphicsPipeline> _graphicsPipelinePool;
+		HandlePool<InternalComputePipelineHandle, ComputePipeline> _computePipelinePool;
 
 		// some rare stuff
-		std::vector<std::string> _shaderSearchPaths = {};
 		std::vector<std::unique_ptr<class BasePlugin>> _plugins = {};
-		Slang::ComPtr<slang::ISession> _slangSession = nullptr;
+		SlangCompiler _slangCompiler;
 		Window _window;
 
 		friend class RenderGraph;

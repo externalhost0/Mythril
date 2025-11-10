@@ -1,16 +1,17 @@
 //
 // Created by Hayden Rivas on 10/17/25.
 //
-#include <mythril/CTXBuilder.h>
-#include <mythril/RenderGraphBuilder.h>
+#include "mythril/CTXBuilder.h"
+#include "mythril/RenderGraphBuilder.h"
 
 #include <vector>
 
-#include <glm/glm.hpp>
-#include <glm/ext/matrix_transform.hpp>
-#include <glm/ext/matrix_clip_space.hpp>
+#include "glm/glm.hpp"
+#include "glm/ext/matrix_transform.hpp"
+#include "glm/ext/matrix_clip_space.hpp"
 
-#include <SDL3/SDL.h>
+#include "SDL3/SDL.h"
+#include "GPUStructs.h"
 
 struct Vertex {
 	glm::vec3 position;
@@ -22,7 +23,6 @@ struct Camera {
 	float nearPlane;
 	float farPlane;
 };
-
 const std::vector<Vertex> cubeVertices = {
 		// front face
 		{{-1.f, -1.f, -1.f}}, // A 0
@@ -101,7 +101,7 @@ int main() {
 		.resizeable = false
 	})
 	.set_shader_search_paths({
-		"assets/shaders/Common/"
+		"../../include/"
 	})
 	.build();
 
@@ -110,69 +110,51 @@ int main() {
 		.dimension = extent2D,
 		.samples = mythril::SampleCount::X4,
 		.usage = mythril::TextureUsageBits::TextureUsageBits_Attachment,
-		.storage = mythril::StorageType::Memoryless,
 		.format = VK_FORMAT_R8G8B8A8_UNORM,
-		.debugName = "Color Texture"
+		.debugName = "Color Texture",
 	});
 	mythril::InternalTextureHandle resolveColorTarget = ctx->createTexture({
 		.dimension = extent2D,
 		.samples = mythril::SampleCount::X1,
-		.usage = mythril::TextureUsageBits::TextureUsageBits_Attachment | mythril::TextureUsageBits_Sampled,
-		.format = VK_FORMAT_R8G8B8A8_UNORM,
-		.debugName = "Color Resolve Texture"
-	});
-	mythril::InternalTextureHandle postColorTarget = ctx->createTexture({
-		.dimension = extent2D,
 		.usage = mythril::TextureUsageBits::TextureUsageBits_Attachment,
 		.format = VK_FORMAT_R8G8B8A8_UNORM,
-		.debugName = "Post Process Texture"
+		.debugName = "Color Resolve Texture",
 	});
 	mythril::InternalTextureHandle depthTarget = ctx->createTexture({
 		.dimension = extent2D,
 		.samples = mythril::SampleCount::X4,
 		.usage = mythril::TextureUsageBits::TextureUsageBits_Attachment,
-		.storage = mythril::StorageType::Memoryless,
 		.format = VK_FORMAT_D32_SFLOAT_S8_UINT,
 		.debugName = "Depth Texture"
 	});
 
 	mythril::InternalShaderHandle standardShader = ctx->createShader({
-		.filePath = "assets/shaders/BasicRed.slang",
-		.debugName = "Red Object Shader"
+		.filePath = "BasicRed.slang",
+		.debugName = "Example Shader"
 	});
-	mythril::InternalPipelineHandle mainPipeline = ctx->createPipeline({
-		.stages = {
-				{standardShader, "vs_main", mythril::ShaderStages::Vertex},
-				{standardShader, "fs_main", mythril::ShaderStages::Fragment}
-		},
+	mythril::InternalGraphicsPipelineHandle mainPipeline = ctx->createGraphicsPipeline({
+		.vertexShader = {standardShader},
+		.fragmentShader = {standardShader},
+		.topology = mythril::TopologyMode::TRIANGLE,
+		.polygon = mythril::PolygonMode::FILL,
+		.blend = mythril::BlendingMode::OFF,
 		.cull = mythril::CullMode::BACK,
 		.multisample = mythril::SampleCount::X4,
 		.debugName = "Main Pipeline"
-	});
-	mythril::InternalShaderHandle postProcessingShader = ctx->createShader({
-		.filePath = "assets/shaders/FullscreenPost.slang",
-		.debugName = "Fullscreen Shader"
-	});
-	mythril::InternalPipelineHandle postPipeline = ctx->createPipeline({
-		.stages = {
-				{postProcessingShader, "vs_main", mythril::ShaderStages::Vertex},
-				{postProcessingShader, "fs_main", mythril::ShaderStages::Fragment}
-		},
-		.debugName = "Post Processing Pipeline"
 	});
 
 	mythril::InternalBufferHandle cubeVertexBuffer = ctx->createBuffer({
 		.size = sizeof(Vertex) * cubeVertices.size(),
 		.usage = mythril::BufferUsageBits::BufferUsageBits_Storage,
 		.storage = mythril::StorageType::Device,
-		.data = cubeVertices.data(),
+		.initialData = cubeVertices.data(),
 		.debugName = "Cube Vertex Buffer"
 	});
 	mythril::InternalBufferHandle cubeIndexBuffer = ctx->createBuffer({
 		.size = sizeof(uint32_t) * cubeIndices.size(),
 		.usage = mythril::BufferUsageBits::BufferUsageBits_Index,
 		.storage = mythril::StorageType::Device,
-		.data = cubeIndices.data(),
+		.initialData = cubeIndices.data(),
 		.debugName = "Cube Index Buffer"
 	});
 
@@ -190,7 +172,7 @@ int main() {
 	})
 	.write({
 		.texture = depthTarget,
-		.clearValue = {0.f, 1},
+		.clearValue = {0, 1},
 		.loadOp = mythril::LoadOperation::CLEAR
 	})
 	.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
@@ -210,40 +192,13 @@ int main() {
 		float time = std::chrono::duration<float>(currentTime - startTime).count();
 		glm::mat4 model = glm::rotate(glm::mat4(1.0f), time, glm::vec3(0.0f, 1.0f, 0.0f));
 		model = glm::rotate(model, time * 0.5f, glm::vec3(1.0f, 0.0f, 0.0f));
-		struct PushConstant {
-			alignas(16) glm::mat4 mvp;
-			alignas(8) VkDeviceAddress vertexBufferAddress;
-		} constants = {
+		GPU::PushConstant constants = {
 				.mvp = calculateProjectionMatrix(camera) * calculateViewMatrix(camera) * model,
 				.vertexBufferAddress = ctx->gpuAddress(cubeVertexBuffer)
 		};
 		cmd.cmdPushConstants(constants);
 		cmd.cmdBindIndexBuffer(cubeIndexBuffer);
 		cmd.cmdDrawIndexed(cubeIndices.size());
-	});
-	graph.addPass("post_processing", mythril::PassSource::Type::Graphics)
-	.write({
-		.texture = postColorTarget,
-		.loadOp = mythril::LoadOperation::NO_CARE,
-		.storeOp = mythril::StoreOperation::STORE
-	})
-	.read({
-		.texture = resolveColorTarget
-	})
-	.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
-		cmd.cmdBindRenderPipeline(postPipeline);
-
-		auto currentTime = std::chrono::high_resolution_clock::now();
-		float time = std::chrono::duration<float>(currentTime - startTime).count();
-		struct PushConstant {
-			uint32_t imageId;
-			float time;
-		} push {
-			.imageId = resolveColorTarget.index(),
-			.time = time
-		};
-		cmd.cmdPushConstants(push);
-		cmd.cmdDraw(3);
 	});
 	graph.compile(*ctx);
 
@@ -255,7 +210,7 @@ int main() {
 			if (e.type == SDL_EVENT_QUIT) quit = true;
 		}
 
-		mythril::CommandBuffer& cmd = ctx->openCommand(mythril::CommandBuffer::Type::Graphics);
+		mythril::CommandBuffer &cmd = ctx->openCommand(mythril::CommandBuffer::Type::Graphics);
 		graph.execute(cmd);
 		ctx->submitCommand(cmd);
 	}

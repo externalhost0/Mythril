@@ -25,43 +25,82 @@ namespace mythril {
 	}
 
 	void RenderPassBuilder::setExecuteCallback(const std::function<void(CommandBuffer&)>& callback) {
-		passSource.executeCallback = callback;
-		_graphRef._sourcePasses.push_back(std::move(passSource));
+		this->passSource.executeCallback = callback;
+		this->_graphRef._sourcePasses.push_back(std::move(passSource));
 		// reset status incase user compiled and than adds another pass
-		_graphRef._hasCompiled = false;
+		this->_graphRef._hasCompiled = false;
 	}
 
-	void RenderGraph::compile(const CTX& ctx) {
+	void RenderGraph::compile(CTX& ctx) {
 		// remove past compilations
 		this->_compiledPasses.clear();
 
+		// BUILD PASS DESCRIPTIONS -> PIPELINE BARRIERS //
 		for (const PassSource& source: this->_sourcePasses) {
+			ASSERT_MSG(!source.writeOperations.empty(), "Pass '{}' has no write operations, what does this pass even do than?", source.name);
+
 			PassCompiled compiled;
 			// first set some basic info
 			compiled.name = source.name;
 			compiled.type = source.type;
 			compiled.executeCallback = source.executeCallback;
-			// TODO: scuffed
-			auto ex = ctx.viewTexture(source.writeOperations.front().texture).getExtentAs2D();
-			LOG_DEBUG("New pass extent2d is: {} x {} and sourced by: {}", ex.width, ex.height,
-					  ctx.viewTexture(source.writeOperations.front().texture)._debugName);
-			compiled.extent2D = ctx.viewTexture(source.writeOperations.front().texture).getExtentAs2D();
+			// TODO: scuffed way to find extent for renderpass
+			VkExtent2D refrenceExtent2D = ctx.viewTexture(source.writeOperations.front().texture).getExtentAs2D();
+			compiled.extent2D = refrenceExtent2D;
+
+			// Validate all attached textures
+#if defined(DEBUG)
+			for (size_t i = 0; i < source.writeOperations.size(); ++i) {
+				const WriteSpec& writeOp = source.writeOperations[i];
+				const AllocatedTexture& texture = ctx.viewTexture(writeOp.texture);
+				VkExtent2D extent = texture.getExtentAs2D();
+
+				// check all writeOp.textures
+				ASSERT_MSG(extent.width == refrenceExtent2D.width && extent.height == refrenceExtent2D.height,
+					   "Pass '{}': Write attachment {} ('{}') has mismatched dimensions {}x{}, expected {}x{} (reference: '{}')",
+					   source.name, i, texture._debugName,
+					   extent.width, extent.height, refrenceExtent2D.width, refrenceExtent2D.height,
+					   ctx.viewTexture(source.writeOperations.front().texture)._debugName);
+
+				// check all writeOp.resolveTextures
+				if (writeOp.resolveTexture.has_value()) {
+					const AllocatedTexture& resolveTexture = ctx.viewTexture(writeOp.resolveTexture.value());
+					VkExtent2D resolveExtent = resolveTexture.getExtentAs2D();
+
+					ASSERT_MSG(resolveExtent.width == refrenceExtent2D.width && resolveExtent.height == refrenceExtent2D.height,
+						   "Pass '{}': Resolve attachment for '{}' has mismatched dimensions {}x{}, expected {}x{}",
+						   source.name, texture._debugName,
+						   resolveExtent.width, resolveExtent.height,
+						   refrenceExtent2D.width, refrenceExtent2D.height);
+				}
+			}
+#endif
 
 			// STEP 1: PROCESS READ OPERATIONS
 			for (const ReadSpec& readOperation: source.readOperations) {
 				const AllocatedTexture& currentTexture = ctx.viewTexture(readOperation.texture);
+
+				ASSERT_MSG(currentTexture._vkImage != VK_NULL_HANDLE, "Pass '{}': Texture read operation references invalid vkImage for '{}'", source.name, currentTexture._debugName);
+
 				VkImageMemoryBarrier2 barrier = vkinfo::CreateImageMemoryBarrier2(
 						currentTexture._vkImage,
 						currentTexture._vkFormat,
 						currentTexture._vkCurrentImageLayout,
-						VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+						readOperation.expectedLayout,
 						false);
 				compiled.preBarriers.push_back({barrier, readOperation.texture});
 			}
+
+			// tracking depth attachment status
+			bool hasDepthAttachment = false;
 			// STEP 2: PROCESS WRITE OPERATIONS
 			for (const WriteSpec& writeOperation: source.writeOperations) {
 				const AllocatedTexture& currentTexture = ctx.viewTexture(writeOperation.texture);
+				ASSERT_MSG(currentTexture._vkImage != VK_NULL_HANDLE, "Pass '{}': Texture write operation references invalid vkImage for '{}'", source.name, currentTexture._debugName);
+
 				if (currentTexture.isDepthAttachment()) {
+					ASSERT_MSG(!hasDepthAttachment, "Pass '{}': Multiple depth attachments not allowed (found '{}')", source.name, currentTexture._debugName);
+					// FOR DEPTH ATTACHMENTS //
 					// we dont have to do much processing for DepthAttachments so just assign directly
 					compiled.depthAttachment = DepthAttachmentInfo{
 							.imageView = currentTexture._vkImageView,
@@ -80,11 +119,13 @@ namespace mythril {
 							false);
 					compiled.preBarriers.push_back({barrier, writeOperation.texture});
 				} else {
+					// FOR COLOR ACTTACHMENTS //
 					ColorAttachmentInfo colorInfo = {
 							.imageView = currentTexture._vkImageView,
 							.imageLayout = currentTexture._vkCurrentImageLayout,
 							.imageFormat = currentTexture._vkFormat,
 
+							// this is filled in the following steps if needed
 							.resolveImageView = VK_NULL_HANDLE,
 							.resolveImageLayout = VK_IMAGE_LAYOUT_UNDEFINED,
 
@@ -106,6 +147,11 @@ namespace mythril {
 					// if color attachment is to resolve onto another
 					if (writeOperation.resolveTexture.has_value()) {
 						const AllocatedTexture& resolveTexture = ctx.viewTexture(writeOperation.resolveTexture.value());
+						// some checks, common mistakes
+						ASSERT_MSG(resolveTexture._vkImage != VK_NULL_HANDLE, "Pass '{}': Resolve target '{}' for '{}' has invalid vkImage!", source.name, resolveTexture._debugName, currentTexture._debugName);
+						ASSERT_MSG(currentTexture._vkSampleCountFlagBits > VK_SAMPLE_COUNT_1_BIT, "Pass '{}': Resolve operation on non-multisampled texture '{}'!", source.name, currentTexture._debugName);
+						ASSERT_MSG(resolveTexture._vkSampleCountFlagBits == VK_SAMPLE_COUNT_1_BIT, "Pass '{}': Resolve target '{}' is multisampled!", source.name, resolveTexture._debugName);
+
 						colorInfo.resolveImageView = resolveTexture._vkImageView;
 						// resolve targets should always be in this layout before rendering, as far as i know
 						colorInfo.resolveImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
@@ -125,8 +171,24 @@ namespace mythril {
 					compiled.colorAttachments.push_back(colorInfo);
 				}
 			}
+			ASSERT_MSG(!compiled.colorAttachments.empty() || hasDepthAttachment, "Pass '{}' has no color or depth attachments!", source.name);
 			this->_compiledPasses.push_back(std::move(compiled));
 		}
+		// once done transforming PassSource -> PassCompiled we still need sourcePasses incase we recompile
+
+		// BUILD RENDER PIPELINES //
+		// TODO: this is horrible, dont have much else to say
+		for (const PassCompiled& pass : _compiledPasses) {
+			// this is a dummy command that will not issue any vulkan related commands itself
+			CommandBuffer dryCmd;
+			dryCmd._ctx = &ctx;
+			dryCmd._activePass = pass;
+			ctx._currentCommandBuffer = dryCmd;
+			ASSERT_MSG(pass.executeCallback != nullptr, "Pass '{}' has null execute callback, how is that possible??", pass.name);
+			pass.executeCallback(dryCmd);
+		}
+		ctx._currentCommandBuffer = {};
+
 		_hasCompiled = true;
 	}
 
@@ -155,10 +217,10 @@ namespace mythril {
 				}
 			}
 
-			cmd.cmdBeginRendering();
+			cmd.cmdBeginRenderingImpl();
 			pass.executeCallback(cmd);
-			cmd.cmdEndRendering();
+			cmd.cmdEndRenderingImpl();
 		}
-		cmd.cmdPrepareToSwapchain(_lastColorTexture);
+		cmd.cmdPrepareToSwapchainImpl(_lastColorTexture);
 	}
 }

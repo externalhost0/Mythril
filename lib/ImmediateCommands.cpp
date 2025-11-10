@@ -200,7 +200,7 @@ namespace mythril {
 			_purge();
 		}
 		while (!_numAvailableCommandBuffers) {
-			LOG_USER(LogType::Info, "Waiting for command buffers..\n");
+			LOG_SYSTEM(LogType::Info, "Waiting for command buffers..\n");
 			_purge();
 		}
 		ImmediateCommands::CommandBufferWrapper* current = nullptr;

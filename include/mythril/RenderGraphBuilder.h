@@ -148,7 +148,10 @@ namespace mythril {
 		inline RenderPassBuilder addPass(const char* name, PassSource::Type type) {
 			return RenderPassBuilder(*this, name, type);
 		};
-		void compile(const CTX& ctx);
+		// 2 step,
+		// 1. transform passes
+		// 2. build pipelines
+		void compile(CTX& ctx);
 		void execute(CommandBuffer& cmd);
 	private:
 		// for automatic handling of blitting to swapchian

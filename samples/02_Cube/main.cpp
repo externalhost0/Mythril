@@ -1,23 +1,21 @@
 //
 // Created by Hayden Rivas on 10/12/25.
 //
-#include <mythril/CTXBuilder.h>
-#include <mythril/RenderGraphBuilder.h>
+#include "mythril/CTXBuilder.h"
+#include "mythril/RenderGraphBuilder.h"
 
 #include <vector>
 
-#include <glm/glm.hpp>
-#include <glm/ext/matrix_transform.hpp>
-#include <glm/ext/matrix_clip_space.hpp>
+#include "glm/glm.hpp"
+#include "glm/ext/matrix_transform.hpp"
+#include "glm/ext/matrix_clip_space.hpp"
 
-#include <SDL3/SDL.h>
+#include "SDL3/SDL.h"
+
+#include "GPUStructs.h"
 
 struct Vertex {
 	glm::vec3 position;
-};
-struct PushConstant {
-	alignas(16) glm::mat4 mvp;
-	alignas(8) VkDeviceAddress vertexBufferAddress;
 };
 struct Camera {
 	glm::vec3 position;
@@ -103,7 +101,7 @@ int main() {
 		.resizeable = false
 	})
 	.set_shader_search_paths({
-		"assets/shaders/Common/"
+		"../../include/"
 	})
 	.build();
 
@@ -122,14 +120,12 @@ int main() {
 	});
 
 	mythril::InternalShaderHandle standardShader = ctx->createShader({
-		.filePath = "assets/shaders/BasicRed.slang",
+		.filePath = "BasicRed.slang",
 		.debugName = "Red Object Shader"
 	});
-	mythril::InternalPipelineHandle mainPipeline = ctx->createPipeline({
-		.stages = {
-				{standardShader, "vs_main", mythril::ShaderStages::Vertex},
-				{standardShader, "fs_main", mythril::ShaderStages::Fragment}
-		},
+	mythril::InternalGraphicsPipelineHandle mainPipeline = ctx->createGraphicsPipeline({
+		.vertexShader = {standardShader},
+		.fragmentShader = {standardShader},
 		.topology = mythril::TopologyMode::TRIANGLE,
 		.polygon = mythril::PolygonMode::FILL,
 		.blend = mythril::BlendingMode::OFF,
@@ -142,14 +138,14 @@ int main() {
 		.size = sizeof(Vertex) * cubeVertices.size(),
 		.usage = mythril::BufferUsageBits::BufferUsageBits_Storage,
 		.storage = mythril::StorageType::Device,
-		.data = cubeVertices.data(),
+		.initialData = cubeVertices.data(),
 		.debugName = "Cube Vertex Buffer"
 	});
 	mythril::InternalBufferHandle cubeIndexBuffer = ctx->createBuffer({
 		.size = sizeof(uint32_t) * cubeIndices.size(),
 		.usage = mythril::BufferUsageBits::BufferUsageBits_Index,
 		.storage = mythril::StorageType::Device,
-		.data = cubeIndices.data(),
+		.initialData = cubeIndices.data(),
 		.debugName = "Cube Index Buffer"
 	});
 
@@ -185,7 +181,7 @@ int main() {
 		float time = std::chrono::duration<float>(currentTime - startTime).count();
 		glm::mat4 model = glm::rotate(glm::mat4(1.0f), time, glm::vec3(0.0f, 1.0f, 0.0f));
 		model = glm::rotate(model, time * 0.5f, glm::vec3(1.0f, 0.0f, 0.0f));
-		PushConstant constants = {
+		GPU::PushConstant constants = {
 				.mvp = calculateProjectionMatrix(camera) * calculateViewMatrix(camera) * model,
 				.vertexBufferAddress = ctx->gpuAddress(cubeVertexBuffer)
 		};

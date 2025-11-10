@@ -74,11 +74,11 @@ namespace mythril {
 			range.dimensions.depth <= 0 ||
 			range.numLayers <= 0 ||
 			range.numMipLevels <= 0) {
-			LOG_USER(LogType::Error, "Values like: width, height, depth, numLayers and mipLevel must all be at least greater than 0.");
+			LOG_SYSTEM(LogType::Error, "Values like: width, height, depth, numLayers and mipLevel must all be at least greater than 0.");
 			return false;
 		}
 		if (range.mipLevel > numLevels) {
-			LOG_USER(LogType::Error, "Requested mipLevels exceed texture's mipLevels!");
+			LOG_SYSTEM(LogType::Error, "Requested mipLevels exceed texture's mipLevels!");
 			return false;
 		}
 		const uint32_t texWidth = std::max(extent3D.width >> range.mipLevel, 1u);
@@ -88,13 +88,13 @@ namespace mythril {
 		if (range.dimensions.width > texWidth ||
 			range.dimensions.height > texHeight ||
 			range.dimensions.depth > texDepth) {
-			LOG_USER(LogType::Error, "Range dimensions exceed texture dimensions!");
+			LOG_SYSTEM(LogType::Error, "Range dimensions exceed texture dimensions!");
 			return false;
 		}
 		if (range.offset.x > texWidth - range.dimensions.width ||
 			range.offset.y > texHeight - range.dimensions.height ||
 			range.offset.z > texDepth - range.dimensions.depth) {
-			LOG_USER(LogType::Error, "Range dimensions exceed texture dimensions when accounting for offsets!");
+			LOG_SYSTEM(LogType::Error, "Range dimensions exceed texture dimensions when accounting for offsets!");
 			return false;
 		}
 		return true;
@@ -112,38 +112,37 @@ namespace mythril {
 		_swapchain.reset(nullptr);
 		vkDestroySemaphore(_vkDevice, _timelineSemaphore, nullptr);
 		destroy(_dummyTextureHandle);
-		destroy(_linearSamplerHandle);
-		destroy(_nearestSamplerHandle);
+		destroy(_dummyLinearSamplerHandle);
 
 
 		// TODO::fixing the allocation not being proerly freed for VMA
 		if (_shaderPool.numObjects()) {
-			LOG_USER(LogType::Info, "Cleaned up {} shader modules", _shaderPool.numObjects());
+			LOG_SYSTEM(LogType::Info, "Cleaned up {} shader modules", _shaderPool.numObjects());
 			for (int i = 0; i < _shaderPool._objects.size(); i++) {
 				destroy(_shaderPool.getHandle(_shaderPool.findObject(&_shaderPool._objects[i]._obj).index()));
 			}
 		}
 		if (_graphicsPipelinePool.numObjects()) {
-			LOG_USER(LogType::Info, "Cleaned up {} render pipelines", _graphicsPipelinePool.numObjects());
+			LOG_SYSTEM(LogType::Info, "Cleaned up {} render pipelines", _graphicsPipelinePool.numObjects());
 			for (int i = 0; i < _graphicsPipelinePool._objects.size(); i++) {
 				destroy(_graphicsPipelinePool.getHandle(_graphicsPipelinePool.findObject(&_graphicsPipelinePool._objects[i]._obj).index()));
 			}
 		}
 		if (_samplerPool.numObjects() > 1) {
 			// the dummy value is owned by the context
-			LOG_USER(LogType::Info, "Cleaned up {} samplers", _samplerPool.numObjects() - 1);
+			LOG_SYSTEM(LogType::Info, "Cleaned up {} samplers", _samplerPool.numObjects() - 1);
 			for (int i = 0; i < _samplerPool._objects.size(); i++) {
 				destroy(_samplerPool.getHandle(_samplerPool.findObject(&_samplerPool._objects[i]._obj).index()));
 			}
 		}
 		if (_texturePool.numObjects()) {
-			LOG_USER(LogType::Info, "Cleaned up {} textures", _texturePool.numObjects());
+			LOG_SYSTEM(LogType::Info, "Cleaned up {} textures", _texturePool.numObjects());
 			for (int i = 0; i < _texturePool._objects.size(); i++) {
 				destroy(_texturePool.getHandle(_texturePool.findObject(&_texturePool._objects[i]._obj).index()));
 			}
 		}
 		if (_bufferPool.numObjects()) {
-			LOG_USER(LogType::Info, "Cleaned up {} buffers", _bufferPool.numObjects());
+			LOG_SYSTEM(LogType::Info, "Cleaned up {} buffers", _bufferPool.numObjects());
 			for (int i = 0; i < _bufferPool._objects.size(); i++) {
 				destroy(_bufferPool.getHandle(_bufferPool.findObject(&_bufferPool._objects[i]._obj).index()));
 			}
@@ -160,10 +159,7 @@ namespace mythril {
 		_imm.reset(nullptr);
 
 		// destroy slang compiler
-		_slangSession.detach();
-
-		vkDestroyDescriptorSetLayout(_vkDevice, _vkDSL, nullptr);
-		vkDestroyDescriptorPool(_vkDevice, _vkDPool, nullptr);
+		_slangCompiler.destroy();
 
 		// destroy our bindless descriptor stuff
 		vkDestroyDescriptorSetLayout(_vkDevice, _vkBindlessDSL, nullptr);
@@ -187,7 +183,7 @@ namespace mythril {
 	void CTX::cleanSwapchain() {
 		if (_swapchain->isDirty()) {
 			VkExtent2D res = this->_window.getFramebufferSize();
-			LOG_USER(LogType::Info, "New Swapchain Extent: {} {}", res.width, res.height);
+			LOG_DEBUG("New Swapchain Extent: {} {}", res.width, res.height);
 
 			VK_CHECK(vkDeviceWaitIdle(_vkDevice));
 			_swapchain.reset(nullptr);
@@ -195,118 +191,28 @@ namespace mythril {
 			_swapchain = std::make_unique<Swapchain>(*this, res.width, res.height);
 			_timelineSemaphore = vkutil::CreateTimelineSemaphore(_vkDevice, _swapchain->getNumOfSwapchainImages()-1);
 		} else {
-			LOG_USER(LogType::Warning, "Cleaning (resizing) of Swapchain called when Swapchain is not dirty, ignoring.");
+			LOG_SYSTEM(LogType::Warning, "Cleaning (resizing) of Swapchain called when Swapchain is not dirty, ignoring.");
 		}
 	}
-	// called everytime we cmd.cmdBeginRendering()
-	void CTX::checkAndUpdateDescriptorSets() {
-		if (!_awaitingCreation) {
-			return;
+	void CTX::deferTask(std::packaged_task<void()>&& task, SubmitHandle handle) const {
+		if (handle.empty()) {
+			handle = _imm->getNextSubmitHandle();
 		}
-		uint32_t newMaxTextures = _currentMaxTextureCount;
-		uint32_t newMaxSamplers = _currentMaxSamplerCount;
-
-		while (_texturePool._objects.size() > newMaxTextures) {
-			newMaxTextures *= 2;
+		_deferredTasks.emplace_back(std::move(task), handle);
+	}
+	void CTX::processDeferredTasks() {
+		auto it = _deferredTasks.begin();
+		while (it != _deferredTasks.end() && _imm->isReady(it->_handle, true)) {
+			(it++)->_task();
 		}
-		while (_samplerPool._objects.size() > newMaxSamplers) {
-			newMaxSamplers *= 2;
+		_deferredTasks.erase(_deferredTasks.begin(), it);
+	}
+	void CTX::waitDeferredTasks() {
+		for (auto& task : _deferredTasks) {
+			_imm->wait(task._handle);
+			task._task();
 		}
-		if (newMaxTextures != _currentMaxTextureCount || newMaxSamplers != _currentMaxSamplerCount || _awaitingNewImmutableSamplers) {
-			growDescriptorPool(newMaxTextures, newMaxSamplers);
-		}
-
-		// IMAGES //
-		std::vector<VkDescriptorImageInfo> infoSampledImages;
-		std::vector<VkDescriptorImageInfo> infoStorageImages;
-		const uint32_t numObjects = _texturePool.numObjects();
-		infoSampledImages.reserve(numObjects);
-		infoStorageImages.reserve(numObjects);
-		// enforce dummyImage created on init to be asssigned if texture is missing
-		VkImageView dummyImageView = _texturePool._objects[0]._obj._vkImageView;
-
-		for (const auto& obj : _texturePool._objects) {
-			const AllocatedTexture& img = obj._obj;
-			VkImageView view = obj._obj._vkImageView;
-			VkImageView storageView = obj._obj._vkImageViewStorage ? obj._obj._vkImageViewStorage : view;
-			// multisampled images cannot be directly accessed from shaders
-			const bool isTextureAvailable = (img.getSampleCount() & VK_SAMPLE_COUNT_1_BIT) == VK_SAMPLE_COUNT_1_BIT;
-			const bool isSampledImage = isTextureAvailable && img.isSampledImage();
-			const bool isStorageImage = isTextureAvailable && img.isStorageImage();
-			infoSampledImages.push_back(VkDescriptorImageInfo{
-					.sampler = VK_NULL_HANDLE,
-					.imageView = isSampledImage ? view : dummyImageView,
-					.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-			});
-			LOG_DEBUG("{} - {}", std::string_view(img._debugName), _texturePool.findObject(&obj._obj).index());
-			ASSERT_MSG(infoSampledImages.back().imageView != VK_NULL_HANDLE, "Sampled VkImageView is VK_NULL_HANDLE!");
-			infoStorageImages.push_back(VkDescriptorImageInfo{
-					.sampler = VK_NULL_HANDLE,
-					.imageView = isStorageImage ? storageView : dummyImageView,
-					.imageLayout = VK_IMAGE_LAYOUT_GENERAL,
-			});
-		}
-
-		// SAMPLERS //
-		std::vector<VkDescriptorImageInfo> infoSamplers;
-		infoSamplers.reserve(_samplerPool._objects.size());
-
-		VkSampler linearSampler = _samplerPool._objects[0]._obj._vkSampler;
-
-		for (const auto& obj : _samplerPool._objects) {
-			infoSamplers.push_back({
-				.sampler = obj._obj._vkSampler ? obj._obj._vkSampler : linearSampler,
-				.imageView = VK_NULL_HANDLE,
-				.imageLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-				});
-		}
-
-		// now write to descriptor set //
-		VkWriteDescriptorSet write[kNumOfBindings] = {};
-		uint32_t numWrites = 0;
-
-		if (!infoSampledImages.empty()) {
-			write[numWrites++] = VkWriteDescriptorSet{
-					.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-					.dstSet = _vkDSet,
-					.dstBinding = kTextureBinding,
-					.dstArrayElement = 0,
-					.descriptorCount = static_cast<uint32_t>(infoSampledImages.size()),
-					.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
-					.pImageInfo = infoSampledImages.data(),
-			};
-		}
-
-		if (!infoSamplers.empty()) {
-			write[numWrites++] = VkWriteDescriptorSet{
-					.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-					.dstSet = _vkDSet,
-					.dstBinding = kSamplerBinding,
-					.dstArrayElement = 0,
-					.descriptorCount = static_cast<uint32_t>(infoSamplers.size()),
-					.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER,
-					.pImageInfo = infoSamplers.data(),
-			};
-		}
-
-		if (!infoStorageImages.empty()) {
-			write[numWrites++] = VkWriteDescriptorSet{
-					.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-					.dstSet = _vkDSet,
-					.dstBinding = kStorageImageBinding,
-					.dstArrayElement = 0,
-					.descriptorCount = static_cast<uint32_t>(infoStorageImages.size()),
-					.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-					.pImageInfo = infoStorageImages.data(),
-			};
-		}
-
-		// update descriptor set
-		if (numWrites) {
-			_imm->wait(_imm->getLastSubmitHandle());
-			vkUpdateDescriptorSets(_vkDevice, numWrites, write, 0, nullptr);
-		}
-		_awaitingCreation = false;
+		_deferredTasks.clear();
 	}
 
 	// FIXME yeah cause this is hardcoded
@@ -324,7 +230,7 @@ namespace mythril {
 				.range = buffer2->_bufferSize
 		};
 
-		VkDescriptorSet dSet0 = _graphicsPipelinePool._objects[0]._obj._nonbindlessDescriptorSets[1];
+		VkDescriptorSet dSet0 = _graphicsPipelinePool._objects[0]._obj._userVkDescriptorSets[1];
 		VkWriteDescriptorSet write[2];
 		write[0] = {
 				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
@@ -334,7 +240,7 @@ namespace mythril {
 				.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
 				.pBufferInfo = &info
 		};
-		VkDescriptorSet dSet1 = _graphicsPipelinePool._objects[0]._obj._nonbindlessDescriptorSets[0];
+		VkDescriptorSet dSet1 = _graphicsPipelinePool._objects[0]._obj._userVkDescriptorSets[0];
 		write[1] = {
 				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
 				.dstSet = dSet1,
@@ -346,11 +252,11 @@ namespace mythril {
 		vkUpdateDescriptorSets(_vkDevice, 2, write, 0, nullptr);
 	}
 
-	void CTX::bindDefaultBindlessDescriptorSets(VkCommandBuffer cmd, VkPipelineBindPoint bindPoint, VkPipelineLayout pipelineLayout) {
-		const std::array<VkDescriptorSet, 1> descriptor_sets = { _vkBindlessDSet };
-		vkCmdBindDescriptorSets(cmd, bindPoint, pipelineLayout, 2, descriptor_sets.size(), descriptor_sets.data(), 0, nullptr);
+	void CTX::bindDefaultBindlessDescriptorSetsImpl(VkCommandBuffer cmd, VkPipelineBindPoint bindPoint, VkPipelineLayout pipelineLayout) {
+		const std::array<VkDescriptorSet, 1> system_descriptor_sets = { _vkBindlessDSet };
+		vkCmdBindDescriptorSets(cmd, bindPoint, pipelineLayout, 0, system_descriptor_sets.size(), system_descriptor_sets.data(), 0, nullptr);
 	}
-	void CTX::checkAndUpdateBindlessDescriptorSet() {
+	void CTX::checkAndUpdateBindlessDescriptorSetImpl() {
 		if (!_awaitingCreation) {
 			return;
 		}
@@ -365,7 +271,7 @@ namespace mythril {
 			newMaxSamplers *= 2;
 		}
 		if (newMaxTextures != _currentMaxTextureCount || newMaxSamplers != _currentMaxSamplerCount || _awaitingNewImmutableSamplers) {
-			growBindlessDescriptorPool(newMaxSamplers, newMaxTextures);
+			growBindlessDescriptorPoolImpl(newMaxSamplers, newMaxTextures);
 		}
 		// SAMPLERS //
 		std::vector<VkDescriptorImageInfo> infoSamplers;
@@ -402,7 +308,6 @@ namespace mythril {
 					.imageView = isSampledImage ? view : dummyImageView,
 					.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
 			});
-			LOG_DEBUG("{} - {}", img._debugName, _texturePool.findObject(&obj._obj).index());
 			ASSERT_MSG(infoSampledImages.back().imageView != VK_NULL_HANDLE, "Sampled imageView is null!");
 			// storage images could be used for anything, per in general layout
 			infoStorageImages.push_back(VkDescriptorImageInfo{
@@ -493,7 +398,7 @@ namespace mythril {
 		_awaitingCreation = false;
 	}
 
-	void CTX::growBindlessDescriptorPool(uint32_t newMaxSamplerCount, uint32_t newMaxTextureCount) {
+	void CTX::growBindlessDescriptorPoolImpl(uint32_t newMaxSamplerCount, uint32_t newMaxTextureCount) {
 		_currentMaxSamplerCount = newMaxSamplerCount;
 		_currentMaxTextureCount = newMaxTextureCount;
 
@@ -580,121 +485,15 @@ namespace mythril {
 		VK_CHECK(vkAllocateDescriptorSets(_vkDevice, &ds_ai, &_vkBindlessDSet));
 		_awaitingNewImmutableSamplers = false;
 	}
-
-	void CTX::growDescriptorPool(uint32_t newMaxTextureCount, uint16_t newMaxSamplerCount) {
-		// update maxes
-		_currentMaxTextureCount = newMaxTextureCount;
-		_currentMaxSamplerCount = newMaxSamplerCount;
-
-		const uint32_t MAX_TEXTURE_LIMIT = _vkPhysDeviceVulkan12Properties.maxDescriptorSetUpdateAfterBindSampledImages;
-		ASSERT_MSG(newMaxTextureCount <= MAX_TEXTURE_LIMIT, "Max sampled textures exceeded: {}, but maximum of {} is allowed!", newMaxTextureCount, MAX_TEXTURE_LIMIT);
-
-		const uint32_t MAX_SAMPLER_LIMIT = _vkPhysDeviceVulkan12Properties.maxDescriptorSetUpdateAfterBindSamplers;
-		ASSERT_MSG(newMaxSamplerCount <= MAX_SAMPLER_LIMIT, "Max samplers exceeded: {}, but maximum of {} is allowed!", newMaxSamplerCount, MAX_SAMPLER_LIMIT);
-
-		if (_vkDSL != VK_NULL_HANDLE) {
-			deferTask(std::packaged_task<void()>([device = _vkDevice, dsl = _vkDSL]() {
-				vkDestroyDescriptorSetLayout(device, dsl, nullptr);
-			}));
-		}
-		if (_vkDPool != VK_NULL_HANDLE) {
-			deferTask(std::packaged_task<void()>([device = _vkDevice, dp = _vkDPool]() {
-				vkDestroyDescriptorPool(device, dp, nullptr);
-			}));
-		}
-
-		VkShaderStageFlags stage_flags =
-				VK_SHADER_STAGE_VERTEX_BIT |
-				VK_SHADER_STAGE_FRAGMENT_BIT |
-				VK_SHADER_STAGE_COMPUTE_BIT;
-
-		const VkDescriptorSetLayoutBinding bindings[kNumOfBindings] = {
-				VkDescriptorSetLayoutBinding(kTextureBinding, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, newMaxTextureCount, stage_flags, nullptr),
-				VkDescriptorSetLayoutBinding(kSamplerBinding, VK_DESCRIPTOR_TYPE_SAMPLER, newMaxSamplerCount, stage_flags, nullptr),
-				VkDescriptorSetLayoutBinding(kStorageImageBinding, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, newMaxTextureCount, stage_flags, nullptr),
-		};
-		// setup for set layout, all this extra stuff is just for our bindless sytem to work
-		const uint32_t dsbinding_flags =
-				VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT |
-				VK_DESCRIPTOR_BINDING_UPDATE_UNUSED_WHILE_PENDING_BIT |
-				VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT;
-		// assign each of our descriptors the same flags
-		VkDescriptorBindingFlags bindingFlags[kNumOfBindings];
-		for (VkDescriptorBindingFlags& bindingFlag : bindingFlags) {
-			bindingFlag = dsbinding_flags;
-		}
-		const VkDescriptorSetLayoutBindingFlagsCreateInfo dsl_bf_ci = {
-				.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO,
-				.bindingCount = (uint32_t) kNumOfBindings,
-				.pBindingFlags = bindingFlags,
-		};
-		const VkDescriptorSetLayoutCreateInfo dsl_ci = {
-				.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-				.pNext = &dsl_bf_ci,
-				.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT,
-				.bindingCount = (uint32_t) kNumOfBindings,
-				.pBindings = bindings,
-		};
-		VK_CHECK(vkCreateDescriptorSetLayout(_vkDevice, &dsl_ci, nullptr, &_vkDSL));
-
-		// now create the descriptor sets according to the just created layout
-
-		const VkDescriptorPoolSize poolSizes[kNumOfBindings]{
-				VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, newMaxTextureCount},
-				VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_SAMPLER, newMaxSamplerCount},
-				VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, newMaxTextureCount},
-		};
-		const VkDescriptorPoolCreateInfo dp_ci = {
-				.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-				.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT,
-				.maxSets = 1,
-				.poolSizeCount = (uint32_t)kNumOfBindings,
-				.pPoolSizes = poolSizes,
-		};
-		VK_CHECK(vkCreateDescriptorPool(_vkDevice, &dp_ci, nullptr, &_vkDPool));
-		const VkDescriptorSetAllocateInfo ds_ai = {
-				.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-				.descriptorPool = _vkDPool,
-				.descriptorSetCount = 1,
-				.pSetLayouts = &_vkDSL,
-		};
-		VK_CHECK(vkAllocateDescriptorSets(_vkDevice, &ds_ai, &_vkDSet));
-
-		_awaitingNewImmutableSamplers = false;
-	}
-	void CTX::bindDefaultDescriptorSets(VkCommandBuffer cmd, VkPipelineBindPoint bindPoint, VkPipelineLayout layout) {
-		const std::array<VkDescriptorSet, 1> descriptor_sets = { _vkDSet };
-		vkCmdBindDescriptorSets(cmd, bindPoint, layout, 0, descriptor_sets.size(), descriptor_sets.data(), 0, nullptr);
-	}
-	void CTX::deferTask(std::packaged_task<void()>&& task, SubmitHandle handle) const {
-		if (handle.empty()) {
-			handle = _imm->getNextSubmitHandle();
-		}
-		_deferredTasks.emplace_back(std::move(task), handle);
-	}
-	void CTX::processDeferredTasks() {
-		auto it = _deferredTasks.begin();
-		while (it != _deferredTasks.end() && _imm->isReady(it->_handle, true)) {
-			(it++)->_task();
-		}
-		_deferredTasks.erase(_deferredTasks.begin(), it);
-	}
-	void CTX::waitDeferredTasks() {
-		for (auto& task : _deferredTasks) {
-			_imm->wait(task._handle);
-			task._task();
-		}
-		_deferredTasks.clear();
-	}
 	VkDeviceAddress CTX::gpuAddress(InternalBufferHandle handle, size_t offset) {
 		const AllocatedBuffer* buf = _bufferPool.get(handle);
 		ASSERT_MSG(buf && buf->_vkDeviceAddress, "Buffer doesnt have a valid device address!");
 		return buf->_vkDeviceAddress + offset;
 	}
-	GraphicsPipeline* CTX::resolveRenderPipeline(InternalPipelineHandle handle) {
+	GraphicsPipeline* CTX::resolveRenderPipeline(InternalGraphicsPipelineHandle handle) {
 		GraphicsPipeline* graphics_pipeline = _graphicsPipelinePool.get(handle);
 		if (!graphics_pipeline) {
-			LOG_USER(LogType::Warning, "Graphics pipeline does not exist, use a valid handle!");
+			LOG_SYSTEM(LogType::Warning, "Graphics pipeline does not exist, use a valid handle!");
 			return VK_NULL_HANDLE;
 		}
 		// updating descriptor layout //
@@ -715,7 +514,7 @@ namespace mythril {
 		}
 		// or, CREATE NEW PIPELINE //
 
-		PipelineSpec& spec = graphics_pipeline->_spec;
+		GraphicsPipelineSpec& spec = graphics_pipeline->_spec;
 
 		// things the user defined previously
 		PipelineBuilder builder = {};
@@ -739,11 +538,29 @@ namespace mythril {
 		}
 
 		// shader setup
-		for (const PipelineSpec::ShaderStage& stage : spec.stages) {
-			builder.add_shader_module(_shaderPool.get(stage.handle)->vkShaderModule, toVulkan(stage.stage), stage.entryPoint);
+		ShaderStage& vertStage = spec.vertexShader;
+		if (vertStage.valid()) {
+			if (!vertStage.entryPoint) {
+				vertStage.entryPoint = "vs_main";
+			}
+			builder.add_shader_module(_shaderPool.get(vertStage.handle)->vkShaderModule, VK_SHADER_STAGE_VERTEX_BIT, vertStage.entryPoint);
+		}
+		ShaderStage& fragStage = spec.fragmentShader;
+		if (fragStage.valid()) {
+			if (!fragStage.entryPoint) {
+				fragStage.entryPoint = "fs_main";
+			}
+			builder.add_shader_module(_shaderPool.get(fragStage.handle)->vkShaderModule, VK_SHADER_STAGE_FRAGMENT_BIT, fragStage.entryPoint);
+		}
+		ShaderStage& geometryStage = spec.geometryShader;
+		if (geometryStage.valid()) {
+			if (!geometryStage.entryPoint) {
+				geometryStage.entryPoint = "fs_main";
+			}
+			builder.add_shader_module(_shaderPool.get(geometryStage.handle)->vkShaderModule, VK_SHADER_STAGE_GEOMETRY_BIT, geometryStage.entryPoint);
 		}
 
-		auto shader = _shaderPool.get(spec.stages.front().handle);
+		auto shader = _shaderPool.get(spec.fragmentShader.handle);
 
 		VkPushConstantRange range = {
 				.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
@@ -755,30 +572,31 @@ namespace mythril {
 
 
 		std::vector<VkDescriptorSetLayout> totalSetLayouts = shader->_vkDescriptorSetLayouts;
+		if (!totalSetLayouts.empty()) {
 
-		for (auto& totalSetLayout : totalSetLayouts) {
-			const VkDescriptorPoolSize poolSizes[1] = {
-					VkDescriptorPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1)
-			};
-			const VkDescriptorPoolCreateInfo dp_ci = {
-					.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-					.flags = 0,
-					.maxSets = 1,
-					.poolSizeCount = 1,
-					.pPoolSizes = poolSizes,
-			};
-			VkDescriptorPool pool;
-			VK_CHECK(vkCreateDescriptorPool(_vkDevice, &dp_ci, nullptr, &pool));
-			const VkDescriptorSetAllocateInfo ds_ai = {
-					.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-					.descriptorPool = pool,
-					.descriptorSetCount = 1,
-					.pSetLayouts = &totalSetLayout,
-			};
-			VkDescriptorSet set;
-			VK_CHECK(vkAllocateDescriptorSets(_vkDevice, &ds_ai, &set));
-			graphics_pipeline->_nonbindlessDescriptorSets.push_back(set);
-		}
+			for (auto &totalSetLayout: totalSetLayouts) {
+				const VkDescriptorPoolSize poolSizes[1] = {
+						VkDescriptorPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1)
+				};
+				const VkDescriptorPoolCreateInfo dp_ci = {
+						.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+						.flags = 0,
+						.maxSets = 1,
+						.poolSizeCount = 1,
+						.pPoolSizes = poolSizes,
+				};
+				VkDescriptorPool pool;
+				VK_CHECK(vkCreateDescriptorPool(_vkDevice, &dp_ci, nullptr, &pool));
+				const VkDescriptorSetAllocateInfo ds_ai = {
+						.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+						.descriptorPool = pool,
+						.descriptorSetCount = 1,
+						.pSetLayouts = &totalSetLayout,
+				};
+				VkDescriptorSet set;
+				VK_CHECK(vkAllocateDescriptorSets(_vkDevice, &ds_ai, &set));
+				graphics_pipeline->_userVkDescriptorSets.push_back(set);
+			}
 
 //		uint32_t numSets = graphics_pipeline->_nonbindlessDescriptorSets.size();
 //		VkWriteDescriptorSet write[numSets];
@@ -797,7 +615,10 @@ namespace mythril {
 //		vkUpdateDescriptorSets(_vkDevice, writesN, write, 0, nullptr);
 
 //		totalSetLayouts.insert(totalSetLayouts.end(), systemSetLayouts.begin(), systemSetLayouts.end());
-		totalSetLayouts = { totalSetLayouts[0], totalSetLayouts[1], _vkBindlessDSL };
+			totalSetLayouts = { _vkBindlessDSL, totalSetLayouts[0], totalSetLayouts[1] };
+		} else {
+			totalSetLayouts = { _vkBindlessDSL };
+		}
 		const VkPipelineLayoutCreateInfo pipeline_layout_info = {
 				.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
 				.setLayoutCount = static_cast<uint32_t>(totalSetLayouts.size()),
@@ -816,7 +637,7 @@ namespace mythril {
 
 	void CTX::generateMipmaps(InternalTextureHandle handle) {
 		if (handle.empty()) {
-			LOG_USER(LogType::Warning, "Generate mipmap request with empty handle!");
+			LOG_SYSTEM(LogType::Warning, "Generate mipmap request with empty handle!");
 			return;
 		}
 		AllocatedTexture* image = _texturePool.get(handle);
@@ -882,8 +703,8 @@ namespace mythril {
 		obj._debugName[sizeof(obj._debugName) - 1] = '\0';
 		vmaSetAllocationName(_vmaAllocator, obj._vmaAllocation, obj._debugName);
 		InternalBufferHandle handle = _bufferPool.create(std::move(obj));
-		if (spec.data) {
-			upload(handle, spec.data, spec.size);
+		if (spec.initialData) {
+			upload(handle, spec.initialData, spec.size);
 		}
 		_awaitingCreation = true;
 		return {handle};
@@ -1029,7 +850,7 @@ namespace mythril {
 			usage_flags |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
 		}
 		if (spec.numMipLevels == 0) {
-			LOG_USER(LogType::Warning, "The number of mip levels specified must be greater than 0!");
+			LOG_SYSTEM(LogType::Warning, "The number of mip levels specified must be greater than 0!");
 			spec.numMipLevels = 1;
 		}
 		ASSERT_MSG(usage_flags != 0, "Invalid usage flags for texture creation!");
@@ -1076,7 +897,7 @@ namespace mythril {
 		InternalTextureHandle handle = _texturePool.create(std::move(obj));
 		// if we have some data we want to upload, do that
 		_awaitingCreation = true;
-		if (spec.data) {
+		if (spec.initialData) {
 			ASSERT(spec.dataNumMipLevels <= spec.numMipLevels);
 			ASSERT(spec.type == TextureType::Type_2D || spec.type == TextureType::Type_Cube);
 			TexRange range = {
@@ -1084,7 +905,7 @@ namespace mythril {
 					.numLayers = static_cast<uint32_t>((spec.type == TextureType::Type_Cube) ? 6 : 1),
 					.numMipLevels = spec.dataNumMipLevels
 			};
-			this->upload(handle, spec.data, range);
+			this->upload(handle, spec.initialData, range);
 			if (spec.generateMipmaps) {
 				this->generateMipmaps(handle);
 			}
@@ -1170,136 +991,31 @@ namespace mythril {
 		}
 		return obj;
 	}
-	InternalPipelineHandle CTX::createPipeline(PipelineSpec spec) {
+
+
+	InternalGraphicsPipelineHandle CTX::createGraphicsPipeline(GraphicsPipelineSpec spec) {
 		// all creating a pipeline does is assign the spec to it
 		// actual construction is done upon first use (lazily)
 		GraphicsPipeline pipeline = {};
 		pipeline._spec = std::move(spec);
-		InternalPipelineHandle handle = _graphicsPipelinePool.create(std::move(pipeline));
+		InternalGraphicsPipelineHandle handle = _graphicsPipelinePool.create(std::move(pipeline));
 		return handle;
-	}
-
-	Slang::ComPtr<slang::ISession> CTX::createSlangSession() {
-		Slang::ComPtr<slang::IGlobalSession> globalSession;
-		SlangResult res = slang::createGlobalSession(globalSession.writeRef());
-		ASSERT_MSG(SLANG_SUCCEEDED(res), "Slang failed to create global session!");
-
-		slang::TargetDesc targetDesc = {
-				.format = SLANG_SPIRV,
-				.profile = globalSession->findProfile("spirv_1_5")
-		};
-		// by default emits spirv
-		std::array<slang::CompilerOptionEntry, 5> entries = {
-				slang::CompilerOptionEntry{
-						.name = slang::CompilerOptionName::VulkanUseEntryPointName,
-						.value = {
-								.kind = slang::CompilerOptionValueKind::Int,
-								.intValue0 = true
-						}
-				},
-				slang::CompilerOptionEntry{
-						.name = slang::CompilerOptionName::Optimization,
-						.value = {
-								.kind = slang::CompilerOptionValueKind::Int,
-								.intValue0 = SLANG_OPTIMIZATION_LEVEL_DEFAULT
-						}
-				},
-				slang::CompilerOptionEntry{
-						.name = slang::CompilerOptionName::VulkanInvertY,
-						.value = {
-								.kind = slang::CompilerOptionValueKind::Int,
-								.intValue0 = true
-						}
-				},
-				slang::CompilerOptionEntry{
-						.name = slang::CompilerOptionName::Capability,
-						.value = {
-								.kind = slang::CompilerOptionValueKind::String,
-								.stringValue0 = "vk_mem_model"
-						}
-				},
-				slang::CompilerOptionEntry{
-					.name = slang::CompilerOptionName::BindlessSpaceIndex,
-					.value = {
-							.kind = slang::CompilerOptionValueKind::Int,
-							.intValue0 = 0,
-					}
-				}
-		};
-
-		// TODO: perhaps find a more interesting way of doing this
-		std::vector<const char*> ptrs;
-		ptrs.reserve(_shaderSearchPaths.size());
-		for (auto& s : _shaderSearchPaths)
-			ptrs.push_back(s.c_str());
-
-		slang::SessionDesc sessionDesc = {
-				.targets = &targetDesc,
-				.targetCount = 1,
-
-				.defaultMatrixLayoutMode = SLANG_MATRIX_LAYOUT_COLUMN_MAJOR,
-
-				.searchPaths = ptrs.data(),
-				.searchPathCount = static_cast<int64_t>(ptrs.size()),
-				.compilerOptionEntries = entries.data(),
-				.compilerOptionEntryCount = entries.size(),
-		};
-		Slang::ComPtr<slang::ISession> session;
-		globalSession->createSession(sessionDesc, session.writeRef());
-		return session;
-	}
-	void compileSlangModule(const Slang::ComPtr<slang::ISession>& session, const char* filepath, slang::IBlob** spirvBlob, slang::ShaderReflection** reflection) {
-		// 1. load module
-		Slang::ComPtr<slang::IModule> module;
-		Slang::ComPtr<slang::IBlob> diagnosticsBlob;
-		module = session->loadModule(filepath, diagnosticsBlob.writeRef());
-		ASSERT_MSG(module, "Failed Slang module creation! Diagnostics Below:\n{}", static_cast<const char*>(diagnosticsBlob->getBufferPointer()));
-		diagnosticsBlob.setNull();
-
-		// 2. compose module
-		std::array<slang::IComponentType *, 1> componentTypes = { module };
-		Slang::ComPtr<slang::IComponentType> composedProgram;
-		SlangResult module_result = session->createCompositeComponentType(componentTypes.data(), componentTypes.size(),
-																		  composedProgram.writeRef(),
-																		  diagnosticsBlob.writeRef());
-		ASSERT_MSG(SLANG_SUCCEEDED(module_result), "Composition failed! Diagnostics Below:\n{}", static_cast<const char*>(diagnosticsBlob->getBufferPointer()));
-		diagnosticsBlob.setNull();
-
-		// 2.5. retrieve layout for reflection
-		// will always be 0 for raster shaders
-		int targetIndex = 0;
-		slang::ProgramLayout* progLayout = composedProgram->getLayout(targetIndex, diagnosticsBlob.writeRef());
-		ASSERT_MSG(progLayout, "Failed to get ProgramLayout*, therefore shader reflection will also fail!");
-		*reflection = progLayout;
-		diagnosticsBlob.setNull();
-
-		// 3. linking
-		Slang::ComPtr<slang::IComponentType> linkedProgram;
-		SlangResult compose_result = composedProgram->link(linkedProgram.writeRef(), diagnosticsBlob.writeRef());
-		ASSERT_MSG(SLANG_SUCCEEDED(compose_result), "Linking failed! Diagnostics Below:\n{}", static_cast<const char*>(diagnosticsBlob->getBufferPointer()));
-		diagnosticsBlob.setNull();
-
-		// 4. retrieve kernel code
-		SlangResult code_result = linkedProgram->getTargetCode(0, spirvBlob, diagnosticsBlob.writeRef());
-		ASSERT_MSG(SLANG_SUCCEEDED(code_result), "Code retrieval failed! Diagnostics Below:\n{}", static_cast<const char*>(diagnosticsBlob->getBufferPointer()));
 	}
 
 	InternalShaderHandle CTX::createShader(ShaderSpec spec) {
 		// lazily create slang session & slang global session
-		if (!_slangSession) {
-			_slangSession = createSlangSession();
+		if (!_slangCompiler.sessionExists()) {
+			_slangCompiler.create();
 		}
-		Slang::ComPtr<slang::IBlob> spirvBlob;
-		// reflection is guaranteed
-		slang::ShaderReflection* reflection;
-		// currently we do not reflect entry points
-		compileSlangModule(_slangSession, spec.filePath, spirvBlob.writeRef(), &reflection);
-		// how we need to always begin reflection for grabbing paramaters
-		Shader obj;
-		// everything else not below
+		CompileResult result = _slangCompiler.compileFile(spec.filePath);
 		// TODO: this is some of the worst code i have ever written in my life, i am so sorry future me who will come back here and have to clean it
+		Shader obj;
+		// _debugName
+		snprintf(obj._debugName, sizeof(obj._debugName) - 1, "%s", spec.debugName);
+
 		ShaderTransformer transformer;
-		transformer.performReflection(obj, reflection);
+
+		transformer.performReflection(obj, result.getProgramLayout());
 		VkPipelineLayout pipelineLayout = transformer.retrievePipelineLayout(_vkDevice);
 		std::vector<VkDescriptorSetLayout> dsl_vector = transformer.retrieveDescriptorSetLayouts();
 
@@ -1310,21 +1026,19 @@ namespace mythril {
 		// _vkShaderModule
 		VkShaderModuleCreateInfo create_info = { .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO, .pNext = nullptr };
 		create_info.flags = 0;
-		create_info.pCode = static_cast<uint32_t const*>(spirvBlob->getBufferPointer());
-		create_info.codeSize = spirvBlob->getBufferSize();
+		create_info.pCode = result.getSpirvCode();
+		create_info.codeSize = result.getSpirvSize();
 		VkShaderModule shaderModule;
+		// after vkCreateShaderModule we no longer need CompileResult btw
 		VK_CHECK(vkCreateShaderModule(_vkDevice, &create_info, nullptr, &shaderModule));
 		obj.vkShaderModule = shaderModule;
-
-		// _debugName
-		snprintf(obj._debugName, sizeof(obj._debugName) - 1, "%s", spec.debugName);
 
 		return _shaderPool.create(std::move(obj));
 	}
 
 	void CTX::upload(InternalBufferHandle handle, const void* data, size_t size, size_t offset) {
 		if (!data) {
-			LOG_USER(LogType::Warning, "Attempting to upload data which is null!");
+			LOG_SYSTEM(LogType::Warning, "Attempting to upload data which is null!");
 			return;
 		}
 		ASSERT_MSG(size > 0, "Size must be greater than 0!");
@@ -1332,37 +1046,37 @@ namespace mythril {
 		AllocatedBuffer* buffer = _bufferPool.get(handle);
 
 		if (offset + size > buffer->_bufferSize) {
-			LOG_USER(LogType::Error, "Buffer request to upload is out of range! (Either the uploaded data size exceeds the size of the actual buffer or its offset is exceeding the total range)");
+			LOG_SYSTEM(LogType::Error, "Buffer request to upload is out of range! (Either the uploaded data size exceeds the size of the actual buffer or its offset is exceeding the total range)");
 			return;
 		}
 		_staging->bufferSubData(*buffer, offset, size, data);
 	}
 	void CTX::download(InternalBufferHandle handle, void* data, size_t size, size_t offset) {
 		if (!data) {
-			LOG_USER(LogType::Warning, "Data is null");
+			LOG_SYSTEM(LogType::Warning, "Data is null");
 			return;
 		}
 		AllocatedBuffer* buffer = _bufferPool.get(handle);
 
 		if (!buffer) {
-			LOG_USER(LogType::Error, "Retrieved buffer is null, handle must have been invalid!");
+			LOG_SYSTEM(LogType::Error, "Retrieved buffer is null, handle must have been invalid!");
 			return;
 		}
 		if (offset + size <= buffer->_bufferSize) {
-			LOG_USER(LogType::Error, "Buffer request to download is out of range!");
+			LOG_SYSTEM(LogType::Error, "Buffer request to download is out of range!");
 			return;
 		}
 		buffer->getBufferSubData(*this, offset, size, data);
 	}
 	void CTX::upload(InternalTextureHandle handle, const void* data, const TexRange& range) {
 		if (!data) {
-			LOG_USER(LogType::Warning, "Attempting to upload data which is null!");
+			LOG_SYSTEM(LogType::Warning, "Attempting to upload data which is null!");
 			return;
 		}
 		AllocatedTexture* image = _texturePool.get(handle);
 		ASSERT_MSG(image, "Attempting to use texture via invalid handle!");
 		if (!ValidateRange(image->_vkExtent, image->_numLevels, range)) {
-			LOG_USER(LogType::Warning, "Image failed validation check!");
+			LOG_SYSTEM(LogType::Warning, "Image failed validation check!");
 		}
 		// why is this here
 		if (image->_vkImageType == VK_IMAGE_TYPE_3D) {
@@ -1382,16 +1096,16 @@ namespace mythril {
 	}
 	void CTX::download(InternalTextureHandle handle, void* data, const TexRange &range) {
 		if (!data) {
-			LOG_USER(LogType::Warning, "Data is null.");
+			LOG_SYSTEM(LogType::Warning, "Data is null.");
 			return;
 		}
 		AllocatedTexture* image = _texturePool.get(handle);
 		if (!image) {
-			LOG_USER(LogType::Error, "Retrieved image is null, handle must have been invalid!");
+			LOG_SYSTEM(LogType::Error, "Retrieved image is null, handle must have been invalid!");
 			return;
 		}
 		if (!ValidateRange(image->_vkExtent, image->_numLevels, range)) {
-			LOG_USER(LogType::Warning, "Image validation failed!");
+			LOG_SYSTEM(LogType::Warning, "Image validation failed!");
 			return;
 		}
 		_staging->getImageData(*image,
@@ -1501,7 +1215,7 @@ namespace mythril {
 //		}));
 		_shaderPool.destroy(handle);
 	}
-	void CTX::destroy(InternalPipelineHandle handle) {
+	void CTX::destroy(InternalGraphicsPipelineHandle handle) {
 		GraphicsPipeline* rps = _graphicsPipelinePool.get(handle);
 		if (!rps) {
 			return;

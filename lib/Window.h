@@ -14,6 +14,8 @@ namespace mythril {
 
 	class Window {
 	public:
+		Window() = default;
+
 		void create(const WindowSpec& spec);
 		void destroy();
 
@@ -27,11 +29,11 @@ namespace mythril {
 	private:
 		inline SDL_Window* _getSDLwindow() { return _sdlWindow; }
 	private:
-		SDL_Window* _sdlWindow;
-		WindowMode _windowMode;
+		SDL_Window* _sdlWindow = nullptr;
+		WindowMode _windowMode{};
 
 		// this means the ability to drag the window with a users cursor to perform resizing
-		bool _isWindowManuallyResizable;
+		bool _isWindowManuallyResizable = false;
 
 		friend class CTXBuilder;
 	};

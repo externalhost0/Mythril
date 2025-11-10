@@ -62,10 +62,10 @@ namespace mythril {
 				.dimension = {texWidth, texHeight},
 				.usage = TextureUsageBits::TextureUsageBits_Sampled | TextureUsageBits::TextureUsageBits_Storage,
 				.format = VK_FORMAT_R8G8B8A8_UNORM,
-				.data = pixels.data(),
+				.initialData = pixels.data(),
 				.debugName = "Dummy Texture"
 			});
-			ctx->_linearSamplerHandle = ctx->createSampler({
+			ctx->_dummyLinearSamplerHandle = ctx->createSampler({
 				.magFilter = SamplerFilter::Linear,
 				.minFilter = SamplerFilter::Linear,
 				.wrapU = SamplerWrap::Clamp,
@@ -74,15 +74,6 @@ namespace mythril {
 				.mipMap = SamplerMip::Disabled,
 				.debugName = "Linear Sampler"
 			});
-			ctx->_nearestSamplerHandle = ctx->createSampler({
-				.magFilter = SamplerFilter::Nearest,
-				.minFilter = SamplerFilter::Nearest,
-				.wrapU = SamplerWrap::Clamp,
-				.wrapV = SamplerWrap::Clamp,
-				.wrapW = SamplerWrap::Clamp,
-				.mipMap = SamplerMip::Disabled,
-				.debugName = "Nearest Sampler"
-			});
 		}
 		// swapchain must be built after default texture has been made
 		// or else the fallback texture is the swapchain's texture
@@ -90,9 +81,10 @@ namespace mythril {
 		ctx->_swapchain = std::make_unique<Swapchain>(*ctx, framebufferSize.width, framebufferSize.height);
 		// timeline semaphore is closely kept to vulkan swapchain
 		ctx->_timelineSemaphore = vkutil::CreateTimelineSemaphore(ctx->_vkDevice, ctx->_swapchain->getNumOfSwapchainImages() - 1);
-//		ctx->growDescriptorPool(ctx->_currentMaxTextureCount, ctx->_currentMaxSamplerCount);
-		ctx->growBindlessDescriptorPool(ctx->_currentMaxTextureCount, ctx->_currentMaxSamplerCount);
-		ctx->_shaderSearchPaths = std::move(this->_searchpaths);
+		ctx->growBindlessDescriptorPoolImpl(ctx->_currentMaxTextureCount, ctx->_currentMaxSamplerCount);
+		for (auto& path : this->_searchpaths) {
+			ctx->_slangCompiler.addSearchPath(path);
+		}
 		// now we can build plugins!
 #ifdef MYTH_ENABLED_IMGUI
 		if (_usingImGui) {
@@ -264,7 +256,7 @@ namespace mythril {
 		allocatorInfo.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT | VMA_ALLOCATOR_CREATE_KHR_DEDICATED_ALLOCATION_BIT;
 		VmaVulkanFunctions vulkanFunctions;
 		VkResult volkimport_result = vmaImportVulkanFunctionsFromVolk(&allocatorInfo, &vulkanFunctions);
-		ASSERT_MSG(volkimport_result == VK_SUCCESS, "Failed to import vulkan functions from Volk for VMA Allocator setup!");
+		ASSERT_MSG(volkimport_result == VK_SUCCESS, "Failed to import vulkan functions from Volk for VMA Allocator create!");
 		allocatorInfo.pVulkanFunctions = &vulkanFunctions;
 		VkResult allocator_result = vmaCreateAllocator(&allocatorInfo, &ctx._vmaAllocator);
 		ASSERT_MSG(allocator_result == VK_SUCCESS, "Failed to create vma Allocator!");

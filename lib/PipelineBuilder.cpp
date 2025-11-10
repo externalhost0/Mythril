@@ -68,7 +68,8 @@ namespace mythril {
 				VK_DYNAMIC_STATE_DEPTH_COMPARE_OP,
 				VK_DYNAMIC_STATE_DEPTH_BIAS,
 				VK_DYNAMIC_STATE_DEPTH_BIAS_ENABLE,
-				VK_DYNAMIC_STATE_BLEND_CONSTANTS };
+				VK_DYNAMIC_STATE_BLEND_CONSTANTS
+		};
 		VkPipelineDynamicStateCreateInfo dynamicInfo = vkinfo::CreatePipelineDynamicStateInfo(states.data(), states.size());
 		graphics_pipeline_ci.pDynamicState = &dynamicInfo;
 

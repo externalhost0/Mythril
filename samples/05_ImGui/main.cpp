@@ -1,15 +1,15 @@
 //
 // Created by Hayden Rivas on 10/18/25.
 //
-#include <mythril/CTXBuilder.h>
-#include <mythril/RenderGraphBuilder.h>
+#include "mythril/CTXBuilder.h"
+#include "mythril/RenderGraphBuilder.h"
 
 
-#include <imgui.h>
-#include <imgui_impl_vulkan.h>
-#include <imgui_impl_sdl3.h>
+#include "imgui.h"
+#include "backends/imgui_impl_vulkan.h"
+#include "backends/imgui_impl_sdl3.h"
 
-#include <SDL3/SDL.h>
+#include "SDL3/SDL.h"
 
 int main() {
 	auto ctx = mythril::CTXBuilder{}

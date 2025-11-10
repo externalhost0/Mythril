@@ -76,7 +76,7 @@ namespace mythril {
 
 			// FIXME: the warning is printing a void *
 			if (!hardwareDownscalingSupported) {
-				LOG_USER(LogType::Warning, "Doesn't support hardware downscaling of this image format: {}", (void*)_vkFormat);
+				LOG_SYSTEM(LogType::Warning, "Doesn't support hardware downscaling of this image format: {}", (void*)_vkFormat);
 				return;
 			}
 		}
