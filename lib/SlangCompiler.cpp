@@ -6,6 +6,7 @@
 #include "HelperMacros.h"
 
 #include <vector>
+#include <fstream>
 
 namespace mythril {
 	void SlangCompiler::create() {
@@ -30,7 +31,7 @@ namespace mythril {
 
 		slang::TargetDesc targetDesc = {
 				.format = SLANG_SPIRV,
-				.profile = this->_globalSlangSession->findProfile("spirv_1_5")
+				.profile = this->_globalSlangSession->findProfile("spirv_1_6+vulkan_1_4")
 		};
 		// by default emits spirv
 		std::array<slang::CompilerOptionEntry, 6> entries = {
@@ -69,14 +70,14 @@ namespace mythril {
 							.intValue0 = SLANG_DEBUG_INFO_LEVEL_MAXIMAL
 					}
 				},
-				// forces scalar layout which is awesome
+				// forces scalar layout which is awesome, means we can have a header file that is shared by c++ and slang
 				slang::CompilerOptionEntry{
 					.name = slang::CompilerOptionName::ForceCLayout,
 					.value = {
 							.kind = slang::CompilerOptionValueKind::Int,
 							.intValue0 = true
 					}
-				}
+				},
 		};
 
 		ASSERT_MSG(this->_shaderSearchPaths.size() <= 16, "You cannot have more than 16 searchpaths in SlangCompiler, this is arbitrary btw lol");
@@ -113,13 +114,13 @@ namespace mythril {
 		// 2. query entry points
 		// if you have more than 8 components we want to link than whatever man
 		std::vector<Slang::ComPtr<slang::IComponentType>> componentTypes = {};
-		componentTypes.emplace_back(Slang::ComPtr<slang::IComponentType>(slang_module));
+		componentTypes.emplace_back(slang_module);
 		int definedEntryPointCount = slang_module->getDefinedEntryPointCount();
 		for (int i = 0; i < definedEntryPointCount; i++) {
 			Slang::ComPtr<slang::IEntryPoint> entryPoint;
 			SlangResult entry_point_result = slang_module->getDefinedEntryPoint(i, entryPoint.writeRef());
 			ASSERT_MSG(SLANG_SUCCEEDED(entry_point_result), "Entry point retrieval failed!");
-			componentTypes.emplace_back(Slang::ComPtr<slang::IComponentType>(entryPoint.get()));
+			componentTypes.emplace_back(entryPoint.get());
 		}
 
 		// 3. compose module
@@ -140,11 +141,22 @@ namespace mythril {
 		diagnostics_blob.setNull();
 
 		// 4.5. retrieve layout for reflection
-		// will always be 0 for raster shaders
+		// will always be 0 for raster shaders at least
 		int targetIndex = 0;
 		slang::ProgramLayout* program_layout = linked_program->getLayout(targetIndex, diagnostics_blob.writeRef());
 		ASSERT_MSG(program_layout, "Failed to get ProgramLayout*, therefore shader reflection will also fail! Diagnostics Below:\n{}", static_cast<const char*>(diagnostics_blob->getBufferPointer()));
 		diagnostics_blob.setNull();
+
+//		Slang::ComPtr<slang::IBlob> jsonBlob;
+//		SlangResult json_result = program_layout->toJson(jsonBlob.writeRef());
+//		ASSERT_MSG(SLANG_SUCCEEDED(json_result), "Failed to get JSON from program_layout!");
+//		std::ofstream file("testshader.json", std::ios::trunc);  // trunc = overwrite
+//		if (file) {
+//			file << (const char*)jsonBlob->getBufferPointer();
+//			printf("wrote json file at %s\n", std::filesystem::absolute("testshader.json").c_str());
+//		} else {
+//			printf("failed to write json file!\n");
+//		}
 
 
 		// 5. retrieve kernel code
@@ -152,6 +164,7 @@ namespace mythril {
 		// use getTargetCode instead of something like getEntryPointCode as this works with multiple entry points
 		SlangResult code_result = linked_program->getTargetCode(0, spirvBlob.writeRef(), diagnostics_blob.writeRef());
 		ASSERT_MSG(SLANG_SUCCEEDED(code_result), "Code retrieval failed! Diagnostics Below:\n{}", static_cast<const char*>(diagnostics_blob->getBufferPointer()));
+
 
 		// 5+. bonus: retreive metadata to determine if parameters are used or not
 		Slang::ComPtr<slang::IMetadata> target_metadata;

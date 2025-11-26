@@ -115,18 +115,50 @@ namespace mythril {
 		const char* debugName = "Unnamed Shader";
 	};
 
-	class DescriptorSet {
+	class DescriptorAllocatorGrowable {
 	public:
-		explicit DescriptorSet(CTX& ctxRef) : _ctxRef(ctxRef) {}
-		~DescriptorSet() = default;
+		struct PoolSizeRatio {
+			VkDescriptorType type;
+			float ratio;
+		};
+		void initialize(VkDevice device, uint32_t initialSets, std::span<PoolSizeRatio> poolRatios);
+		void clearPools(VkDevice device);
+		void destroyPools(VkDevice device);
 
-		void writeBuffer();
-		void updateSet();
+		VkDescriptorSet allocateSet(VkDevice device, VkDescriptorSetLayout layout, void* pNext = nullptr);
 	private:
-		CTX& _ctxRef;
+		VkDescriptorPool getPoolImpl(VkDevice device);
+		VkDescriptorPool createPoolImpl(VkDevice device, uint32_t setCount, std::span<PoolSizeRatio> poolRatios);
 
-		std::vector<VkWriteDescriptorSet> _writes;
-		std::queue<VkDescriptorBufferInfo> _bufferInfos;
+		std::vector<PoolSizeRatio> _ratios;
+		std::vector<VkDescriptorPool> _fullPools;
+		std::vector<VkDescriptorPool> _readyPools;
+		uint32_t _setsPerPool;
+	};
+
+	class DescriptorWriter {
+	public:
+		void write_buffer(int binding, VkBuffer buffer, size_t size, size_t offset, VkDescriptorType type);
+		void write_image(int binding,VkImageView image, VkSampler sampler,  VkImageLayout layout, VkDescriptorType type);
+
+		void update_set(VkDevice device, VkDescriptorSet set);
+		void clear();
+	private:
+		std::deque<VkDescriptorImageInfo> imageInfos;
+		std::deque<VkDescriptorBufferInfo> bufferInfos;
+		std::vector<VkWriteDescriptorSet> writes;
+	};
+
+	class DescriptorUpdater {
+	public:
+		void updateBufferBinding(InternalBufferHandle bufferHandle, unsigned int binding);
+	private:
+		DescriptorWriter writer = {};
+		unsigned int currentSet = -1;
+		GraphicsPipeline* currentPipeline = nullptr;
+		CTX* _ctx = nullptr;
+
+		friend class CTX;
 	};
 
 
@@ -146,7 +178,21 @@ namespace mythril {
 		CommandBuffer& openCommand(CommandBuffer::Type type);
 		SubmitHandle submitCommand(CommandBuffer& cmd);
 
-		void updateDescriptorSet(InternalBufferHandle handle, const char* paramName);
+		DescriptorUpdater openUpdater(InternalGraphicsPipelineHandle pipelineHandle, unsigned int set) {
+			DescriptorUpdater updater;
+			updater.currentSet = set;
+			updater._ctx = this;
+			updater.currentPipeline = _graphicsPipelinePool.get(pipelineHandle);
+			return updater;
+		};
+		void submitUpdater(DescriptorUpdater& updater) {
+			updater.writer.update_set(_vkDevice, updater.currentPipeline->_dSets[updater.currentSet]);
+			updater.writer.clear();
+			updater.currentPipeline = nullptr;
+			updater.currentSet = -1;
+		};
+
+//		InternalDescriptorSetHandle createDescriptorSet(DescriptorSet spec);
 
 		InternalBufferHandle createBuffer(BufferSpec spec);
 		InternalTextureHandle createTexture(TextureSpec spec);
@@ -154,6 +200,8 @@ namespace mythril {
 		InternalSamplerHandle createSampler(SamplerSpec spec);
 		InternalGraphicsPipelineHandle createGraphicsPipeline(GraphicsPipelineSpec spec);
 		InternalShaderHandle createShader(ShaderSpec spec);
+
+		InternalDescriptorSetHandle createDescriptorSet(InternalShaderHandle handle, uint32_t setIndex);
 
 		VkDeviceAddress gpuAddress(InternalBufferHandle handle, size_t offset = 0);
 
@@ -213,12 +261,14 @@ namespace mythril {
 		void checkAndUpdateBindlessDescriptorSetImpl();
 		void growBindlessDescriptorPoolImpl(uint32_t newMaxSamplerCount, uint32_t newMaxTextureCount);
 
+		VkPipelineLayout buildPipelineLayoutFromSignature(const PipelineLayoutSignature& signature);
+		std::vector<VkDescriptorSet> buildDescriptorSetsFromSignature(const PipelineLayoutSignature& signature);
+
 		// pack tasks
 		void deferTask(std::packaged_task<void()>&& task, SubmitHandle handle = SubmitHandle()) const;
 		void processDeferredTasks();
 		void waitDeferredTasks();
 
-		Slang::ComPtr<slang::ISession> createSlangSession();
 	private: // Vulkan Members //
 		VkInstance _vkInstance = VK_NULL_HANDLE;
 		VkDebugUtilsMessengerEXT _vkDebugMessenger = VK_NULL_HANDLE;
@@ -261,7 +311,9 @@ namespace mythril {
 		VkDescriptorSet _vkBindlessDSet = VK_NULL_HANDLE;
 
 		VkSemaphore _timelineSemaphore = VK_NULL_HANDLE;
+
 		CommandBuffer _currentCommandBuffer;
+		DescriptorAllocatorGrowable _descriptorAllocator;
 	private: // my stuff //
 		std::unique_ptr<ImmediateCommands> _imm = nullptr;
 		std::unique_ptr<Swapchain> _swapchain = nullptr;
@@ -274,11 +326,14 @@ namespace mythril {
 		HandlePool<InternalGraphicsPipelineHandle, GraphicsPipeline> _graphicsPipelinePool;
 		HandlePool<InternalComputePipelineHandle, ComputePipeline> _computePipelinePool;
 
+//		HandlePool<InternalDescriptorSetHandle, DescriptorSet> _descriptorSetPool;
+
 		// some rare stuff
 		std::vector<std::unique_ptr<class BasePlugin>> _plugins = {};
 		SlangCompiler _slangCompiler;
 		Window _window;
 
+		friend class DescriptorUpdater;
 		friend class RenderGraph;
 		friend class CommandBuffer;
 		friend class StagingDevice;
@@ -289,5 +344,5 @@ namespace mythril {
 		friend class ImGuiPlugin;
 
 	};
-
 }
+

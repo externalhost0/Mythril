@@ -6,6 +6,7 @@
 
 #ifdef __cplusplus // when this header is processed in cpp
 #include <glm/glm.hpp>
+#include <slang/slang-cpp-types.h>
 
 #define NAMESPACE_BEGIN() namespace GPU {
 #define NAMESPACE_END() }
@@ -43,8 +44,18 @@ struct Ptr {
 
 template<typename T>
 struct DescriptorHandle {
-	uint64_t index;
-	DescriptorHandle(uint32_t index) : index(index) {}
+	uint64_t index; // uint2 in slang
+	DescriptorHandle(uint64_t index) : index(index) {}
+};
+
+template<typename T>
+struct StructuredBuffer {
+	T* buf;
+};
+
+template<typename T>
+struct ConstantBuffer {
+	T* buf;
 };
 
 struct Texture2D;

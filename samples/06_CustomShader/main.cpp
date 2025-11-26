@@ -105,7 +105,7 @@ namespace mythril {
 				return "Array";
 			case FieldKind::Struct:
 				return "Struct";
-			default:
+			case FieldKind::Unknown:
 				return "Unknown";
 		}
 	}
@@ -251,12 +251,12 @@ namespace mythril {
 
 void DrawFieldInfoRecursive(const std::vector<mythril::FieldInfo>& fields);
 
-void DrawShaderInfo(const mythril::Shader &shader) {
+void DrawShaderInfo(const mythril::Shader& shader) {
 	char buf[128];
 	const char* windowName = "Shader Inspector";
-	snprintf(buf, sizeof(buf), "Shader Inspector - %s", shader._debugName);
+	snprintf(buf, sizeof(buf), "%s - %s", windowName, shader.getnamefordebugpurpose().data());
 	if (ImGui::Begin(buf)) {
-		ImGui::PushID(shader._debugName);
+		ImGui::PushID(&shader);
 
 		// shader module info
 		if (ImGui::CollapsingHeader("Pipeline Information", ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -381,6 +381,7 @@ void DrawFieldInfoRecursive(const std::vector<mythril::FieldInfo>& fields) {
 	}
 }
 
+
 int main() {
 	auto ctx = mythril::CTXBuilder{}
 	.set_info_spec({
@@ -441,7 +442,7 @@ int main() {
 		.filePath = "Marble.slang",
 		.debugName = "Example Shader"
 	});
-	mythril::DescriptorSet set1 = ctx.requestSet(standardShader, 1);
+
 	mythril::InternalGraphicsPipelineHandle mainPipeline = ctx->createGraphicsPipeline({
 		.vertexShader = {standardShader},
 		.fragmentShader = {standardShader},
@@ -489,6 +490,13 @@ int main() {
 		.storage = mythril::StorageType::Device,
 		.debugName = "PerMaterialData Uniform Buffer"
 	});
+	constexpr unsigned int kNumObjects = 50;
+	mythril::InternalBufferHandle objectDataHandle = ctx->createBuffer({
+		.size = sizeof(GPU::ObjectData) * kNumObjects,
+		.usage = mythril::BufferUsageBits::BufferUsageBits_Storage,
+		.storage = mythril::StorageType::Device,
+		.debugName = "Object Data SSBO"
+	});
 
 
 	auto startTime = std::chrono::high_resolution_clock::now();
@@ -513,9 +521,6 @@ int main() {
 	})
 	.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
 		cmd.cmdBindRenderPipeline(mainPipeline);
-
-		ctx->updateDescriptorSet(perFrameDataBuffer, "perFrame");
-		ctx->updateDescriptorSet(perMaterialDataBuffer, "perMaterial");
 
 		auto currentTime = std::chrono::high_resolution_clock::now();
 		float time = std::chrono::duration<float>(currentTime - startTime).count();
@@ -559,6 +564,7 @@ int main() {
 	})
 	.setExecuteCallback([&](mythril::CommandBuffer& cmd){
 		cmd.cmdBindRenderPipeline(postPipeline);
+
 		GPU::GaussianPushConstant push {
 			.colorTexture = colorTarget.index(),
 			.emissiveTexture = emissiveTarget.index(),
@@ -635,7 +641,6 @@ int main() {
 			graph.compile(*ctx);
 		}
 
-
 		ImGui_ImplVulkan_NewFrame();
 		ImGui_ImplSDL3_NewFrame();
 		ImGui::NewFrame();
@@ -657,6 +662,25 @@ int main() {
 		static float warp_iterations = 1.0f;
 		ImGui::SliderFloat("Warp Iterations", &warp_iterations, 0.f, 1.f);
 		ImGui::End();
+
+
+		std::srand(static_cast<unsigned>(std::time(nullptr)));
+		GPU::ObjectData objects[kNumObjects];
+		for (int i = 0; i < kNumObjects; i++) {
+			glm::vec3 pos = {
+					(std::rand() / (float)RAND_MAX - 0.5f) * 100.0f, // range [-50, 50]
+					(std::rand() / (float)RAND_MAX - 0.5f) * 100.0f,
+					(std::rand() / (float)RAND_MAX - 0.5f) * 100.0f
+			};
+
+			glm::vec3 color = {
+					std::rand() / (float)RAND_MAX, // range [0, 1]
+					std::rand() / (float)RAND_MAX,
+					std::rand() / (float)RAND_MAX
+			};
+			objects[i] = { pos, color };
+		}
+
 
 		const GPU::MaterialData matData = {
 				.tint = { col[0], col[1], col[2] },
@@ -680,18 +704,30 @@ int main() {
 		};
 		auto currentTime = std::chrono::high_resolution_clock::now();
 		float time = std::chrono::duration<float>(currentTime - startTime).count();
-		// once again, getFramebufferSize is the actual resolution we render out,
-		// though it might not be the same size as the surface we are displaying it to
+		// once again, getFramebufferSize is the actual resolution we render out
 		const VkExtent2D renderSize = ctx->getWindow().getFramebufferSize();
 		const GPU::GlobalData frameData {
-				.camera = cameraData,
-				.resolution = { renderSize.width, renderSize.height },
-				.time = time
+			.objects = ctx->gpuAddress(objectDataHandle),
+			.camera = cameraData,
+			.renderResolution = { renderSize.width, renderSize.height },
+			.time = time
 		};
 		mythril::CommandBuffer& cmd = ctx->openCommand(mythril::CommandBuffer::Type::Graphics);
 		// buffer updating must be done before rendering
+		cmd.cmdUpdateBuffer(objectDataHandle, objects);
 		cmd.cmdUpdateBuffer(perFrameDataBuffer, frameData);
 		cmd.cmdUpdateBuffer(perMaterialDataBuffer, matData);
+
+		// now we should update descriptor sets for the first time
+		// fixme: as this logic should occur on user demand and definitely not only once in here
+		mythril::DescriptorUpdater updater0 = ctx->openUpdater(mainPipeline, 1);
+		updater0.updateBufferBinding(perMaterialDataBuffer, 0);
+		ctx->submitUpdater(updater0);
+
+		mythril::DescriptorUpdater updater1 = ctx->openUpdater(mainPipeline, 0);
+		updater1.updateBufferBinding(perFrameDataBuffer, 0);
+		ctx->submitUpdater(updater1);
+
 
 		graph.execute(cmd);
 		ctx->submitCommand(cmd);

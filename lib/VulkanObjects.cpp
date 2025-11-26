@@ -48,6 +48,7 @@ namespace mythril {
 		}
 		vmaInvalidateAllocation(ctx._vmaAllocator, _vmaAllocation, offset, size);
 	}
+
 	void AllocatedTexture::transitionLayout(VkCommandBuffer cmd, VkImageLayout newImageLayout, const VkImageSubresourceRange& subresourceRange) {
 		const VkImageLayout oldImageLayout = (_vkCurrentImageLayout == VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL)
 											 ? (isDepthAttachment() ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL)

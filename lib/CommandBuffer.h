@@ -55,6 +55,7 @@ namespace mythril {
 		void cmdBindRenderPipeline(InternalGraphicsPipelineHandle handle);
 
 		// ALL BELOW COMMANDS SHOULD RETURN ON DRYRUN //
+		void cmdBindDescriptorSets(std::initializer_list<InternalDescriptorSetHandle> handles);
 
 		void cmdBindIndexBuffer(InternalBufferHandle buffer);
 		// we can pass in structs of any type for push constants!!

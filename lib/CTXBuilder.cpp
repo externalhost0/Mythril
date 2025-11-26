@@ -82,6 +82,14 @@ namespace mythril {
 		// timeline semaphore is closely kept to vulkan swapchain
 		ctx->_timelineSemaphore = vkutil::CreateTimelineSemaphore(ctx->_vkDevice, ctx->_swapchain->getNumOfSwapchainImages() - 1);
 		ctx->growBindlessDescriptorPoolImpl(ctx->_currentMaxTextureCount, ctx->_currentMaxSamplerCount);
+
+		// https://vkguide.dev/docs/new_chapter_4/descriptor_abstractions/#:~:text=the%20end%20of-,init_descriptors,-()
+		std::vector<DescriptorAllocatorGrowable::PoolSizeRatio> frame_sizes = {
+				{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 3 },
+				{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3 },
+		};
+		ctx->_descriptorAllocator.initialize(ctx->_vkDevice, 1000, frame_sizes);
+
 		for (auto& path : this->_searchpaths) {
 			ctx->_slangCompiler.addSearchPath(path);
 		}

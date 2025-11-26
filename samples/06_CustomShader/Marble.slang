@@ -23,28 +23,12 @@ struct v2f {
 // you will unfortunately HAVE to manually annotate your parameters
 // this is solely so that our bindless set that should always exist can exist in every shader
 
-// struct CameraData {
-//     float4x4 proj;
-//     float4x4 view;
-//     float3 position;
-// };
-// struct GlobalData {
-//     CameraData camera;
-//     float2 resolution;
-//     float time;
-// };
-// struct MaterialData {
-//     float3 tint;
-//     float warpIterations;
-//     float glowAmount;
-//     float distortAmount;
-// };
-
 // our parameters
-[[vk::binding(0, 1)]]
-ParameterBlock<MaterialData> perMaterial;
-[[vk::binding(0, 2)]]
+// i honestly dont think you ever need more than 2 user defined sets
+// [[vk::binding(0, 1)]]
 ParameterBlock<GlobalData> perFrame;
+// [[vk::binding(0, 2)]]
+ParameterBlock<MaterialData> perMaterial;
 
 [vk::push_constant]
 GeometryPushConstant perObject;
@@ -71,7 +55,7 @@ v2f vs_main(VSInput input) {
 FSOutput fs_main(v2f input) {
     FSOutput output;
 
-    float2 resolution = perFrame.resolution;
+    float2 resolution = perFrame.renderResolution;
     float time = perFrame.time;
 
     float2 fragCoord = input.UV * resolution;

@@ -16,13 +16,14 @@ namespace mythril {
 		const uint32_t* getSpirvCode() const { return reinterpret_cast<const uint32_t*>(_spirvBlob->getBufferPointer()); };
 		size_t getSpirvSize() const { return _spirvBlob->getBufferSize(); };
 
-		slang::ProgramLayout* getProgramLayout() { return _programLayout; }
+//		slang::ProgramLayout* getReflectionInformation() { return _programLayout; }
 
 		explicit operator bool() const { return success; }
 	private:
 		Slang::ComPtr<slang::IBlob> _spirvBlob = nullptr;
 		slang::ProgramLayout* _programLayout = nullptr;
 
+		// needs to be stored to keep the lifetime of _programLayout
 		Slang::ComPtr<slang::IComponentType> _linkedProgram = nullptr;
 		bool success = false;
 

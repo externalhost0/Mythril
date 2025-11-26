@@ -18,7 +18,9 @@ namespace mythril {
 		Vector,
 		Matrix,
 		Array,
-		Struct
+		Struct,
+
+		Unknown
 	};
 	enum class OpaqueKind {
 		// sampled images
@@ -76,6 +78,17 @@ namespace mythril {
 		std::vector<FieldInfo> fields;
 	};
 
+	struct DescriptorSetSignature {
+		std::vector<VkDescriptorSetLayoutBinding> bindings;
+		uint32_t setIndex;
+		bool isBindless;
+	};
+	struct PipelineLayoutSignature {
+		std::vector<DescriptorSetSignature> sets;
+		std::vector<VkPushConstantRange> pushes;
+	};
+
+	PipelineLayoutSignature ReflectSPIRV(const uint32_t* code, size_t size);
 
 	class Shader {
 	public:
@@ -94,31 +107,24 @@ namespace mythril {
 
 		const std::vector<ParameterBlockInfo>& viewParameters() const { return _parameterBlocks; };
 		const std::vector<PushConstantInfo>& viewPushConstants() const { return _pushConstants; }
-//	private:
+		const PipelineLayoutSignature& getPipelineLayoutSignature() const { return _plSignature; }
+		const std::string_view getnamefordebugpurpose() const { return _debugName; }
+	private:
 		// a shader defines not only the module obviously, but a pipelineLayout
 		VkShaderModule vkShaderModule;
-		char _debugName[128] = {0};
-		// right now its not expected shaders share pipeline layouts (have the same dsls and pcrs)
-		VkPipelineLayout vkPipelineLayout;
-		std::vector<VkDescriptorSetLayout> _vkDescriptorSetLayouts;
 
 		// everything below can be quired by user, not necessary for renderer
 		std::vector<ParameterBlockInfo> _parameterBlocks;
 		std::vector<PushConstantInfo> _pushConstants;
 
-		uint8_t _descriptorSetUsedCount;
+		PipelineLayoutSignature _plSignature;
+		bool usesBindlessSet = false;
+
+		char _debugName[128] = {0};
 
 		friend class CTX;
 		friend class ShaderTransformer;
 		friend class CommandBuffer;
-	};
-
-	class Material {
-	public:
-
-	private:
-
-		friend class CTX;
 	};
 
 
@@ -155,49 +161,73 @@ namespace mythril {
 		friend class ShaderTransformer;
 	};
 
+
+
 	class ShaderTransformer {
 	public:
 		void performReflection(Shader& shader, slang::ShaderReflection* reflectionData);
-		VkPipelineLayout retrievePipelineLayout(VkDevice device);
-		std::vector<VkDescriptorSetLayout> retrieveDescriptorSetLayouts();
 	private:
-		void addRangesForParameterBlockElement(PipelineLayoutBuilder& plBuilder,
-											   DescriptorSetLayoutBuilder& dslBuilder,
+		void addRangesForParameterBlockElement(PipelineLayoutSignature& plSignature,
+											   DescriptorSetSignature& dslSignature,
 											   slang::TypeLayoutReflection* elementTypeLayout);
-
-		void addAutomaticallyIntroducedUniformBuffer(DescriptorSetLayoutBuilder &dslBuilder);
-
-		void addDescriptorSetForParameterBlock(PipelineLayoutBuilder& plBuilder,
+		void addAutomaticallyIntroducedUniformBuffer(DescriptorSetSignature& dslSignature);
+		void addDescriptorSetForParameterBlock(PipelineLayoutSignature& plSignature,
 											   slang::TypeLayoutReflection* paramBlockTypeLayout);
-		void addPushConstantRangeForConstantBuffer(PipelineLayoutBuilder& plBuilder,
+		void addPushConstantRangeForConstantBuffer(PipelineLayoutSignature& plSignature,
 												   slang::TypeLayoutReflection* pushConstantBufferTypeLayout);
-
-
-		void addRanges(PipelineLayoutBuilder& plBuilder,
-					   DescriptorSetLayoutBuilder& dslBuilder,
+		void addRanges(PipelineLayoutSignature& plSignature,
+					   DescriptorSetSignature& dslSignature,
 					   slang::TypeLayoutReflection* typeLayout);
-
-		void addDescriptorRanges(DescriptorSetLayoutBuilder& dslBuilder,
+		void addDescriptorRanges(DescriptorSetSignature& dslSignature,
 								 slang::TypeLayoutReflection* typeLayout);
-		void addDescriptorRange(DescriptorSetLayoutBuilder& dslBuilder,
+		void addDescriptorRange(DescriptorSetSignature& dslSignature,
 								slang::TypeLayoutReflection* typeLayout,
 								int relativeSetIndex,
 								int rangeIndex);
-
-		void addSubRanges(PipelineLayoutBuilder& plBuilder,
+		void addSubRanges(PipelineLayoutSignature& plSignature,
 						  slang::TypeLayoutReflection* typeLayout);
-		void addSubRange(PipelineLayoutBuilder& plBuilder,
+		void addSubRange(PipelineLayoutSignature& plSignature,
 						 slang::TypeLayoutReflection* typeLayout,
 						 int subRangeIndex);
-
-		void startBuildingDescriptorSetLayout(PipelineLayoutBuilder& plBuilder,
-											  DescriptorSetLayoutBuilder& dslBuilder);
-		void finishBuildingDescriptorSetLayout(PipelineLayoutBuilder& plBuilder,
-											   DescriptorSetLayoutBuilder& dslBuilder);
+		void startBuildingDescriptorSetLayout(PipelineLayoutSignature& plSignature,
+											  DescriptorSetSignature& dslSignature);
+		void finishBuildingDescriptorSetLayout(PipelineLayoutSignature& plSignature,
+											   DescriptorSetSignature& dslSignature);
+//		void addRangesForParameterBlockElement(PipelineLayoutBuilder& plBuilder,
+//											   DescriptorSetLayoutBuilder& dslBuilder,
+//											   slang::TypeLayoutReflection* elementTypeLayout);
+//
+//		void addAutomaticallyIntroducedUniformBuffer(DescriptorSetLayoutBuilder &dslBuilder);
+//
+//		void addDescriptorSetForParameterBlock(PipelineLayoutBuilder& plBuilder,
+//											   slang::TypeLayoutReflection* paramBlockTypeLayout);
+//		void addPushConstantRangeForConstantBuffer(PipelineLayoutBuilder& plBuilder,
+//												   slang::TypeLayoutReflection* pushConstantBufferTypeLayout);
+//
+//
+//		void addRanges(PipelineLayoutBuilder& plBuilder,
+//					   DescriptorSetLayoutBuilder& dslBuilder,
+//					   slang::TypeLayoutReflection* typeLayout);
+//
+//		void addDescriptorRanges(DescriptorSetLayoutBuilder& dslBuilder,
+//								 slang::TypeLayoutReflection* typeLayout);
+//		void addDescriptorRange(DescriptorSetLayoutBuilder& dslBuilder,
+//								slang::TypeLayoutReflection* typeLayout,
+//								int relativeSetIndex,
+//								int rangeIndex);
+//
+//		void addSubRanges(PipelineLayoutBuilder& plBuilder,
+//						  slang::TypeLayoutReflection* typeLayout);
+//		void addSubRange(PipelineLayoutBuilder& plBuilder,
+//						 slang::TypeLayoutReflection* typeLayout,
+//						 int subRangeIndex);
+//
+//		void startBuildingDescriptorSetLayout(PipelineLayoutBuilder& plBuilder,
+//											  DescriptorSetLayoutBuilder& dslBuilder);
+//		void finishBuildingDescriptorSetLayout(PipelineLayoutBuilder& plBuilder,
+//											   DescriptorSetLayoutBuilder& dslBuilder);
 	private:
 		Shader* _currentShader = nullptr;
-		PipelineLayoutBuilder _completePLB;
-
 		VkShaderStageFlags _currentStageFlags = VK_SHADER_STAGE_ALL;
 	};
 }

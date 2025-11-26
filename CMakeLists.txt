@@ -51,6 +51,20 @@ set_target_properties(slang PROPERTIES
         IMPORTED_LOCATION "${SLANG_LIBRARY}"
         INTERFACE_INCLUDE_DIRECTORIES "${SLANG_INCLUDE_DIR}"
 )
+# ------------------------- SPIRV-Reflect --------------------------------
+CPMAddPackage(
+        NAME SPIRV-Reflect
+        GITHUB_REPOSITORY "KhronosGroup/SPIRV-Reflect"
+        GIT_TAG vulkan-sdk-1.4.328
+        OPTIONS
+        "SPIRV_REFLECT_STATIC_LIB=OFF"
+)
+add_library(SPIRV-Reflect STATIC
+        ${SPIRV-Reflect_SOURCE_DIR}/spirv_reflect.c
+)
+target_include_directories(SPIRV-Reflect PUBLIC
+        ${SPIRV-Reflect_SOURCE_DIR}
+)
 
 
 # ----------------------------- VOLK --------------------------------
@@ -181,6 +195,7 @@ target_link_libraries(${PARENT_PROJECT_NAME}
         GPUOpen::VulkanMemoryAllocator
         volk
         vk-bootstrap
+        SPIRV-Reflect
         slang
 )
 if(MYTH_ENABLE_IMGUI_STANDARD)

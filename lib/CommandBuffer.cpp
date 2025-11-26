@@ -91,51 +91,72 @@ namespace mythril {
 			LOG_SYSTEM(LogType::Warning, "No pipeline currently bound, will not perform push constants!");
 			return;
 		}
+		size_t pcsize = _ctx->_graphicsPipelinePool.get(_currentPipelineHandle)->signature.pushes[0].size;
+		if (pcsize != size) {
+//			LOG_SYSTEM(LogType::Warning, "Push constant CPU size is different than GPU size! Your CPU structure has a size of '{}' while shader's push constant has size of '{}'", size, pcsize);
+		}
 
 		const GraphicsPipeline& pipeline = *_ctx->_graphicsPipelinePool.get(_currentPipelineHandle);
-		vkCmdPushConstants(_wrapper->_cmdBuf, pipeline._vkPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, offset, size, data);
+		const VkShaderStageFlags stageFlags =  VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+		vkCmdPushConstants(_wrapper->_cmdBuf, pipeline._vkPipelineLayout, static_cast<VkShaderStageFlagBits>(stageFlags), offset, pcsize, data);
 	}
 
+	void MaybeWarnRebind(const IPipeline* pipeline, VkPipeline lastBound) {
+		static std::unordered_map<VkPipeline, int> g_rebindWarningCount;
+		VkPipeline vkPipe = pipeline->_vkPipeline;
+		if (lastBound != vkPipe)
+			return;
+		int& count = g_rebindWarningCount[vkPipe];
+		constexpr unsigned int maxWarns = 5;
+		if (count < maxWarns) {
+			LOG_SYSTEM(LogType::Warning, "Called to rebind already bound pipeline '{}'", pipeline->_debugName);
+		} else if (count == maxWarns) {
+			LOG_SYSTEM(LogType::Warning, "Pipeline '{}' has triggered this warning >{} times and will now be silenced.", pipeline->_debugName, maxWarns);
+		}
+		count++;
+	}
 
 	void CommandBuffer::cmdBindRenderPipeline(InternalGraphicsPipelineHandle handle) {
 		ASSERT_MSG(_ctx != nullptr, "You forgot to assign ctx to your CommandBuffer dude.");
 		if (_isDryRun) {
 			// we perform construction inside our dry run, which is when we compile the RenderGraph
+			// we do this so we dont stutter mid gameplay loop
 			_ctx->resolveRenderPipeline(handle);
 			return;
 		}
-
 		if (handle.empty()) {
 			LOG_SYSTEM(LogType::Warning, "Binded render pipeline was empty/invalid!");
 			return;
 		}
 		// use _currentPipeline
 		_currentPipelineHandle = handle;
-
-		const GraphicsPipeline* pipeline = _ctx->resolveRenderPipeline(_currentPipelineHandle);
-//		Shader* shader = _ctx->_shaderPool.get(pipeline->_spec.stages.front().handle);
+		const GraphicsPipeline* pipeline = _ctx->_graphicsPipelinePool.get(_currentPipelineHandle);
 
 		// only bind pipeline if its not currently bound
-		if (_lastBoundvkPipeline != pipeline->_vkPipeline) {
-			_lastBoundvkPipeline = pipeline->_vkPipeline;
-			vkCmdBindPipeline(_wrapper->_cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->_vkPipeline);
-			_ctx->bindDefaultBindlessDescriptorSetsImpl(_wrapper->_cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS,
-														pipeline->_vkPipelineLayout);
-			if (pipeline->_userVkDescriptorSets.empty()) return;
-			vkCmdBindDescriptorSets(_wrapper->_cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->_vkPipelineLayout,
-									1,
-									pipeline->_userVkDescriptorSets.size(),
-									pipeline->_userVkDescriptorSets.data(),
-									0,
-									nullptr);
-//			_ctx->bindDefaultDescriptorSets(_wrapper->_cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->_vkPipelineLayout);
-//			vkCmdBindDescriptorSets(_wrapper->_cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->_vkPipelineLayout,
-//									0,
-//									shader->_vkDescriptorSets.size(),
-//									shader->_vkDescriptorSets.data(),
-//									0,
-//									nullptr);
+		if (_lastBoundvkPipeline == pipeline->_vkPipeline) {
+#ifdef DEBUG
+			MaybeWarnRebind(static_cast<const IPipeline*>(pipeline), _lastBoundvkPipeline);
+#endif
+			return;
 		}
+		_lastBoundvkPipeline = pipeline->_vkPipeline;
+		vkCmdBindPipeline(_wrapper->_cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->_vkPipeline);
+
+		// constructs another vector of descriptor sets but with the special bindless set in the correct index
+		std::vector<VkDescriptorSet> vk_descriptor_sets = {};
+		for (int i = 0; i < pipeline->signature.sets.size(); i++) {
+			if (pipeline->signature.sets[i].isBindless) {
+				vk_descriptor_sets.push_back(_ctx->_vkBindlessDSet);
+				continue;
+			}
+			vk_descriptor_sets.push_back(pipeline->_dSets[i]);
+		}
+		vkCmdBindDescriptorSets(_wrapper->_cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->_vkPipelineLayout,
+								0,
+								vk_descriptor_sets.size(),
+								vk_descriptor_sets.data(),
+								0,
+								nullptr);
 	}
 
 	// current issues with host buffer
@@ -149,7 +170,7 @@ namespace mythril {
 		ASSERT(offset % 4 == 0);
 		AllocatedBuffer* buf = _ctx->_bufferPool.get(handle);
 		if (!data) {
-			LOG_SYSTEM(LogType::Warning, "You are updating buffer '{}' with empty data.", std::string_view(buf->_debugName));
+			LOG_SYSTEM(LogType::Warning, "You are updating buffer '{}' with empty data.", buf->_debugName);
 			return;
 		}
 
@@ -490,6 +511,26 @@ namespace mythril {
 		scissor.extent = extent2D;
 		vkCmdSetScissor(_wrapper->_cmdBuf, 0, 1, &scissor);
 	}
+
+//	void CommandBuffer::cmdBindDescriptorSets(std::initializer_list<InternalDescriptorSetHandle> handles) {
+//		if (_isDryRun) return;
+//
+//		std::vector<VkDescriptorSet> dsSets = {};
+//		dsSets.reserve(handles.size());
+//		for (const auto& handle : handles) {
+//			DescriptorSet* set = _ctx->_descriptorSetPool.get(handle);
+//			dsSets.push_back(set->_vkDescriptorSet);
+//		}
+//
+//		GraphicsPipeline* pipeline = _ctx->_graphicsPipelinePool.get(_currentPipelineHandle);
+//		ASSERT_MSG(pipeline, "You must bind a graphics pipeline before binding descriptor sets!");
+//		vkCmdBindDescriptorSets(_wrapper->_cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->_vkPipelineLayout,
+//								1,
+//								dsSets.size(),
+//								dsSets.data(),
+//								0,
+//								nullptr);
+//	}
 
 }
 
