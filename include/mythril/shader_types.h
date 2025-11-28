@@ -58,8 +58,12 @@ struct ConstantBuffer {
 	T* buf;
 };
 
-struct Texture2D;
-struct SamplerState;
+struct Texture2D {
+
+};
+struct SamplerState {
+
+};
 
 
 NAMESPACE_END()

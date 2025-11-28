@@ -8,6 +8,7 @@
 #include <slang/slang.h>
 #include <string>
 #include <vector>
+#include <unordered_map>
 
 namespace mythril {
 	enum class FieldKind {
@@ -80,19 +81,20 @@ namespace mythril {
 
 	struct DescriptorSetSignature {
 		std::vector<VkDescriptorSetLayoutBinding> bindings;
+		std::unordered_map<std::string, uint32_t> nameToBinding;
 		uint32_t setIndex;
 		bool isBindless;
 	};
+
 	struct PipelineLayoutSignature {
-		std::vector<DescriptorSetSignature> sets;
+		std::vector<DescriptorSetSignature> setSignatures;
 		std::vector<VkPushConstantRange> pushes;
 	};
 
-	PipelineLayoutSignature ReflectSPIRV(const uint32_t* code, size_t size);
 
 	class Shader {
 	public:
-		struct ParameterBlockInfo : IParameterInfo {
+		struct DescriptorBindingInfo : IParameterInfo {
 			uint32_t setIndex;
 			uint32_t bindingIndex;
 
@@ -105,20 +107,19 @@ namespace mythril {
 			uint32_t size;
 		};
 
-		const std::vector<ParameterBlockInfo>& viewParameters() const { return _parameterBlocks; };
+		const std::vector<DescriptorBindingInfo>& viewParameters() const { return _parameterBlocks; };
 		const std::vector<PushConstantInfo>& viewPushConstants() const { return _pushConstants; }
-		const PipelineLayoutSignature& getPipelineLayoutSignature() const { return _plSignature; }
-		const std::string_view getnamefordebugpurpose() const { return _debugName; }
+		const PipelineLayoutSignature& getPipelineLayoutSignature() const { return _pipelineSignature; }
+		std::string_view getnamefordebugpurpose() const { return _debugName; }
 	private:
 		// a shader defines not only the module obviously, but a pipelineLayout
 		VkShaderModule vkShaderModule;
 
 		// everything below can be quired by user, not necessary for renderer
-		std::vector<ParameterBlockInfo> _parameterBlocks;
+		std::vector<DescriptorBindingInfo> _parameterBlocks;
 		std::vector<PushConstantInfo> _pushConstants;
 
-		PipelineLayoutSignature _plSignature;
-		bool usesBindlessSet = false;
+		PipelineLayoutSignature _pipelineSignature;
 
 		char _debugName[128] = {0};
 
@@ -127,39 +128,13 @@ namespace mythril {
 		friend class CommandBuffer;
 	};
 
-
-	class DescriptorSetLayoutBuilder {
-	public:
-		// descriptorCount is used for bindings that are arrays (ie: bindless descriptors)
-		uint32_t getBindingCount() const;
-		// always preffered that you give the stages but just in case user is lazy
-		DescriptorSetLayoutBuilder& addBinding(uint32_t bindIndex, VkDescriptorType descriptorType, VkShaderStageFlags stages = VK_SHADER_STAGE_ALL, uint32_t descriptorCount = 1);
-
-		VkDescriptorSetLayout build(VkDevice vkDevice);
-	private:
-		void clear();
-		std::vector<VkDescriptorSetLayoutBinding> _vkDescriptorRanges;
-		uint32_t setIndex = -1;
-
-		friend class ShaderTransformer;
+	struct ReflectionResult {
+		PipelineLayoutSignature pipelineLayoutSignature;
+		std::vector<Shader::DescriptorBindingInfo> retrievedDescriptors;
+		std::vector<Shader::PushConstantInfo> retrivedPushConstants;
 	};
 
-	class PipelineLayoutBuilder {
-	public:
-		PipelineLayoutBuilder& addDescriptorSetLayoutBuilder(DescriptorSetLayoutBuilder& dsBuilder);
-		PipelineLayoutBuilder& addPushConstantRange(VkPushConstantRange pcRange);
-
-		VkPipelineLayout build(VkDevice device);
-	private:
-		void clear();
-		std::vector<DescriptorSetLayoutBuilder> _dslBuilders;
-		std::vector<VkPushConstantRange> _vkPCRs;
-
-		// invalid until later
-		std::vector<VkDescriptorSetLayout> _builtDSLs;
-
-		friend class ShaderTransformer;
-	};
+	ReflectionResult ReflectSPIRV(const uint32_t* code, size_t size);
 
 
 

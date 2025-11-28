@@ -51,6 +51,7 @@ namespace mythril {
 	using InternalGraphicsPipelineHandle = ObjectHandle<struct GraphicsPipelineTag>;
 	using InternalComputePipelineHandle = ObjectHandle<struct ComputePipelineTag>;
 	using InternalDescriptorSetHandle = ObjectHandle<struct DescriptorSetTag>;
+	using InternalDescriptorHandle = ObjectHandle<struct DescriptorTag>;
 
 
 

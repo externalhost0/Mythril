@@ -92,11 +92,11 @@ namespace mythril {
 	private:
 		GraphicsPipelineSpec _spec;
 		PipelineLayoutSignature signature;
-		std::vector<VkDescriptorSet> _dSets;
+		std::vector<VkDescriptorSet> _vkDescriptorSets;
 
 		friend class CTX;
 		friend class CommandBuffer;
-		friend class DescriptorUpdater;
+		friend class DescriptorSetWriter;
 	};
 
 }

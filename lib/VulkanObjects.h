@@ -103,6 +103,6 @@ namespace mythril {
 		friend class CTX;
 		friend class CommandBuffer;
 		friend class StagingDevice;
-		friend class DescriptorUpdater;
+		friend class DescriptorSetWriter;
 	};
 }

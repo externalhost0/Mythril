@@ -457,6 +457,7 @@ int main() {
 		.filePath = "GaussianBlur.slang",
 		.debugName = "Fullscreen Shader"
 	});
+
 	mythril::InternalGraphicsPipelineHandle postPipeline = ctx->createGraphicsPipeline({
 		.vertexShader = {postProcessingShader},
 		.fragmentShader = {postProcessingShader},
@@ -484,6 +485,8 @@ int main() {
 		.storage = mythril::StorageType::Device,
 		.debugName = "PerFrameData Uniform Buffer"
 	});
+
+
 	mythril::InternalBufferHandle perMaterialDataBuffer = ctx->createBuffer({
 		.size = sizeof(GPU::MaterialData),
 		.usage = mythril::BufferUsageBits::BufferUsageBits_Uniform,
@@ -498,6 +501,8 @@ int main() {
 		.debugName = "Object Data SSBO"
 	});
 
+	mythril::InternalDescriptorHandle perFrameDataDescriptor = ctx->createDescriptor(standardShader, "perFrame");
+	mythril::InternalDescriptorHandle perMaterialDataDescriptor = ctx->createDescriptor(standardShader, "perMaterial");
 
 	auto startTime = std::chrono::high_resolution_clock::now();
 	mythril::RenderGraph graph;
@@ -618,6 +623,13 @@ int main() {
 	graph.compile(*ctx);
 
 
+	// now we should update descriptor sets for the first & only time
+	mythril::DescriptorSetWriter writer = ctx->openUpdate(mainPipeline);
+	writer.updateBinding(perMaterialDataBuffer, "perMaterial");
+	writer.updateBinding(perFrameDataBuffer, "perFrame");
+	ctx->submitUpdate(writer);
+
+	std::srand(std::time(0));
 	bool quit = false;
 	while(!quit) {
 		SDL_Event e;
@@ -662,7 +674,6 @@ int main() {
 		static float warp_iterations = 1.0f;
 		ImGui::SliderFloat("Warp Iterations", &warp_iterations, 0.f, 1.f);
 		ImGui::End();
-
 
 		std::srand(static_cast<unsigned>(std::time(nullptr)));
 		GPU::ObjectData objects[kNumObjects];
@@ -712,22 +723,14 @@ int main() {
 			.renderResolution = { renderSize.width, renderSize.height },
 			.time = time
 		};
+
+
 		mythril::CommandBuffer& cmd = ctx->openCommand(mythril::CommandBuffer::Type::Graphics);
+		
 		// buffer updating must be done before rendering
 		cmd.cmdUpdateBuffer(objectDataHandle, objects);
 		cmd.cmdUpdateBuffer(perFrameDataBuffer, frameData);
 		cmd.cmdUpdateBuffer(perMaterialDataBuffer, matData);
-
-		// now we should update descriptor sets for the first time
-		// fixme: as this logic should occur on user demand and definitely not only once in here
-		mythril::DescriptorUpdater updater0 = ctx->openUpdater(mainPipeline, 1);
-		updater0.updateBufferBinding(perMaterialDataBuffer, 0);
-		ctx->submitUpdater(updater0);
-
-		mythril::DescriptorUpdater updater1 = ctx->openUpdater(mainPipeline, 0);
-		updater1.updateBufferBinding(perFrameDataBuffer, 0);
-		ctx->submitUpdater(updater1);
-
 
 		graph.execute(cmd);
 		ctx->submitCommand(cmd);

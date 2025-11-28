@@ -52,10 +52,51 @@ namespace mythril {
 		};
 	}
 
-	void DescriptorUpdater::updateBufferBinding(InternalBufferHandle bufferHandle, unsigned int binding) {
-		const auto set_signature = currentPipeline->signature.sets[this->currentSet];
-		AllocatedBuffer* buf = _ctx->_bufferPool.get(bufferHandle);
-		writer.write_buffer(binding, buf->_vkBuffer, buf->_bufferSize, 0, set_signature.bindings[binding].descriptorType);
+	std::pair<int, int> findBinding() {
+
+	}
+
+	void DescriptorSetWriter::updateBinding(mythril::InternalBufferHandle bufHandle, const char* name) {
+		for (size_t i = 0; i < this->currentPipeline->signature.setSignatures.size(); i++) {
+			const DescriptorSetSignature& set_signature = this->currentPipeline->signature.setSignatures[i];
+			auto it = set_signature.nameToBinding.find(name);
+			if (it != set_signature.nameToBinding.end()) {
+				updateBinding(bufHandle, static_cast<int>(i), static_cast<int>(it->second));
+				return;
+			}
+		}
+		ASSERT_MSG(false, "Variable name '{}' could not be found in pipeline '{}'!", name, this->currentPipeline->_debugName);
+	}
+
+	void DescriptorSetWriter::updateBinding(InternalBufferHandle bufHandle, int set, int binding) {
+		ASSERT_MSG(bufHandle.valid(), "Handle must be for a valid buffer object!");
+
+		const DescriptorSetSignature& set_signature = currentPipeline->signature.setSignatures[set];
+		VkDescriptorSet vkset = currentPipeline->_vkDescriptorSets[set];
+		AllocatedBuffer* buf = _ctx->_bufferPool.get(bufHandle);
+		this->writer.writeBuffer(vkset, binding, buf->_vkBuffer, buf->_bufferSize, 0, set_signature.bindings[binding].descriptorType);
+	}
+
+	void DWriter::writeBuffer(VkDescriptorSet set, unsigned int binding, VkBuffer buffer, size_t size, size_t offset, VkDescriptorType type) {
+		VkDescriptorBufferInfo& info = this->_bufferInfos.emplace_back(VkDescriptorBufferInfo{
+				.buffer = buffer,
+				.offset = offset,
+				.range = size
+		});
+
+		VkWriteDescriptorSet write = {
+				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+				.pNext = nullptr,
+				.dstSet = set,
+				.dstBinding = static_cast<uint32_t>(binding),
+				.descriptorCount = 1,
+				.descriptorType = type,
+				.pBufferInfo = &info
+		};
+		this->_writes.push_back(write);
+	}
+	void DWriter::updateSets(VkDevice device) {
+		vkUpdateDescriptorSets(device, static_cast<uint32_t>(_writes.size()), _writes.data(), 0, nullptr);
 	}
 
 	VkMemoryPropertyFlags StorageTypeToVkMemoryPropertyFlags(StorageType storage) {
@@ -223,10 +264,6 @@ namespace mythril {
 		_deferredTasks.clear();
 	}
 
-	void CTX::bindDefaultBindlessDescriptorSetsImpl(VkCommandBuffer cmd, VkPipelineBindPoint bindPoint, VkPipelineLayout pipelineLayout) {
-		const std::array<VkDescriptorSet, 1> system_descriptor_sets = { _vkBindlessDSet };
-		vkCmdBindDescriptorSets(cmd, bindPoint, pipelineLayout, 0, system_descriptor_sets.size(), system_descriptor_sets.data(), 0, nullptr);
-	}
 	void CTX::checkAndUpdateBindlessDescriptorSetImpl() {
 		if (!_awaitingCreation) {
 			return;
@@ -461,197 +498,97 @@ namespace mythril {
 		ASSERT_MSG(buf && buf->_vkDeviceAddress, "Buffer doesnt have a valid device address!");
 		return buf->_vkDeviceAddress + offset;
 	}
-	std::string VkShaderStageToStringINNER2(VkShaderStageFlags stageFlags) {
-		std::string result;
 
-		if (stageFlags & VK_SHADER_STAGE_VERTEX_BIT)
-			result += "VERTEX, ";
-		if (stageFlags & VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT)
-			result += "TESSELLATION_CONTROL, ";
-		if (stageFlags & VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT)
-			result += "TESSELLATION_EVALUATION, ";
-		if (stageFlags & VK_SHADER_STAGE_GEOMETRY_BIT)
-			result += "GEOMETRY, ";
-		if (stageFlags & VK_SHADER_STAGE_FRAGMENT_BIT)
-			result += "FRAGMENT, ";
-		if (stageFlags & VK_SHADER_STAGE_COMPUTE_BIT)
-			result += "COMPUTE, ";
-		if (stageFlags & VK_SHADER_STAGE_TASK_BIT_EXT)
-			result += "TASK, ";
-		if (stageFlags & VK_SHADER_STAGE_MESH_BIT_EXT)
-			result += "MESH, ";
-		if (stageFlags & VK_SHADER_STAGE_RAYGEN_BIT_KHR)
-			result += "RAYGEN, ";
-		if (stageFlags & VK_SHADER_STAGE_ANY_HIT_BIT_KHR)
-			result += "ANY_HIT, ";
-		if (stageFlags & VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR)
-			result += "CLOSEST_HIT, ";
-		if (stageFlags & VK_SHADER_STAGE_MISS_BIT_KHR)
-			result += "MISS, ";
-		if (stageFlags & VK_SHADER_STAGE_INTERSECTION_BIT_KHR)
-			result += "INTERSECTION, ";
-		if (stageFlags & VK_SHADER_STAGE_CALLABLE_BIT_KHR)
-			result += "CALLABLE, ";
-		if (stageFlags & VK_SHADER_STAGE_SUBPASS_SHADING_BIT_HUAWEI)
-			result += "SUBPASS_SHADING_HUAWEI, ";
-		if (stageFlags & VK_SHADER_STAGE_CLUSTER_CULLING_BIT_HUAWEI)
-			result += "CLUSTER_CULLING_HUAWEI, ";
+	InternalDescriptorHandle CTX::createDescriptor(InternalShaderHandle handle, const char* bindingName) {
+		Shader* shader = _shaderPool.get(handle);
+	}
+	InternalDescriptorHandle CTX::createDescriptor(InternalShaderHandle handle, uint32_t binding, uint32_t set) {
 
-		if (stageFlags == VK_SHADER_STAGE_ALL_GRAPHICS)
-			result = "ALL_GRAPHICS, ";
-		else if (stageFlags == VK_SHADER_STAGE_ALL)
-			result = "ALL, ";
-
-		if (result.empty())
-			result = "UNKNOWN";
-		else
-			// remove last ", "
-			result.erase(result.size() - 2);
-
-		return result;
 	}
 
-	VkPipelineLayout CTX::buildPipelineLayoutFromSignature(const PipelineLayoutSignature& signature) {
-		std::vector<VkDescriptorSetLayout> descriptor_set_layouts = {};
-		descriptor_set_layouts.reserve(signature.sets.size());
-		for (const DescriptorSetSignature& setSignature : signature.sets) {
+	LayoutBuildResult CTX::buildDescriptorResultFromSignature(const PipelineLayoutSignature& pipelineSignature) {
+		LayoutBuildResult result;
+		unsigned int max_set_size = pipelineSignature.setSignatures.size();
+		result.allLayouts.reserve(max_set_size);
+		result.allocatableLayouts.reserve(max_set_size);
+		for (const DescriptorSetSignature& setSignature : pipelineSignature.setSignatures) {
 			if (setSignature.isBindless) {
-				descriptor_set_layouts.push_back(_vkBindlessDSL);
+				result.allLayouts.push_back(_vkBindlessDSL);
 				continue;
 			}
 			const VkDescriptorSetLayoutCreateInfo dsl_ci = {
 					.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
 					.pNext = nullptr,
+					.flags = 0,
 					.bindingCount = static_cast<uint32_t>(setSignature.bindings.size()),
 					.pBindings = setSignature.bindings.data(),
 			};
+
 			VkDescriptorSetLayout descriptor_set_layout = VK_NULL_HANDLE;
 			VK_CHECK(vkCreateDescriptorSetLayout(_vkDevice, &dsl_ci, nullptr, &descriptor_set_layout));
-
-			descriptor_set_layouts.push_back(descriptor_set_layout);
+			ASSERT_MSG(descriptor_set_layout != VK_NULL_HANDLE, "Descriptor Set Layout failed to allocate!");
+			result.allLayouts.push_back(descriptor_set_layout);
+			result.allocatableLayouts.push_back(descriptor_set_layout);
 		}
+		return result;
+	}
 
+	std::vector<VkDescriptorSet> CTX::allocateDescriptorSets(const std::vector<VkDescriptorSetLayout>& layouts) {
+		std::vector<VkDescriptorSet> descriptor_sets;
+		descriptor_sets.reserve(layouts.size());
+		for (VkDescriptorSetLayout layout : layouts) {
+			descriptor_sets.push_back(this->_descriptorAllocator.allocateSet(_vkDevice, layout));
+		}
+		return descriptor_sets;
+	}
+	VkPipelineLayout CTX::buildPipelineLayout(const std::vector<VkDescriptorSetLayout>& layouts, const std::vector<VkPushConstantRange>& ranges) {
 		const VkPipelineLayoutCreateInfo pipeline_layout_info = {
 				.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-				.setLayoutCount = static_cast<uint32_t>(descriptor_set_layouts.size()),
-				.pSetLayouts = descriptor_set_layouts.data(),
-				.pushConstantRangeCount = static_cast<uint32_t>(signature.pushes.size()),
-				.pPushConstantRanges =  signature.pushes.data(),
+				.setLayoutCount = static_cast<uint32_t>(layouts.size()),
+				.pSetLayouts = layouts.data(),
+				.pushConstantRangeCount = static_cast<uint32_t>(ranges.size()),
+				.pPushConstantRanges =  ranges.data(),
 		};
 		VkPipelineLayout plLayout = VK_NULL_HANDLE;
 		VK_CHECK(vkCreatePipelineLayout(_vkDevice, &pipeline_layout_info, nullptr, &plLayout));
 		return plLayout;
 	}
 
-	std::vector<VkDescriptorSet> CTX::buildDescriptorSetsFromSignature(const PipelineLayoutSignature& signature) {
-		std::vector<VkDescriptorSetLayout> descriptor_set_layouts = {};
-		descriptor_set_layouts.reserve(signature.sets.size());
-		for (const DescriptorSetSignature& setSignature : signature.sets) {
-			if (setSignature.isBindless) {
-				continue;
-			}
-			const VkDescriptorSetLayoutCreateInfo dsl_ci = {
-					.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-					.pNext = nullptr,
-					.bindingCount = static_cast<uint32_t>(setSignature.bindings.size()),
-					.pBindings = setSignature.bindings.data(),
-			};
-			VkDescriptorSetLayout descriptor_set_layout = VK_NULL_HANDLE;
-			VK_CHECK(vkCreateDescriptorSetLayout(_vkDevice, &dsl_ci, nullptr, &descriptor_set_layout));
-
-			descriptor_set_layouts.push_back(descriptor_set_layout);
-		}
-
-		// allocate dsets
-		std::vector<VkDescriptorSet> descriptor_sets;
-		descriptor_sets.resize(descriptor_set_layouts.size());
-		for (int i = 0; i < descriptor_set_layouts.size(); i++) {
-			descriptor_sets[i] = this->_descriptorAllocator.allocateSet(_vkDevice, descriptor_set_layouts[i]);
-		}
-		for (VkDescriptorSetLayout& layout : descriptor_set_layouts) {
-			vkDestroyDescriptorSetLayout(_vkDevice, layout, nullptr);
-		}
-		return descriptor_sets;
-	}
-
-
-	void DescriptorWriter::write_buffer(int binding, VkBuffer buffer, size_t size, size_t offset, VkDescriptorType type) {
-		VkDescriptorBufferInfo& info = bufferInfos.emplace_back(VkDescriptorBufferInfo{
-				.buffer = buffer,
-				.offset = offset,
-				.range = size
-		});
-
-		VkWriteDescriptorSet write = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-
-		write.dstBinding = binding;
-		write.dstSet = VK_NULL_HANDLE; //left empty for now until we need to write it
-		write.descriptorCount = 1;
-		write.descriptorType = type;
-		write.pBufferInfo = &info;
-
-		writes.push_back(write);
-	}
-	void DescriptorWriter::write_image(int binding,VkImageView image, VkSampler sampler,  VkImageLayout layout, VkDescriptorType type) {
-		VkDescriptorImageInfo& info = imageInfos.emplace_back(VkDescriptorImageInfo{
-				.sampler = sampler,
-				.imageView = image,
-				.imageLayout = layout
-		});
-		VkWriteDescriptorSet write = { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
-
-		write.dstBinding = binding;
-		write.dstSet = VK_NULL_HANDLE; //left empty for now until we need to write it
-		write.descriptorCount = 1;
-		write.descriptorType = type;
-		write.pImageInfo = &info;
-
-		writes.push_back(write);
-	}
-	void DescriptorWriter::clear() {
-		imageInfos.clear();
-		writes.clear();
-		bufferInfos.clear();
-	}
-
-	void DescriptorWriter::update_set(VkDevice device, VkDescriptorSet set) {
-		for (VkWriteDescriptorSet& write : writes) {
-			write.dstSet = set;
-		}
-		vkUpdateDescriptorSets(device, (uint32_t)writes.size(), writes.data(), 0, nullptr);
-	}
-
 	PipelineLayoutSignature MergeSignatures(const std::vector<PipelineLayoutSignature>& pipelineSignatures) {
 		// the signature that will be returned
 		PipelineLayoutSignature out;
-		// 1. merge descriptor set func
 		std::unordered_map<uint32_t, DescriptorSetSignature> setMap;
 
-		// apply merge func to every descriptor_set by reference
 		for (const PipelineLayoutSignature& sig : pipelineSignatures) {
-			for (const DescriptorSetSignature& src : sig.sets) {
+			for (const DescriptorSetSignature& src : sig.setSignatures) {
 				auto& dst = setMap[src.setIndex];
+
 				// initialize once
 				if (dst.bindings.empty() && !dst.isBindless) {
 					dst.setIndex = src.setIndex;
 					dst.isBindless = src.isBindless;
+					dst.nameToBinding = src.nameToBinding;
+				} else {
+					for (const auto& [name, binding] : src.nameToBinding) {
+						if (dst.nameToBinding.find(name) == dst.nameToBinding.end()) {
+							dst.nameToBinding[name] = binding;
+						}
+					}
 				}
 				// if any other set is marked bindless
 				dst.isBindless = dst.isBindless || src.isBindless;
+
 				// merge bindings
 				std::unordered_map<uint32_t, size_t> bindingIndexMap;
 				bindingIndexMap.reserve(dst.bindings.size());
 				for (size_t i = 0; i < dst.bindings.size(); ++i) {
 					bindingIndexMap[dst.bindings[i].binding] = i;
 				}
-
-				for (const auto& bnd : src.bindings) {
+				for (const VkDescriptorSetLayoutBinding& bnd : src.bindings) {
 					auto it = bindingIndexMap.find(bnd.binding);
 					if (it != bindingIndexMap.end()) {
 						auto& existing = dst.bindings[it->second];
-						// merge stageFlags
 						existing.stageFlags |= bnd.stageFlags;
-						// descriptorType & descriptorCount must match
 						ASSERT_MSG(existing.descriptorType == bnd.descriptorType,
 								   "Descriptor type mismatch for set={}, binding={}",
 								   src.setIndex, bnd.binding);
@@ -664,17 +601,16 @@ namespace mythril {
 				}
 			}
 		}
-
 		// sort merged sets by index
-		out.sets.reserve(setMap.size());
+		out.setSignatures.reserve(setMap.size());
 		for (auto& [index, sig] : setMap) {
 			// sort bindings by binding index
 			std::sort(sig.bindings.begin(), sig.bindings.end(),
 					  [](const auto& x, const auto& y) { return x.binding < y.binding; });
-			out.sets.push_back(std::move(sig));
+			out.setSignatures.push_back(std::move(sig));
 		}
 
-		std::sort(out.sets.begin(), out.sets.end(),
+		std::sort(out.setSignatures.begin(), out.setSignatures.end(),
 				  [](const auto& a, const auto& b) { return a.setIndex < b.setIndex; });
 
 		// 2. merge push constant func
@@ -712,6 +648,9 @@ namespace mythril {
 			LOG_SYSTEM(LogType::Warning, "Graphics pipeline does not exist, use a valid handle!");
 			return VK_NULL_HANDLE;
 		}
+
+		checkAndUpdateBindlessDescriptorSetImpl();
+
 		// updating descriptor layout //
 //		if (graphics_pipeline->_vkLastDescriptorSetLayout != _vkBindlessDSL) {
 //			deferTask(std::packaged_task<void()>([device = _vkDevice, pipeline = graphics_pipeline->_vkPipeline]() {
@@ -745,7 +684,7 @@ namespace mythril {
 		const PassCompiled& current_pass_info = _currentCommandBuffer._activePass;
 		std::vector<VkFormat> colorFormats;
 		colorFormats.reserve(current_pass_info.colorAttachments.size());
-		for (auto& colorAttachment : current_pass_info.colorAttachments) {
+		for (const auto& colorAttachment : current_pass_info.colorAttachments) {
 			colorFormats.push_back(colorAttachment.imageFormat);
 		}
 		builder.set_color_formats(colorFormats);
@@ -762,7 +701,7 @@ namespace mythril {
 			}
 			Shader* shader = _shaderPool.get(vertStage.handle);
 			builder.add_shader_module(shader->vkShaderModule, VK_SHADER_STAGE_VERTEX_BIT, vertStage.entryPoint);
-			pipeline_layout_signatures.push_back(shader->_plSignature);
+			pipeline_layout_signatures.push_back(shader->_pipelineSignature);
 		}
 		ShaderStage& fragStage = spec.fragmentShader;
 		if (fragStage.valid()) {
@@ -771,7 +710,7 @@ namespace mythril {
 			}
 			Shader* shader = _shaderPool.get(fragStage.handle);
 			builder.add_shader_module(shader->vkShaderModule, VK_SHADER_STAGE_FRAGMENT_BIT, fragStage.entryPoint);
-			pipeline_layout_signatures.push_back(shader->_plSignature);
+			pipeline_layout_signatures.push_back(shader->_pipelineSignature);
 		}
 		ShaderStage& geometryStage = spec.geometryShader;
 		if (geometryStage.valid()) {
@@ -780,16 +719,20 @@ namespace mythril {
 			}
 			Shader* shader = _shaderPool.get(geometryStage.handle);
 			builder.add_shader_module(shader->vkShaderModule, VK_SHADER_STAGE_GEOMETRY_BIT, geometryStage.entryPoint);
-			pipeline_layout_signatures.push_back(shader->_plSignature);
+			pipeline_layout_signatures.push_back(shader->_pipelineSignature);
 		}
 
 		PipelineLayoutSignature pl_signature = MergeSignatures(pipeline_layout_signatures);
 
-		VkPipelineLayout pipeline_layout = this->buildPipelineLayoutFromSignature(pl_signature);
+		LayoutBuildResult result = buildDescriptorResultFromSignature(pl_signature);
+		VkPipelineLayout vk_pipeline_layout = buildPipelineLayout(result.allLayouts, pl_signature.pushes);
+		std::vector<VkDescriptorSet> vk_descriptor_sets = allocateDescriptorSets(result.allocatableLayouts);
+
+		graphics_pipeline->_vkDescriptorSets = std::move(vk_descriptor_sets);
+
 		graphics_pipeline->signature = pl_signature;
-		graphics_pipeline->_dSets = this->buildDescriptorSetsFromSignature(pl_signature);
-		graphics_pipeline->_vkPipeline = builder.build(_vkDevice, pipeline_layout);
-		graphics_pipeline->_vkPipelineLayout = pipeline_layout;
+		graphics_pipeline->_vkPipeline = builder.build(_vkDevice, vk_pipeline_layout);
+		graphics_pipeline->_vkPipelineLayout = vk_pipeline_layout;
 
 		return graphics_pipeline;
 	}
@@ -797,7 +740,7 @@ namespace mythril {
 	VkDescriptorPool DescriptorAllocatorGrowable::createPoolImpl(VkDevice device, uint32_t setCount, std::span<PoolSizeRatio> poolRatios) {
 		std::vector<VkDescriptorPoolSize> pool_sizes;
 		pool_sizes.reserve(this->_ratios.size());
-		for (auto& ratio : this->_ratios) {
+		for (const PoolSizeRatio& ratio : poolRatios) {
 			pool_sizes.push_back(VkDescriptorPoolSize{
 					.type = ratio.type,
 					.descriptorCount = static_cast<uint32_t>(ratio.ratio * (float)setCount)
@@ -1257,19 +1200,20 @@ namespace mythril {
 		if (!_slangCompiler.sessionExists()) {
 			_slangCompiler.create();
 		}
-		CompileResult result = _slangCompiler.compileFile(spec.filePath);
+		CompileResult compile_result = _slangCompiler.compileFile(spec.filePath);
 		// TODO: this is some of the worst code i have ever written in my life, i am so sorry future me who will come back here and have to clean it
 		Shader obj;
 		// _debugName
 		snprintf(obj._debugName, sizeof(obj._debugName) - 1, "%s", spec.debugName);
 
-		obj._plSignature = ReflectSPIRV(result.getSpirvCode(), result.getSpirvSize());
+		ReflectionResult reflection_result = ReflectSPIRV(compile_result.getSpirvCode(), compile_result.getSpirvSize());
+		obj._pipelineSignature = reflection_result.pipelineLayoutSignature;
 
 		// _vkShaderModule
 		VkShaderModuleCreateInfo create_info = { .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO, .pNext = nullptr };
 		create_info.flags = 0;
-		create_info.pCode = result.getSpirvCode();
-		create_info.codeSize = result.getSpirvSize();
+		create_info.pCode = compile_result.getSpirvCode();
+		create_info.codeSize = compile_result.getSpirvSize();
 		VkShaderModule shaderModule = VK_NULL_HANDLE;
 		// after vkCreateShaderModule we no longer need CompileResult btw
 		VK_CHECK(vkCreateShaderModule(_vkDevice, &create_info, nullptr, &shaderModule));
@@ -1450,22 +1394,17 @@ namespace mythril {
 		deferTask(std::packaged_task<void()>([device = _vkDevice, module = shader->vkShaderModule]() {
 			vkDestroyShaderModule(device, module, nullptr);
 		}));
-//		deferTask(std::packaged_task<void()>([device = _vkDevice, dss = shader->vkDSLs]() {
-//			for (auto ds : dss) {
-//				vkFreeDescriptorSets(device, ds, nullptr);
-//			}
-//		}));
 		_shaderPool.destroy(handle);
 	}
 	void CTX::destroy(InternalGraphicsPipelineHandle handle) {
-		GraphicsPipeline* rps = _graphicsPipelinePool.get(handle);
-		if (!rps) {
+		GraphicsPipeline* graphics_pipeline = _graphicsPipelinePool.get(handle);
+		if (!graphics_pipeline) {
 			return;
 		}
-		deferTask(std::packaged_task<void()>([device = _vkDevice, pipeline = rps->_vkPipeline]() {
+		deferTask(std::packaged_task<void()>([device = _vkDevice, pipeline = graphics_pipeline->_vkPipeline]() {
 			vkDestroyPipeline(device, pipeline, nullptr);
 		}));
-		deferTask(std::packaged_task<void()>([device = _vkDevice, layout = rps->_vkPipelineLayout]() {
+		deferTask(std::packaged_task<void()>([device = _vkDevice, layout = graphics_pipeline->_vkPipelineLayout]() {
 			vkDestroyPipelineLayout(device, layout, nullptr);
 		}));
 		_graphicsPipelinePool.destroy(handle);
