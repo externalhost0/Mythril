@@ -102,12 +102,17 @@ namespace mythril {
 			uint32_t descriptorCount;
 			VkDescriptorType descriptorType;
 		};
+		// these in a vector should be ordered according to their set index anyway
+		struct DescriptorSetInfo {
+			uint32_t setIndex;
+			std::vector<DescriptorBindingInfo> bindingInfos;
+		};
 		struct PushConstantInfo : IParameterInfo {
 			uint32_t offset;
 			uint32_t size;
 		};
 
-		const std::vector<DescriptorBindingInfo>& viewDescriptorBindings() const { return _parameterBlocks; };
+		const std::vector<DescriptorSetInfo>& viewDescriptorSets() const { return _descriptorSets; };
 		const std::vector<PushConstantInfo>& viewPushConstants() const { return _pushConstants; }
 		const PipelineLayoutSignature& getPipelineLayoutSignature() const { return _pipelineSignature; }
 		std::string_view getnamefordebugpurpose() const { return _debugName; }
@@ -115,8 +120,8 @@ namespace mythril {
 		// a shader defines not only the module obviously, but a pipelineLayout
 		VkShaderModule vkShaderModule;
 
-		// everything below can be quired by user, not necessary for renderer
-		std::vector<DescriptorBindingInfo> _parameterBlocks;
+		// everything below can be quired by user, not used by Mythril at all
+		std::vector<DescriptorSetInfo> _descriptorSets;
 		std::vector<PushConstantInfo> _pushConstants;
 
 		PipelineLayoutSignature _pipelineSignature;
@@ -131,7 +136,7 @@ namespace mythril {
 	struct ReflectionResult {
 		PipelineLayoutSignature pipelineLayoutSignature;
 		// optional information for user-created reflection systems
-		std::vector<Shader::DescriptorBindingInfo> retrievedDescriptors;
+		std::vector<Shader::DescriptorSetInfo> retrievedDescriptorSets;
 		std::vector<Shader::PushConstantInfo> retrivedPushConstants;
 	};
 

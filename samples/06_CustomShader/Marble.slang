@@ -25,9 +25,7 @@ struct v2f {
 
 // our parameters
 // i honestly dont think you ever need more than 2 user defined sets
-// [[vk::binding(0, 1)]]
 ParameterBlock<GlobalData> perFrame;
-// [[vk::binding(0, 2)]]
 ParameterBlock<MaterialData> perMaterial;
 
 [vk::push_constant]

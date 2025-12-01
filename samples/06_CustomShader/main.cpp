@@ -306,44 +306,39 @@ void DrawFieldInfoRecursive(const std::vector<mythril::FieldInfo>& fields) {
 	}
 }
 void DrawShaderInfo(const mythril::Shader& shader) {
-	char buf[128];
+	char title_buf[128];
 	const char* windowName = "Shader Inspector";
-	snprintf(buf, sizeof(buf), "%s - %s", windowName, shader.getnamefordebugpurpose().data());
-	if (ImGui::Begin(buf)) {
+	snprintf(title_buf, sizeof(title_buf), "%s - %s", windowName, shader.getnamefordebugpurpose().data());
+	if (ImGui::Begin(title_buf)) {
 		ImGui::PushID(&shader);
 
-		// shader module info
-		if (ImGui::CollapsingHeader("Pipeline Information", ImGuiTreeNodeFlags_DefaultOpen)) {
-//			ImGui::Text("Shader Module: 0x%llx", (uint64_t) shader.vkShaderModule);
-//			ImGui::Text("Pipeline Layout: 0x%llx", (uint64_t) shader.vkPipelineLayout);
-			ImGui::Separator();
-		}
-
 		// binding parameters
-		const auto& params = shader.viewDescriptorBindings();
+		const auto& descriptor_set_infos = shader.viewDescriptorSets();
 		if (ImGui::CollapsingHeader("Bound Sets", ImGuiTreeNodeFlags_DefaultOpen)) {
-			ImGui::Text("Total Sets: %zu", params.size());
+			ImGui::Text("Total Sets: %zu", descriptor_set_infos.size());
 			ImGui::Separator();
 
-			for (size_t i = 0; i < params.size(); i++) {
-				const auto& paramater = params[i];
+			for (const mythril::Shader::DescriptorSetInfo& setInfo : descriptor_set_infos) {
+				char set_buf[64];
+				snprintf(set_buf, sizeof(set_buf), "Set %u", setInfo.setIndex);
+				if (ImGui::TreeNode(set_buf)) {
+					for (const mythril::Shader::DescriptorBindingInfo& bindingInfo : setInfo.bindingInfos) {
+						ImGui::Text("Variable Name: %s", bindingInfo.varName.c_str());
+						ImGui::Text("Type Name: %s", bindingInfo.typeName.c_str());
+						ImGui::Text("Set Index: %u", bindingInfo.setIndex);
+						ImGui::Text("Binding Index: %u", bindingInfo.bindingIndex);
+						ImGui::Text("Descriptor Count: %u", bindingInfo.descriptorCount);
+						ImGui::Text("Descriptor Type: %s", mythril::VkDescriptorTypeToString(bindingInfo.descriptorType));
+						ImGui::Text("Used Stages: %s", mythril::VkShaderStageToString(bindingInfo.usedStages).c_str());
 
-				std::string label = "Set " + std::to_string(i) + ": \"" + paramater.varName + "\"";
-				if (ImGui::TreeNode(label.c_str())) {
-					ImGui::Text("Variable Name: %s", paramater.varName.c_str());
-					ImGui::Text("Type Name: %s", paramater.typeName.c_str());
-					ImGui::Text("Set Index: %u", paramater.setIndex);
-					ImGui::Text("Binding Index: %u", paramater.bindingIndex);
-					ImGui::Text("Descriptor Count: %u", paramater.descriptorCount);
-					ImGui::Text("Descriptor Type: %s", mythril::VkDescriptorTypeToString(paramater.descriptorType));
-					ImGui::Text("Used Stages: %s", mythril::VkShaderStageToString(paramater.usedStages).c_str());
+						// fields
+						if (!bindingInfo.fields.empty()) {
+							ImGui::Separator();
+							DrawFieldInfoRecursive(bindingInfo.fields);
+						}
+						ImGui::TreePop();
 
-					// fields
-					if (!paramater.fields.empty()) {
-						ImGui::Separator();
-						DrawFieldInfoRecursive(paramater.fields);
 					}
-					ImGui::TreePop();
 				}
 			}
 		}
@@ -356,9 +351,9 @@ void DrawShaderInfo(const mythril::Shader& shader) {
 
 			for (size_t i = 0; i < pushConstants.size(); i++) {
 				const mythril::Shader::PushConstantInfo& pc = pushConstants[i];
-
-				std::string label = "Push Constant " + std::to_string(i) + ": \"" + pc.varName + "\"";
-				if (ImGui::TreeNode(label.c_str())) {
+				char push_buf[128];
+				snprintf(push_buf, sizeof(push_buf), "Push Constant %zu : \"%s\"", i, pc.varName.c_str());
+				if (ImGui::TreeNode(push_buf)) {
 					ImGui::Text("Variable Name: %s", pc.varName.c_str());
 					ImGui::Text("Type Name: %s", pc.typeName.c_str());
 					ImGui::Text("Offset: %u", pc.offset);
@@ -640,17 +635,19 @@ int main() {
 		}
 
 		// mandatory for resizeability
+		// or else your presentation will break
 		if (ctx->isSwapchainDirty()) {
 			ctx->cleanSwapchain();
 
 			const mythril::Window& window = ctx->getWindow();
 			// get framebuffer size for correct resolution, not windowsize which might not scale to your monitor dpi correctly
-			extent2D = window.getFramebufferSize();
-			ctx->resizeTexture(colorTarget, extent2D);
-			ctx->resizeTexture(depthTarget, extent2D);
-			ctx->resizeTexture(postColorTarget, extent2D);
-			ctx->resizeTexture(emissiveTarget, extent2D);
-			ctx->resizeTexture(horizBlurredTarget, extent2D);
+			VkExtent2D new_extent_2d = window.getFramebufferSize();
+			ctx->resizeTexture(colorTarget, new_extent_2d);
+			ctx->resizeTexture(depthTarget, new_extent_2d);
+			ctx->resizeTexture(postColorTarget, new_extent_2d);
+			ctx->resizeTexture(emissiveTarget, new_extent_2d);
+			ctx->resizeTexture(horizBlurredTarget, new_extent_2d);
+			// you must recompile your framegraph in order for it to recieve texture changes
 			graph.compile(*ctx);
 		}
 
@@ -678,7 +675,7 @@ int main() {
 
 		std::srand(static_cast<unsigned>(std::time(nullptr)));
 		GPU::ObjectData objects[kNumObjects];
-		for (int i = 0; i < kNumObjects; i++) {
+		for (GPU::ObjectData& object : objects) {
 			glm::vec3 pos = {
 					(std::rand() / (float)RAND_MAX - 0.5f) * 100.0f, // range [-50, 50]
 					(std::rand() / (float)RAND_MAX - 0.5f) * 100.0f,
@@ -690,7 +687,7 @@ int main() {
 					std::rand() / (float)RAND_MAX,
 					std::rand() / (float)RAND_MAX
 			};
-			objects[i] = { pos, color };
+			object = { pos, color };
 		}
 
 

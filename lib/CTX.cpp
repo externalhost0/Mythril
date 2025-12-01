@@ -1220,8 +1220,8 @@ namespace mythril {
 
 		ReflectionResult reflection_result = ReflectSPIRV(compile_result.getSpirvCode(), compile_result.getSpirvSize());
 		obj._pipelineSignature = reflection_result.pipelineLayoutSignature;
+		obj._descriptorSets = std::move(reflection_result.retrievedDescriptorSets);
 		obj._pushConstants = std::move(reflection_result.retrivedPushConstants);
-		obj._parameterBlocks = std::move(reflection_result.retrievedDescriptors);
 
 		// _vkShaderModule
 		VkShaderModuleCreateInfo create_info = { .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO, .pNext = nullptr };

@@ -567,7 +567,9 @@ namespace mythril {
 			fields.push_back(field);
 		}
 	}
-	void GatherDescriptorInformation(Shader::DescriptorBindingInfo& info, const SpvReflectDescriptorBinding& descriptorBind) {
+
+
+	void GatherDescriptorBindingInformation(Shader::DescriptorBindingInfo& info, const SpvReflectDescriptorBinding& descriptorBind) {
 		// alias top level type
 		const SpvReflectTypeDescription& blockType = *descriptorBind.type_description;
 		// descriptor info
@@ -581,6 +583,16 @@ namespace mythril {
 
 		CollectFieldsRecursively(info.fields, descriptorBind.block);
 	}
+	void GatherDescriptorSetInformation(Shader::DescriptorSetInfo& info, const SpvReflectDescriptorSet& descriptorSet) {
+		info.setIndex = descriptorSet.set;
+		info.bindingInfos.reserve(descriptorSet.binding_count);
+		for (int i = 0; i < descriptorSet.binding_count; i++) {
+			Shader::DescriptorBindingInfo binding_info = {};
+			GatherDescriptorBindingInformation(binding_info, *descriptorSet.bindings[i]);
+			info.bindingInfos.push_back(binding_info);
+		}
+	}
+
 	void GatherPushConstantInformation(Shader::PushConstantInfo& info, const SpvReflectBlockVariable& blockVar) {
 		// alias top level type
 		const SpvReflectTypeDescription& blockType = *blockVar.type_description;
@@ -593,68 +605,62 @@ namespace mythril {
 		CollectFieldsRecursively(info.fields, blockVar);
 	}
 
-	void collectFieldsRecursivelyEXT(std::vector<FieldInfo>& fields, slang::TypeLayoutReflection* typeLayout) {
-		unsigned int fieldCount = typeLayout->getFieldCount();
-		for (unsigned int i = 0; i < fieldCount; ++i) {
-			auto fieldVariableLayout = typeLayout->getFieldByIndex(i);
-			auto fieldTypeLayout = fieldVariableLayout->getTypeLayout();
-
-			FieldInfo field;
-			field.varName = fieldVariableLayout->getName();
-			field.typeName = fieldTypeLayout->getName();
-			field.kind = getFieldKind(fieldTypeLayout);
-			field.scalarKind = getScalarType(fieldTypeLayout);
-			field.size = fieldTypeLayout->getSize();
-			field.offset = fieldVariableLayout->getOffset();
-
-			// must be take from variableReflection
-			// TODO: remove me before merge
-			if (const char* string = fieldVariableLayout->getVariable()->getUserAttributeByIndex(0)->getName()) {
-				int hasMark = strcmp(string, "MarkHandle");
-				if (hasMark == 0) {
-					int val;
-					fieldVariableLayout->getVariable()->getUserAttributeByIndex(0)->getArgumentValueInt(0, &val);
-					field.opaqueKind = (OpaqueKind)val;
-					field.kind = FieldKind::OpaqueHandle;
-					field.scalarKind = ScalarKind::None;
-					field.typeName = "OpaqueHandle";
-				}
-			}
-
-			auto type = fieldTypeLayout->getType();
-
-			// special cases of fields that need more data
-			switch (field.kind) {
-				case FieldKind::Vector: {
-					field.componentCount = type->getElementCount();
-				} break;
-				case FieldKind::Matrix: {
-					field.rowCount = type->getRowCount();
-					field.columnCount = type->getColumnCount();
-				} break;
-				case FieldKind::Array: {
-					field.componentCount = type->getElementCount();  // Array size
-					// Recursively collect the array element type
-					auto elementTypeLayout = fieldTypeLayout->getElementTypeLayout();
-					if (elementTypeLayout && elementTypeLayout->getFieldCount() > 0) {
-						collectFieldsRecursivelyEXT(field.fields, elementTypeLayout);
-					}
-				} break;
-				case FieldKind::Struct: {
-					collectFieldsRecursivelyEXT(field.fields, fieldTypeLayout);
-				} break;
-				default:
-					LOG_DEBUG("Unaccounted field of kind '{}', type '{}', named '{}'", FieldKindToString(field.kind), field.typeName, field.varName);
-			}
-			fields.push_back(field);
-		}
-	}
-
-	typedef slang::TypeReflection SlangType;
-	typedef slang::VariableReflection SlangVariable;
-	typedef slang::TypeLayoutReflection SlangTypeLayout;
-	typedef slang::VariableLayoutReflection SlangVariableLayout;
-
+//	void collectFieldsRecursivelyEXT(std::vector<FieldInfo>& fields, slang::TypeLayoutReflection* typeLayout) {
+//		unsigned int fieldCount = typeLayout->getFieldCount();
+//		for (unsigned int i = 0; i < fieldCount; ++i) {
+//			auto fieldVariableLayout = typeLayout->getFieldByIndex(i);
+//			auto fieldTypeLayout = fieldVariableLayout->getTypeLayout();
+//
+//			FieldInfo field;
+//			field.varName = fieldVariableLayout->getName();
+//			field.typeName = fieldTypeLayout->getName();
+//			field.kind = getFieldKind(fieldTypeLayout);
+//			field.scalarKind = getScalarType(fieldTypeLayout);
+//			field.size = fieldTypeLayout->getSize();
+//			field.offset = fieldVariableLayout->getOffset();
+//
+//			// must be take from variableReflection
+//			// TODO: remove me before merge
+//			if (const char* string = fieldVariableLayout->getVariable()->getUserAttributeByIndex(0)->getName()) {
+//				int hasMark = strcmp(string, "MarkHandle");
+//				if (hasMark == 0) {
+//					int val;
+//					fieldVariableLayout->getVariable()->getUserAttributeByIndex(0)->getArgumentValueInt(0, &val);
+//					field.opaqueKind = (OpaqueKind)val;
+//					field.kind = FieldKind::OpaqueHandle;
+//					field.scalarKind = ScalarKind::None;
+//					field.typeName = "OpaqueHandle";
+//				}
+//			}
+//
+//			auto type = fieldTypeLayout->getType();
+//
+//			// special cases of fields that need more data
+//			switch (field.kind) {
+//				case FieldKind::Vector: {
+//					field.componentCount = type->getElementCount();
+//				} break;
+//				case FieldKind::Matrix: {
+//					field.rowCount = type->getRowCount();
+//					field.columnCount = type->getColumnCount();
+//				} break;
+//				case FieldKind::Array: {
+//					field.componentCount = type->getElementCount();  // Array size
+//					// Recursively collect the array element type
+//					auto elementTypeLayout = fieldTypeLayout->getElementTypeLayout();
+//					if (elementTypeLayout && elementTypeLayout->getFieldCount() > 0) {
+//						collectFieldsRecursivelyEXT(field.fields, elementTypeLayout);
+//					}
+//				} break;
+//				case FieldKind::Struct: {
+//					collectFieldsRecursivelyEXT(field.fields, fieldTypeLayout);
+//				} break;
+//				default:
+//					LOG_DEBUG("Unaccounted field of kind '{}', type '{}', named '{}'", FieldKindToString(field.kind), field.typeName, field.varName);
+//			}
+//			fields.push_back(field);
+//		}
+//	}
 
 	ReflectionResult ReflectSPIRV(const uint32_t* code, size_t size) {
 		SpvReflectShaderModule spirv_module = {};
@@ -672,6 +678,7 @@ namespace mythril {
 		// begin collecting information for the result here
 		ReflectionResult result = {};
 		result.pipelineLayoutSignature.setSignatures.resize(sets.size());
+		result.retrievedDescriptorSets.reserve(sets.size()); // this reserves +1 when bindless exists
 
 		// collect descriptor sets info
 		// lets make every shader own its descriptor sets even if they are duplicated, optimize later with a pool of a sort whe signatures match
@@ -683,11 +690,18 @@ namespace mythril {
 			set_signature.isBindless = false;
 			set_signature.setIndex = reflected_set->set;
 			set_signature.bindings.reserve(reflected_set->binding_count);
+
+			// for bonus reflection, as done in push constants aswell
+			// filled in later by each binding, must be done as we move across bindings in order to avoid bindless descriptor
+			Shader::DescriptorSetInfo set_info = {};
+			set_info.setIndex = reflected_set->set;
+
 			// now move through all the descriptor bindings in the set
 			for (unsigned int j_binding = 0; j_binding < reflected_set->binding_count; j_binding++) {
 				// get a binding from the set
 				const SpvReflectDescriptorBinding* reflected_binding = reflected_set->bindings[j_binding];
 				auto vk_descriptor_type = static_cast<VkDescriptorType>(reflected_binding->descriptor_type);
+
 				// resolve custom bindless status
 				if (strcmp(reflected_binding->name, "__slang_resource_heap") == 0) {
 					set_signature.isBindless = true;
@@ -695,7 +709,8 @@ namespace mythril {
 				}
 				ASSERT_MSG(
 						vk_descriptor_type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER ||
-						vk_descriptor_type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, "Descriptor binding type not currently supported!");
+						vk_descriptor_type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+						"VkDescriptorType '{}' not currently supported!", VulkanDescriptorTypeToString(vk_descriptor_type));
 
 				// fill in the vk struct
 				VkDescriptorSetLayoutBinding vkds_layout_binding = {};
@@ -709,13 +724,14 @@ namespace mythril {
 				// this is for lookup when updating
 				set_signature.nameToBinding[reflected_binding->name] = reflected_binding->binding;
 
-				// this is bonus information, only used by end user
-				Shader::DescriptorBindingInfo descriptorInfo = {};
-				GatherDescriptorInformation(descriptorInfo, *reflected_binding);
-				result.retrievedDescriptors.push_back(std::move(descriptorInfo));
+				// bonus information for user
+				Shader::DescriptorBindingInfo binding_info = {};
+				GatherDescriptorBindingInformation(binding_info, *reflected_binding);
+				set_info.bindingInfos.push_back(binding_info);
 
 				set_signature.bindings.push_back(vkds_layout_binding);
 			}
+			if (!set_info.bindingInfos.empty()) result.retrievedDescriptorSets.push_back(set_info);
 		}
 
 		// collect push constant info
