@@ -10,12 +10,17 @@
 
 namespace mythril {
 	void SlangCompiler::create() {
+		if (this->_sessionExists)
+			return;
 		createSessionImpl();
 		_sessionExists = true;
 	}
 	void SlangCompiler::destroy() {
+		if (!this->_sessionExists)
+			return;
 		_slangSession.detach();
 		_globalSlangSession.detach();
+		_sessionExists = false;
 	}
 
 	void SlangCompiler::addSearchPath(const std::filesystem::path& searchPath) {
@@ -34,7 +39,7 @@ namespace mythril {
 				.profile = this->_globalSlangSession->findProfile("spirv_1_6+vulkan_1_4")
 		};
 		// by default emits spirv
-		std::array<slang::CompilerOptionEntry, 6> entries = {
+		std::array<slang::CompilerOptionEntry, 5> entries = {
 				slang::CompilerOptionEntry{
 						.name = slang::CompilerOptionName::VulkanUseEntryPointName,
 						.value = {
@@ -56,13 +61,13 @@ namespace mythril {
 								.intValue0 = true
 						}
 				},
-				slang::CompilerOptionEntry{
-						.name = slang::CompilerOptionName::Capability,
-						.value = {
-								.kind = slang::CompilerOptionValueKind::String,
-								.stringValue0 = "vk_mem_model"
-						}
-				},
+//				slang::CompilerOptionEntry{
+//						.name = slang::CompilerOptionName::Capability,
+//						.value = {
+//								.kind = slang::CompilerOptionValueKind::String,
+//								.stringValue0 = "vk_mem_model"
+//						}
+//				},
 				slang::CompilerOptionEntry{
 					.name = slang::CompilerOptionName::DebugInformation,
 					.value = {

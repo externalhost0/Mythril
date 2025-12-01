@@ -15,8 +15,7 @@ namespace mythril {
 	struct CompileResult {
 		const uint32_t* getSpirvCode() const { return reinterpret_cast<const uint32_t*>(_spirvBlob->getBufferPointer()); };
 		size_t getSpirvSize() const { return _spirvBlob->getBufferSize(); };
-
-//		slang::ProgramLayout* getReflectionInformation() { return _programLayout; }
+		slang::ProgramLayout* getSlangProgramLayout() { return _programLayout; }
 
 		explicit operator bool() const { return success; }
 	private:

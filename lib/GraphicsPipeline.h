@@ -86,13 +86,20 @@ namespace mythril {
 		friend class CTX;
 		friend class CommandBuffer;
 	};
+
 	class GraphicsPipeline : public IPipeline {
 	public:
 
 	private:
 		GraphicsPipelineSpec _spec;
 		PipelineLayoutSignature signature;
-		std::vector<VkDescriptorSet> _vkDescriptorSets;
+
+		struct ManagedDescriptorSet {
+			VkDescriptorSet vkDescriptorSet = VK_NULL_HANDLE;
+			VkDescriptorSetLayout vkDescriptorSetLayout = VK_NULL_HANDLE;
+		};
+		std::vector<ManagedDescriptorSet> _managedDescriptorSets;
+		std::vector<VkDescriptorSet> _vkBindableDescriptorSets;
 
 		friend class CTX;
 		friend class CommandBuffer;

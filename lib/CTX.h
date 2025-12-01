@@ -204,18 +204,6 @@ namespace mythril {
 		InternalGraphicsPipelineHandle createGraphicsPipeline(GraphicsPipelineSpec spec);
 		InternalShaderHandle createShader(ShaderSpec spec);
 
-		// offer two ways to create descriptors
-		InternalDescriptorHandle createDescriptor(InternalShaderHandle handle, const char* bindingName);
-		InternalDescriptorHandle createDescriptor(InternalShaderHandle handle, uint32_t binding, uint32_t set);
-
-		// offers two ways to update
-		void updateDescriptorSets(std::span<const InternalDescriptorHandle> handles);
-		void updateDescriptorSets(std::initializer_list<InternalDescriptorHandle> handles) {
-			this->updateDescriptorSets(std::span<const InternalDescriptorHandle>(handles.begin(), handles.size()));
-		}
-
-		InternalDescriptorSetHandle createDescriptorSet(InternalShaderHandle handle, uint32_t setIndex);
-
 		VkDeviceAddress gpuAddress(InternalBufferHandle handle, size_t offset = 0);
 
 		inline const AllocatedTexture& viewTexture(InternalTextureHandle handle) const {
@@ -272,9 +260,6 @@ namespace mythril {
 
 		void checkAndUpdateBindlessDescriptorSetImpl();
 		void growBindlessDescriptorPoolImpl(uint32_t newMaxSamplerCount, uint32_t newMaxTextureCount);
-
-//		VkPipelineLayout buildPipelineLayoutFromSignature(const PipelineLayoutSignature& signature);
-//		std::vector<VkDescriptorSet> buildDescriptorSetsFromSignature(const PipelineLayoutSignature& signature);
 
 		LayoutBuildResult buildDescriptorResultFromSignature(const PipelineLayoutSignature &pipelineSignature);
 		std::vector<VkDescriptorSet> allocateDescriptorSets(const std::vector<VkDescriptorSetLayout>& layouts);

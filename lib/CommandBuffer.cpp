@@ -141,20 +141,11 @@ namespace mythril {
 		}
 		_lastBoundvkPipeline = pipeline->_vkPipeline;
 		vkCmdBindPipeline(_wrapper->_cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->_vkPipeline);
-
-		// constructs another vector of descriptor sets but with the special bindless set in the correct index
-		std::vector<VkDescriptorSet> vk_descriptor_sets = {};
-		for (int i = 0; i < pipeline->signature.setSignatures.size(); i++) {
-			if (pipeline->signature.setSignatures[i].isBindless) {
-				vk_descriptor_sets.push_back(_ctx->_vkBindlessDSet);
-				continue;
-			}
-			vk_descriptor_sets.push_back(pipeline->_vkDescriptorSets[i]);
-		}
+		if (pipeline->_vkBindableDescriptorSets.empty()) return;
 		vkCmdBindDescriptorSets(_wrapper->_cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->_vkPipelineLayout,
 								0,
-								vk_descriptor_sets.size(),
-								vk_descriptor_sets.data(),
+								pipeline->_vkBindableDescriptorSets.size(),
+								pipeline->_vkBindableDescriptorSets.data(),
 								0,
 								nullptr);
 	}

@@ -52,11 +52,9 @@ namespace mythril {
 		};
 	}
 
-	std::pair<int, int> findBinding() {
-
-	}
-
 	void DescriptorSetWriter::updateBinding(mythril::InternalBufferHandle bufHandle, const char* name) {
+		ASSERT_MSG(this->currentPipeline, "You must call updateBinding within opening and submitting a DescriptorSetWriter!");
+
 		for (size_t i = 0; i < this->currentPipeline->signature.setSignatures.size(); i++) {
 			const DescriptorSetSignature& set_signature = this->currentPipeline->signature.setSignatures[i];
 			auto it = set_signature.nameToBinding.find(name);
@@ -69,11 +67,16 @@ namespace mythril {
 	}
 
 	void DescriptorSetWriter::updateBinding(InternalBufferHandle bufHandle, int set, int binding) {
+		ASSERT_MSG(this->currentPipeline, "You must call updateBinding within opening and submitting a DescriptorSetWriter!");
+
 		ASSERT_MSG(bufHandle.valid(), "Handle must be for a valid buffer object!");
+		AllocatedBuffer* buf = _ctx->_bufferPool.get(bufHandle);
+		ASSERT_MSG(buf->isUniformBuffer(), "Buffer passed to be written to descriptor binding must be uniform, aka uses 'BufferUsageBits_Uniform'!");
+		ASSERT_MSG(buf->_bufferSize > 0, "Buffer size must be greater than 0!");
 
 		const DescriptorSetSignature& set_signature = currentPipeline->signature.setSignatures[set];
-		VkDescriptorSet vkset = currentPipeline->_vkDescriptorSets[set];
-		AllocatedBuffer* buf = _ctx->_bufferPool.get(bufHandle);
+		VkDescriptorSet vkset = currentPipeline->_managedDescriptorSets[set].vkDescriptorSet;
+		ASSERT_MSG(vkset != VK_NULL_HANDLE, "VkDescriptorSet gathered is NULL!");
 		this->writer.writeBuffer(vkset, binding, buf->_vkBuffer, buf->_bufferSize, 0, set_signature.bindings[binding].descriptorType);
 	}
 
@@ -232,7 +235,7 @@ namespace mythril {
 	void CTX::cleanSwapchain() {
 		if (_swapchain->isDirty()) {
 			VkExtent2D res = this->_window.getFramebufferSize();
-			LOG_DEBUG("New Swapchain Extent: {} {}", res.width, res.height);
+			LOG_DEBUG("New Swapchain Extent: {} x {}", res.width, res.height);
 
 			VK_CHECK(vkDeviceWaitIdle(_vkDevice));
 			_swapchain.reset(nullptr);
@@ -499,13 +502,6 @@ namespace mythril {
 		return buf->_vkDeviceAddress + offset;
 	}
 
-	InternalDescriptorHandle CTX::createDescriptor(InternalShaderHandle handle, const char* bindingName) {
-		Shader* shader = _shaderPool.get(handle);
-	}
-	InternalDescriptorHandle CTX::createDescriptor(InternalShaderHandle handle, uint32_t binding, uint32_t set) {
-
-	}
-
 	LayoutBuildResult CTX::buildDescriptorResultFromSignature(const PipelineLayoutSignature& pipelineSignature) {
 		LayoutBuildResult result;
 		unsigned int max_set_size = pipelineSignature.setSignatures.size();
@@ -722,15 +718,31 @@ namespace mythril {
 			pipeline_layout_signatures.push_back(shader->_pipelineSignature);
 		}
 
-		PipelineLayoutSignature pl_signature = MergeSignatures(pipeline_layout_signatures);
+		const PipelineLayoutSignature merged_pl_signature = MergeSignatures(pipeline_layout_signatures);
 
-		LayoutBuildResult result = buildDescriptorResultFromSignature(pl_signature);
-		VkPipelineLayout vk_pipeline_layout = buildPipelineLayout(result.allLayouts, pl_signature.pushes);
-		std::vector<VkDescriptorSet> vk_descriptor_sets = allocateDescriptorSets(result.allocatableLayouts);
+		const LayoutBuildResult result = buildDescriptorResultFromSignature(merged_pl_signature);
+		VkPipelineLayout vk_pipeline_layout = buildPipelineLayout(result.allLayouts, merged_pl_signature.pushes);
+		const std::vector<VkDescriptorSet> vk_descriptor_sets = allocateDescriptorSets(result.allocatableLayouts);
 
-		graphics_pipeline->_vkDescriptorSets = std::move(vk_descriptor_sets);
+		// convert data into the managed stuct
+		unsigned int managed_sets_size = result.allocatableLayouts.size();
+		graphics_pipeline->_managedDescriptorSets.reserve(managed_sets_size);
+		for (int i = 0; i < managed_sets_size; i++) {
+			graphics_pipeline->_managedDescriptorSets.push_back({ vk_descriptor_sets[i], result.allocatableLayouts[i] });
+		}
+		// constructs another vector of descriptor sets but with the special bindless set in the correct index
+		// this vector should ONLY be used by cmdBindPipeline which also calls a vkCmdBindDescriptorSets
+		unsigned int total_sets_size = result.allLayouts.size();
+		graphics_pipeline->_vkBindableDescriptorSets.reserve(total_sets_size);
+		for (int i = 0; i < total_sets_size; i++) {
+			if (merged_pl_signature.setSignatures[i].isBindless) {
+				graphics_pipeline->_vkBindableDescriptorSets.push_back(this->_vkBindlessDSet);
+				continue;
+			}
+			graphics_pipeline->_vkBindableDescriptorSets.push_back(vk_descriptor_sets[i]);
+		}
 
-		graphics_pipeline->signature = pl_signature;
+		graphics_pipeline->signature = merged_pl_signature;
 		graphics_pipeline->_vkPipeline = builder.build(_vkDevice, vk_pipeline_layout);
 		graphics_pipeline->_vkPipelineLayout = vk_pipeline_layout;
 
@@ -1208,6 +1220,8 @@ namespace mythril {
 
 		ReflectionResult reflection_result = ReflectSPIRV(compile_result.getSpirvCode(), compile_result.getSpirvSize());
 		obj._pipelineSignature = reflection_result.pipelineLayoutSignature;
+		obj._pushConstants = std::move(reflection_result.retrivedPushConstants);
+		obj._parameterBlocks = std::move(reflection_result.retrievedDescriptors);
 
 		// _vkShaderModule
 		VkShaderModuleCreateInfo create_info = { .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO, .pNext = nullptr };
@@ -1401,6 +1415,11 @@ namespace mythril {
 		if (!graphics_pipeline) {
 			return;
 		}
+		deferTask(std::packaged_task<void()>([device = _vkDevice, managedlayouts = graphics_pipeline->_managedDescriptorSets]() {
+			for (const auto& managedlayout : managedlayouts) {
+				vkDestroyDescriptorSetLayout(device, managedlayout.vkDescriptorSetLayout, nullptr);
+			}
+		}));
 		deferTask(std::packaged_task<void()>([device = _vkDevice, pipeline = graphics_pipeline->_vkPipeline]() {
 			vkDestroyPipeline(device, pipeline, nullptr);
 		}));

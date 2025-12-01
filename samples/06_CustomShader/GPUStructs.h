@@ -60,6 +60,7 @@ struct MaterialData {
 	float warpIterations;
 	float glowAmount;
 	float distortAmount;
+    uint unint1;
 };
 
 NAMESPACE_END()

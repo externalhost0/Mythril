@@ -15,6 +15,7 @@ namespace mythril {
 		// special cases, can have their own kinds
 		OpaqueHandle,
 		Scalar,
+		Pointer,
 		// ordinary cases
 		Vector,
 		Matrix,
@@ -55,7 +56,7 @@ namespace mythril {
 		std::string typeName;
 		uint32_t size;
 		uint32_t offset;
-		FieldKind fieldKind;
+		FieldKind kind;
 
 		// only valid when FieldKind::Scalar
 		ScalarKind scalarKind;
@@ -74,7 +75,6 @@ namespace mythril {
 	struct IParameterInfo {
 		std::string varName;
 		std::string typeName;
-		std::string completeSlangName;
 		VkShaderStageFlags usedStages;
 		std::vector<FieldInfo> fields;
 	};
@@ -107,7 +107,7 @@ namespace mythril {
 			uint32_t size;
 		};
 
-		const std::vector<DescriptorBindingInfo>& viewParameters() const { return _parameterBlocks; };
+		const std::vector<DescriptorBindingInfo>& viewDescriptorBindings() const { return _parameterBlocks; };
 		const std::vector<PushConstantInfo>& viewPushConstants() const { return _pushConstants; }
 		const PipelineLayoutSignature& getPipelineLayoutSignature() const { return _pipelineSignature; }
 		std::string_view getnamefordebugpurpose() const { return _debugName; }
@@ -130,13 +130,12 @@ namespace mythril {
 
 	struct ReflectionResult {
 		PipelineLayoutSignature pipelineLayoutSignature;
+		// optional information for user-created reflection systems
 		std::vector<Shader::DescriptorBindingInfo> retrievedDescriptors;
 		std::vector<Shader::PushConstantInfo> retrivedPushConstants;
 	};
 
 	ReflectionResult ReflectSPIRV(const uint32_t* code, size_t size);
-
-
 
 	class ShaderTransformer {
 	public:

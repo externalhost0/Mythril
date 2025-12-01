@@ -95,6 +95,8 @@ namespace mythril {
 		switch (kind) {
 			case FieldKind::OpaqueHandle:
 				return "OpaqueHandle";
+			case FieldKind::Pointer:
+				return "Pointer";
 			case FieldKind::Scalar:
 				return "Scalar";
 			case FieldKind::Vector:
@@ -249,88 +251,11 @@ namespace mythril {
 	}
 }
 
-void DrawFieldInfoRecursive(const std::vector<mythril::FieldInfo>& fields);
-
-void DrawShaderInfo(const mythril::Shader& shader) {
-	char buf[128];
-	const char* windowName = "Shader Inspector";
-	snprintf(buf, sizeof(buf), "%s - %s", windowName, shader.getnamefordebugpurpose().data());
-	if (ImGui::Begin(buf)) {
-		ImGui::PushID(&shader);
-
-		// shader module info
-		if (ImGui::CollapsingHeader("Pipeline Information", ImGuiTreeNodeFlags_DefaultOpen)) {
-//			ImGui::Text("Shader Module: 0x%llx", (uint64_t) shader.vkShaderModule);
-//			ImGui::Text("Pipeline Layout: 0x%llx", (uint64_t) shader.vkPipelineLayout);
-			ImGui::Separator();
-		}
-
-		// binding parameters
-		const auto& params = shader.viewParameters();
-		if (ImGui::CollapsingHeader("Bound Sets", ImGuiTreeNodeFlags_DefaultOpen)) {
-			ImGui::Text("Total Sets: %zu", params.size());
-			ImGui::Separator();
-
-			for (size_t i = 0; i < params.size(); i++) {
-				const auto& paramater = params[i];
-
-				std::string label = "Set " + std::to_string(i) + ": " + paramater.varName;
-				if (ImGui::TreeNode(label.c_str())) {
-					ImGui::Text("Variable Name: %s", paramater.varName.c_str());
-					ImGui::Text("Type Name: %s", paramater.typeName.c_str());
-					ImGui::Text("Complete Slang Name: %s", paramater.completeSlangName.c_str());
-					ImGui::Text("Set Index: %u", paramater.setIndex);
-					ImGui::Text("Binding Index: %u", paramater.bindingIndex);
-					ImGui::Text("Descriptor Count: %u", paramater.descriptorCount);
-					ImGui::Text("Descriptor Type: %s", mythril::VkDescriptorTypeToString(paramater.descriptorType));
-					ImGui::Text("Used Stages: %s", mythril::VkShaderStageToString(paramater.usedStages).c_str());
-
-					// fields
-					if (!paramater.fields.empty()) {
-						ImGui::Separator();
-						DrawFieldInfoRecursive(paramater.fields);
-					}
-					ImGui::TreePop();
-				}
-			}
-		}
-
-		// push constants
-		auto pushConstants = shader.viewPushConstants();
-		if (ImGui::CollapsingHeader("Push Constants", ImGuiTreeNodeFlags_DefaultOpen)) {
-			ImGui::Text("Total Push Constants: %zu", pushConstants.size());
-			ImGui::Separator();
-
-			for (size_t i = 0; i < pushConstants.size(); i++) {
-				const mythril::Shader::PushConstantInfo& pc = pushConstants[i];
-
-				std::string label = "Push Constant " + std::to_string(i) + ": " + pc.varName;
-				if (ImGui::TreeNode(label.c_str())) {
-					ImGui::Text("Variable Name: %s", pc.varName.c_str());
-					ImGui::Text("Type Name: %s", pc.typeName.c_str());
-					ImGui::Text("Complete Slang Name: %s", pc.completeSlangName.c_str());
-					ImGui::Text("Offset: %u", pc.offset);
-					ImGui::Text("Size: %u bytes", pc.size);
-					ImGui::Text("Used Stages: %s", mythril::VkShaderStageToString(pc.usedStages).c_str());
-
-					// fields
-					if (!pc.fields.empty()) {
-						ImGui::Separator();
-						DrawFieldInfoRecursive(pc.fields);
-					}
-					ImGui::TreePop();
-				}
-			}
-		}
-		ImGui::PopID();
-	}
-	ImGui::End();
-}
 void DrawFieldInfoRecursive(const std::vector<mythril::FieldInfo>& fields) {
 	for (const auto& field : fields) {
 		ImGui::PushID(&field);
 
-		bool isStruct = (field.fieldKind == mythril::FieldKind::Struct);
+		bool isStruct = (field.kind == mythril::FieldKind::Struct);
 		ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_SpanAvailWidth |
 								   (isStruct ? 0 : (ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen));
 
@@ -341,9 +266,9 @@ void DrawFieldInfoRecursive(const std::vector<mythril::FieldInfo>& fields) {
 			ImGui::SameLine();
 			ImGui::TextDisabled("size=%u | offset=%u | kind=%s",
 								field.size, field.offset,
-								GetFieldKindString(field.fieldKind));
+								GetFieldKindString(field.kind));
 
-			switch (field.fieldKind) {
+			switch (field.kind) {
 				case mythril::FieldKind::Scalar:
 					ImGui::SameLine();
 					ImGui::TextDisabled("| scalar=%s", GetScalarKindString(field.scalarKind));
@@ -366,7 +291,7 @@ void DrawFieldInfoRecursive(const std::vector<mythril::FieldInfo>& fields) {
 		else {
 			if (open) {
 				ImGui::TextDisabled("size=%u bytes | offset=%u | kind=%s",
-									field.size, field.offset, GetFieldKindString(field.fieldKind));
+									field.size, field.offset, GetFieldKindString(field.kind));
 
 				if (!field.fields.empty()) {
 					ImGui::SeparatorText("Members");
@@ -379,6 +304,79 @@ void DrawFieldInfoRecursive(const std::vector<mythril::FieldInfo>& fields) {
 
 		ImGui::PopID();
 	}
+}
+void DrawShaderInfo(const mythril::Shader& shader) {
+	char buf[128];
+	const char* windowName = "Shader Inspector";
+	snprintf(buf, sizeof(buf), "%s - %s", windowName, shader.getnamefordebugpurpose().data());
+	if (ImGui::Begin(buf)) {
+		ImGui::PushID(&shader);
+
+		// shader module info
+		if (ImGui::CollapsingHeader("Pipeline Information", ImGuiTreeNodeFlags_DefaultOpen)) {
+//			ImGui::Text("Shader Module: 0x%llx", (uint64_t) shader.vkShaderModule);
+//			ImGui::Text("Pipeline Layout: 0x%llx", (uint64_t) shader.vkPipelineLayout);
+			ImGui::Separator();
+		}
+
+		// binding parameters
+		const auto& params = shader.viewDescriptorBindings();
+		if (ImGui::CollapsingHeader("Bound Sets", ImGuiTreeNodeFlags_DefaultOpen)) {
+			ImGui::Text("Total Sets: %zu", params.size());
+			ImGui::Separator();
+
+			for (size_t i = 0; i < params.size(); i++) {
+				const auto& paramater = params[i];
+
+				std::string label = "Set " + std::to_string(i) + ": \"" + paramater.varName + "\"";
+				if (ImGui::TreeNode(label.c_str())) {
+					ImGui::Text("Variable Name: %s", paramater.varName.c_str());
+					ImGui::Text("Type Name: %s", paramater.typeName.c_str());
+					ImGui::Text("Set Index: %u", paramater.setIndex);
+					ImGui::Text("Binding Index: %u", paramater.bindingIndex);
+					ImGui::Text("Descriptor Count: %u", paramater.descriptorCount);
+					ImGui::Text("Descriptor Type: %s", mythril::VkDescriptorTypeToString(paramater.descriptorType));
+					ImGui::Text("Used Stages: %s", mythril::VkShaderStageToString(paramater.usedStages).c_str());
+
+					// fields
+					if (!paramater.fields.empty()) {
+						ImGui::Separator();
+						DrawFieldInfoRecursive(paramater.fields);
+					}
+					ImGui::TreePop();
+				}
+			}
+		}
+
+		// push constants
+		const auto& pushConstants = shader.viewPushConstants();
+		if (ImGui::CollapsingHeader("Push Constants", ImGuiTreeNodeFlags_DefaultOpen)) {
+			ImGui::Text("Total Push Constants: %zu", pushConstants.size());
+			ImGui::Separator();
+
+			for (size_t i = 0; i < pushConstants.size(); i++) {
+				const mythril::Shader::PushConstantInfo& pc = pushConstants[i];
+
+				std::string label = "Push Constant " + std::to_string(i) + ": \"" + pc.varName + "\"";
+				if (ImGui::TreeNode(label.c_str())) {
+					ImGui::Text("Variable Name: %s", pc.varName.c_str());
+					ImGui::Text("Type Name: %s", pc.typeName.c_str());
+					ImGui::Text("Offset: %u", pc.offset);
+					ImGui::Text("Size: %u bytes", pc.size);
+					ImGui::Text("Used Stages: %s", mythril::VkShaderStageToString(pc.usedStages).c_str());
+
+					// fields
+					if (!pc.fields.empty()) {
+						ImGui::Separator();
+						DrawFieldInfoRecursive(pc.fields);
+					}
+					ImGui::TreePop();
+				}
+			}
+		}
+		ImGui::PopID();
+	}
+	ImGui::End();
 }
 
 
@@ -501,9 +499,6 @@ int main() {
 		.debugName = "Object Data SSBO"
 	});
 
-	mythril::InternalDescriptorHandle perFrameDataDescriptor = ctx->createDescriptor(standardShader, "perFrame");
-	mythril::InternalDescriptorHandle perMaterialDataDescriptor = ctx->createDescriptor(standardShader, "perMaterial");
-
 	auto startTime = std::chrono::high_resolution_clock::now();
 	mythril::RenderGraph graph;
 	graph.addPass("geometry", mythril::PassSource::Type::Graphics)
@@ -624,9 +619,10 @@ int main() {
 
 
 	// now we should update descriptor sets for the first & only time
+	// we can update multiple descriptor sets at the same time & in the same call
 	mythril::DescriptorSetWriter writer = ctx->openUpdate(mainPipeline);
-	writer.updateBinding(perMaterialDataBuffer, "perMaterial");
-	writer.updateBinding(perFrameDataBuffer, "perFrame");
+	writer.updateBinding(perFrameDataBuffer, "perFrame"); // set 0, binding 0
+	writer.updateBinding(perMaterialDataBuffer, "perMaterial"); // set 1, binding 0
 	ctx->submitUpdate(writer);
 
 	std::srand(std::time(0));
@@ -636,6 +632,11 @@ int main() {
 		while (SDL_PollEvent(&e)) {
 			ImGui_ImplSDL3_ProcessEvent(&e);
 			if (e.type == SDL_EVENT_QUIT) quit = true;
+			if (e.type == SDL_EVENT_KEY_DOWN) {
+				if (e.key.key == SDLK_Q) {
+					quit = true;
+				}
+			}
 		}
 
 		// mandatory for resizeability
