@@ -15,7 +15,6 @@
 namespace mythril {
 	class CommandBuffer;
 
-
 	struct ClearColor {
 		float r, g, b, a;
 		ClearColor(float r, float g, float b, float a) : r(r), g(g), b(b), a(a) {};
@@ -78,6 +77,7 @@ namespace mythril {
 	};
 	struct ReadSpec {
 		InternalTextureHandle texture;
+		// expectedLayout is always SHADER_READ_ONLY
 		VkImageLayout expectedLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 	};
 
@@ -115,7 +115,6 @@ namespace mythril {
 		std::vector<CompiledBarrier> preBarriers;
 	};
 
-
 	// forward declare just for RenderPassBuilder
 	class RenderGraph;
 
@@ -124,8 +123,8 @@ namespace mythril {
 		RenderPassBuilder() = delete;
 		RenderPassBuilder(RenderGraph& graph, std::string name, PassSource::Type type)
 		: _graphRef(graph) {
-			passSource.name = std::move(name);
-			passSource.type = type;
+			this->_passSource.name = std::move(name);
+			this->_passSource.type = type;
 		}
 
 		// currently we only accept textures, should take buffers later and handle them differently
@@ -135,7 +134,7 @@ namespace mythril {
 		// always the last command, must be called for RenderPassBuilder
 		void setExecuteCallback(const std::function<void(CommandBuffer& cmd)>& callback);
 	private:
-		PassSource passSource;
+		PassSource _passSource;
 
 		RenderGraph& _graphRef;
 		friend class RenderGraph;
@@ -146,7 +145,7 @@ namespace mythril {
 	class RenderGraph {
 	public:
 		inline RenderPassBuilder addPass(const char* name, PassSource::Type type) {
-			return RenderPassBuilder(*this, name, type);
+			return RenderPassBuilder{*this, name, type};
 		};
 		// 2 step,
 		// 1. transform passes

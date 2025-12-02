@@ -102,7 +102,7 @@ namespace mythril {
 		vkUpdateDescriptorSets(device, static_cast<uint32_t>(_writes.size()), _writes.data(), 0, nullptr);
 	}
 
-	VkMemoryPropertyFlags StorageTypeToVkMemoryPropertyFlags(StorageType storage) {
+	static VkMemoryPropertyFlags StorageTypeToVkMemoryPropertyFlags(StorageType storage) {
 		VkMemoryPropertyFlags memFlags{0};
 		switch (storage) {
 			case StorageType::Device:
@@ -118,7 +118,7 @@ namespace mythril {
 		return memFlags;
 	}
 
-	bool ValidateRange(const VkExtent3D& extent3D, uint32_t numLevels, const TexRange& range) {
+	static bool ValidateRange(const VkExtent3D& extent3D, uint32_t numLevels, const TexRange& range) {
 		if (range.dimensions.width <= 0 ||
 			range.dimensions.height <= 0 ||
 			range.dimensions.depth <= 0 ||
@@ -149,6 +149,63 @@ namespace mythril {
 		}
 		return true;
 	}
+
+	void CTX::construct() {
+		ASSERT(this->_vkInstance != VK_NULL_HANDLE);
+		ASSERT(this->_vkPhysicalDevice != VK_NULL_HANDLE);
+		ASSERT(this->_vkDevice != VK_NULL_HANDLE);
+
+		// ACTUAL INIT
+		this->_imm = std::make_unique<ImmediateCommands>(this->_vkDevice, this->_graphicsQueueFamilyIndex);
+		this->_staging = std::make_unique<StagingDevice>(*this);
+		// DEFAULT VULKAN OBJECTS
+		{
+			// pattern xor
+			const uint32_t texWidth = 256;
+			const uint32_t texHeight = 256;
+			std::vector<uint32_t> pixels(texWidth * texHeight);
+			for (uint32_t y = 0; y != texHeight; y++) {
+				for (uint32_t x = 0; x != texWidth; x++) {
+					pixels[y * texWidth + x] =
+							0xFF000000 + ((x ^ y) << 16) + ((x ^ y) << 8) + (x ^ y);
+				}
+			}
+			// now take the pattern and create the first texture, the default and fallback texture for missing textures
+			this->_dummyTextureHandle = this->createTexture({
+				.dimension = {texWidth, texHeight},
+				.usage = TextureUsageBits::TextureUsageBits_Sampled | TextureUsageBits::TextureUsageBits_Storage,
+				.format = VK_FORMAT_R8G8B8A8_UNORM,
+				.initialData = pixels.data(),
+				.debugName = "Dummy Texture"
+			});
+			this->_dummyLinearSamplerHandle = this->createSampler({
+				.magFilter = SamplerFilter::Linear,
+				.minFilter = SamplerFilter::Linear,
+				.wrapU = SamplerWrap::Clamp,
+				.wrapV = SamplerWrap::Clamp,
+				.wrapW = SamplerWrap::Clamp,
+				.mipMap = SamplerMip::Disabled,
+				.debugName = "Linear Sampler"
+			});
+
+			// swapchain must be built after default texture has been made
+			// or else the fallback texture is the swapchain's texture
+			VkExtent2D framebufferSize = this->getWindow().getFramebufferSize();
+			this->_swapchain = std::make_unique<Swapchain>(*this, framebufferSize.width, framebufferSize.height);
+			// timeline semaphore is closely kept to vulkan swapchain
+			this->_timelineSemaphore = vkutil::CreateTimelineSemaphore(this->_vkDevice,
+																	   this->_swapchain->getNumOfSwapchainImages() - 1);
+			this->growBindlessDescriptorPoolImpl(this->_currentMaxTextureCount, this->_currentMaxSamplerCount);
+
+			// https://vkguide.dev/docs/new_chapter_4/descriptor_abstractions/#:~:text=the%20end%20of-,init_descriptors,-()
+			std::vector<DescriptorAllocatorGrowable::PoolSizeRatio> frame_sizes = {
+					{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 3},
+					{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3},
+			};
+			this->_descriptorAllocator.initialize(this->_vkDevice, 1000, frame_sizes);
+		}
+	}
+
 	CTX::~CTX() {
 		VK_CHECK(vkDeviceWaitIdle(_vkDevice));
 		// more like awaitingDestruction :0

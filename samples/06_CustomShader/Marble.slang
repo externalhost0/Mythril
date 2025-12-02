@@ -35,7 +35,6 @@ GeometryPushConstant perObject;
 v2f vs_main(VSInput input) {
     v2f output;
 
-
     Vertex v = perObject.vertexBufferAddress[input.VertexID];
 
     output.ClipPos = float4(mul(perObject.model, float4(v.position, 1)));

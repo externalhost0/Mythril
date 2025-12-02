@@ -16,17 +16,17 @@ namespace mythril {
 
 	RenderPassBuilder& RenderPassBuilder::write(WriteSpec spec) {
 		// we will save the data and cannot actually use it until we do some processing for more information in compile()
-		passSource.writeOperations.push_back(spec);
+		_passSource.writeOperations.push_back(spec);
 		return *this;
 	}
 	RenderPassBuilder& RenderPassBuilder::read(ReadSpec spec) {
-		passSource.readOperations.push_back(spec);
+		_passSource.readOperations.push_back(spec);
 		return *this;
 	}
 
 	void RenderPassBuilder::setExecuteCallback(const std::function<void(CommandBuffer&)>& callback) {
-		this->passSource.executeCallback = callback;
-		this->_graphRef._sourcePasses.push_back(std::move(passSource));
+		this->_passSource.executeCallback = callback;
+		this->_graphRef._sourcePasses.push_back(std::move(_passSource));
 		// reset status incase user compiled and than adds another pass
 		this->_graphRef._hasCompiled = false;
 	}
@@ -204,7 +204,7 @@ namespace mythril {
 				for (const CompiledBarrier& cb : pass.preBarriers) {
 					barriers.push_back(cb.barrier);
 				}
-
+				// write image barrier
 				VkDependencyInfo dependencyInfo = {
 						.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
 						.pNext = nullptr,
@@ -212,6 +212,7 @@ namespace mythril {
 						.pImageMemoryBarriers = barriers.data()
 				};
 				vkCmdPipelineBarrier2(cmd._wrapper->_cmdBuf, &dependencyInfo);
+				// update image layout for each texture object
 				for (const CompiledBarrier& cb : pass.preBarriers) {
 					cmd._ctx->_texturePool.get(cb.textureHandle)->_vkCurrentImageLayout = cb.barrier.newLayout;
 				}

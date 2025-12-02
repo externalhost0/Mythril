@@ -6,6 +6,7 @@ project(${PARENT_PROJECT_NAME} LANGUAGES C CXX)
 # default options
 option(MYTH_ENABLE_IMGUI_STANDARD "Enable ImGui Plugin Main Branch" OFF)
 option(MYTH_ENABLE_IMGUI_DOCKING "Enable ImGui Plugin Docking Branch" OFF)
+option(MYTH_ENABLE_TEST_CASES "Enable Test Cases" ON)
 option(MYTH_RUN_SAMPLES "Enable sample apps" ON)
 
 
@@ -65,7 +66,6 @@ add_library(SPIRV-Reflect STATIC
 target_include_directories(SPIRV-Reflect PUBLIC
         ${SPIRV-Reflect_SOURCE_DIR}
 )
-
 
 # ----------------------------- VOLK --------------------------------
 if (WIN32)
@@ -198,6 +198,8 @@ target_link_libraries(${PARENT_PROJECT_NAME}
         SPIRV-Reflect
         slang
 )
+
+# adds imgui if enabled
 if(MYTH_ENABLE_IMGUI_STANDARD)
     target_compile_definitions(${PARENT_PROJECT_NAME}
             PUBLIC
@@ -217,3 +219,7 @@ if (MYTH_ENABLE_IMGUI_STANDARD OR MYTH_ENABLE_IMGUI_DOCKING)
     )
 endif ()
 
+# adds test cases if enabled
+if(MYTH_ENABLE_TEST_CASES)
+    add_subdirectory(tests)
+endif()

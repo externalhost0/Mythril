@@ -10,7 +10,6 @@
 #include "vkutil.h"
 #include "Logger.h"
 
-#include <iostream>
 
 #include <volk.h>
 #include <vk_mem_alloc.h>
@@ -19,96 +18,15 @@
 #include <SDL3/SDL_vulkan.h>
 
 namespace mythril {
-	std::unique_ptr<CTX> CTXBuilder::build() {
-		std::unique_ptr<CTX> ctx = std::make_unique<CTX>();
-
-		// mythril should only provide graphics related things
-		if (!SDL_Init(SDL_INIT_VIDEO)) {
-			ASSERT_MSG(true, "SDL could not be initialized!");
-		}
-
-		ctx->_window.create(_window_spec);
-
-		// volk init
-		VkResult volk_result = volkInitialize();
-		ASSERT_MSG(volk_result == VK_SUCCESS, "Volk failed to initialize!");
-
-		// build vulkan
-		vkb::Instance tempVKBInstance;
-		_createVulkanInstance(*ctx, tempVKBInstance);
-		_createVulkanSurface(*ctx, ctx->_window._getSDLwindow());
-		vkb::PhysicalDevice tempVKBPhysDevice;
-		_createVulkanPhysDevice(*ctx, tempVKBInstance, tempVKBPhysDevice);
-		vkb::Device tempVKBDevice;
-		_createVulkanLogicalDevice(*ctx, tempVKBPhysDevice, tempVKBDevice);
-		_createMemoryAllocator(*ctx);
-		_createVulkanQueues(*ctx, tempVKBDevice);
-		ctx->_imm = std::make_unique<ImmediateCommands>(ctx->_vkDevice, ctx->_graphicsQueueFamilyIndex);
-		ctx->_staging = std::make_unique<StagingDevice>(*ctx);
-		// DEFAULT VULKAN OBJECTS
-		{
-			// pattern xor
-			const uint32_t texWidth = 256;
-			const uint32_t texHeight = 256;
-			std::vector<uint32_t> pixels(texWidth * texHeight);
-			for (uint32_t y = 0; y != texHeight; y++) {
-				for (uint32_t x = 0; x != texWidth; x++) {
-					pixels[y * texWidth + x] =
-							0xFF000000 + ((x ^ y) << 16) + ((x ^ y) << 8) + (x ^ y);
-				}
-			}
-			// now take the pattern and create the first texture, the default and fallback texture for missing textures
-			ctx->_dummyTextureHandle = ctx->createTexture({
-				.dimension = {texWidth, texHeight},
-				.usage = TextureUsageBits::TextureUsageBits_Sampled | TextureUsageBits::TextureUsageBits_Storage,
-				.format = VK_FORMAT_R8G8B8A8_UNORM,
-				.initialData = pixels.data(),
-				.debugName = "Dummy Texture"
-			});
-			ctx->_dummyLinearSamplerHandle = ctx->createSampler({
-				.magFilter = SamplerFilter::Linear,
-				.minFilter = SamplerFilter::Linear,
-				.wrapU = SamplerWrap::Clamp,
-				.wrapV = SamplerWrap::Clamp,
-				.wrapW = SamplerWrap::Clamp,
-				.mipMap = SamplerMip::Disabled,
-				.debugName = "Linear Sampler"
-			});
-		}
-		// swapchain must be built after default texture has been made
-		// or else the fallback texture is the swapchain's texture
-		VkExtent2D framebufferSize = ctx->getWindow().getFramebufferSize();
-		ctx->_swapchain = std::make_unique<Swapchain>(*ctx, framebufferSize.width, framebufferSize.height);
-		// timeline semaphore is closely kept to vulkan swapchain
-		ctx->_timelineSemaphore = vkutil::CreateTimelineSemaphore(ctx->_vkDevice, ctx->_swapchain->getNumOfSwapchainImages() - 1);
-		ctx->growBindlessDescriptorPoolImpl(ctx->_currentMaxTextureCount, ctx->_currentMaxSamplerCount);
-
-		// https://vkguide.dev/docs/new_chapter_4/descriptor_abstractions/#:~:text=the%20end%20of-,init_descriptors,-()
-		std::vector<DescriptorAllocatorGrowable::PoolSizeRatio> frame_sizes = {
-				{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 3 },
-				{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3 },
-		};
-		ctx->_descriptorAllocator.initialize(ctx->_vkDevice, 1000, frame_sizes);
-
-		for (auto& path : this->_searchpaths) {
-			ctx->_slangCompiler.addSearchPath(path);
-		}
-		// now we can build plugins!
-#ifdef MYTH_ENABLED_IMGUI
-		if (_usingImGui) {
-			ImGuiPlugin imgui;
-			imgui.onInit(*ctx, ctx->getWindow()._sdlWindow);
-			ctx->_plugins.emplace_back(std::make_unique<ImGuiPlugin>(imgui));
-		}
-#endif
-		return ctx;
-	}
-	void CTXBuilder::_createVulkanInstance(CTX& ctx, vkb::Instance& vkb_instance) const {
-		// Instance
+	struct VulkanInstanceInputs {
+		const char* appName = nullptr;
+		const char* engineName = nullptr;
+	};
+	static vkb::Instance CreateVulkanInstance(VulkanInstanceInputs inputs) {
 		vkb::InstanceBuilder instanceBuilder;
 		vkb::Result<vkb::Instance> instanceResult = instanceBuilder
-				.set_app_name(_vkinfo_spec.app_name)
-				.set_engine_name(_vkinfo_spec.engine_name)
+				.set_app_name(inputs.appName)
+				.set_engine_name(inputs.engineName)
 				.require_api_version(VK_API_VERSION_1_3)
 				.set_minimum_instance_version(1, 4, 304)
 				.request_validation_layers()
@@ -117,28 +35,25 @@ namespace mythril {
 #endif
 				.build();
 		ASSERT_MSG(instanceResult.has_value(), "Failed to create Vulkan instance, Error: {}", instanceResult.error().message());
-		vkb_instance = instanceResult.value();
-		ctx._vkInstance = instanceResult->instance;
-#ifdef DEBUG
-		ctx._vkDebugMessenger = instanceResult->debug_messenger;
-#endif
-		volkLoadInstance(ctx._vkInstance);
-
-		// Instance Info (Optional)
-		vkb::Result<vkb::SystemInfo> systemInfoResult = vkb::SystemInfo::get_system_info();
-		ASSERT_MSG(systemInfoResult.has_value(), "Failed to get system info, Error: {}", instanceResult.error().message());
-		vkb::SystemInfo system_info = systemInfoResult.value();
+		vkb::Instance vkb_instance = instanceResult.value();
+		volkLoadInstance(vkb_instance.instance);
+		return vkb_instance;
 	}
-
-	void CTXBuilder::_createVulkanSurface(CTX& ctx, SDL_Window* sdlWindow) const {
-		// Surface
+	struct VulkanSurfaceInputs {
+		VkInstance vkInstance = VK_NULL_HANDLE;
+		SDL_Window* sdlWindow = nullptr;
+	};
+	static VkSurfaceKHR CreateVulkanSurface(VulkanSurfaceInputs inputs) {
 		VkSurfaceKHR surface = nullptr;
-		bool surface_success = SDL_Vulkan_CreateSurface(sdlWindow, ctx._vkInstance, nullptr, &surface);
+		bool surface_success = SDL_Vulkan_CreateSurface(inputs.sdlWindow, inputs.vkInstance, nullptr, &surface);
 		ASSERT_MSG(surface_success, "Failed to create Vulkan surface with GLFW");
-		ctx._vkSurfaceKHR = surface;
+		return surface;
 	}
-
-	void CTXBuilder::_createVulkanPhysDevice(CTX& ctx, vkb::Instance& vkb_instance, vkb::PhysicalDevice& vkb_physdevice_EMPTY) const {
+	struct VulkanPhysicalDeviceInputs {
+		vkb::Instance vkbInstance = {};
+		VkSurfaceKHR vkSurface = VK_NULL_HANDLE;
+	};
+	static vkb::PhysicalDevice CreateVulkanPhysicalDevice(VulkanPhysicalDeviceInputs inputs) {
 		// Physical Device
 		// vulkan 1.3 features
 		VkPhysicalDeviceVulkan13Features features13 = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES };
@@ -183,10 +98,10 @@ namespace mythril {
 		features.shaderImageGatherExtended = true;
 		features.samplerAnisotropy = true;
 
-		vkb::PhysicalDeviceSelector physicalDeviceSelector{vkb_instance};
+		vkb::PhysicalDeviceSelector physicalDeviceSelector{inputs.vkbInstance};
 		vkb::Result<vkb::PhysicalDevice> physicalDeviceResult = physicalDeviceSelector
 				.set_minimum_version(1, 2)
-				.set_surface(ctx._vkSurfaceKHR)
+				.set_surface(inputs.vkSurface)
 				.add_required_extension(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME)
 				.add_required_extension(VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME)
 				.add_required_extension(VK_KHR_COPY_COMMANDS_2_EXTENSION_NAME)
@@ -205,26 +120,10 @@ namespace mythril {
 				.set_required_features(features)
 				.select();
 		ASSERT_MSG(physicalDeviceResult.has_value(), "Failed to select Vulkan Physical Device. Error: {}", physicalDeviceResult.error().message());
-		vkb_physdevice_EMPTY = physicalDeviceResult.value();
-		ctx._vkPhysicalDevice = physicalDeviceResult.value().physical_device;
-
-		// get physical device properties
-		VkPhysicalDeviceProperties2 props = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
-		VkPhysicalDeviceVulkan13Properties props13 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_PROPERTIES};
-		VkPhysicalDeviceVulkan12Properties props12 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_PROPERTIES};
-		VkPhysicalDeviceVulkan11Properties props11 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_PROPERTIES};
-		props.pNext = &props13;
-		props13.pNext = &props12;
-		props12.pNext = &props11;
-		vkGetPhysicalDeviceProperties2(ctx._vkPhysicalDevice, &props);
-		ctx._vkPhysDeviceProperties = physicalDeviceResult.value().properties;
-		ctx._vkPhysDeviceVulkan13Properties = props13;
-		ctx._vkPhysDeviceVulkan12Properties = props12;
-		ctx._vkPhysDeviceVulkan11Properties = props11;
+		return physicalDeviceResult.value();
 	}
-	void CTXBuilder::_createVulkanLogicalDevice(CTX& ctx, vkb::PhysicalDevice& vkb_physdevice, vkb::Device& vkb_device_EMPTY) const {
-		// Logical Device
 
+	static vkb::Device CreateVulkanLogicalDevice(const vkb::PhysicalDevice& vkbPhysicalDevice) {
 		VkPhysicalDeviceExtendedDynamicStateFeaturesEXT dynamic_state_feature = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_FEATURES_EXT };
 		dynamic_state_feature.pNext = nullptr;
 		dynamic_state_feature.extendedDynamicState = VK_TRUE;
@@ -233,15 +132,14 @@ namespace mythril {
 		dynamic_state_feature_2.pNext = nullptr;
 		dynamic_state_feature_2.extendedDynamicState2 = VK_TRUE;
 
-		vkb::DeviceBuilder logicalDeviceBuilder{vkb_physdevice};
+		vkb::DeviceBuilder logicalDeviceBuilder{vkbPhysicalDevice};
 		vkb::Result<vkb::Device> logicalDeviceResult = logicalDeviceBuilder
 				.add_pNext(&dynamic_state_feature)
 				.add_pNext(&dynamic_state_feature_2)
 				.build();
 
 		ASSERT_MSG(logicalDeviceResult.has_value(), "Failed to create Vulkan Logical Device. Error: {}", logicalDeviceResult.error().message());
-		vkb_device_EMPTY = logicalDeviceResult.value();
-		ctx._vkDevice = logicalDeviceResult->device;
+		vkb::Device vkb_device = logicalDeviceResult.value();
 		volkLoadDevice(logicalDeviceResult->device);
 		// alias KHR and EXT functions
 #if defined(__APPLE__)
@@ -254,42 +152,140 @@ namespace mythril {
 		vkCmdPipelineBarrier2 = vkCmdPipelineBarrier2KHR;
 		vkQueueSubmit2 = vkQueueSubmit2KHR;
 #endif
+		return vkb_device;
 	}
-	void CTXBuilder::_createMemoryAllocator(CTX& ctx) const {
+	struct VulkanMemoryAllocatorInputs {
+		VkInstance vkInstance;
+		VkPhysicalDevice vkPhysicalDevice;
+		VkDevice vkLogicalDevice;
+	};
+	static VmaAllocator CreateVulkanMemoryAllocator(VulkanMemoryAllocatorInputs inputs) {
 		VmaAllocatorCreateInfo allocatorInfo = {};
-		allocatorInfo.physicalDevice = ctx._vkPhysicalDevice;
-		allocatorInfo.device = ctx._vkDevice;
-		allocatorInfo.instance = ctx._vkInstance;
+		allocatorInfo.physicalDevice = inputs.vkPhysicalDevice;
+		allocatorInfo.device = inputs.vkLogicalDevice;
+		allocatorInfo.instance = inputs.vkInstance;
 		allocatorInfo.vulkanApiVersion = VK_API_VERSION_1_3;
 		allocatorInfo.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT | VMA_ALLOCATOR_CREATE_KHR_DEDICATED_ALLOCATION_BIT;
 		VmaVulkanFunctions vulkanFunctions;
 		VkResult volkimport_result = vmaImportVulkanFunctionsFromVolk(&allocatorInfo, &vulkanFunctions);
 		ASSERT_MSG(volkimport_result == VK_SUCCESS, "Failed to import vulkan functions from Volk for VMA Allocator create!");
 		allocatorInfo.pVulkanFunctions = &vulkanFunctions;
-		VkResult allocator_result = vmaCreateAllocator(&allocatorInfo, &ctx._vmaAllocator);
+		VmaAllocator vma_allocator = VK_NULL_HANDLE;
+		VkResult allocator_result = vmaCreateAllocator(&allocatorInfo, &vma_allocator);
 		ASSERT_MSG(allocator_result == VK_SUCCESS, "Failed to create vma Allocator!");
+		return vma_allocator;
 	}
-	void CTXBuilder::_createVulkanQueues(CTX& ctx, vkb::Device& vkb_device) const {
-		// Queues
+
+	struct VulkanQueueOutputs {
+		VkQueue vkGraphicsQueue = VK_NULL_HANDLE;
+		uint32_t graphicsQueueFamilyIndex = -1;
+		VkQueue vkPresentQueue = VK_NULL_HANDLE;
+		uint32_t presentQueueFamilyIndex = -1;
+	};
+	static VulkanQueueOutputs CreateVulkanQueues(const vkb::Device& vkb_device) {
+		// result
+		VulkanQueueOutputs output{};
+
 		// graphics queue
 		vkb::Result<VkQueue_T*> graphics_queue_result = vkb_device.get_queue(vkb::QueueType::graphics);
 		ASSERT_MSG(graphics_queue_result.has_value(), "Failed to get graphics queue. Error: {}", graphics_queue_result.error().message());
-		ctx._vkGraphicsQueue = graphics_queue_result.value();
+		output.vkGraphicsQueue = graphics_queue_result.value();
 
 		// graphics queue index
 		vkb::Result<uint32_t> graphics_queue_index_result = vkb_device.get_queue_index(vkb::QueueType::graphics);
 		ASSERT_MSG(graphics_queue_index_result.has_value(), "Failed to get graphics queue index/family. Error: {}", graphics_queue_index_result.error().message());
-		ctx._graphicsQueueFamilyIndex = graphics_queue_index_result.value();
+		output.graphicsQueueFamilyIndex = graphics_queue_index_result.value();
 
 		// present queue
 		vkb::Result<VkQueue_T*> present_queue_result = vkb_device.get_queue(vkb::QueueType::present);
 		ASSERT_MSG(present_queue_result.has_value(), "Failed to get present queue. Error: {}", present_queue_result.error().message());
-		ctx._vkPresentQueue = present_queue_result.value();
+		output.vkPresentQueue = present_queue_result.value();
 
 		// present queue index
 		vkb::Result<uint32_t> present_queue_index_result = vkb_device.get_queue_index(vkb::QueueType::present);
 		ASSERT_MSG(present_queue_index_result.has_value(), "Failed to get present queue index/family. Error: {}", present_queue_index_result.error().message());
-		ctx._presentQueueFamilyIndex = present_queue_index_result.value();
+		output.presentQueueFamilyIndex = present_queue_index_result.value();
+
+		return output;
 	}
+	std::unique_ptr<CTX> CTXBuilder::build() {
+		// mythril should only provide graphics related things
+		// fixme as this means that we have no audio
+		if (!SDL_Init(SDL_INIT_VIDEO)) {
+			ASSERT_MSG(true, "SDL could not be initialized!");
+		}
+		Window window;
+		window.create(this->_window_spec);
+
+		VkResult volk_result = volkInitialize();
+		ASSERT_MSG(volk_result == VK_SUCCESS, "Volk failed to initialize!");
+
+		vkb::Instance vkb_instance = CreateVulkanInstance({
+			.appName = this->_vkinfo_spec.app_name,
+			.engineName = this->_vkinfo_spec.engine_name
+		});
+		VkSurfaceKHR vk_surface = CreateVulkanSurface({
+			.vkInstance = vkb_instance.instance,
+			.sdlWindow = window._sdlWindow
+		});
+		vkb::PhysicalDevice vkb_physical_device = CreateVulkanPhysicalDevice({
+			.vkbInstance = vkb_instance,
+			.vkSurface = vk_surface
+		});
+		vkb::Device vkb_device = CreateVulkanLogicalDevice(vkb_physical_device);
+		VmaAllocator vma_allocator = CreateVulkanMemoryAllocator({
+			.vkInstance = vkb_instance.instance,
+			.vkPhysicalDevice = vkb_physical_device.physical_device,
+			.vkLogicalDevice = vkb_device.device
+		});
+		VulkanQueueOutputs queue_output = CreateVulkanQueues(vkb_device);
+
+		// most of the setup we need to worry about is done in the constructor
+		std::unique_ptr<CTX> ctx = std::make_unique<CTX>();
+		// manually transfer the values to ctx
+		ctx->_vkInstance = vkb_instance.instance;
+		ctx->_vkDebugMessenger = vkb_instance.debug_messenger;
+		ctx->_vkSurfaceKHR = vk_surface;
+		ctx->_vkPhysicalDevice = vkb_physical_device.physical_device;
+		ctx->_vkDevice = vkb_device.device;
+		ctx->_vmaAllocator = vma_allocator;
+
+		// get physical device properties
+		VkPhysicalDeviceProperties2 props = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
+		VkPhysicalDeviceVulkan13Properties props13 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_PROPERTIES};
+		VkPhysicalDeviceVulkan12Properties props12 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_PROPERTIES};
+		VkPhysicalDeviceVulkan11Properties props11 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_PROPERTIES};
+		props.pNext = &props13;
+		props13.pNext = &props12;
+		props12.pNext = &props11;
+		vkGetPhysicalDeviceProperties2(ctx->_vkPhysicalDevice, &props);
+		ctx->_vkPhysDeviceProperties = vkb_physical_device.properties;
+		ctx->_vkPhysDeviceVulkan13Properties = props13;
+		ctx->_vkPhysDeviceVulkan12Properties = props12;
+		ctx->_vkPhysDeviceVulkan11Properties = props11;
+
+		ctx->_vkGraphicsQueue = queue_output.vkGraphicsQueue;
+		ctx->_graphicsQueueFamilyIndex = queue_output.graphicsQueueFamilyIndex;
+		ctx->_vkPresentQueue = queue_output.vkPresentQueue;
+		ctx->_presentQueueFamilyIndex = queue_output.presentQueueFamilyIndex;
+
+		ctx->_window = window;
+		ctx->construct();
+
+		for (auto& path : this->_searchpaths) {
+			ctx->_slangCompiler.addSearchPath(path);
+		}
+		// now we can build plugins!
+#ifdef MYTH_ENABLED_IMGUI
+		if (_usingImGui) {
+			ImGuiPlugin imgui;
+			imgui.onInit(*ctx, ctx->getWindow()._sdlWindow);
+			ctx->_plugins.emplace_back(std::make_unique<ImGuiPlugin>(imgui));
+		}
+#endif
+
+		return ctx;
+	}
+
 
 }

@@ -48,6 +48,7 @@ namespace mythril {
 		SDL_SetWindowSize(_sdlWindow, static_cast<int>(newExtent.width), static_cast<int>(newExtent.height));
 	}
 	void Window::setWindowMode(WindowMode newMode) {
+		ASSERT_MSG(newMode != WindowMode::Headless, "You cannot set display mode to Headless during execution.");
 		switch (newMode) {
 			case WindowMode::Windowed: {
 				if (!SDL_SetWindowFullscreen(_sdlWindow, false)) {

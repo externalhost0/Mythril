@@ -129,7 +129,6 @@ namespace mythril {
 		char _debugName[128] = {0};
 
 		friend class CTX;
-		friend class ShaderTransformer;
 		friend class CommandBuffer;
 	};
 
@@ -142,71 +141,4 @@ namespace mythril {
 
 	ReflectionResult ReflectSPIRV(const uint32_t* code, size_t size);
 
-	class ShaderTransformer {
-	public:
-		void performReflection(Shader& shader, slang::ShaderReflection* reflectionData);
-	private:
-		void addRangesForParameterBlockElement(PipelineLayoutSignature& plSignature,
-											   DescriptorSetSignature& dslSignature,
-											   slang::TypeLayoutReflection* elementTypeLayout);
-		void addAutomaticallyIntroducedUniformBuffer(DescriptorSetSignature& dslSignature);
-		void addDescriptorSetForParameterBlock(PipelineLayoutSignature& plSignature,
-											   slang::TypeLayoutReflection* paramBlockTypeLayout);
-		void addPushConstantRangeForConstantBuffer(PipelineLayoutSignature& plSignature,
-												   slang::TypeLayoutReflection* pushConstantBufferTypeLayout);
-		void addRanges(PipelineLayoutSignature& plSignature,
-					   DescriptorSetSignature& dslSignature,
-					   slang::TypeLayoutReflection* typeLayout);
-		void addDescriptorRanges(DescriptorSetSignature& dslSignature,
-								 slang::TypeLayoutReflection* typeLayout);
-		void addDescriptorRange(DescriptorSetSignature& dslSignature,
-								slang::TypeLayoutReflection* typeLayout,
-								int relativeSetIndex,
-								int rangeIndex);
-		void addSubRanges(PipelineLayoutSignature& plSignature,
-						  slang::TypeLayoutReflection* typeLayout);
-		void addSubRange(PipelineLayoutSignature& plSignature,
-						 slang::TypeLayoutReflection* typeLayout,
-						 int subRangeIndex);
-		void startBuildingDescriptorSetLayout(PipelineLayoutSignature& plSignature,
-											  DescriptorSetSignature& dslSignature);
-		void finishBuildingDescriptorSetLayout(PipelineLayoutSignature& plSignature,
-											   DescriptorSetSignature& dslSignature);
-//		void addRangesForParameterBlockElement(PipelineLayoutBuilder& plBuilder,
-//											   DescriptorSetLayoutBuilder& dslBuilder,
-//											   slang::TypeLayoutReflection* elementTypeLayout);
-//
-//		void addAutomaticallyIntroducedUniformBuffer(DescriptorSetLayoutBuilder &dslBuilder);
-//
-//		void addDescriptorSetForParameterBlock(PipelineLayoutBuilder& plBuilder,
-//											   slang::TypeLayoutReflection* paramBlockTypeLayout);
-//		void addPushConstantRangeForConstantBuffer(PipelineLayoutBuilder& plBuilder,
-//												   slang::TypeLayoutReflection* pushConstantBufferTypeLayout);
-//
-//
-//		void addRanges(PipelineLayoutBuilder& plBuilder,
-//					   DescriptorSetLayoutBuilder& dslBuilder,
-//					   slang::TypeLayoutReflection* typeLayout);
-//
-//		void addDescriptorRanges(DescriptorSetLayoutBuilder& dslBuilder,
-//								 slang::TypeLayoutReflection* typeLayout);
-//		void addDescriptorRange(DescriptorSetLayoutBuilder& dslBuilder,
-//								slang::TypeLayoutReflection* typeLayout,
-//								int relativeSetIndex,
-//								int rangeIndex);
-//
-//		void addSubRanges(PipelineLayoutBuilder& plBuilder,
-//						  slang::TypeLayoutReflection* typeLayout);
-//		void addSubRange(PipelineLayoutBuilder& plBuilder,
-//						 slang::TypeLayoutReflection* typeLayout,
-//						 int subRangeIndex);
-//
-//		void startBuildingDescriptorSetLayout(PipelineLayoutBuilder& plBuilder,
-//											  DescriptorSetLayoutBuilder& dslBuilder);
-//		void finishBuildingDescriptorSetLayout(PipelineLayoutBuilder& plBuilder,
-//											   DescriptorSetLayoutBuilder& dslBuilder);
-	private:
-		Shader* _currentShader = nullptr;
-		VkShaderStageFlags _currentStageFlags = VK_SHADER_STAGE_ALL;
-	};
 }

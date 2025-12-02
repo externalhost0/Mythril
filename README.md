@@ -3,8 +3,9 @@ Mythril is C++20 Vulkan rendering framework for Windows, Linux, and MacOS.
 It aims to provide a easy to create and highly abstracted API for Vulkan, aswell as some bonus features described below.
 
 ### Features:
-* Render Graph implementation.
-* [KINDA, MIGHT CHANGE] Shader reflection.
+* RenderGraph implementation.
+* Automatic shader reflection.
+* Super easy uniform useability.
 * [NOT YET DONE] Tracy, profiles the rendering logic. Learn more about Tracy [here](https://github.com/wolfpld/tracy).
 
 
@@ -84,7 +85,7 @@ idk use cmake
 | `MYTH_RUN_SAMPLES`           | `ON`    | Enables sample apps.                                              |
 | `MYTH_ENABLE_IMGUI_STANDARD` | `OFF`   | Installs ImGui (Main Branch) and enables mythril's ImGuiPlugin    |
 | `MYTH_ENABLE_IMGUI_DOCKING`  | `OFF`   | Installs ImGui (Docking Branch) and enables mythril's ImGuiPlugin |
-> Note: MYTH_ENABLE_IMGUI_STANDARD and MYTH_ENABLE_IMGUI_DOCKING are mutually exclusive!
+> Note: `MYTH_ENABLE_IMGUI_STANDARD` and `MYTH_ENABLE_IMGUI_DOCKING` are mutually exclusive!
 
 
 ## License
@@ -92,7 +93,7 @@ This project is distributed under the **Mozilla Public License Version 2.0**, pl
 
 # Acknowledgments
 
-https://www.youtube.com/watch?v=OxOZ81N3NKw
+- [LightweightVK](https://github.com/corporateshark/lightweightvk/tree/master) - Basically why Mythril exists, I loved how simply lightweightvk is but found we could abstract the hell out of it.
 
 <!-- image definitions -->
 [basic_window_img]: docs/img/basic_window.png

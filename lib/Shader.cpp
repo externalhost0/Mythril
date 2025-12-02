@@ -6,8 +6,9 @@
 #include "HelperMacros.h"
 #include "Logger.h"
 
-#include <iostream>
-#include <map>
+#include <string>
+#include <optional>
+#include <cctype>
 
 #include <slang/slang.h>
 #include <slang/slang-com-ptr.h>
@@ -15,224 +16,6 @@
 
 
 namespace mythril {
-	const char* BindingTypeToString(slang::BindingType bindingRangeType) {
-		switch (bindingRangeType) {
-			case slang::BindingType::Unknown:                         return "Unknown";
-			case slang::BindingType::Sampler:                         return "Sampler";
-			case slang::BindingType::Texture:                         return "Texture";
-			case slang::BindingType::ConstantBuffer:                  return "ConstantBuffer";
-			case slang::BindingType::ParameterBlock:                  return "ParameterBlock";
-			case slang::BindingType::TypedBuffer:                     return "TypedBuffer";
-			case slang::BindingType::RawBuffer:                       return "RawBuffer";
-			case slang::BindingType::CombinedTextureSampler:          return "CombinedTextureSampler";
-			case slang::BindingType::InputRenderTarget:               return "InputRenderTarget";
-			case slang::BindingType::InlineUniformData:               return "InlineUniformData";
-			case slang::BindingType::RayTracingAccelerationStructure: return "RayTracingAccelerationStructure";
-			case slang::BindingType::VaryingInput:                    return "VaryingInput";
-			case slang::BindingType::VaryingOutput:                   return "VaryingOutput";
-			case slang::BindingType::ExistentialValue:                return "ExistentialValue";
-			case slang::BindingType::PushConstant:                    return "PushConstant";
-			case slang::BindingType::MutableFlag:                     return "MutableFlag";
-			case slang::BindingType::MutableTexture:                  return "MutableTexture";
-			case slang::BindingType::MutableTypedBuffer:              return "MutableTypedBuffer";
-			case slang::BindingType::MutableRawBuffer:                return "MutableRawBuffer";
-			case slang::BindingType::BaseMask:                        return "BaseMask";
-			case slang::BindingType::ExtMask:                         return "ExtMask";
-		}
-	}
-	VkDescriptorType mapToDescriptorType(slang::BindingType bindingRangeType) {
-		switch(bindingRangeType) {
-			case slang::BindingType::Sampler: return VK_DESCRIPTOR_TYPE_SAMPLER;
-			case slang::BindingType::Texture: return VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
-			case slang::BindingType::MutableTexture: return VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-			case slang::BindingType::ConstantBuffer: return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-
-			case slang::BindingType::MutableRawBuffer:
-			case slang::BindingType::RawBuffer: return VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-
-			case slang::BindingType::TypedBuffer: return VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER;
-			case slang::BindingType::MutableTypedBuffer: return VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER;
-
-			case slang::BindingType::InputRenderTarget: return VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
-			case slang::BindingType::CombinedTextureSampler: return VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-			case slang::BindingType::RayTracingAccelerationStructure: return VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
-			default:
-				ASSERT_MSG(false, "Unsupported binding range type: {}", BindingTypeToString(bindingRangeType));
-		}
-	}
-	const char* ResourceShapeToString(SlangResourceShape shape) {
-		switch (shape) {
-			case SLANG_TEXTURE_1D:                   return "TEXTURE_1D";
-			case SLANG_TEXTURE_2D:                   return "TEXTURE_2D";
-			case SLANG_TEXTURE_3D:                   return "TEXTURE_3D";
-			case SLANG_TEXTURE_CUBE:                 return "TEXTURE_CUBE";
-			case SLANG_TEXTURE_BUFFER:               return "TEXTURE_BUFFER";
-			case SLANG_STRUCTURED_BUFFER:            return "STRUCTURED_BUFFER";
-			case SLANG_BYTE_ADDRESS_BUFFER:          return "BYTE_ADDRESS_BUFFER";
-			case SLANG_RESOURCE_UNKNOWN:             return "RESOURCE_UNKNOWN";
-			case SLANG_ACCELERATION_STRUCTURE:       return "ACCELERATION_STRUCTURE";
-			case SLANG_TEXTURE_SUBPASS:              return "TEXTURE_SUBPASS";
-			case SLANG_TEXTURE_FEEDBACK_FLAG:        return "TEXTURE_FEEDBACK_FLAG";
-			case SLANG_TEXTURE_SHADOW_FLAG:          return "TEXTURE_SHADOW_FLAG";
-			case SLANG_TEXTURE_ARRAY_FLAG:           return "TEXTURE_ARRAY_FLAG";
-			case SLANG_TEXTURE_MULTISAMPLE_FLAG:     return "TEXTURE_MULTISAMPLE_FLAG";
-			case SLANG_TEXTURE_1D_ARRAY:             return "TEXTURE_1D_ARRAY";
-			case SLANG_TEXTURE_2D_ARRAY:             return "TEXTURE_2D_ARRAY";
-			case SLANG_TEXTURE_CUBE_ARRAY:           return "TEXTURE_CUBE_ARRAY";
-
-			case SLANG_RESOURCE_BASE_SHAPE_MASK:     return "RESOURCE_BASE_SHAPE_MASK";
-			case SLANG_RESOURCE_NONE:                return "SLANG_RESOURCE_NONE";
-			case SLANG_RESOURCE_EXT_SHAPE_MASK:      return "SLANG_RESOURCE_EXT_SHAPE_MASK";
-			case SLANG_TEXTURE_2D_MULTISAMPLE:       return "SLANG_TEXTURE_2D_MULTISAMPLE";
-			case SLANG_TEXTURE_2D_MULTISAMPLE_ARRAY: return "SLANG_TEXTURE_2D_MULTISAMPLE_ARRAY";
-			case SLANG_TEXTURE_SUBPASS_MULTISAMPLE:  return "SLANG_TEXTURE_SUBPASS_MULTISAMPLE";
-			case SLANG_TEXTURE_COMBINED_FLAG:        return "SLANG_TEXTURE_COMBINED_FLAG";
-		}
-	}
-	const char* ResourceAccessToString(SlangResourceAccess access) {
-		switch (access) {
-			case SLANG_RESOURCE_ACCESS_NONE:           return "RESOURCE_ACCESS_NONE";
-			case SLANG_RESOURCE_ACCESS_READ:           return "RESOURCE_ACCESS_READ";
-			case SLANG_RESOURCE_ACCESS_READ_WRITE:     return "RESOURCE_ACCESS_READ_WRITE";
-			case SLANG_RESOURCE_ACCESS_RASTER_ORDERED: return "RESOURCE_ACCESS_RASTER_ORDERED";
-			case SLANG_RESOURCE_ACCESS_APPEND:         return "RESOURCE_ACCESS_APPEND";
-			case SLANG_RESOURCE_ACCESS_CONSUME:        return "RESOURCE_ACCESS_CONSUME";
-			case SLANG_RESOURCE_ACCESS_WRITE:          return "RESOURCE_ACCESS_WRITE";
-			case SLANG_RESOURCE_ACCESS_FEEDBACK:       return "RESOURCE_ACCESS_FEEDBACK";
-			case SLANG_RESOURCE_ACCESS_UNKNOWN:        return "RESOURCE_ACCESS_UNKNOWN";
-			default: return "UNSUPPORTED";
-		}
-	}
-	const char* TypeKindToString(slang::TypeReflection::Kind typeKind) {
-		switch(typeKind) {
-			case slang::TypeReflection::Kind::Scalar:               return "Scalar";
-			case slang::TypeReflection::Kind::Vector:               return "Vector";
-			case slang::TypeReflection::Kind::Matrix:               return "Matrix";
-			case slang::TypeReflection::Kind::Array:                return "Array";
-			case slang::TypeReflection::Kind::Struct:               return "Struct";
-			case slang::TypeReflection::Kind::Resource:             return "Resource";
-			case slang::TypeReflection::Kind::SamplerState:         return "SamplerState";
-			case slang::TypeReflection::Kind::ConstantBuffer:       return "ConstantBuffer";
-			case slang::TypeReflection::Kind::ParameterBlock:       return "ParameterBlock";
-			case slang::TypeReflection::Kind::TextureBuffer:        return "TextureBuffer";
-			case slang::TypeReflection::Kind::ShaderStorageBuffer:  return "ShaderStorageBuffer";
-			case slang::TypeReflection::Kind::Pointer:              return "Pointer";
-			case slang::TypeReflection::Kind::DynamicResource:      return "DynamicResource";
-
-			case slang::TypeReflection::Kind::GenericTypeParameter: return "GenericTypeParameter";
-			case slang::TypeReflection::Kind::Interface:            return "Interface";
-			case slang::TypeReflection::Kind::OutputStream:         return "OutputStream";
-			case slang::TypeReflection::Kind::Specialized:          return "Specialized";
-			case slang::TypeReflection::Kind::Feedback:             return "Feedback";
-			case slang::TypeReflection::Kind::None:                 return "None";
-			case slang::TypeReflection::Kind::MeshOutput:           return "MeshOutput";
-		}
-	}
-
-	const char* ScalarTypeToString(slang::TypeReflection::ScalarType scalarType) {
-		switch (scalarType) {
-			case slang::TypeReflection::None:    return "None";
-			case slang::TypeReflection::Void:    return "Void";
-			case slang::TypeReflection::Bool:    return "Bool";
-			case slang::TypeReflection::Int32:   return "Int32";
-			case slang::TypeReflection::UInt32:  return "UInt32";
-			case slang::TypeReflection::Int64:   return "Int64";
-			case slang::TypeReflection::UInt64:  return "UInt64";
-			case slang::TypeReflection::Float16: return "Float16";
-			case slang::TypeReflection::Float32: return "Float32";
-			case slang::TypeReflection::Float64: return "Float64";
-			case slang::TypeReflection::Int8:    return "Int8";
-			case slang::TypeReflection::UInt8:   return "UInt8";
-			case slang::TypeReflection::Int16:   return "Int16";
-			case slang::TypeReflection::UInt16:  return "UInt16";
-		}
-	}
-
-	const char* MatrixModeToString(SlangMatrixLayoutMode matrixLayoutMode) {
-		switch (matrixLayoutMode) {
-			case SLANG_MATRIX_LAYOUT_MODE_UNKNOWN: return "MATRIX_LAYOUT_MODE_UNKNOWN";
-			case SLANG_MATRIX_LAYOUT_ROW_MAJOR:    return "MATRIX_LAYOUT_MODE_ROW_MAJOR";
-			case SLANG_MATRIX_LAYOUT_COLUMN_MAJOR: return "MATRIX_LAYOUT_MODE_COLUMN_MAJOR";
-		}
-	}
-
-	// Helper to convert variable category to string
-	//
-	const char* LayoutUnitToString(slang::ParameterCategory category) {
-		switch(category) {
-			// these first 7 are the ONLY ones we care about using Vulkan
-			case slang::ParameterCategory::Uniform:                    return "Uniform";
-			case slang::ParameterCategory::DescriptorTableSlot:        return "DescriptorTableSlot";
-			case slang::ParameterCategory::SubElementRegisterSpace:    return "SubElementRegisterSpace";
-			case slang::ParameterCategory::PushConstantBuffer:         return "PushConstantBuffer";
-			case slang::ParameterCategory::SpecializationConstant:     return "SpecializationConstant";
-			case slang::ParameterCategory::VaryingInput:               return "VaryingInput";
-			case slang::ParameterCategory::VaryingOutput:              return "VaryingOutput";
-				// things our application should never run into, as vulkan never uses any of these layout units
-			case slang::ParameterCategory::None:                       return "None";
-			case slang::ParameterCategory::Mixed:                      return "Mixed";
-			case slang::ParameterCategory::ConstantBuffer:             return "ConstantBuffer";
-			case slang::ParameterCategory::ShaderResource:             return "ShaderResource";
-			case slang::ParameterCategory::UnorderedAccess:            return "UnorderedAccess";
-			case slang::ParameterCategory::SamplerState:               return "SamplerState";
-			case slang::ParameterCategory::RegisterSpace:              return "RegisterSpace";
-			case slang::ParameterCategory::GenericResource:            return "GenericResource";
-			case slang::ParameterCategory::RayPayload:                 return "RayPayload";
-			case slang::ParameterCategory::HitAttributes:              return "HitAttributes";
-			case slang::ParameterCategory::CallablePayload:            return "CallablePayload";
-			case slang::ParameterCategory::ShaderRecord:               return "ShaderRecord";
-			case slang::ParameterCategory::ExistentialTypeParam:       return "ExistentialTypeParam";
-			case slang::ParameterCategory::ExistentialObjectParam:     return "ExistentialObjectParam";
-			case slang::ParameterCategory::InputAttachmentIndex:       return "InputAttachmentIndex";
-			case slang::ParameterCategory::MetalArgumentBufferElement: return "MetalArgumentBufferElement";
-			case slang::ParameterCategory::MetalAttribute:             return "MetalAttribute";
-			case slang::ParameterCategory::MetalPayload:               return "MetalPayload";
-		}
-	}
-	const char* SlangStageToString(SlangStage stage) {
-		switch (stage) {
-			case SLANG_STAGE_NONE:           return "None";
-			case SLANG_STAGE_VERTEX:         return "Vertex";
-			case SLANG_STAGE_HULL:           return "Hull";
-			case SLANG_STAGE_DOMAIN:         return "Domain";
-			case SLANG_STAGE_GEOMETRY:       return "Geometry";
-			case SLANG_STAGE_FRAGMENT:       return "Fragment";
-			case SLANG_STAGE_COMPUTE:        return "Compute";
-			case SLANG_STAGE_RAY_GENERATION: return "RayGeneration";
-			case SLANG_STAGE_INTERSECTION:   return "Intersection";
-			case SLANG_STAGE_ANY_HIT:        return "AnyHit";
-			case SLANG_STAGE_CLOSEST_HIT:    return "ClosestHit";
-			case SLANG_STAGE_MISS:           return "Miss";
-			case SLANG_STAGE_CALLABLE:       return "Callable";
-			case SLANG_STAGE_MESH:           return "Mesh";
-			case SLANG_STAGE_AMPLIFICATION:  return "Amplification";
-			case SLANG_STAGE_COUNT:          return "Count";
-			case SLANG_STAGE_DISPATCH:       return "Dispatch";
-		}
-	}
-	VkShaderStageFlags SlangStageToVkShaderStage(SlangStage stage) {
-		switch (stage) {
-			case SLANG_STAGE_NONE: return 0;
-			case SLANG_STAGE_VERTEX: return VK_SHADER_STAGE_VERTEX_BIT;
-			case SLANG_STAGE_HULL: return VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
-			case SLANG_STAGE_DOMAIN: return VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
-			case SLANG_STAGE_GEOMETRY: return VK_SHADER_STAGE_GEOMETRY_BIT;
-			case SLANG_STAGE_FRAGMENT: return VK_SHADER_STAGE_FRAGMENT_BIT;
-			case SLANG_STAGE_COMPUTE: return VK_SHADER_STAGE_COMPUTE_BIT;
-			case SLANG_STAGE_RAY_GENERATION: return VK_SHADER_STAGE_RAYGEN_BIT_KHR;
-			case SLANG_STAGE_INTERSECTION: return VK_SHADER_STAGE_INTERSECTION_BIT_KHR;
-			case SLANG_STAGE_ANY_HIT: return VK_SHADER_STAGE_ANY_HIT_BIT_KHR;
-			case SLANG_STAGE_CLOSEST_HIT: return VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
-			case SLANG_STAGE_MISS: return VK_SHADER_STAGE_MISS_BIT_KHR;
-			case SLANG_STAGE_CALLABLE: return VK_SHADER_STAGE_CALLABLE_BIT_KHR;
-			case SLANG_STAGE_MESH: return VK_SHADER_STAGE_MESH_BIT_EXT;
-			case SLANG_STAGE_AMPLIFICATION: return VK_SHADER_STAGE_TASK_BIT_EXT;
-
-			default: return 0;
-		}
-	}
-#include <vulkan/vulkan.h>
-
 	static const char* VulkanDescriptorTypeToString(VkDescriptorType type) {
 		switch (type) {
 			case VK_DESCRIPTOR_TYPE_SAMPLER:
@@ -275,98 +58,9 @@ namespace mythril {
 				return "VK_DESCRIPTOR_TYPE_PARTITIONED_ACCELERATION_STRUCTURE_NV";
 			default:
 				ASSERT_MSG(false, "VkDescriptorType should have a value.");
-				return "VK_DESCRIPTOR_TYPE_UNKNOWN";
 		}
 	}
 
-
-	std::string resolveArrayName(slang::TypeReflection* type) {
-		if (type->isArray()) {
-			return "Array of " + resolveArrayName(type->getElementType());
-		}
-		return type->getName();
-	}
-	std::string resolveFullTypeName(slang::TypeLayoutReflection* typeLayout) {
-		std::string fullName = resolveArrayName(typeLayout->getType());
-		return fullName;
-	}
-
-	OpaqueKind getOpaqueKind(slang::TypeLayoutReflection* typeLayout) {
-		auto type = typeLayout->getType();
-		const char* typeName = typeLayout->getName();
-
-		auto kind = type->getKind();
-		if (kind == slang::TypeReflection::Kind::Resource) {
-			auto shape = type->getResourceShape();
-			auto access = type->getResourceAccess();
-			bool isReadWrite = (access == SLANG_RESOURCE_ACCESS_READ_WRITE);
-
-			switch (shape & SLANG_RESOURCE_BASE_SHAPE_MASK) {
-				case SLANG_TEXTURE_1D:
-					return isReadWrite ? OpaqueKind::RWTexture1D
-									   : OpaqueKind::Texture1D;
-				case SLANG_TEXTURE_2D:
-					return isReadWrite ? OpaqueKind::RWTexture2D
-									   : OpaqueKind::Texture2D;
-				case SLANG_TEXTURE_3D:
-					return isReadWrite ? OpaqueKind::RWTexture3D
-									   : OpaqueKind::Texture3D;
-				case SLANG_TEXTURE_CUBE:
-					return OpaqueKind::TextureCube;
-				default:
-					return OpaqueKind::Unknown;
-			}
-		} else if (kind == slang::TypeReflection::Kind::SamplerState) {
-			return OpaqueKind::Sampler;
-		}
-		return OpaqueKind::Unknown;
-	}
-
-	ScalarKind getScalarType(slang::TypeLayoutReflection* typeLayout) {
-		auto type = typeLayout->getType();
-		auto scalarType = type->getScalarType();
-
-		switch (scalarType) {
-			case slang::TypeReflection::ScalarType::Float32:
-			case slang::TypeReflection::ScalarType::Float64:
-				return ScalarKind::Float;
-			case slang::TypeReflection::ScalarType::Int32:
-			case slang::TypeReflection::ScalarType::Int16:
-			case slang::TypeReflection::ScalarType::Int64:
-			case slang::TypeReflection::ScalarType::Int8:
-				return ScalarKind::Int;
-			case slang::TypeReflection::ScalarType::UInt32:
-			case slang::TypeReflection::ScalarType::UInt16:
-			case slang::TypeReflection::ScalarType::UInt64:
-			case slang::TypeReflection::ScalarType::UInt8:
-				return ScalarKind::UInt;
-			case slang::TypeReflection::ScalarType::Bool:
-				return ScalarKind::Bool;
-			default:
-				return ScalarKind::None;
-		}
-	}
-
-	FieldKind getFieldKind(slang::TypeLayoutReflection* typeLayout) {
-		auto type = typeLayout->getType();
-		auto kind = type->getKind();
-		const char* typeName = typeLayout->getName();
-
-		switch (kind) {
-			case slang::TypeReflection::Kind::Struct:
-				return FieldKind::Struct;
-			case slang::TypeReflection::Kind::Array:
-				return FieldKind::Array;
-			case slang::TypeReflection::Kind::Vector:
-				return FieldKind::Vector;
-			case slang::TypeReflection::Kind::Matrix:
-				return FieldKind::Matrix;
-			case slang::TypeReflection::Kind::Scalar:
-				return FieldKind::Scalar;
-			default:
-				return FieldKind::Unknown;
-		}
-	}
 	const char* FieldKindToString(FieldKind fieldKind) {
 		switch (fieldKind) {
 			case FieldKind::OpaqueHandle: return "OpaqueHandle";
@@ -375,8 +69,8 @@ namespace mythril {
 			case FieldKind::Matrix:       return "Matrix";
 			case FieldKind::Array:        return "Array";
 			case FieldKind::Struct:       return "Struct";
-			case FieldKind::Unknown:      return "Unknown";
 			case FieldKind::Pointer:      return "Pointer";
+			case FieldKind::Unknown:      return "Unknown";
 		}
 	}
 
@@ -426,16 +120,12 @@ namespace mythril {
 		}
 	}
 
-#include <string>
-#include <optional>
-#include <cctype>
-
 	struct MatrixDims {
 		int rows;
 		int cols;
 	};
 
-	std::optional<MatrixDims> ExtractMatrixDims(const std::string& s) {
+	static std::optional<MatrixDims> ExtractMatrixDims(const std::string& s) {
 		// for length of string
 		for (size_t i = 0; i < s.size(); i++) {
 			// if character is digit, as this is the first part of detecting NxM pattern
@@ -467,14 +157,15 @@ namespace mythril {
 		return std::nullopt;
 	}
 
-	bool DetectMatrixType(const SpvReflectTypeDescription& typeDesc) {
+	static bool DetectMatrixType(const SpvReflectTypeDescription& typeDesc) {
 		if (typeDesc.struct_type_description) {
 			std::string s = typeDesc.type_name;
 			return s.find("MatrixStorage") != std::string::npos;
 		}
 		return false;
 	}
-	FieldKind ResolveKind(const SpvReflectTypeDescription& typeDesc) {
+
+	static FieldKind ResolveKind(const SpvReflectTypeDescription& typeDesc) {
 		// it looks very bad with all of the if statements but it makes sense alright
 		if (DetectMatrixType(typeDesc)) {
 			return FieldKind::Matrix;
@@ -497,7 +188,7 @@ namespace mythril {
 		return FieldKind::Unknown;
 	}
 
-	ScalarKind ResolveScalarKindFromType(const SpvReflectTypeDescription& typeDesc) {
+	static ScalarKind ResolveScalarKindFromType(const SpvReflectTypeDescription& typeDesc) {
 		switch (typeDesc.op) {
 			case SpvOpTypeInt: {
 				if (typeDesc.traits.numeric.scalar.signedness == 1) {
@@ -511,15 +202,13 @@ namespace mythril {
 				}
 				return ScalarKind::Float;
 			}
-			case SpvOpTypeBool: {
-				return ScalarKind::Bool;
-			}
+			case SpvOpTypeBool: return ScalarKind::Bool;
 			default: break;
-			ASSERT_MSG(false, "Something went horribly wrong, this should never happen!");
 		}
+		ASSERT_MSG(false, "Something went horribly wrong, this should never happen!");
 	}
 
-	void CollectFieldsRecursively(std::vector<FieldInfo>& fields, const SpvReflectBlockVariable& blockVar) {
+	static void CollectFieldsRecursively(std::vector<FieldInfo>& fields, const SpvReflectBlockVariable& blockVar) {
 		for (unsigned int i = 0; i < blockVar.member_count; i++) {
 			// aliases
 			const SpvReflectBlockVariable& memberVar = blockVar.members[i];
@@ -569,7 +258,7 @@ namespace mythril {
 	}
 
 
-	void GatherDescriptorBindingInformation(Shader::DescriptorBindingInfo& info, const SpvReflectDescriptorBinding& descriptorBind) {
+	static void GatherDescriptorBindingInformation(Shader::DescriptorBindingInfo& info, const SpvReflectDescriptorBinding& descriptorBind) {
 		// alias top level type
 		const SpvReflectTypeDescription& blockType = *descriptorBind.type_description;
 		// descriptor info
@@ -583,17 +272,8 @@ namespace mythril {
 
 		CollectFieldsRecursively(info.fields, descriptorBind.block);
 	}
-	void GatherDescriptorSetInformation(Shader::DescriptorSetInfo& info, const SpvReflectDescriptorSet& descriptorSet) {
-		info.setIndex = descriptorSet.set;
-		info.bindingInfos.reserve(descriptorSet.binding_count);
-		for (int i = 0; i < descriptorSet.binding_count; i++) {
-			Shader::DescriptorBindingInfo binding_info = {};
-			GatherDescriptorBindingInformation(binding_info, *descriptorSet.bindings[i]);
-			info.bindingInfos.push_back(binding_info);
-		}
-	}
 
-	void GatherPushConstantInformation(Shader::PushConstantInfo& info, const SpvReflectBlockVariable& blockVar) {
+	static void GatherPushConstantInformation(Shader::PushConstantInfo& info, const SpvReflectBlockVariable& blockVar) {
 		// alias top level type
 		const SpvReflectTypeDescription& blockType = *blockVar.type_description;
 		// top level info

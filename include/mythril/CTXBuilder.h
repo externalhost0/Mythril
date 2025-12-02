@@ -14,14 +14,13 @@
 class SDL_Window;
 
 namespace mythril {
-	class BasePlugin;
 
 	struct VulkanInfoSpec {
 		const char* app_name = "Untitled App";
 		const char* engine_name = "Untitled Engine";
 	};
 
-	enum class WindowMode { Windowed, Fullscreen };
+	enum class WindowMode { Windowed, Fullscreen, Headless };
 	struct WindowSpec {
 		std::string title = "Untitled Window";
 		WindowMode mode = WindowMode::Windowed;
@@ -71,12 +70,5 @@ namespace mythril {
 		std::vector<std::string> _searchpaths = {};
 		VulkanInfoSpec _vkinfo_spec;
 		WindowSpec _window_spec;
-
-		void _createVulkanInstance(CTX& ctx, vkb::Instance& vkb_instance_EMPTY) const;
-		void _createVulkanPhysDevice(CTX& ctx, vkb::Instance& vkb_instance, vkb::PhysicalDevice& vkb_physdevice_EMPTY) const;
-		void _createVulkanLogicalDevice(CTX& ctx, vkb::PhysicalDevice& vkb_physdevice, vkb::Device& vkb_device_EMPTY) const;
-		void _createMemoryAllocator(CTX& ctx) const;
-		void _createVulkanQueues(CTX& ctx, vkb::Device& vkb_device) const;
-		void _createVulkanSurface(CTX& ctx, SDL_Window* sdlWindow) const;
 	};
 }

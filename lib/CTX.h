@@ -169,13 +169,37 @@ namespace mythril {
 		std::vector<VkDescriptorSetLayout> allocatableLayouts; // excludes specials
 	};
 
-
+	struct CTXRequirements {
+		VkInstance instance = VK_NULL_HANDLE;
+		VkDebugUtilsMessengerEXT debugMessenger = VK_NULL_HANDLE;
+		VkSurfaceKHR surface = VK_NULL_HANDLE;
+		VkPhysicalDevice physDevice = VK_NULL_HANDLE;
+		VkDevice device = VK_NULL_HANDLE;
+		VmaAllocator allocator = VK_NULL_HANDLE;
+		VkPhysicalDeviceProperties physDeviceProps = {};
+#if defined(VK_API_VERSION_1_3)
+		VkPhysicalDeviceVulkan13Properties physDevice13Props = {};
+#endif
+#if defined(VK_API_VERSION_1_2)
+		VkPhysicalDeviceVulkan12Properties physDevice12Props = {};
+#endif
+#if defined(VK_API_VERSION_1_1)
+		VkPhysicalDeviceVulkan11Properties physDevice11Props = {};
+#endif
+		VkQueue graphicsQueue = VK_NULL_HANDLE;
+		uint32_t graphicsQueueFamilyIndex = -1;
+		VkQueue presentQueue = VK_NULL_HANDLE;
+		uint32_t presentQueueFamilyIndex = -1;
+	};
 	class CTX final {
+		void construct();
 	public:
-		CTX() = default;
+		 CTX() = default;
 		~CTX();
+
 		CTX(const CTX &) = delete;
 		CTX &operator=(const CTX &) = delete;
+
 		CTX(CTX &&) noexcept = default;
 		CTX &operator=(CTX &&) noexcept = default;
 	public:
@@ -280,15 +304,9 @@ namespace mythril {
 
 		// vulkan properties
 		VkPhysicalDeviceProperties _vkPhysDeviceProperties = {};
-#if defined(VK_API_VERSION_1_3)
 		VkPhysicalDeviceVulkan13Properties _vkPhysDeviceVulkan13Properties = {};
-#endif
-#if defined(VK_API_VERSION_1_2)
 		VkPhysicalDeviceVulkan12Properties _vkPhysDeviceVulkan12Properties = {};
-#endif
-#if defined(VK_API_VERSION_1_1)
 		VkPhysicalDeviceVulkan11Properties _vkPhysDeviceVulkan11Properties = {};
-#endif
 
 		// vulkan queues
 		VkQueue _vkGraphicsQueue = VK_NULL_HANDLE;
