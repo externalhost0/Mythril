@@ -82,10 +82,10 @@ const std::vector<uint32_t> cubeIndices = {
 		22, 23, 20
 };
 
-glm::mat4 calculateViewMatrix(Camera camera) {
+static glm::mat4 calculateViewMatrix(Camera camera) {
 	return glm::lookAt(camera.position, camera.position + glm::vec3(0, 0, -1), glm::vec3(0, 1, 0));
 }
-glm::mat4 calculateProjectionMatrix(Camera camera) {
+static glm::mat4 calculateProjectionMatrix(Camera camera) {
 	return glm::perspective(glm::radians(camera.fov), camera.aspectRatio, camera.nearPlane, camera.farPlane);
 }
 
@@ -402,21 +402,7 @@ int main() {
 		.format = VK_FORMAT_R8G8B8A8_UNORM,
 		.debugName = "Color Texture"
 	});
-	mythril::InternalTextureHandle emissiveTarget = ctx->createTexture({
-		.dimension = extent2D,
-		.usage = mythril::TextureUsageBits::TextureUsageBits_Attachment | mythril::TextureUsageBits_Sampled,
-		.storage = mythril::StorageType::Device,
-		.format = VK_FORMAT_R8G8B8A8_UNORM,
-		.debugName = "Emissive Texture"
-	});
-	mythril::InternalTextureHandle horizBlurredTarget = ctx->createTexture({
-		.dimension = extent2D,
-		.usage = mythril::TextureUsageBits::TextureUsageBits_Attachment | mythril::TextureUsageBits::TextureUsageBits_Sampled,
-		.storage = mythril::StorageType::Device,
-		.format = VK_FORMAT_R8G8B8A8_UNORM,
-		.debugName = "Horizontally Blurred Color Target"
-	});
-	mythril::InternalTextureHandle postColorTarget = ctx->createTexture({
+	mythril::InternalTextureHandle finalColorTarget = ctx->createTexture({
 		.dimension = extent2D,
 		.usage = mythril::TextureUsageBits::TextureUsageBits_Attachment,
 		.storage = mythril::StorageType::Device,
@@ -444,17 +430,7 @@ int main() {
 		.blend = mythril::BlendingMode::OFF,
 		.cull = mythril::CullMode::BACK,
 		.multisample = mythril::SampleCount::X1,
-		.debugName = "Main Pipeline"
-	});
-	mythril::InternalShaderHandle postProcessingShader = ctx->createShader({
-		.filePath = "GaussianBlur.slang",
-		.debugName = "Fullscreen Shader"
-	});
-
-	mythril::InternalGraphicsPipelineHandle postPipeline = ctx->createGraphicsPipeline({
-		.vertexShader = {postProcessingShader},
-		.fragmentShader = {postProcessingShader},
-		.debugName = "Post Processing Pipeline"
+		.debugName = "Geometry Pipeline"
 	});
 
 	mythril::InternalBufferHandle cubeVertexBuffer = ctx->createBuffer({
@@ -471,15 +447,12 @@ int main() {
 		.initialData = cubeIndices.data(),
 		.debugName = "Cube Index Buffer"
 	});
-
 	mythril::InternalBufferHandle perFrameDataBuffer = ctx->createBuffer({
 		.size = sizeof(GPU::GlobalData),
 		.usage = mythril::BufferUsageBits::BufferUsageBits_Uniform,
 		.storage = mythril::StorageType::Device,
 		.debugName = "PerFrameData Uniform Buffer"
 	});
-
-
 	mythril::InternalBufferHandle perMaterialDataBuffer = ctx->createBuffer({
 		.size = sizeof(GPU::MaterialData),
 		.usage = mythril::BufferUsageBits::BufferUsageBits_Uniform,
@@ -508,12 +481,6 @@ int main() {
 		.clearValue = {0, 1},
 		.loadOp = mythril::LoadOperation::CLEAR
 	})
-	.write({
-		.texture = emissiveTarget,
-		.clearValue = {0, 0, 0, 1},
-		.loadOp = mythril::LoadOperation::CLEAR,
-		.storeOp = mythril::StoreOperation::STORE
-	})
 	.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
 		cmd.cmdBindRenderPipeline(mainPipeline);
 
@@ -533,7 +500,7 @@ int main() {
 		};
 
 		GPU::GeometryPushConstant push {
-			.model = calculateProjectionMatrix(camera) * calculateViewMatrix(camera) * modelmatrix,
+			.model =  modelmatrix,
 			.vertexBufferAddress = ctx->gpuAddress(cubeVertexBuffer)
 		};
 		cmd.cmdPushConstants(push);
@@ -541,68 +508,9 @@ int main() {
 		cmd.cmdDrawIndexed(cubeIndices.size());
 	});
 
-	float scale = 2.4f;
-	float intensity = 1.f;
-
-	graph.addPass("horizontal_blur", mythril::PassSource::Type::Graphics)
-	.write({
-		.texture = horizBlurredTarget,
-		.clearValue = {0, 0, 0, 1},
-		.loadOp = mythril::LoadOperation::CLEAR,
-		.storeOp = mythril::StoreOperation::STORE
-	})
-	.read({
-		.texture = colorTarget
-	})
-	.read({
-		.texture = emissiveTarget
-	})
-	.setExecuteCallback([&](mythril::CommandBuffer& cmd){
-		cmd.cmdBindRenderPipeline(postPipeline);
-
-		GPU::GaussianPushConstant push {
-			.colorTexture = colorTarget.index(),
-			.emissiveTexture = emissiveTarget.index(),
-			.samplerId = 0,
-			.scale = scale,
-			.intensity = intensity,
-			.blurdirection = 1
-		};
-		cmd.cmdPushConstants(push);
-		cmd.cmdDraw(3);
-	});
-
-	graph.addPass("vertical_blur", mythril::PassSource::Type::Graphics)
-	.write({
-		.texture = postColorTarget,
-		.clearValue = {0, 0, 0, 1},
-		.loadOp = mythril::LoadOperation::CLEAR,
-		.storeOp = mythril::StoreOperation::STORE
-	})
-	.read({
-		.texture = colorTarget
-	})
-	.read({
-		.texture = horizBlurredTarget
-	})
-	.setExecuteCallback([&](mythril::CommandBuffer& cmd){
-		cmd.cmdBindRenderPipeline(postPipeline);
-
-		GPU::GaussianPushConstant push {
-			.colorTexture = colorTarget.index(),
-			.emissiveTexture = horizBlurredTarget.index(),
-			.samplerId = 0,
-			.scale = scale,
-			.intensity = intensity,
-			.blurdirection = 0
-		};
-		cmd.cmdPushConstants(push);
-		cmd.cmdDraw(3);
-	});
-
 	graph.addPass("gui", mythril::PassSource::Type::Graphics)
 	.write({
-		.texture = postColorTarget,
+		.texture = colorTarget,
 		.loadOp = mythril::LoadOperation::LOAD,
 		.storeOp = mythril::StoreOperation::STORE
 	})
@@ -644,9 +552,7 @@ int main() {
 			VkExtent2D new_extent_2d = window.getFramebufferSize();
 			ctx->resizeTexture(colorTarget, new_extent_2d);
 			ctx->resizeTexture(depthTarget, new_extent_2d);
-			ctx->resizeTexture(postColorTarget, new_extent_2d);
-			ctx->resizeTexture(emissiveTarget, new_extent_2d);
-			ctx->resizeTexture(horizBlurredTarget, new_extent_2d);
+			ctx->resizeTexture(finalColorTarget, new_extent_2d);
 			// you must recompile your framegraph in order for it to recieve texture changes
 			graph.compile(*ctx);
 		}
@@ -655,12 +561,6 @@ int main() {
 		ImGui_ImplSDL3_NewFrame();
 		ImGui::NewFrame();
 		DrawShaderInfo(ctx->viewShader(standardShader));
-		DrawShaderInfo(ctx->viewShader(postProcessingShader));
-
-		ImGui::Begin("Post Processing Uniforms");
-		ImGui::SliderFloat("Bloom Scale", &scale, 0.f, 50.f);
-		ImGui::SliderFloat("Intensity", &intensity, 0.f, 2.f);
-		ImGui::End();
 
 		ImGui::Begin("Cube Uniforms");
 		static float col[3] = {1.f, 0.f, 0.f };

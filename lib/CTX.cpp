@@ -235,9 +235,8 @@ namespace mythril {
 				destroy(_graphicsPipelinePool.getHandle(_graphicsPipelinePool.findObject(&_graphicsPipelinePool._objects[i]._obj).index()));
 			}
 		}
-		if (_samplerPool.numObjects() > 1) {
-			// the dummy value is owned by the context
-			LOG_SYSTEM(LogType::Info, "Cleaned up {} samplers", _samplerPool.numObjects() - 1);
+		if (_samplerPool.numObjects()) {
+			LOG_SYSTEM(LogType::Info, "Cleaned up {} samplers", _samplerPool.numObjects());
 			for (int i = 0; i < _samplerPool._objects.size(); i++) {
 				destroy(_samplerPool.getHandle(_samplerPool.findObject(&_samplerPool._objects[i]._obj).index()));
 			}

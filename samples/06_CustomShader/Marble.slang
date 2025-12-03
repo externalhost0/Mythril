@@ -6,7 +6,6 @@ struct VSInput {
 };
 struct FSOutput {
     float4 FragColor : SV_Target0;
-    float4 EmissiveTarget : SV_Target1;
 };
 struct v2f {
     // system defined
@@ -37,13 +36,12 @@ v2f vs_main(VSInput input) {
 
     Vertex v = perObject.vertexBufferAddress[input.VertexID];
 
-    output.ClipPos = float4(mul(perObject.model, float4(v.position, 1)));
-    // float3 worldpos = mul(perObject.model, float4(v.position, 1)).xyz;
-    // output.ClipPos = mul(mul(perFrame.camera.proj, perFrame.camera.view), float4(worldpos, 1));
+    float3 worldpos = mul(perObject.model, float4(v.position, 1)).xyz;
+    output.ClipPos = mul(mul(perFrame.camera.proj, perFrame.camera.view), float4(worldpos, 1));
 
     output.Normal = mul(perObject.model, float4(v.normal, 0)).xyz;
     output.UV = float2(v.uv_x, v.uv_y);
-    // output.WorldPosition = worldpos;
+    output.WorldPosition = worldpos;
 
     return output;
 }
@@ -68,11 +66,6 @@ FSOutput fs_main(v2f input) {
     glow *= perMaterial.glowAmount;
     float3 color = glow.xxx * perMaterial.tint;
     output.FragColor = float4(color, 1.f);
-
-    float brightness = dot(color, float3(0.2126, 0.7152, 0.0722));
-    float threshold = 0.9f; // e.g., 1.0 or configurable
-    float3 emissive = brightness > threshold ? color : float3(0.0, 0.0, 0.0);
-    output.EmissiveTarget = float4(emissive, 1);
 
     return output;
 }

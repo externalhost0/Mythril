@@ -68,6 +68,7 @@ namespace mythril {
 
 	// this is what the user interacts with
 	// intermediate struct, PassSource -> PassCompiled
+	// totally personal preference if you think working operations should be the default, ie ::CLEAR & ::STORE
 	struct WriteSpec {
 		InternalTextureHandle texture;
 		ClearValue clearValue;
@@ -88,14 +89,14 @@ namespace mythril {
 		enum class Type {
 			Graphics,
 			Compute
-		} type;
+		} type = Type::Graphics;
 		std::function<void(CommandBuffer&)> executeCallback;
 
 		std::vector<WriteSpec> writeOperations;
 		std::vector<ReadSpec> readOperations;
 	};
 	struct CompiledBarrier {
-		VkImageMemoryBarrier2 barrier;
+		VkImageMemoryBarrier2 barrier{};
 		InternalTextureHandle textureHandle;
 	};
 

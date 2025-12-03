@@ -89,6 +89,8 @@ namespace mythril {
 						readOperation.expectedLayout,
 						false);
 				compiled.preBarriers.push_back({barrier, readOperation.texture});
+				// update layout during compile, as later passes may read an images layout
+				ctx._texturePool.get(readOperation.texture)->_vkCurrentImageLayout = readOperation.expectedLayout;
 			}
 
 			// tracking depth attachment status
@@ -111,13 +113,15 @@ namespace mythril {
 							.clearDepthStencil = writeOperation.clearValue.clearDepthStencil.getAsVkClearDepthStencilValue()
 					};
 
+					VkImageLayout vk_new_image_layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 					VkImageMemoryBarrier2 barrier = vkinfo::CreateImageMemoryBarrier2(
 							currentTexture._vkImage,
 							currentTexture._vkFormat,
 							currentTexture._vkCurrentImageLayout,
-							VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+							vk_new_image_layout,
 							false);
 					compiled.preBarriers.push_back({barrier, writeOperation.texture});
+					ctx._texturePool.get(writeOperation.texture)->_vkCurrentImageLayout = vk_new_image_layout;
 				} else {
 					// FOR COLOR ACTTACHMENTS //
 					ColorAttachmentInfo colorInfo = {
@@ -133,16 +137,18 @@ namespace mythril {
 							.storeOp = toVulkan(writeOperation.storeOp),
 							.clearColor = writeOperation.clearValue.clearColor.getAsVkClearColorValue(),
 					};
+					VkImageLayout vk_new_image_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 					VkImageMemoryBarrier2 barrier = vkinfo::CreateImageMemoryBarrier2(
 							currentTexture._vkImage,
 							currentTexture._vkFormat,
 							currentTexture._vkCurrentImageLayout,
-							VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+							vk_new_image_layout,
 							false);
 					compiled.preBarriers.push_back({barrier, writeOperation.texture});
+					ctx._texturePool.get(writeOperation.texture)->_vkCurrentImageLayout = vk_new_image_layout;
 
 					// keep setting last texture, last set is the last duh
-					_lastColorTexture = writeOperation.texture;
+					this->_lastColorTexture = writeOperation.texture;
 
 					// if color attachment is to resolve onto another
 					if (writeOperation.resolveTexture.has_value()) {
@@ -157,16 +163,17 @@ namespace mythril {
 						colorInfo.resolveImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
 						// and if its a resolve set it after the other set
-						_lastColorTexture = writeOperation.resolveTexture.value();
+						this->_lastColorTexture = writeOperation.resolveTexture.value();
 
 						// make the resolve target also in the optimal layout
 						VkImageMemoryBarrier2 resolveBarrier = vkinfo::CreateImageMemoryBarrier2(
 								resolveTexture._vkImage,
 								resolveTexture._vkFormat,
 								resolveTexture._vkCurrentImageLayout,
-								VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+								vk_new_image_layout,
 								true);
 						compiled.preBarriers.push_back({resolveBarrier, writeOperation.resolveTexture.value()});
+						ctx._texturePool.get(writeOperation.resolveTexture.value())->_vkCurrentImageLayout = vk_new_image_layout;
 					}
 					compiled.colorAttachments.push_back(colorInfo);
 				}
@@ -174,18 +181,18 @@ namespace mythril {
 			ASSERT_MSG(!compiled.colorAttachments.empty() || hasDepthAttachment, "Pass '{}' has no color or depth attachments!", source.name);
 			this->_compiledPasses.push_back(std::move(compiled));
 		}
-		// once done transforming PassSource -> PassCompiled we still need sourcePasses incase we recompile
+		// once done transforming PassSource -> PassCompiled we still need to store sourcePasses incase we recompile
 
 		// BUILD RENDER PIPELINES //
 		// TODO: this is horrible, dont have much else to say
-		for (const PassCompiled& pass : _compiledPasses) {
+		for (const PassCompiled& pass : this->_compiledPasses) {
 			// this is a dummy command that will not issue any vulkan related commands itself
-			CommandBuffer dryCmd;
-			dryCmd._ctx = &ctx;
-			dryCmd._activePass = pass;
-			ctx._currentCommandBuffer = dryCmd;
+			CommandBuffer dry_cmd;
+			dry_cmd._ctx = &ctx;
+			dry_cmd._activePass = pass;
+			ctx._currentCommandBuffer = dry_cmd;
 			ASSERT_MSG(pass.executeCallback != nullptr, "Pass '{}' has null execute callback, how is that possible??", pass.name);
-			pass.executeCallback(dryCmd);
+			pass.executeCallback(dry_cmd);
 		}
 		ctx._currentCommandBuffer = {};
 
@@ -193,7 +200,8 @@ namespace mythril {
 	}
 
 	void RenderGraph::execute(CommandBuffer& cmd) {
-		ASSERT_MSG(_hasCompiled, "RenderGraph must be compiled before it can be executed!");
+		ASSERT_MSG(this->_hasCompiled, "RenderGraph must be compiled before it can be executed!");
+		ASSERT(!this->_compiledPasses.empty());
 
 		for (const PassCompiled& pass : _compiledPasses) {
 			cmd._activePass = pass;
@@ -221,6 +229,10 @@ namespace mythril {
 			cmd.cmdBeginRenderingImpl();
 			pass.executeCallback(cmd);
 			cmd.cmdEndRenderingImpl();
+
+			// image layout may change and therefore..
+			// needs to be updated before next pass in case it is used there
+
 		}
 		cmd.cmdPrepareToSwapchainImpl(_lastColorTexture);
 	}

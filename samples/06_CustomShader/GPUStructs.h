@@ -11,11 +11,9 @@ NAMESPACE_BEGIN()
 
 // must be a multiple of 8 because of largest member (sizeof(DescriptorHandle<T>) == 8 so extra padding of 4 bytes is added for 40 bytes
 struct GaussianPushConstant {
-	DescriptorHandle<Texture2D> colorTexture; // 8
 	DescriptorHandle<Texture2D> emissiveTexture; // 8
-	DescriptorHandle<SamplerState> samplerId; // 8 = 24
+	DescriptorHandle<SamplerState> sampler; // 8 = 24
 	float scale; // 4
-	float intensity; // 4
 	int blurdirection; // 4 = 12
 	// 12+24 = 36
 };
@@ -61,6 +59,19 @@ struct MaterialData {
 	float glowAmount;
 	float distortAmount;
     uint unint1;
+};
+
+struct EmissiveExtractPushConstant {
+    DescriptorHandle<Texture2D> sceneTexture;
+    DescriptorHandle<SamplerState> sampler;
+    float threshold;
+    float softKnee;
+};
+struct CompositePushConstant {
+	DescriptorHandle<Texture2D> sceneTexture;
+	DescriptorHandle<Texture2D> blurredTexture;
+	DescriptorHandle<SamplerState> sampler;
+    float intensity;
 };
 
 NAMESPACE_END()

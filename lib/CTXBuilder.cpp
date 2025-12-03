@@ -44,6 +44,9 @@ namespace mythril {
 		SDL_Window* sdlWindow = nullptr;
 	};
 	static VkSurfaceKHR CreateVulkanSurface(VulkanSurfaceInputs inputs) {
+		ASSERT(inputs.vkInstance != VK_NULL_HANDLE);
+		ASSERT(inputs.sdlWindow != nullptr);
+
 		VkSurfaceKHR surface = nullptr;
 		bool surface_success = SDL_Vulkan_CreateSurface(inputs.sdlWindow, inputs.vkInstance, nullptr, &surface);
 		ASSERT_MSG(surface_success, "Failed to create Vulkan surface with GLFW");
@@ -54,6 +57,8 @@ namespace mythril {
 		VkSurfaceKHR vkSurface = VK_NULL_HANDLE;
 	};
 	static vkb::PhysicalDevice CreateVulkanPhysicalDevice(VulkanPhysicalDeviceInputs inputs) {
+		ASSERT(inputs.vkSurface != VK_NULL_HANDLE);
+		ASSERT(inputs.vkbInstance.instance != VK_NULL_HANDLE);
 		// Physical Device
 		// vulkan 1.3 features
 		VkPhysicalDeviceVulkan13Features features13 = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES };
@@ -124,6 +129,8 @@ namespace mythril {
 	}
 
 	static vkb::Device CreateVulkanLogicalDevice(const vkb::PhysicalDevice& vkbPhysicalDevice) {
+		ASSERT(vkbPhysicalDevice.physical_device != VK_NULL_HANDLE);
+
 		VkPhysicalDeviceExtendedDynamicStateFeaturesEXT dynamic_state_feature = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_FEATURES_EXT };
 		dynamic_state_feature.pNext = nullptr;
 		dynamic_state_feature.extendedDynamicState = VK_TRUE;

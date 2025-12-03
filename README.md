@@ -5,7 +5,7 @@ It aims to provide a easy to create and highly abstracted API for Vulkan, aswell
 ### Features:
 * RenderGraph implementation.
 * Automatic shader reflection.
-* Super easy uniform useability.
+* Abstracted and easy to use resource descriptors.
 * [NOT YET DONE] Tracy, profiles the rendering logic. Learn more about Tracy [here](https://github.com/wolfpld/tracy).
 
 
@@ -77,7 +77,19 @@ int main() {
 * Vulkan SDK 1.4.3+
 
 ## Installing
-idk use cmake
+
+You can easily include with CPM.
+```cmake
+CPMAddPackage(
+    NAME mythril
+    GITHUB_REPOSITORY "externalhost0/Mythril"
+    GIT_TAG main
+)
+```
+You could also clone as a submodule and add as a subdirectory.
+```cmake
+add_subdirectory(mythril)
+```
 
 ### CMake Options
 | Option                       | Default | Description                                                       |
@@ -85,6 +97,7 @@ idk use cmake
 | `MYTH_RUN_SAMPLES`           | `ON`    | Enables sample apps.                                              |
 | `MYTH_ENABLE_IMGUI_STANDARD` | `OFF`   | Installs ImGui (Main Branch) and enables mythril's ImGuiPlugin    |
 | `MYTH_ENABLE_IMGUI_DOCKING`  | `OFF`   | Installs ImGui (Docking Branch) and enables mythril's ImGuiPlugin |
+| `MYTH_ENABLE_TESTS`          | `OFF`   | Builds tests directory to be run by CMake.                        |
 > Note: `MYTH_ENABLE_IMGUI_STANDARD` and `MYTH_ENABLE_IMGUI_DOCKING` are mutually exclusive!
 
 
