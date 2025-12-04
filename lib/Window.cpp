@@ -65,4 +65,8 @@ namespace mythril {
 		}
 		_windowMode = newMode;
 	}
+
+	void Window::setMouseMode(bool relativeEnabled) {
+		SDL_SetWindowRelativeMouseMode(this->_sdlWindow, relativeEnabled);
+	}
 }

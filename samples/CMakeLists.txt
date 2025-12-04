@@ -56,10 +56,17 @@ CPMAddPackage(
 add_compile_definitions(GLM_FORCE_DEPTH_ZERO_TO_ONE)
 #add_compile_definitions(GLM_FORCE_LEFT_HANDED)
 
+CPMAddPackage(
+        NAME fastgltf
+        GITHUB_REPOSITORY "spnda/fastgltf"
+        GIT_TAG v0.9.0
+)
+
 
 ADD_SAMPLE("01_ClearWindow")
 ADD_SAMPLE("02_Cube" LIBS glm)
 ADD_SAMPLE("03_CubeMSAA" LIBS glm)
 ADD_SAMPLE("04_PostProcessingCube" LIBS glm)
 ADD_SAMPLE("05_ImGui" OPTIONS MYTH_ENABLE_IMGUI_STANDARD=ON)
-ADD_SAMPLE("06_CustomShader" LIBS glm OPTIONS MYTH_ENABLE_IMGUI_STANDARD=ON)
+ADD_SAMPLE("06_ComplexShader" LIBS glm OPTIONS MYTH_ENABLE_IMGUI_STANDARD=ON)
+ADD_SAMPLE("07_HDR", LIBS glm fastgltf OPTIONS MYTH_ENABLED_IMGUI_STANDARD=ON)

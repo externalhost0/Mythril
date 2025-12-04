@@ -258,7 +258,8 @@ namespace mythril {
 	}
 
 
-	static void GatherDescriptorBindingInformation(Shader::DescriptorBindingInfo& info, const SpvReflectDescriptorBinding& descriptorBind) {
+	static Shader::DescriptorBindingInfo GatherDescriptorBindingInformation(const SpvReflectDescriptorBinding& descriptorBind) {
+		Shader::DescriptorBindingInfo info = {};
 		// alias top level type
 		const SpvReflectTypeDescription& blockType = *descriptorBind.type_description;
 		// descriptor info
@@ -271,9 +272,12 @@ namespace mythril {
 		info.varName = descriptorBind.name;
 
 		CollectFieldsRecursively(info.fields, descriptorBind.block);
+		return info;
 	}
 
-	static void GatherPushConstantInformation(Shader::PushConstantInfo& info, const SpvReflectBlockVariable& blockVar) {
+
+	static Shader::PushConstantInfo GatherPushConstantInformation(const SpvReflectBlockVariable& blockVar) {
+		Shader::PushConstantInfo info = {};
 		// alias top level type
 		const SpvReflectTypeDescription& blockType = *blockVar.type_description;
 		// top level info
@@ -283,6 +287,7 @@ namespace mythril {
 		info.typeName = blockType.type_name;
 
 		CollectFieldsRecursively(info.fields, blockVar);
+		return info;
 	}
 
 //	void collectFieldsRecursivelyEXT(std::vector<FieldInfo>& fields, slang::TypeLayoutReflection* typeLayout) {
@@ -342,6 +347,7 @@ namespace mythril {
 //		}
 //	}
 
+
 	ReflectionResult ReflectSPIRV(const uint32_t* code, size_t size) {
 		SpvReflectShaderModule spirv_module = {};
 		SpvReflectResult spv_result = spvReflectCreateShaderModule(size, code, &spirv_module);
@@ -362,11 +368,11 @@ namespace mythril {
 
 		// collect descriptor sets info
 		// lets make every shader own its descriptor sets even if they are duplicated, optimize later with a pool of a sort whe signatures match
-		for (unsigned int i_set = 0; i_set < sets.size(); i_set++) {
+		for (unsigned int set_index = 0; set_index < sets.size(); set_index++) {
 			// get a set from the array we enumerated
-			const SpvReflectDescriptorSet* reflected_set = sets[i_set];
+			const SpvReflectDescriptorSet* reflected_set = sets[set_index];
 			// modify the set signature in place
-			DescriptorSetSignature& set_signature = result.pipelineLayoutSignature.setSignatures[i_set];
+			DescriptorSetSignature& set_signature = result.pipelineLayoutSignature.setSignatures[set_index];
 			set_signature.isBindless = false;
 			set_signature.setIndex = reflected_set->set;
 			set_signature.bindings.reserve(reflected_set->binding_count);
@@ -377,9 +383,9 @@ namespace mythril {
 			set_info.setIndex = reflected_set->set;
 
 			// now move through all the descriptor bindings in the set
-			for (unsigned int j_binding = 0; j_binding < reflected_set->binding_count; j_binding++) {
+			for (unsigned int binding_index = 0; binding_index < reflected_set->binding_count; binding_index++) {
 				// get a binding from the set
-				const SpvReflectDescriptorBinding* reflected_binding = reflected_set->bindings[j_binding];
+				const SpvReflectDescriptorBinding* reflected_binding = reflected_set->bindings[binding_index];
 				auto vk_descriptor_type = static_cast<VkDescriptorType>(reflected_binding->descriptor_type);
 
 				// resolve custom bindless status
@@ -402,12 +408,10 @@ namespace mythril {
 				vkds_layout_binding.pImmutableSamplers = nullptr;
 				// thats all the info for a binding
 				// this is for lookup when updating
-				set_signature.nameToBinding[reflected_binding->name] = reflected_binding->binding;
+				set_signature.nameToBinding.insert({reflected_binding->name, reflected_binding->binding});
 
 				// bonus information for user
-				Shader::DescriptorBindingInfo binding_info = {};
-				GatherDescriptorBindingInformation(binding_info, *reflected_binding);
-				set_info.bindingInfos.push_back(binding_info);
+				set_info.bindingInfos.emplace_back(GatherDescriptorBindingInformation(*reflected_binding));
 
 				set_signature.bindings.push_back(vkds_layout_binding);
 			}
@@ -434,11 +438,9 @@ namespace mythril {
 			pc_range.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
 			pc_ranges[i_block] = pc_range;
 
-			Shader::PushConstantInfo pushInfo = {};
-			GatherPushConstantInformation(pushInfo, *block);
-			result.retrivedPushConstants.push_back(std::move(pushInfo));
+			result.retrivedPushConstants.emplace_back(GatherPushConstantInformation(*block));
 		}
-		result.pipelineLayoutSignature.pushes = pc_ranges;
+		result.pipelineLayoutSignature.pushes = std::move(pc_ranges);
 
 		spvReflectDestroyShaderModule(&spirv_module);
 

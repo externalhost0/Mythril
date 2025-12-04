@@ -53,10 +53,9 @@ namespace mythril {
 		// ALL BELOW COMMANDS HAVE SPECIAL BEHAVIOR ON DRYRUN //
 
 		void cmdBindRenderPipeline(InternalGraphicsPipelineHandle handle);
+		void cmdBindDepthState(const DepthState& state);
 
 		// ALL BELOW COMMANDS SHOULD RETURN ON DRYRUN //
-		void cmdBindDescriptorSets(std::initializer_list<InternalDescriptorSetHandle> handles);
-
 		void cmdBindIndexBuffer(InternalBufferHandle buffer);
 		// we can pass in structs of any type for push constants!!
 		// make sure it is mirrored on the shader code
@@ -87,7 +86,6 @@ namespace mythril {
 		void cmdBeginRenderingImpl();
 		void cmdEndRenderingImpl();
 
-		void cmdBindDepthStateImpl(const DepthState& state);
 		void cmdSetDepthBiasEnableImpl(bool enable);
 		void cmdSetDepthBiasImpl(float constantFactor, float slopeFactor, float clamp);
 

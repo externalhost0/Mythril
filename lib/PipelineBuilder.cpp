@@ -196,7 +196,6 @@ namespace mythril {
 		}
 		return *this;
 	}
-
 }
 
 

@@ -186,6 +186,15 @@ namespace mythril {
 		VkImageLayout properLayout = sourceTex._vkCurrentImageLayout;
 		vkCmdCopyImageToBuffer(_wrapper->_cmdBuf, sourceTex._vkImage, properLayout, _ctx->viewBuffer(destination)._vkBuffer, 1, &region);
 	}
+	void CommandBuffer::cmdBindDepthState(const DepthState& state) {
+		if (_isDryRun) return;
+		// https://github.com/corporateshark/lightweightvk/blob/master/lvk/vulkan/VulkanClasses.cpp#L2458
+		const VkCompareOp op = toVulkan(state.compareOp);
+		vkCmdSetDepthWriteEnable(_wrapper->_cmdBuf, state.isDepthWriteEnabled ? VK_TRUE : VK_FALSE);
+		vkCmdSetDepthTestEnable(_wrapper->_cmdBuf, (op != VK_COMPARE_OP_ALWAYS || state.isDepthWriteEnabled) ? VK_TRUE : VK_FALSE);
+		vkCmdSetDepthCompareOp(_wrapper->_cmdBuf, op);
+	}
+
 
 #ifdef MYTH_ENABLED_IMGUI
 	void CommandBuffer::cmdDrawImGui() {
@@ -247,9 +256,9 @@ namespace mythril {
 				.pDepthAttachment = hasDepth ? &depthAttachmentInfo : nullptr,
 				.pStencilAttachment = nullptr
 		};
-		cmdSetScissorImpl(renderExtent);
 		cmdSetViewportImpl(renderExtent);
-		cmdBindDepthStateImpl({});
+		cmdSetScissorImpl(renderExtent);
+		cmdBindDepthState({});
 
 		_ctx->checkAndUpdateBindlessDescriptorSetImpl();
 //		_ctx->checkAndUpdateDescriptorSets();
@@ -398,13 +407,6 @@ namespace mythril {
 	void CommandBuffer::cmdSetDepthBiasImpl(float constantFactor, float slopeFactor, float clamp) {
 		vkCmdSetDepthBias(_wrapper->_cmdBuf, constantFactor, clamp, slopeFactor);
 	}
-	void CommandBuffer::cmdBindDepthStateImpl(const DepthState& state) {
-		// https://github.com/corporateshark/lightweightvk/blob/master/lvk/vulkan/VulkanClasses.cpp#L2458
-		const VkCompareOp op = toVulkan(state.compareOp);
-		vkCmdSetDepthWriteEnable(_wrapper->_cmdBuf, state.isDepthWriteEnabled ? VK_TRUE : VK_FALSE);
-		vkCmdSetDepthTestEnable(_wrapper->_cmdBuf, (op != VK_COMPARE_OP_ALWAYS || state.isDepthWriteEnabled) ? VK_TRUE : VK_FALSE);
-		vkCmdSetDepthCompareOp(_wrapper->_cmdBuf, op);
-	}
 	void CommandBuffer::cmdBlitImageImpl(InternalTextureHandle source, InternalTextureHandle destination, VkExtent2D srcSize, VkExtent2D dstSize) {
 		VkImageBlit2 blitRegion = { .sType = VK_STRUCTURE_TYPE_IMAGE_BLIT_2, .pNext = nullptr };
 
@@ -502,26 +504,6 @@ namespace mythril {
 		scissor.extent = extent2D;
 		vkCmdSetScissor(_wrapper->_cmdBuf, 0, 1, &scissor);
 	}
-
-//	void CommandBuffer::cmdBindDescriptorSets(std::initializer_list<InternalDescriptorSetHandle> handles) {
-//		if (_isDryRun) return;
-//
-//		std::vector<VkDescriptorSet> dsSets = {};
-//		dsSets.reserve(handles.size());
-//		for (const auto& handle : handles) {
-//			DescriptorSet* set = _ctx->_descriptorSetPool.get(handle);
-//			dsSets.push_back(set->_vkDescriptorSet);
-//		}
-//
-//		GraphicsPipeline* pipeline = _ctx->_graphicsPipelinePool.get(_currentPipelineHandle);
-//		ASSERT_MSG(pipeline, "You must bind a graphics pipeline before binding descriptor sets!");
-//		vkCmdBindDescriptorSets(_wrapper->_cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->_vkPipelineLayout,
-//								1,
-//								dsSets.size(),
-//								dsSets.data(),
-//								0,
-//								nullptr);
-//	}
 
 }
 

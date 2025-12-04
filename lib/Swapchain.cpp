@@ -65,8 +65,8 @@ namespace mythril {
 			image._isOwning = false;
 			image._vkUsageFlags = usage_flags;
 			image._vkImageType = VK_IMAGE_TYPE_2D;
-			image._vkImage = std::move(images[i]),
-			image._vkImageView = std::move(imageviews[i]),
+			image._vkImage = images[i],
+			image._vkImageView = imageviews[i],
 			image._vkCurrentImageLayout = VK_IMAGE_LAYOUT_UNDEFINED,
 			image._vkExtent = { _vkExtent2D.width, _vkExtent2D.height, 1},
 			image._vkFormat = _vkImageFormat;
@@ -116,10 +116,6 @@ namespace mythril {
 			_getNextImage = false;
 			_ctx._imm->waitSemaphore(acquireSemaphore);
 		}
-//		if (_currentImageIndex < _numSwapchainImages) {
-//			return _swapchainTextures[_currentImageIndex];
-//		}
-//		return {};
 	}
 
 	void Swapchain::present() {

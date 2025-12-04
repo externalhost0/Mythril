@@ -54,6 +54,7 @@ namespace mythril {
 
 	void DescriptorSetWriter::updateBinding(mythril::InternalBufferHandle bufHandle, const char* name) {
 		ASSERT_MSG(this->currentPipeline, "You must call updateBinding within opening and submitting a DescriptorSetWriter!");
+		ASSERT_MSG(this->currentPipeline->_vkPipeline != VK_NULL_HANDLE, "Pipeline '{}' has not yet been resolved, you likely forgot to call RenderGraph::compile!", this->currentPipeline->_debugName);
 
 		for (size_t i = 0; i < this->currentPipeline->signature.setSignatures.size(); i++) {
 			const DescriptorSetSignature& set_signature = this->currentPipeline->signature.setSignatures[i];
@@ -207,20 +208,20 @@ namespace mythril {
 	}
 
 	CTX::~CTX() {
-		VK_CHECK(vkDeviceWaitIdle(_vkDevice));
+		VK_CHECK(vkDeviceWaitIdle(this->_vkDevice));
 		// more like awaitingDestruction :0
-		_awaitingCreation = true;
+		this->_awaitingCreation = true;
 
 		for (auto& plugin : _plugins) {
 			plugin->onDispose();
 		}
 
-		_staging.reset(nullptr);
-		_swapchain.reset(nullptr);
+		destroy(this->_staging->_stagingBuffer);
+		this->_staging.reset(nullptr);
+		this->_swapchain.reset(nullptr);
 		vkDestroySemaphore(_vkDevice, _timelineSemaphore, nullptr);
-		destroy(_dummyTextureHandle);
-		destroy(_dummyLinearSamplerHandle);
-
+		destroy(this->_dummyTextureHandle);
+		destroy(this->_dummyLinearSamplerHandle);
 
 		// TODO::fixing the allocation not being proerly freed for VMA
 		if (_shaderPool.numObjects()) {

@@ -161,7 +161,7 @@ int main() {
 	})
 	.write({
 		.texture = depthTarget,
-		.clearValue = {0, 1},
+		.clearValue = {1.f, 0},
 		.loadOp = mythril::LoadOperation::CLEAR,
 	})
 	.setExecuteCallback([&](mythril::CommandBuffer& cmd) {

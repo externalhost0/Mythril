@@ -212,7 +212,9 @@ namespace mythril {
 
 		DescriptorSetWriter openUpdate(InternalGraphicsPipelineHandle pipelineHandle) {
 			DescriptorSetWriter updater(*this);
-			updater.currentPipeline = _graphicsPipelinePool.get(pipelineHandle);
+			GraphicsPipeline* pipeline = _graphicsPipelinePool.get(pipelineHandle);
+			ASSERT_MSG(!pipeline->_managedDescriptorSets.empty(), "Pipeline '{}' has no managed desriptor sets, therefore attempts to open a DescriptorSetWriter are disallowed!", pipeline->_debugName);
+			updater.currentPipeline = pipeline;
 			return updater;
 		};
 		void submitUpdate(DescriptorSetWriter& updater) {

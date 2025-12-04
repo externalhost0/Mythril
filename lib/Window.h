@@ -21,6 +21,7 @@ namespace mythril {
 
 		void setWindowMode(WindowMode mode);
 		void setWindowSize(VkExtent2D newExtent);
+		void setMouseMode(bool relativeEnabled);
 
 		VkExtent2D getWindowSize() const;
 		VkExtent2D getFramebufferSize() const;
