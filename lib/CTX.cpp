@@ -51,10 +51,13 @@ namespace mythril {
 			kNumOfBinds = 3
 		};
 	}
-
+	static void CheckUpdateBindingCall(GraphicsPipeline* pipeline, InternalBufferHandle bufHandle) {
+		ASSERT_MSG(pipeline, "You must call updateBinding within opening and submitting a DescriptorSetWriter!");
+		ASSERT_MSG(pipeline->_vkPipeline != VK_NULL_HANDLE, "Pipeline '{}' has not yet been resolved, you likely forgot to call RenderGraph::compile!", pipeline->_debugName);
+		ASSERT_MSG(bufHandle.valid(), "Handle must be for a valid buffer object!");
+	}
 	void DescriptorSetWriter::updateBinding(mythril::InternalBufferHandle bufHandle, const char* name) {
-		ASSERT_MSG(this->currentPipeline, "You must call updateBinding within opening and submitting a DescriptorSetWriter!");
-		ASSERT_MSG(this->currentPipeline->_vkPipeline != VK_NULL_HANDLE, "Pipeline '{}' has not yet been resolved, you likely forgot to call RenderGraph::compile!", this->currentPipeline->_debugName);
+		CheckUpdateBindingCall(this->currentPipeline, bufHandle);
 
 		for (size_t i = 0; i < this->currentPipeline->signature.setSignatures.size(); i++) {
 			const DescriptorSetSignature& set_signature = this->currentPipeline->signature.setSignatures[i];
@@ -68,9 +71,8 @@ namespace mythril {
 	}
 
 	void DescriptorSetWriter::updateBinding(InternalBufferHandle bufHandle, int set, int binding) {
-		ASSERT_MSG(this->currentPipeline, "You must call updateBinding within opening and submitting a DescriptorSetWriter!");
+		CheckUpdateBindingCall(this->currentPipeline, bufHandle);
 
-		ASSERT_MSG(bufHandle.valid(), "Handle must be for a valid buffer object!");
 		AllocatedBuffer* buf = _ctx->_bufferPool.get(bufHandle);
 		ASSERT_MSG(buf->isUniformBuffer(), "Buffer passed to be written to descriptor binding must be uniform, aka uses 'BufferUsageBits_Uniform'!");
 		ASSERT_MSG(buf->_bufferSize > 0, "Buffer size must be greater than 0!");
@@ -151,7 +153,7 @@ namespace mythril {
 		return true;
 	}
 
-	void CTX::construct() {
+	void CTX::construct(SwapchainArgs args) {
 		ASSERT(this->_vkInstance != VK_NULL_HANDLE);
 		ASSERT(this->_vkPhysicalDevice != VK_NULL_HANDLE);
 		ASSERT(this->_vkDevice != VK_NULL_HANDLE);
@@ -192,7 +194,11 @@ namespace mythril {
 			// swapchain must be built after default texture has been made
 			// or else the fallback texture is the swapchain's texture
 			VkExtent2D framebufferSize = this->getWindow().getFramebufferSize();
-			this->_swapchain = std::make_unique<Swapchain>(*this, framebufferSize.width, framebufferSize.height);
+			SwapchainArgs swapchain_args = args;
+			swapchain_args.width = framebufferSize.width;
+			swapchain_args.height = framebufferSize.height;
+
+			this->_swapchain = std::make_unique<Swapchain>(*this, swapchain_args);
 			// timeline semaphore is closely kept to vulkan swapchain
 			this->_timelineSemaphore = vkutil::CreateTimelineSemaphore(this->_vkDevice,
 																	   this->_swapchain->getNumOfSwapchainImages() - 1);
@@ -287,18 +293,24 @@ namespace mythril {
 		SDL_Quit();
 	}
 	bool CTX::isSwapchainDirty() {
-		return _swapchain->isDirty();
+		return this->_swapchain->isDirty();
 	}
 	void CTX::cleanSwapchain() {
-		if (_swapchain->isDirty()) {
+		if (this->_swapchain->isDirty()) {
 			VkExtent2D res = this->_window.getFramebufferSize();
 			LOG_DEBUG("New Swapchain Extent: {} x {}", res.width, res.height);
 
-			VK_CHECK(vkDeviceWaitIdle(_vkDevice));
+			VK_CHECK(vkDeviceWaitIdle(this->_vkDevice));
+			SwapchainArgs args;
+			args.format = this->_swapchain->_vkImageFormat;
+			args.colorSpace = this->_swapchain->_vkColorSpace;
+			args.presentMode = this->_swapchain->_vkPresentMode;
 			_swapchain.reset(nullptr);
 			vkDestroySemaphore(_vkDevice, _timelineSemaphore, nullptr);
-			_swapchain = std::make_unique<Swapchain>(*this, res.width, res.height);
-			_timelineSemaphore = vkutil::CreateTimelineSemaphore(_vkDevice, _swapchain->getNumOfSwapchainImages()-1);
+			args.width = res.width;
+			args.height = res.height;
+			this->_swapchain = std::make_unique<Swapchain>(*this, args);
+			this->_timelineSemaphore = vkutil::CreateTimelineSemaphore(_vkDevice, this->_swapchain->getNumOfSwapchainImages()-1);
 		} else {
 			LOG_SYSTEM(LogType::Warning, "Cleaning (resizing) of Swapchain called when Swapchain is not dirty, ignoring.");
 		}

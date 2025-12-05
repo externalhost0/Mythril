@@ -34,18 +34,19 @@ v2f vs_main(VSInput input) {
     return output;
 }
 
+float linearizeDepth(float vertexZ, CameraData camera) {
+    float ndc = vertexZ; // already in [-1,1]
+    float linearDepth = (2.0 * camera.near * camera.far) / (camera.far + camera.near - ndc * (camera.far - camera.near));
+    return linearDepth / camera.far;
+}
+
 [shader("pixel")]
 FSOutput fs_main(v2f input) {
     FSOutput output;
-
-    CameraData camera = frame.camera;
-
-    float ndc = input.ClipPos.z; // already in [-1,1]
-    float linearDepth = (2.0 * camera.near * camera.far) /
-                        (camera.far + camera.near - ndc * (camera.far - camera.near));
-
-    output.FragColor = float4(input.UV, 0, 1);
-    output.FragColor = float4(float3(linearDepth/camera.far), 1);
+    float4 baseColor = push.tintColor;
+    baseColor *= push.baseColorTexture.Sample(push.samplerState, input.UV);
+    output.FragColor = baseColor;
+    output.FragColor = baseColor + float4(input.UV, 0, 1);
 
     return output;
 }

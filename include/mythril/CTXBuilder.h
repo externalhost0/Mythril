@@ -29,6 +29,12 @@ namespace mythril {
 		bool resizeable = false;
 	};
 
+	struct SwapchainSpec {
+		VkFormat format = VK_FORMAT_B8G8R8A8_UNORM;
+		VkColorSpaceKHR colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
+		VkPresentModeKHR presentMode = VK_PRESENT_MODE_FIFO_KHR;
+	};
+
 	class CTXBuilder final {
 	public:
 		CTXBuilder() = default;
@@ -42,6 +48,10 @@ namespace mythril {
 			this->_window_spec = spec;
 			return *this;
 		};
+		CTXBuilder& set_swapchain_spec(const SwapchainSpec& spec) {
+			this->_swapchain_spec = spec;
+			return *this;
+		}
 		CTXBuilder& set_shader_search_paths(std::initializer_list<const char*> searchPaths) {
 			_searchpaths.clear();
 			for (auto path : searchPaths) {
@@ -57,7 +67,7 @@ namespace mythril {
 		}
 		CTXBuilder& with_ImGui() {
 #ifndef MYTH_ENABLED_IMGUI
-			ASSERT_MSG(false, "You can not use the ImGui Plugin unless you also enable it in CMake via the options 'MYTH_ENABLE_IMGUI_STANDARD ON' or 'MYTH_ENABLE_IMGUI_DOCKING ON'!");
+			ASSERT_MSG(false, "You can not use the ImGui Plugin unless you also enable it in CMake via the options 'MYTH_ENABLE_IMGUI_STANDARD=ON' or 'MYTH_ENABLE_IMGUI_DOCKING=ON'!");
 #endif
 			this->_usingImGui = true;
 			return *this;
@@ -68,7 +78,9 @@ namespace mythril {
 		bool _usingImGui = false;
 
 		std::vector<std::string> _searchpaths = {};
-		VulkanInfoSpec _vkinfo_spec;
-		WindowSpec _window_spec;
+		// all specs use default values
+		VulkanInfoSpec _vkinfo_spec{};
+		WindowSpec _window_spec{};
+		SwapchainSpec _swapchain_spec{};
 	};
 }

@@ -13,15 +13,17 @@
 #include "VulkanObjects.h"
 
 namespace mythril {
-	Swapchain::Swapchain(CTX& ctx, uint16_t width, uint16_t height)
+	Swapchain::Swapchain(CTX& ctx, SwapchainArgs args)
 	: _ctx(ctx) {
 		// PRIMARY SWAPCHAIN DATA CREATION //
+		uint16_t width = args.width, height = args.height;
 		vkb::SwapchainBuilder swapchainBuilder{_ctx._vkPhysicalDevice, _ctx._vkDevice, _ctx._vkSurfaceKHR};
 		auto swapchain_result = swapchainBuilder
 				.set_desired_format(VkSurfaceFormatKHR{
-						.format = VkFormat::VK_FORMAT_B8G8R8A8_UNORM,
-						.colorSpace = VkColorSpaceKHR::VK_COLOR_SPACE_SRGB_NONLINEAR_KHR})
-				.set_desired_present_mode(VkPresentModeKHR::VK_PRESENT_MODE_FIFO_KHR) // VERY IMPORTANT, decides framerate/buffer/sync
+						.format = args.format,
+						.colorSpace = args.colorSpace,
+				})
+				.set_desired_present_mode(args.presentMode) // VERY IMPORTANT, decides framerate/buffer/sync
 				.set_desired_extent(width, height)
 				.add_image_usage_flags(VkImageUsageFlagBits::VK_IMAGE_USAGE_TRANSFER_DST_BIT)
 				.build();
@@ -31,6 +33,9 @@ namespace mythril {
 		// things we assign to the class itself
 		this->_vkSwapchain = vkbswapchain.swapchain;
 		this->_vkExtent2D = vkbswapchain.extent;
+		this->_vkColorSpace = vkbswapchain.color_space;
+		this->_vkPresentMode = vkbswapchain.present_mode;
+
 		if (_vkExtent2D.width != width || _vkExtent2D.height != height) {
 			LOG_SYSTEM(LogType::Warning, "Requested swapchain size did not take place! \n Requested: {} x {} vs Actual: {} x {}", width, height, _vkExtent2D.width, _vkExtent2D.height);
 		}

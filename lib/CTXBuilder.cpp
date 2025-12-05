@@ -10,6 +10,7 @@
 #include "vkutil.h"
 #include "Logger.h"
 
+#include <VkBootstrap.h>
 
 #include <volk.h>
 #include <vk_mem_alloc.h>
@@ -56,9 +57,10 @@ namespace mythril {
 		vkb::Instance vkbInstance = {};
 		VkSurfaceKHR vkSurface = VK_NULL_HANDLE;
 	};
-	static vkb::PhysicalDevice CreateVulkanPhysicalDevice(VulkanPhysicalDeviceInputs inputs) {
+	static vkb::PhysicalDevice CreateVulkanPhysicalDevice(VulkanPhysicalDeviceInputs inputs, std::span<const char*> additional_extensions) {
 		ASSERT(inputs.vkSurface != VK_NULL_HANDLE);
 		ASSERT(inputs.vkbInstance.instance != VK_NULL_HANDLE);
+
 		// Physical Device
 		// vulkan 1.3 features
 		VkPhysicalDeviceVulkan13Features features13 = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES };
@@ -118,6 +120,8 @@ namespace mythril {
 				.add_required_extension(VK_EXT_INLINE_UNIFORM_BLOCK_EXTENSION_NAME)
 				.add_required_extension(VK_EXT_SUBGROUP_SIZE_CONTROL_EXTENSION_NAME)
 				.add_required_extension(VK_EXT_TEXEL_BUFFER_ALIGNMENT_EXTENSION_NAME)
+
+				.add_required_extensions(additional_extensions)
 
 				.set_required_features_13(features13)
 				.set_required_features_12(features12)
@@ -215,6 +219,15 @@ namespace mythril {
 
 		return output;
 	}
+
+	const char* ResolveAdditional_SwapchainColorSpace(VkColorSpaceKHR colorSpaceKhr) {
+		switch (colorSpaceKhr) {
+			case VkColorSpaceKHR::VK_COLOR_SPACE_SRGB_NONLINEAR_KHR: return nullptr;
+			case VkColorSpaceKHR::VK_COLOR_SPACE_DISPLAY_NATIVE_AMD: return VK_AMD_DISPLAY_NATIVE_HDR_EXTENSION_NAME;
+			default: return VK_EXT_SWAPCHAIN_COLOR_SPACE_EXTENSION_NAME;
+		}
+	}
+
 	std::unique_ptr<CTX> CTXBuilder::build() {
 		// mythril should only provide graphics related things
 		// fixme as this means that we have no audio
@@ -235,10 +248,15 @@ namespace mythril {
 			.vkInstance = vkb_instance.instance,
 			.sdlWindow = window._sdlWindow
 		});
+
+		std::vector<const char*> additional_extensions = {};
+		const char* swapchain_extension = ResolveAdditional_SwapchainColorSpace(this->_swapchain_spec.colorSpace);
+		if (swapchain_extension) additional_extensions.push_back(swapchain_extension);
+
 		vkb::PhysicalDevice vkb_physical_device = CreateVulkanPhysicalDevice({
 			.vkbInstance = vkb_instance,
 			.vkSurface = vk_surface
-		});
+		}, additional_extensions);
 		vkb::Device vkb_device = CreateVulkanLogicalDevice(vkb_physical_device);
 		VmaAllocator vma_allocator = CreateVulkanMemoryAllocator({
 			.vkInstance = vkb_instance.instance,
@@ -277,7 +295,12 @@ namespace mythril {
 		ctx->_presentQueueFamilyIndex = queue_output.presentQueueFamilyIndex;
 
 		ctx->_window = window;
-		ctx->construct();
+		SwapchainArgs args = {
+				.format = this->_swapchain_spec.format,
+				.colorSpace = this->_swapchain_spec.colorSpace,
+				.presentMode = this->_swapchain_spec.presentMode
+		};
+		ctx->construct(args);
 
 		for (auto& path : this->_searchpaths) {
 			ctx->_slangCompiler.addSearchPath(path);

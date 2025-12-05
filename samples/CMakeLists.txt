@@ -61,6 +61,15 @@ CPMAddPackage(
         GITHUB_REPOSITORY "spnda/fastgltf"
         GIT_TAG v0.9.0
 )
+CPMAddPackage(
+        NAME stb_image
+        GITHUB_REPOSITORY "nothings/stb"
+        GIT_TAG master
+)
+if (stb_image_ADDED)
+    add_library(stb_image INTERFACE IMPORTED)
+    target_include_directories(stb_image INTERFACE ${stb_image_SOURCE_DIR})
+endif()
 
 
 ADD_SAMPLE("01_ClearWindow")
@@ -69,4 +78,4 @@ ADD_SAMPLE("03_CubeMSAA" LIBS glm)
 ADD_SAMPLE("04_PostProcessingCube" LIBS glm)
 ADD_SAMPLE("05_ImGui" OPTIONS MYTH_ENABLE_IMGUI_STANDARD=ON)
 ADD_SAMPLE("06_ComplexShader" LIBS glm OPTIONS MYTH_ENABLE_IMGUI_STANDARD=ON)
-ADD_SAMPLE("07_HDR", LIBS glm fastgltf OPTIONS MYTH_ENABLED_IMGUI_STANDARD=ON)
+ADD_SAMPLE("07_HDR" LIBS glm fastgltf stb_image OPTIONS MYTH_ENABLED_IMGUI_STANDARD=ON)

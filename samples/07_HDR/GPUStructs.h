@@ -23,6 +23,9 @@ struct Vertex {
 struct GeometryPushConstants {
 	float4x4 model;
 	Ptr<Vertex> vba;
+    float4 tintColor;
+	DescriptorHandle<Texture2D> baseColorTexture;
+	DescriptorHandle<SamplerState> samplerState;
 };
 struct BlurPushConstants {
 

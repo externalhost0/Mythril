@@ -192,7 +192,7 @@ namespace mythril {
 		uint32_t presentQueueFamilyIndex = -1;
 	};
 	class CTX final {
-		void construct();
+		void construct(SwapchainArgs args);
 	public:
 		 CTX() = default;
 		~CTX();
@@ -206,6 +206,7 @@ namespace mythril {
 		void cleanSwapchain();
 		bool isSwapchainDirty();
 		Window& getWindow() { return _window; };
+		inline const InternalTextureHandle& getNullTexture() { return this->_dummyTextureHandle; };
 
 		CommandBuffer& openCommand(CommandBuffer::Type type);
 		SubmitHandle submitCommand(CommandBuffer& cmd);
@@ -253,7 +254,6 @@ namespace mythril {
 			return *ptr;
 		}
 
-		inline const AllocatedSampler& viewDefaultLinearSampler() const { return *_samplerPool.get(_dummyLinearSamplerHandle); }
 	private:
 		// for automatic cleanup of resources
 		void destroy(InternalBufferHandle handle);
