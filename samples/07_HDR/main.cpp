@@ -46,9 +46,10 @@ struct MeshCompiled {
 };
 struct MaterialData {
 	glm::vec4 baseColorFactor = glm::vec4(1);
-	int baseColorTextureIndex = -1;
-	int normalTextureIndex = -1;
-	int roughnessTextureIndex = -1;
+	size_t baseColorTextureIndex = -1;
+	size_t normalTextureIndex = -1;
+	size_t roughnessMetallicTextureIndex = -1;
+	bool isTransparent;
 };
 struct AssetCompiled {
 	std::vector<MeshCompiled> meshes;
@@ -105,18 +106,24 @@ static AssetData loadGLTFAsset(const std::filesystem::path& filepath) {
 		if (material.pbrData.baseColorTexture) {
 			size_t texture_index = material.pbrData.baseColorTexture->textureIndex;
 			material_data.baseColorTextureIndex = gltf.textures[texture_index].imageIndex.value();
+		} else {
+			material_data.baseColorTextureIndex = 0;
 		}
 		if (material.normalTexture) {
 			size_t texture_index = material.normalTexture->textureIndex;
 			material_data.normalTextureIndex = gltf.textures[texture_index].imageIndex.value();
+		} else {
+			material_data.normalTextureIndex = 0;
 		}
 		if (material.pbrData.metallicRoughnessTexture) {
 			size_t texture_index = material.pbrData.metallicRoughnessTexture->textureIndex;
-			material_data.roughnessTextureIndex = gltf.textures[texture_index].imageIndex.value();
+			material_data.roughnessMetallicTextureIndex = gltf.textures[texture_index].imageIndex.value();
+		} else {
+			material_data.roughnessMetallicTextureIndex = 0;
 		}
 		auto& base_color = material.pbrData.baseColorFactor;
 		material_data.baseColorFactor = {base_color.x(), base_color.y(), base_color.z(), base_color.w()};
-
+		material_data.isTransparent = material.alphaMode == fastgltf::AlphaMode::Blend || material.alphaMode == fastgltf::AlphaMode::Mask;
 		materials.push_back(material_data);
 	}
 
@@ -181,8 +188,7 @@ static AssetData loadGLTFAsset(const std::filesystem::path& filepath) {
 					});
 				}
 			}
-			// load material index
-			int material_index = primitive.materialIndex.value();
+			int material_index = primitive.materialIndex.has_value() ? static_cast<int>(primitive.materialIndex.value()) : 0;
 			// store
 			primitives.push_back(PrimitiveData{vertices, indices, material_index});
 		}
@@ -196,6 +202,7 @@ static AssetData loadGLTFAsset(const std::filesystem::path& filepath) {
 	for (const fastgltf::Image& image : gltf.images) {
 		TextureData texture{};
 
+		// we declare these variables at the top simply because we use it in all paths
 		int w, h, nChannels;
 		std::visit(fastgltf::visitor {
 				[&](auto& args) {
@@ -218,6 +225,7 @@ static AssetData loadGLTFAsset(const std::filesystem::path& filepath) {
 								texture.pixels.reset(data);
 							}}, buffer.data);
 				},
+				// this is the codepath basically most of sponza takes
 				[&](const fastgltf::sources::Array& array) {
 					unsigned char* data = stbi_load_from_memory(
 							reinterpret_cast<const stbi_uc*>(array.bytes.data()),
@@ -255,7 +263,7 @@ static AssetData loadGLTFAsset(const std::filesystem::path& filepath) {
 		}, image.data);
 		textures.push_back(std::move(texture));
 	}
-	return AssetData{meshes, std::move(textures), materials};
+	return AssetData{meshes, std::move(textures), std::move(materials)};
 }
 
 static AssetCompiled compileGLTFAsset(mythril::CTX& ctx, AssetData& data) {
@@ -264,7 +272,7 @@ static AssetCompiled compileGLTFAsset(mythril::CTX& ctx, AssetData& data) {
 	asset.meshes.reserve(data.meshData.size());
 	asset.textureHandles.reserve(data.textureData.size());
 	// and just transfer the data regarding materials
-	asset.materials = data.materialData;
+	asset.materials = std::move(data.materialData);
 
 	unsigned int i = 0;
 	for (const MeshData& mesh_data : data.meshData) {
@@ -276,7 +284,6 @@ static AssetCompiled compileGLTFAsset(mythril::CTX& ctx, AssetData& data) {
 			snprintf(vertex_name_buf, sizeof(vertex_name_buf), "Sponza Vertex Buf on Mesh %d Primitive %d", i, j);
 			char index_name_buf[64];
 			snprintf(index_name_buf, sizeof(index_name_buf), "Sponza Index Buf on Mesh %d Primitive %d", i, j);
-
 
 			MeshCompiled mesh_compiled;
 			mesh_compiled.materialIndex = primitive_data.materialIndex;
@@ -305,9 +312,11 @@ static AssetCompiled compileGLTFAsset(mythril::CTX& ctx, AssetData& data) {
 		}
 
 	}
+	i = 0;
 	for (TextureData& texture_data : data.textureData) {
 		char texture_name_buf[64];
 		snprintf(texture_name_buf, sizeof(texture_name_buf), "Sponza Image %d", i);
+		i++;
 
 		mythril::InternalTextureHandle texture_handle;
 		if (texture_data.pixels) {
@@ -348,8 +357,6 @@ int main() {
 	.with_ImGui()
 	.build();
 
-	
-
 	VkExtent2D extent2D = ctx->getWindow().getFramebufferSize();
 	mythril::InternalTextureHandle colorTarget = ctx->createTexture({
 		.dimension = extent2D,
@@ -371,12 +378,31 @@ int main() {
 		.filePath = "Standard.slang",
 		.debugName = "Standard Shader"
 	});
-	mythril::InternalGraphicsPipelineHandle standardPipeline = ctx->createGraphicsPipeline({
+
+	mythril::InternalGraphicsPipelineHandle opaquePipeline = ctx->createGraphicsPipeline({
 		.vertexShader = {standardShader},
 		.fragmentShader = {standardShader},
 		.blend = mythril::BlendingMode::OFF,
 		.cull = mythril::CullMode::BACK,
-		.debugName = "Standard Graphics Pipeline"
+		.debugName = "Opaque Graphics Pipeline"
+	});
+	mythril::InternalGraphicsPipelineHandle transparentPipeline = ctx->createGraphicsPipeline({
+		.vertexShader = {standardShader},
+		.fragmentShader = {standardShader},
+		.blend = mythril::BlendingMode::ALPHA_BLEND,
+		.cull = mythril::CullMode::OFF,
+		.debugName = "Transparent Graphics Pipeline"
+	});
+
+	mythril::InternalSamplerHandle samplerHandle = ctx->createSampler({
+		.magFilter = mythril::SamplerFilter::Linear,
+		.minFilter = mythril::SamplerFilter::Linear,
+		.wrapU = mythril::SamplerWrap::Repeat,
+		.wrapV = mythril::SamplerWrap::Repeat,
+		.wrapW = mythril::SamplerWrap::Repeat,
+		.mipMap = mythril::SamplerMip::Disabled,
+		.anistrophic = false,
+		.debugName = "Repeating Sampler" ,
 	});
 
 
@@ -385,7 +411,7 @@ int main() {
 	AssetCompiled sponzaCompiled = compileGLTFAsset(*ctx, sponzaData);
 
 	mythril::RenderGraph graph;
-	graph.addPass("geometry", mythril::PassSource::Type::Graphics)
+	graph.addPass("geometry_opaque", mythril::PassSource::Type::Graphics)
 	.write({
 		.texture = colorTarget,
 		.clearValue = {0.2f, 0.2f, 0.2f, 1.f},
@@ -395,24 +421,70 @@ int main() {
 	.write({
 		.texture = depthTarget,
 		.clearValue = {1.f, 0},
-		.loadOp = mythril::LoadOperation::CLEAR
+		.loadOp = mythril::LoadOperation::CLEAR,
+		.storeOp = mythril::StoreOperation::STORE
 	})
 	.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
-		cmd.cmdBindRenderPipeline(standardPipeline);
+		cmd.cmdBindRenderPipeline(opaquePipeline);
 		cmd.cmdBindDepthState({mythril::CompareOperation::CompareOp_Less, true});
 		auto model = glm::mat4(1.0);
 
 		// what we call a mesh is really a primitive for fastgltf
 		for (const MeshCompiled& mesh : sponzaCompiled.meshes) {
-			MaterialData material = sponzaCompiled.materials[mesh.materialIndex];
+			const MaterialData& material = sponzaCompiled.materials[mesh.materialIndex];
+			if (material.isTransparent) continue;
+
 			mythril::InternalTextureHandle baseColorTex = sponzaCompiled.textureHandles[material.baseColorTextureIndex];
+			mythril::InternalTextureHandle normalTex = sponzaCompiled.textureHandles[material.normalTextureIndex];
+			mythril::InternalTextureHandle roughnessMetallicTex = sponzaCompiled.textureHandles[material.roughnessMetallicTextureIndex];
 
 			GPU::GeometryPushConstants push {
 					.model = model,
 					.vba = ctx->gpuAddress(mesh.vertexBufHandle),
 					.tintColor = {1, 1, 1, 1},
 					.baseColorTexture = baseColorTex.index(),
-					.samplerState = 0
+					.normalTexture = normalTex.index(),
+					.roughnessMetallicTexture = roughnessMetallicTex.index(),
+					.samplerState = samplerHandle.index()
+			};
+			cmd.cmdPushConstants(push);
+			cmd.cmdBindIndexBuffer(mesh.indexBufHandle);
+			cmd.cmdDrawIndexed(mesh.indexCount);
+		}
+	});
+	graph.addPass("geometry_transparent", mythril::PassSource::Type::Graphics)
+	.write({
+		.texture = colorTarget,
+		.loadOp = mythril::LoadOperation::LOAD,
+		.storeOp = mythril::StoreOperation::STORE
+	})
+	.write({
+		.texture = depthTarget,
+		.loadOp = mythril::LoadOperation::LOAD,
+		.storeOp = mythril::StoreOperation::NO_CARE
+	})
+	.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
+		cmd.cmdBindRenderPipeline(transparentPipeline);
+		cmd.cmdBindDepthState({mythril::CompareOperation::CompareOp_Less, true});
+		auto model = glm::mat4(1.0);
+
+		// what we call a mesh is really a primitive for fastgltf
+		for (const MeshCompiled& mesh : sponzaCompiled.meshes) {
+			const MaterialData& material = sponzaCompiled.materials[mesh.materialIndex];
+			if (!material.isTransparent) continue;
+
+			mythril::InternalTextureHandle baseColorTex = sponzaCompiled.textureHandles[material.baseColorTextureIndex];
+			mythril::InternalTextureHandle normalTex = sponzaCompiled.textureHandles[material.normalTextureIndex];
+			mythril::InternalTextureHandle roughnessMetallicTex = sponzaCompiled.textureHandles[material.roughnessMetallicTextureIndex];
+
+			GPU::GeometryPushConstants push {
+				.model = model,
+				.vba = ctx->gpuAddress(mesh.vertexBufHandle),
+				.tintColor = {1, 1, 1, 1},
+				.baseColorTexture = baseColorTex.index(),
+				.normalTexture = normalTex.index(),
+				.roughnessMetallicTexture = roughnessMetallicTex.index(),
+				.samplerState = 0
 			};
 			cmd.cmdPushConstants(push);
 			cmd.cmdBindIndexBuffer(mesh.indexBufHandle);
@@ -428,9 +500,15 @@ int main() {
 		.debugName = "frameData Buffer"
 	});
 
-	mythril::DescriptorSetWriter writer = ctx->openUpdate(standardPipeline);
-	writer.updateBinding(frameDataHandle, "frame");
-	ctx->submitUpdate(writer);
+	// todo: right now if a shader is used across multiple pipelines, its descriptor sets have to be updated for each one
+	mythril::DescriptorSetWriter writer1 = ctx->openUpdate(opaquePipeline);
+	writer1.updateBinding(frameDataHandle, "frame");
+	ctx->submitUpdate(writer1);
+
+	mythril::DescriptorSetWriter writer2 = ctx->openUpdate(transparentPipeline);
+	writer2.updateBinding(frameDataHandle, "frame");
+	ctx->submitUpdate(writer2);
+
 
 	auto startTime = std::chrono::high_resolution_clock::now();
 

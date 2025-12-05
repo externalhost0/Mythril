@@ -25,6 +25,8 @@ struct GeometryPushConstants {
 	Ptr<Vertex> vba;
     float4 tintColor;
 	DescriptorHandle<Texture2D> baseColorTexture;
+	DescriptorHandle<Texture2D> normalTexture;
+	DescriptorHandle<Texture2D> roughnessMetallicTexture;
 	DescriptorHandle<SamplerState> samplerState;
 };
 struct BlurPushConstants {

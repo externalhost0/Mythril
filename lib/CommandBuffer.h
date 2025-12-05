@@ -45,6 +45,7 @@ namespace mythril {
 		~CommandBuffer();
 
 		VkCommandBufferSubmitInfo requestSubmitInfo() const;
+		inline bool isDrying() const { return _isDryRun; };
 	public:
 		// all possible commands user can call inside setExecuteCallback
 		// all commands in this section NEED to detect if they are being called while in a dryRun

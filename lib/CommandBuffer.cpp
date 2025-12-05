@@ -117,7 +117,7 @@ namespace mythril {
 	}
 
 	void CommandBuffer::cmdBindRenderPipeline(InternalGraphicsPipelineHandle handle) {
-		ASSERT_MSG(_ctx != nullptr, "You forgot to assign ctx to your CommandBuffer dude.");
+		ASSERT_MSG(this->_ctx, "You forgot to assign ctx to your CommandBuffer dude.");
 		if (_isDryRun) {
 			// we perform construction inside our dry run, which is when we compile the RenderGraph
 			// we do this so we dont stutter mid gameplay loop

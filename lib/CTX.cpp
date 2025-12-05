@@ -713,9 +713,6 @@ namespace mythril {
 			LOG_SYSTEM(LogType::Warning, "Graphics pipeline does not exist, use a valid handle!");
 			return VK_NULL_HANDLE;
 		}
-
-		checkAndUpdateBindlessDescriptorSetImpl();
-
 		// updating descriptor layout //
 //		if (graphics_pipeline->_vkLastDescriptorSetLayout != _vkBindlessDSL) {
 //			deferTask(std::packaged_task<void()>([device = _vkDevice, pipeline = graphics_pipeline->_vkPipeline]() {
@@ -733,6 +730,7 @@ namespace mythril {
 			return graphics_pipeline;
 		}
 		// or, CREATE NEW PIPELINE //
+		checkAndUpdateBindlessDescriptorSetImpl();
 
 		GraphicsPipelineSpec& spec = graphics_pipeline->_spec;
 
