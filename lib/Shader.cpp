@@ -73,50 +73,14 @@ namespace mythril {
 			case FieldKind::Unknown:      return "Unknown";
 		}
 	}
-
-	const char* SpvOpToString(SpvOp op) {
-		switch (op) {
-#define OP(X) case X: return #X
-			OP(SpvOpNop);
-			OP(SpvOpUndef);
-			OP(SpvOpSourceContinued);
-			OP(SpvOpSource);
-			OP(SpvOpSourceExtension);
-			OP(SpvOpName);
-			OP(SpvOpMemberName);
-			OP(SpvOpString);
-			OP(SpvOpLine);
-			OP(SpvOpExtension);
-			OP(SpvOpExtInstImport);
-			OP(SpvOpExtInst);
-			OP(SpvOpMemoryModel);
-			OP(SpvOpEntryPoint);
-			OP(SpvOpExecutionMode);
-			OP(SpvOpCapability);
-			OP(SpvOpTypeVoid);
-			OP(SpvOpTypeBool);
-			OP(SpvOpTypeInt);
-			OP(SpvOpTypeFloat);
-			OP(SpvOpTypeVector);
-			OP(SpvOpTypeMatrix);
-			OP(SpvOpTypeImage);
-			OP(SpvOpTypeSampler);
-			OP(SpvOpTypeSampledImage);
-			OP(SpvOpTypeArray);
-			OP(SpvOpTypeRuntimeArray);
-			OP(SpvOpTypeStruct);
-			OP(SpvOpTypeOpaque);
-			OP(SpvOpTypePointer);
-			OP(SpvOpTypeFunction);
-			OP(SpvOpTypeEvent);
-			OP(SpvOpTypeDeviceEvent);
-			OP(SpvOpTypeReserveId);
-			OP(SpvOpTypeQueue);
-			OP(SpvOpTypePipe);
-			OP(SpvOpTypeForwardPointer);
-				// ... add more here as needed ...
-#undef OP
-			default: return "<Unknown SpvOp>";
+	const char* ScalarKindToString(ScalarKind scalarKind) {
+		switch (scalarKind) {
+			case ScalarKind::None: return "None";
+			case ScalarKind::Int: return "Int";
+			case ScalarKind::UInt: return "UInt";
+			case ScalarKind::Float: return "Float";
+			case ScalarKind::Double: return "Double";
+			case ScalarKind::Bool: return "Bool";
 		}
 	}
 
@@ -259,9 +223,9 @@ namespace mythril {
 
 
 	static Shader::DescriptorBindingInfo GatherDescriptorBindingInformation(const SpvReflectDescriptorBinding& descriptorBind) {
-		Shader::DescriptorBindingInfo info = {};
 		// alias top level type
 		const SpvReflectTypeDescription& blockType = *descriptorBind.type_description;
+		Shader::DescriptorBindingInfo info = {};
 		// descriptor info
 		info.descriptorType = static_cast<VkDescriptorType>(descriptorBind.descriptor_type);
 		info.descriptorCount = descriptorBind.count;
@@ -277,9 +241,9 @@ namespace mythril {
 
 
 	static Shader::PushConstantInfo GatherPushConstantInformation(const SpvReflectBlockVariable& blockVar) {
-		Shader::PushConstantInfo info = {};
 		// alias top level type
 		const SpvReflectTypeDescription& blockType = *blockVar.type_description;
+		Shader::PushConstantInfo info = {};
 		// top level info
 		info.size = blockVar.size;
 		info.offset = blockVar.offset;
@@ -289,6 +253,7 @@ namespace mythril {
 		CollectFieldsRecursively(info.fields, blockVar);
 		return info;
 	}
+
 
 //	void collectFieldsRecursivelyEXT(std::vector<FieldInfo>& fields, slang::TypeLayoutReflection* typeLayout) {
 //		unsigned int fieldCount = typeLayout->getFieldCount();
@@ -353,6 +318,34 @@ namespace mythril {
 		SpvReflectResult spv_result = spvReflectCreateShaderModule(size, code, &spirv_module);
 		ASSERT_MSG(spv_result == SPV_REFLECT_RESULT_SUCCESS, "Initial reflection of the SpvReflectShaderModule failed!");
 
+		// define return value
+		ReflectionResult result = {};
+
+		// collect specialization constants
+		uint32_t sc_count = 0;
+		spv_result = spvReflectEnumerateSpecializationConstants(&spirv_module, &sc_count, nullptr);
+		ASSERT_MSG(spv_result == SPV_REFLECT_RESULT_SUCCESS, "Failed to enumerate Specialization Constants for count.");
+
+		std::vector<SpvReflectSpecializationConstant*> constants(sc_count);
+		spv_result = spvReflectEnumerateSpecializationConstants(&spirv_module, &sc_count, constants.data());
+		ASSERT_MSG(spv_result == SPV_REFLECT_RESULT_SUCCESS, "Failed to enumerate Specialization Constants for data.");
+
+		for (const SpvReflectSpecializationConstant* reflected_constant : constants) {
+			// safely derefrence
+			const SpvReflectTypeDescription& constantType = *reflected_constant->type_description;
+			SpecializationConstant info = {};
+
+			info.varName = reflected_constant->name;
+			info.typeName = "Scalar";
+			info.scalarKind = ResolveScalarKindFromType(constantType);
+			info.id = reflected_constant->constant_id;
+
+			result.specializationInfo.specializationConstants.emplace_back(info);
+			result.specializationInfo.nameToID.insert({info.varName, info.id});
+		}
+
+		// collect descriptor sets info
+
 		uint32_t ds_count = 0;
 		spv_result = spvReflectEnumerateDescriptorSets(&spirv_module, &ds_count, nullptr);
 		ASSERT_MSG(spv_result == SPV_REFLECT_RESULT_SUCCESS, "Failed to enumerate Descriptor Sets for count.");
@@ -362,13 +355,11 @@ namespace mythril {
 		ASSERT_MSG(spv_result == SPV_REFLECT_RESULT_SUCCESS, "Failed to enumerate Descriptor Sets for data.");
 
 		// begin collecting information for the result here
-		ReflectionResult result = {};
 		result.pipelineLayoutSignature.setSignatures.resize(sets.size());
 		result.retrievedDescriptorSets.reserve(sets.size()); // this reserves +1 when bindless exists
 
-		// collect descriptor sets info
 		// lets make every shader own its descriptor sets even if they are duplicated, optimize later with a pool of a sort whe signatures match
-		for (unsigned int set_index = 0; set_index < sets.size(); set_index++) {
+		for (int set_index = 0; set_index < sets.size(); set_index++) {
 			// get a set from the array we enumerated
 			const SpvReflectDescriptorSet* reflected_set = sets[set_index];
 			// modify the set signature in place
@@ -383,7 +374,7 @@ namespace mythril {
 			set_info.setIndex = reflected_set->set;
 
 			// now move through all the descriptor bindings in the set
-			for (unsigned int binding_index = 0; binding_index < reflected_set->binding_count; binding_index++) {
+			for (int binding_index = 0; binding_index < reflected_set->binding_count; binding_index++) {
 				// get a binding from the set
 				const SpvReflectDescriptorBinding* reflected_binding = reflected_set->bindings[binding_index];
 				auto vk_descriptor_type = static_cast<VkDescriptorType>(reflected_binding->descriptor_type);

@@ -6,9 +6,9 @@
 #include "mythril/CTXBuilder.h"
 #include "HelperMacros.h"
 #include "CTX.h"
-#include "Plugins.h"
 #include "vkutil.h"
 #include "Logger.h"
+#include "Plugins.h"
 
 #include <VkBootstrap.h>
 
@@ -308,9 +308,7 @@ namespace mythril {
 		// now we can build plugins!
 #ifdef MYTH_ENABLED_IMGUI
 		if (_usingImGui) {
-			ImGuiPlugin imgui;
-			imgui.onInit(*ctx, ctx->getWindow()._sdlWindow);
-			ctx->_plugins.emplace_back(std::make_unique<ImGuiPlugin>(imgui));
+			ctx->_imguiPlugin.onInit(*ctx, ctx->_window._getSDLwindow(), this->_imgui_spec.format);
 		}
 #endif
 

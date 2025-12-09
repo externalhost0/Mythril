@@ -12,7 +12,9 @@
 #include <backends/imgui_impl_sdl3.h>
 
 namespace mythril {
-	void ImGuiPlugin::onInit(CTX& ctx, SDL_Window* sdlWindow) {
+	void ImGuiPlugin::onInit(CTX& ctx, SDL_Window* sdlWindow, VkFormat format) {
+		this->_isEnabeld = true;
+		this->_requestedFormat = format;
 		_ctx = &ctx;
 		IMGUI_CHECKVERSION();
 		ImGui::CreateContext();
@@ -44,8 +46,6 @@ namespace mythril {
 		pool_info.pPoolSizes = pool_sizes;
 		VK_CHECK(vkCreateDescriptorPool(ctx._vkDevice, &pool_info, nullptr, &this->_descriptorPool));
 
-		// TODO: resolve this from user decision
-		VkFormat format = VK_FORMAT_R8G8B8A8_UNORM;
 		ImGui_ImplVulkan_InitInfo vulkanInitInfo = {
 				.ApiVersion = VK_API_VERSION_1_3,
 				.Instance = ctx._vkInstance,
@@ -75,12 +75,22 @@ namespace mythril {
 		};
 		ImGui_ImplSDL3_InitForVulkan(sdlWindow);
 		ImGui_ImplVulkan_Init(&vulkanInitInfo);
+		// to pull in ctx to use in aliased functions
+		auto* data = new MyUserData {
+			.ctx = &ctx,
+			.sampler = _ctx->_samplerPool.get(_ctx->_dummyLinearSamplerHandle)->getSampler(),
+			.handleMap = {}
+		};
+		ImGui::GetIO().UserData = data;
 	}
-	void ImGuiPlugin::onDispose() {
+	void ImGuiPlugin::onDestroy() {
+		auto* data = reinterpret_cast<MyUserData*>(ImGui::GetIO().UserData);
+		delete data;
 		ImGui_ImplVulkan_Shutdown();
 		// destroying the descriptor pool we made must come after ImplVulkan_Shutdown()
 		vkDestroyDescriptorPool(_ctx->_vkDevice, _descriptorPool, nullptr);
 		ImGui_ImplSDL3_Shutdown();
 		ImGui::DestroyContext();
+		this->_isEnabeld = false;
 	}
 }

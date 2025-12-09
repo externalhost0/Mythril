@@ -3,7 +3,7 @@
 //
 #pragma once
 
-#include "FastVector.h"
+#include "faststl/FastVector.h"
 #include "vkenums.h"
 
 #include <span>
@@ -31,7 +31,7 @@ namespace mythril {
 		void Clear();
 	public:
 		// program
-		PipelineBuilder& add_shader_module(VkShaderModule const &module, VkShaderStageFlags stageFlags, const char *entryPoint);
+		PipelineBuilder& add_shader_module(const VkShaderModule& module, VkShaderStageFlags stageFlags, const char* entryPoint, VkSpecializationInfo* spInfo = nullptr);
 
 		// props
 		PipelineBuilder& set_topology_mode(TopologyMode mode);
@@ -46,6 +46,9 @@ namespace mythril {
 	private:
 		void _setBlendtoOff();
 		void _setBlendtoAlphaBlend();
-		void _setBlendtoAdditive();
+		void _setBlendtoAdditive(); // ext
+		void _setBlendtoMultiply(); // ext
+		void _setBlendtoPremultiplied(); // ext
+		void _setBlendtoMask(); // ext
 	};
 }

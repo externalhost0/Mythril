@@ -88,7 +88,8 @@ namespace mythril {
 		std::string name;
 		enum class Type {
 			Graphics,
-			Compute
+			Compute,
+			General
 		} type = Type::Graphics;
 		std::function<void(CommandBuffer&)> executeCallback;
 

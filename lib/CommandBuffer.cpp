@@ -58,7 +58,26 @@ namespace mythril {
 	}
 	void CommandBuffer::cmdBlitImage(InternalTextureHandle source, InternalTextureHandle destination) {
 		if (_isDryRun) return;
+		ASSERT_MSG(source.valid() && destination.valid(), "Textures must be valid handles!");
 
+#ifdef DEBUG
+		VkImageView source_vkImageView = _ctx->viewTexture(source)._vkImageView;
+		VkImageView dest_vkImageView = _ctx->viewTexture(destination)._vkImageView;
+		for (const auto& color_attachment : this->_activePass.colorAttachments) {
+			ASSERT_MSG(
+					color_attachment.imageView != source_vkImageView &&
+					color_attachment.imageView != dest_vkImageView,
+					"You cannot blit an image currently being used by a RenderPass!");
+		}
+		if (this->_activePass.depthAttachment.has_value()) {
+			const auto& depth_attachment = this->_activePass.depthAttachment.value();
+			ASSERT_MSG(
+					depth_attachment.imageView != source_vkImageView &&
+					depth_attachment.imageView != dest_vkImageView,
+					"You cannot blit an image currently being used by a RenderPass!");
+		}
+
+#endif
 		auto& sourceTex = _ctx->viewTexture(source);
 		auto& destinationTex = _ctx->viewTexture(destination);
 		if (sourceTex._vkCurrentImageLayout != VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) {
@@ -195,10 +214,15 @@ namespace mythril {
 		vkCmdSetDepthCompareOp(_wrapper->_cmdBuf, op);
 	}
 
-
 #ifdef MYTH_ENABLED_IMGUI
 	void CommandBuffer::cmdDrawImGui() {
 		if (_isDryRun) return;
+#ifdef DEBUG
+		for (const auto& color_attachment : this->_activePass.colorAttachments) {
+			ASSERT_MSG(color_attachment.resolveImageView == VK_NULL_HANDLE, "Rendering of ImGui cannot be done inside a multisampled texture!");
+			ASSERT_MSG(color_attachment.imageFormat == this->_ctx->_imguiPlugin.getFormat(), "ImGui is drawing to a format that it was not given! Please pass the VkFormat of the texture which ImGui is drawing to when calling 'withImGuiPlugin()'!");
+		}
+#endif
 		ImGui::Render();
 		ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), _wrapper->_cmdBuf);
 	}
@@ -261,7 +285,6 @@ namespace mythril {
 		cmdBindDepthState({});
 
 		_ctx->checkAndUpdateBindlessDescriptorSetImpl();
-//		_ctx->checkAndUpdateDescriptorSets();
 
 		vkCmdSetDepthCompareOp(_wrapper->_cmdBuf, VK_COMPARE_OP_ALWAYS);
 		vkCmdSetDepthBiasEnable(_wrapper->_cmdBuf, VK_FALSE);
@@ -433,7 +456,7 @@ namespace mythril {
 		blitInfo.srcImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
 		blitInfo.dstImage = _ctx->viewTexture(destination)._vkImage;
 		blitInfo.dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-		blitInfo.filter = VK_FILTER_LINEAR;
+		blitInfo.filter = VK_FILTER_NEAREST; // todo allow customization
 		blitInfo.regionCount = 1;
 		blitInfo.pRegions = &blitRegion;
 

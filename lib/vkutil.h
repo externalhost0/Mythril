@@ -22,7 +22,10 @@ namespace mythril::vkutil {
 	VkImageAspectFlags AspectMaskFromAttachmentLayout(VkImageLayout layout);
 	VkImageAspectFlags AspectMaskFromFormat(VkFormat format);
 
+	bool IsFormatDepth(VkFormat format);
+	bool IsFormatStencil(VkFormat format);
 	bool IsFormatDepthOrStencil(VkFormat format);
+	bool IsFormatDepthAndStencil(VkFormat format);
 
 	StageAccess getPipelineStageAccess(VkImageLayout layout);
 	void ImageMemoryBarrier2(VkCommandBuffer cmd, VkImage image, StageAccess src, StageAccess dst, VkImageLayout oldLayout, VkImageLayout newLayout, VkImageSubresourceRange range);

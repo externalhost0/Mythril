@@ -7,8 +7,8 @@
 #include "Logger.h"
 #include "PipelineBuilder.h"
 #include "GraphicsPipeline.h"
-#include "Plugins.h"
 #include "mythril/CTXBuilder.h"
+#include "Plugins.h"
 
 #include <iostream>
 
@@ -53,7 +53,7 @@ namespace mythril {
 	}
 	static void CheckUpdateBindingCall(GraphicsPipeline* pipeline, InternalBufferHandle bufHandle) {
 		ASSERT_MSG(pipeline, "You must call updateBinding within opening and submitting a DescriptorSetWriter!");
-		ASSERT_MSG(pipeline->_vkPipeline != VK_NULL_HANDLE, "Pipeline '{}' has not yet been resolved, you likely forgot to call RenderGraph::compile!", pipeline->_debugName);
+		ASSERT_MSG(pipeline->_vkPipeline != VK_NULL_HANDLE, "Pipeline '{}' has not yet been resolved, pipeline was probably not included when compiling RenderGraph!", pipeline->_debugName);
 		ASSERT_MSG(bufHandle.valid(), "Handle must be for a valid buffer object!");
 	}
 	void DescriptorSetWriter::updateBinding(mythril::InternalBufferHandle bufHandle, const char* name) {
@@ -187,7 +187,6 @@ namespace mythril {
 				.wrapU = SamplerWrap::Clamp,
 				.wrapV = SamplerWrap::Clamp,
 				.wrapW = SamplerWrap::Clamp,
-				.mipMap = SamplerMip::Disabled,
 				.debugName = "Linear Sampler"
 			});
 
@@ -218,8 +217,8 @@ namespace mythril {
 		// more like awaitingDestruction :0
 		this->_awaitingCreation = true;
 
-		for (auto& plugin : _plugins) {
-			plugin->onDispose();
+		if (this->_imguiPlugin.isEnabled()) {
+			this->_imguiPlugin.onDestroy();
 		}
 
 		destroy(this->_staging->_stagingBuffer);
@@ -707,6 +706,60 @@ namespace mythril {
 		return out;
 	}
 
+	static int ResolveSpecializationConstantID(const std::variant<std::string, int>& identifier, const std::unordered_map<std::string, int>& map) {
+		bool isString = std::holds_alternative<std::string>(identifier);
+		if (!isString) return std::get<int>(identifier);
+		const auto& name = std::get<std::string>(identifier);
+		auto it = map.find(name);
+		if (it != map.end()) {
+			return it->second;
+		}
+		ASSERT_MSG(false, "Your specialization constant entry '{}' could not be found", name);
+	}
+
+	struct SpecializationInfoBundle {
+		VkSpecializationInfo vkInfo{};
+		// purely for lifetime reasons
+		std::vector<VkSpecializationMapEntry> mapEntriesData;
+		std::vector<std::byte> packedData;
+	};
+	static std::unique_ptr<SpecializationInfoBundle> BuildSpecializationInfoBundle(SpecializationConstantEntry* pEntries, uint32_t entryCount, const std::unordered_map<std::string, int>& map) {
+		// if entryCount is 0 just save ourselves time
+		if (entryCount < 1) return nullptr;
+		if (map.empty()) return nullptr;
+
+		auto bundle = std::make_unique<SpecializationInfoBundle>();
+		bundle->mapEntriesData.reserve(entryCount);
+
+		size_t offset = 0;
+		for (uint32_t i_entry = 0; i_entry < entryCount; i_entry++) {
+			const SpecializationConstantEntry& spec_entry = pEntries[i_entry];
+			VkSpecializationMapEntry vk_entry = {};
+			vk_entry.size = spec_entry.size;
+			vk_entry.offset = offset;
+			vk_entry.constantID = ResolveSpecializationConstantID(spec_entry.identifier, map);
+			bundle->mapEntriesData.push_back(vk_entry);
+			offset += spec_entry.size;
+		}
+
+		// make packed structure
+		bundle->packedData.resize(offset);
+		for (uint32_t i = 0; i < entryCount; i++) {
+			const SpecializationConstantEntry& spec_entry = pEntries[i];
+			size_t dstOffset = bundle->mapEntriesData[i].offset;
+			std::memcpy(
+					bundle->packedData.data() + dstOffset,
+					spec_entry.data,
+					spec_entry.size);
+		}
+
+		bundle->vkInfo.mapEntryCount = bundle->mapEntriesData.size();
+		bundle->vkInfo.pMapEntries = bundle->mapEntriesData.data();
+		bundle->vkInfo.dataSize = bundle->packedData.size();
+		bundle->vkInfo.pData = bundle->packedData.data();
+
+		return bundle;	}
+
 	GraphicsPipeline* CTX::resolveRenderPipeline(InternalGraphicsPipelineHandle handle) {
 		GraphicsPipeline* graphics_pipeline = _graphicsPipelinePool.get(handle);
 		if (!graphics_pipeline) {
@@ -725,12 +778,15 @@ namespace mythril {
 //			graphics_pipeline->_vkLastDescriptorSetLayout = _vkBindlessDSL;
 //		}
 
+		// if we are drying then dont do this because descriptor sets may not havent been updated yet
+		this->checkAndUpdateBindlessDescriptorSetImpl();
+
+
 		// RETURN EXISTING PIPELINE //
 		if (graphics_pipeline->_vkPipeline != VK_NULL_HANDLE) {
 			return graphics_pipeline;
 		}
 		// or, CREATE NEW PIPELINE //
-		checkAndUpdateBindlessDescriptorSetImpl();
 
 		GraphicsPipelineSpec& spec = graphics_pipeline->_spec;
 
@@ -755,33 +811,52 @@ namespace mythril {
 			builder.set_depth_format(current_pass_info.depthAttachment->imageFormat);
 		}
 
+		// manually resolve the # of spec constants user gave
+		uint32_t sc_count = 0;
+		while (sc_count < 16 && spec.specConstants[sc_count].size) {
+			sc_count++;
+		}
+
 		// shader setup & signature collection
 		std::vector<PipelineLayoutSignature> pipeline_layout_signatures = {};
+
 		ShaderStage& vertStage = spec.vertexShader;
+		std::unique_ptr<SpecializationInfoBundle> vertSpecConstantsBundle;
 		if (vertStage.valid()) {
 			if (!vertStage.entryPoint) {
 				vertStage.entryPoint = "vs_main";
 			}
 			Shader* shader = _shaderPool.get(vertStage.handle);
-			builder.add_shader_module(shader->vkShaderModule, VK_SHADER_STAGE_VERTEX_BIT, vertStage.entryPoint);
+			if (shader->_specializationInfo.specializationConstants.size() > sc_count)
+				LOG_SYSTEM(LogType::Warning, "You have specialization constants used in the vertex shader '{}' that are not defined in the pipeline creation for '{}'!", shader->_debugName, spec.debugName);
+			vertSpecConstantsBundle = BuildSpecializationInfoBundle(spec.specConstants, sc_count, shader->_specializationInfo.nameToID);
+			builder.add_shader_module(shader->vkShaderModule, VK_SHADER_STAGE_VERTEX_BIT, vertStage.entryPoint, &vertSpecConstantsBundle->vkInfo);
 			pipeline_layout_signatures.push_back(shader->_pipelineSignature);
 		}
 		ShaderStage& fragStage = spec.fragmentShader;
+		std::unique_ptr<SpecializationInfoBundle> fragSpecConstantsBundle;
 		if (fragStage.valid()) {
 			if (!fragStage.entryPoint) {
 				fragStage.entryPoint = "fs_main";
 			}
 			Shader* shader = _shaderPool.get(fragStage.handle);
-			builder.add_shader_module(shader->vkShaderModule, VK_SHADER_STAGE_FRAGMENT_BIT, fragStage.entryPoint);
+			if (shader->_specializationInfo.specializationConstants.size() > sc_count)
+				LOG_SYSTEM(LogType::Warning, "You have specialization constants used in the fragment shader '{}' that are not defined in the pipeline creation for '{}'!", shader->_debugName, spec.debugName);
+			fragSpecConstantsBundle = BuildSpecializationInfoBundle(spec.specConstants, sc_count, shader->_specializationInfo.nameToID);
+			builder.add_shader_module(shader->vkShaderModule, VK_SHADER_STAGE_FRAGMENT_BIT, fragStage.entryPoint, &fragSpecConstantsBundle->vkInfo);
 			pipeline_layout_signatures.push_back(shader->_pipelineSignature);
 		}
 		ShaderStage& geometryStage = spec.geometryShader;
+		std::unique_ptr<SpecializationInfoBundle> geomSpecConstantsBundle;
 		if (geometryStage.valid()) {
 			if (!geometryStage.entryPoint) {
 				geometryStage.entryPoint = "gs_main";
 			}
 			Shader* shader = _shaderPool.get(geometryStage.handle);
-			builder.add_shader_module(shader->vkShaderModule, VK_SHADER_STAGE_GEOMETRY_BIT, geometryStage.entryPoint);
+			if (shader->_specializationInfo.specializationConstants.size() > sc_count)
+				LOG_SYSTEM(LogType::Warning, "You have specialization constants used in the geometry shader '{}' that are not defined in the pipeline creation for '{}'!", shader->_debugName, spec.debugName);
+			geomSpecConstantsBundle = BuildSpecializationInfoBundle(spec.specConstants, sc_count, shader->_specializationInfo.nameToID);
+			builder.add_shader_module(shader->vkShaderModule, VK_SHADER_STAGE_GEOMETRY_BIT, geometryStage.entryPoint, &geomSpecConstantsBundle->vkInfo);
 			pipeline_layout_signatures.push_back(shader->_pipelineSignature);
 		}
 
@@ -920,30 +995,44 @@ namespace mythril {
 		_imm->submit(wrapper);
 	}
 	InternalSamplerHandle CTX::createSampler(SamplerSpec spec) {
-		VkFilter minfilter = toVulkan(spec.minFilter);
-		VkFilter magfilter = toVulkan(spec.magFilter);
-		VkSamplerAddressMode addressU = toVulkan(spec.wrapU);
-		VkSamplerAddressMode addressV = toVulkan(spec.wrapV);
-		VkSamplerAddressMode addressW = toVulkan(spec.wrapW);
-
 		// creating sampler requires little work so we dont need an _Impl function for it
 		VkSamplerCreateInfo info = {
 				.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
 				.pNext = nullptr,
+				.flags = 0,
 
-				.magFilter = magfilter,
-				.minFilter = minfilter,
-				.addressModeU = addressU,
-				.addressModeV = addressV,
-				.addressModeW = addressW,
+				.magFilter = toVulkan(spec.magFilter),
+				.minFilter = toVulkan(spec.minFilter),
+				.mipmapMode = toVulkan(spec.mipMap),
+				.addressModeU = toVulkan(spec.wrapU),
+				.addressModeV = toVulkan(spec.wrapV),
+				.addressModeW = toVulkan(spec.wrapW),
 
-				.maxAnisotropy = 1.0f,
+				.mipLodBias = 0.f,
+				.anisotropyEnable = VK_FALSE,
+				.maxAnisotropy = 0.0f,
+
+				.compareEnable = spec.compareEnabled ? VK_TRUE : VK_FALSE,
+				.compareOp = toVulkan(spec.compareOp),
+
 				.minLod = -1000,
 				.maxLod = 1000,
 
 				.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK,
-				.unnormalizedCoordinates = false,
+				.unnormalizedCoordinates = VK_FALSE,
 		};
+		if (spec.maxAnisotropic > 1) {
+			float maxSamplerAnisotropy = this->_vkPhysDeviceProperties.limits.maxSamplerAnisotropy;
+			const bool isAnisotropicFilteringSupported = maxSamplerAnisotropy > 1;
+			ASSERT_MSG(isAnisotropicFilteringSupported, "Anisotropic filtering is not supported by the device.");
+			info.anisotropyEnable = spec.anistrophic ? VK_TRUE : VK_FALSE;
+			if (maxSamplerAnisotropy < spec.maxAnisotropic) {
+				LOG_SYSTEM(LogType::Warning,
+						   "Supplied sampler anisotropic value greater than max supported by the device, setting to {}",
+						   static_cast<double>(maxSamplerAnisotropy));
+			}
+			info.maxAnisotropy = std::min((float)maxSamplerAnisotropy, (float)spec.maxAnisotropic);
+		}
 
 		AllocatedSampler obj = {};
 		vkCreateSampler(_vkDevice, &info, nullptr, &obj._vkSampler);
@@ -1103,6 +1192,7 @@ namespace mythril {
 		VkImageUsageFlags usage_flags = (spec.storage == StorageType::Device) ? VK_IMAGE_USAGE_TRANSFER_DST_BIT : 0;
 
 		if (spec.usage & TextureUsageBits::TextureUsageBits_Sampled) {
+			ASSERT_MSG(!vkutil::IsFormatDepthAndStencil(spec.format), "VkFormat cannot have both depth & stencil components and be used for sampling! Occurs because of texture '{}'", spec.debugName);
 			usage_flags |= VK_IMAGE_USAGE_SAMPLED_BIT;
 		}
 		if (spec.usage & TextureUsageBits::TextureUsageBits_Storage) {
@@ -1273,8 +1363,15 @@ namespace mythril {
 		InternalGraphicsPipelineHandle handle = _graphicsPipelinePool.create(std::move(obj));
 		return handle;
 	}
+	InternalComputePipelineHandle CTX::createComputePipeline(ComputePipelineSpec spec) {
+		ComputePipeline obj = {};
+		snprintf(obj._debugName, sizeof(obj._debugName) - 1, "%s", spec.debugName);
+		InternalComputePipelineHandle handle = _computePipelinePool.create(std::move(obj));
+		return handle;
+	}
 
 	InternalShaderHandle CTX::createShader(ShaderSpec spec) {
+		ASSERT_MSG(exists(spec.filePath), "Filepath does not exist.");
 		// lazily create slang session & slang global session
 		if (!_slangCompiler.sessionExists()) {
 			_slangCompiler.create();
@@ -1289,6 +1386,8 @@ namespace mythril {
 		obj._pipelineSignature = reflection_result.pipelineLayoutSignature;
 		obj._descriptorSets = std::move(reflection_result.retrievedDescriptorSets);
 		obj._pushConstants = std::move(reflection_result.retrivedPushConstants);
+		// specialization constants need to be stored until they are used in resolving a pipeline
+		obj._specializationInfo = std::move(reflection_result.specializationInfo);
 
 		// _vkShaderModule
 		VkShaderModuleCreateInfo create_info = { .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO, .pNext = nullptr };
@@ -1496,4 +1595,33 @@ namespace mythril {
 		_graphicsPipelinePool.destroy(handle);
 	}
 
+
 }
+#ifdef MYTH_ENABLED_IMGUI
+namespace ImGui {
+	void Image(mythril::InternalTextureHandle texHandle, const ImVec2& image_size, const ImVec2& uv0, const ImVec2& uv1) {
+		ASSERT_MSG(texHandle.valid(), "Texture handle is invalid!");
+		auto userData = reinterpret_cast<mythril::MyUserData*>(ImGui::GetIO().UserData);
+		ImVec2 size;
+		if (image_size.x <= 0 && image_size.y <= 0) {
+			VkExtent2D extent2D = userData->ctx->viewTexture(texHandle).getExtentAs2D();
+			size = { static_cast<float>(extent2D.width), static_cast<float>(extent2D.height) };
+		} else {
+			size = image_size;
+		}
+		VkDescriptorSet im_image_ds;
+		auto iterator = userData->handleMap.find(texHandle);
+		if (iterator != userData->handleMap.end()) {
+			im_image_ds = iterator->second;
+		} else {
+			const mythril::AllocatedTexture& texture = userData->ctx->viewTexture(texHandle);
+			ASSERT_MSG(texture.isSampledImage(), "Texture must have sampled flag!");
+			VkDescriptorSet ds = ImGui_ImplVulkan_AddTexture(userData->sampler, texture.getImageView(), texture.getLayout());
+			userData->handleMap.insert({texHandle, ds});
+			im_image_ds = ds;
+		}
+		ImGui::Image((ImTextureID)im_image_ds, size, uv0, uv1);
+	}
+
+}
+#endif

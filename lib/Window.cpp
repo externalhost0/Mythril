@@ -54,14 +54,14 @@ namespace mythril {
 				if (!SDL_SetWindowFullscreen(_sdlWindow, false)) {
 					LOG_SYSTEM(LogType::Error, "Failed to set window mode as Windowed. SDL Error: {}", SDL_GetError());
 				}
-				break;
-			}
+			} break;
 			case WindowMode::Fullscreen: {
 				if (!SDL_SetWindowFullscreen(_sdlWindow, true)) {
 					LOG_SYSTEM(LogType::Error, "Failed to set window mode as Borderless Fullscreen. SDL Error: {}", SDL_GetError());
 				}
-				break;
-			}
+			} break;
+			case WindowMode::Headless:
+				ASSERT_MSG(false, "WindowMode can never be set to HEADLESS during runtime!");
 		}
 		_windowMode = newMode;
 	}

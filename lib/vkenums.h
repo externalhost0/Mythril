@@ -10,7 +10,9 @@ namespace mythril {
 	enum class BlendingMode {
 		OFF,
 		ADDITIVE, // (glow)
-		ALPHA_BLEND // (standard)
+		ALPHA_BLEND, // (standard)
+		MULTIPLY,
+		MASK // (stencil)
 	};
 	enum class DepthMode {
 		NONE,
@@ -43,7 +45,7 @@ namespace mythril {
 		Nearest,
 		Linear
 	};
-	enum class SamplerMip : uint8_t {
+	enum class SamplerMipMap : uint8_t {
 		Disabled,
 		Nearest,
 		Linear
@@ -52,6 +54,15 @@ namespace mythril {
 		Repeat,
 		Clamp,
 		MirrorRepeat
+	};
+	enum class CompareOp : uint8_t {
+		Never,
+		Less,
+		LessEqual,
+		Equal,
+		Greater,
+		GreaterEqual,
+		Always
 	};
 	enum class LoadOperation : uint8_t {
 		NONE = 0,
@@ -163,6 +174,24 @@ namespace mythril {
 			case SamplerWrap::Repeat: return VK_SAMPLER_ADDRESS_MODE_REPEAT;
 			case SamplerWrap::Clamp: return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
 			case SamplerWrap::MirrorRepeat: return VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT;
+		}
+	}
+	constexpr VkSamplerMipmapMode toVulkan(SamplerMipMap mip) {
+		switch (mip) {
+			case SamplerMipMap::Disabled:
+			case SamplerMipMap::Nearest: return VK_SAMPLER_MIPMAP_MODE_NEAREST;
+			case SamplerMipMap::Linear: return VK_SAMPLER_MIPMAP_MODE_LINEAR;
+		}
+	}
+	constexpr VkCompareOp toVulkan(CompareOp op) {
+		switch (op) {
+			case CompareOp::Never: return VK_COMPARE_OP_NEVER;
+			case CompareOp::Less: return VK_COMPARE_OP_LESS;
+			case CompareOp::LessEqual: return VK_COMPARE_OP_LESS_OR_EQUAL;
+			case CompareOp::Equal: return VK_COMPARE_OP_EQUAL;
+			case CompareOp::Greater: return VK_COMPARE_OP_GREATER;
+			case CompareOp::GreaterEqual: return VK_COMPARE_OP_GREATER_OR_EQUAL;
+			case CompareOp::Always: return VK_COMPARE_OP_ALWAYS;
 		}
 	}
 

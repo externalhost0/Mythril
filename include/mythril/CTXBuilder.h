@@ -35,6 +35,12 @@ namespace mythril {
 		VkPresentModeKHR presentMode = VK_PRESENT_MODE_FIFO_KHR;
 	};
 
+#ifdef MYTH_ENABLED_IMGUI
+	struct ImGuiPluginSpec {
+		VkFormat format = VK_FORMAT_R8G8B8A8_UNORM;
+	};
+#endif
+
 	class CTXBuilder final {
 	public:
 		CTXBuilder() = default;
@@ -65,13 +71,14 @@ namespace mythril {
 			}
 			return *this;
 		}
-		CTXBuilder& with_ImGui() {
-#ifndef MYTH_ENABLED_IMGUI
-			ASSERT_MSG(false, "You can not use the ImGui Plugin unless you also enable it in CMake via the options 'MYTH_ENABLE_IMGUI_STANDARD=ON' or 'MYTH_ENABLE_IMGUI_DOCKING=ON'!");
-#endif
+
+#ifdef MYTH_ENABLED_IMGUI
+		CTXBuilder& with_ImGui(ImGuiPluginSpec spec = {}) {
 			this->_usingImGui = true;
+			this->_imgui_spec = spec;
 			return *this;
 		}
+#endif
 
 		std::unique_ptr<CTX> build();
 	private:
@@ -82,5 +89,8 @@ namespace mythril {
 		VulkanInfoSpec _vkinfo_spec{};
 		WindowSpec _window_spec{};
 		SwapchainSpec _swapchain_spec{};
+#ifdef MYTH_ENABLED_IMGUI
+		ImGuiPluginSpec _imgui_spec{};
+#endif
 	};
 }

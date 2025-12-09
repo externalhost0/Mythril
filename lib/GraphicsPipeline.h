@@ -38,6 +38,26 @@ namespace mythril {
 			return handle.valid();
 		}
 	};
+
+
+	struct SpecializationConstantEntry {
+		SpecializationConstantEntry() = default;
+		// explicit construction
+		SpecializationConstantEntry(const void* data, size_t size, const std::variant<std::string, int>& id) {
+			this->data = data;
+			this->size = size;
+			this->identifier = id;
+		}
+		// implicit construction (recommended)
+//		template<typename T>
+//		SpecializationConstantEntry(const T& type, const std::variant<std::string, int>& id) {
+//			SpecializationConstantEntry(&type, sizeof(T), id);
+//		}
+		const void* data = nullptr;
+		size_t size = 0;
+		std::variant<std::string, int> identifier;
+	};
+
 	struct GraphicsPipelineSpec {
 		ShaderStage vertexShader;
 		ShaderStage fragmentShader;
@@ -46,41 +66,30 @@ namespace mythril {
 		TopologyMode topology = TopologyMode::TRIANGLE;
 		PolygonMode polygon = PolygonMode::FILL;
 		BlendingMode blend = BlendingMode::OFF;
-		CullMode cull = CullMode::BACK;
+		CullMode cull = CullMode::OFF;
 		SampleCount multisample = SampleCount::X1;
+
+		// max spec constants of 16
+		SpecializationConstantEntry specConstants[16];
 		const char* debugName = "Unnamed Graphics Pipeline";
 	};
 	struct RayTracingPipelineSpec {
-
+		InternalShaderHandle shader;
 		const char* debugName = "Unnamed RayTracing Pipeline";
 	};
 	struct ComputePipelineSpec {
-		InternalShaderHandle handle;
-		const char* entryPoint;
+		InternalShaderHandle shader;
+		SpecializationConstantEntry specConstants[16];
 		const char* debugName = "Unnamed Compute Pipeline";
 	};
 
-	enum class PipelineType {
-		Graphics,
-		Compute,
-		RayTracing
-	};
 
 	struct IPipeline {
 		VkPipeline _vkPipeline = VK_NULL_HANDLE;
 		VkPipelineLayout _vkPipelineLayout = VK_NULL_HANDLE;
-		PipelineType _type = PipelineType::Graphics;
-
 		char _debugName[128] = {0};
 	};
-	class ComputePipeline : public IPipeline {
-
-	private:
-		friend class CTX;
-		friend class CommandBuffer;
-
-	};
-	class RayTracingPipeline : IPipeline {
+	class RayTracingPipeline : public IPipeline {
 
 	private:
 		friend class CTX;
@@ -104,6 +113,17 @@ namespace mythril {
 		friend class CTX;
 		friend class CommandBuffer;
 		friend class DescriptorSetWriter;
+	};
+
+	class ComputePipeline : public IPipeline {
+	public:
+
+	private:
+
+
+		friend class CTX;
+		friend class CommandBuffer;
+
 	};
 
 }

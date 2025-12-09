@@ -79,6 +79,14 @@ namespace mythril {
 		std::vector<FieldInfo> fields;
 	};
 
+	// a specialization constant can only ever be a Scalar
+	struct SpecializationConstant {
+		std::string varName;
+		std::string typeName;
+		ScalarKind scalarKind;
+		uint32_t id;
+	};
+
 	struct DescriptorSetSignature {
 		std::vector<VkDescriptorSetLayoutBinding> bindings;
 		std::unordered_map<std::string, uint32_t> nameToBinding;
@@ -89,6 +97,10 @@ namespace mythril {
 	struct PipelineLayoutSignature {
 		std::vector<DescriptorSetSignature> setSignatures;
 		std::vector<VkPushConstantRange> pushes;
+	};
+	struct SpecializationInfo {
+		std::vector<SpecializationConstant> specializationConstants;
+		std::unordered_map<std::string, int> nameToID;
 	};
 
 
@@ -119,12 +131,13 @@ namespace mythril {
 	private:
 		// a shader defines not only the module obviously, but a pipelineLayout
 		VkShaderModule vkShaderModule;
+		PipelineLayoutSignature _pipelineSignature;
+		SpecializationInfo _specializationInfo; // holds both info and a map when varName is used to resolve ID
 
-		// everything below can be quired by user, not used by Mythril at all
+		// these two vectors can be quired by user, not used by Mythril at all
 		std::vector<DescriptorSetInfo> _descriptorSets;
 		std::vector<PushConstantInfo> _pushConstants;
 
-		PipelineLayoutSignature _pipelineSignature;
 
 		char _debugName[128] = {0};
 
@@ -132,8 +145,17 @@ namespace mythril {
 		friend class CommandBuffer;
 	};
 
+
 	struct ReflectionResult {
+		// ds = descriptor sets
+		// pc = push constants
+		// sc = specialization constants
+
+		// pipeline layout requires ds & pc
 		PipelineLayoutSignature pipelineLayoutSignature;
+		// pipeline requires sc
+		SpecializationInfo specializationInfo;
+
 		// optional information for user-created reflection systems
 		std::vector<Shader::DescriptorSetInfo> retrievedDescriptorSets;
 		std::vector<Shader::PushConstantInfo> retrivedPushConstants;

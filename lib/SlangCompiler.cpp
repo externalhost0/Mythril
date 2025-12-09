@@ -108,12 +108,17 @@ namespace mythril {
 		ASSERT_MSG(SLANG_SUCCEEDED(session_result), "Slang failed to create session!");
 	}
 
+	static const char* ResolveDiagnosticsMessage(const Slang::ComPtr<slang::IBlob>& diagnostics_blob) {
+		return diagnostics_blob ? static_cast<const char*>(diagnostics_blob->getBufferPointer()) : "(no diagnostics available)";
+	}
+
 	CompileResult SlangCompiler::compileFile(const std::filesystem::path& filepath) {
+		ASSERT(exists(filepath));
 		// 1. load module
 		Slang::ComPtr<slang::IModule> slang_module;
 		Slang::ComPtr<slang::IBlob> diagnostics_blob;
 		slang_module = this->_slangSession->loadModule(filepath.c_str(), diagnostics_blob.writeRef());
-		ASSERT_MSG(slang_module, "Failed Slang module creation! Diagnostics Below:\n{}", static_cast<const char*>(diagnostics_blob->getBufferPointer()));
+		ASSERT_MSG(slang_module, "Failed Slang module creation, this might happen for a bunch of different reasons like filepath couldnt be found or the shader is invalid, Diagnostics Below:\n{}", ResolveDiagnosticsMessage(diagnostics_blob));
 		diagnostics_blob.setNull();
 
 		// 2. query entry points
@@ -135,46 +140,34 @@ namespace mythril {
 				(int)componentTypes.size(),
 				composed_program.writeRef(),
 				diagnostics_blob.writeRef());
-		ASSERT_MSG(SLANG_SUCCEEDED(module_result), "Composition failed! Diagnostics Below:\n{}", static_cast<const char*>(diagnostics_blob->getBufferPointer()));
+		ASSERT_MSG(SLANG_SUCCEEDED(module_result), "Composition failed! Diagnostics Below:\n{}", ResolveDiagnosticsMessage(diagnostics_blob));
 		diagnostics_blob.setNull();
 
 		// 4. linking
 		// linked_program needs to be kept alive as we want to access entrypoints, and therefore we store linked_program in the CompileResult return
 		Slang::ComPtr<slang::IComponentType> linked_program;
 		SlangResult compose_result = composed_program->link(linked_program.writeRef(), diagnostics_blob.writeRef());
-		ASSERT_MSG(SLANG_SUCCEEDED(compose_result), "Linking failed! Diagnostics Below:\n{}", static_cast<const char*>(diagnostics_blob->getBufferPointer()));
+		ASSERT_MSG(SLANG_SUCCEEDED(compose_result), "Linking failed! Diagnostics Below:\n{}", ResolveDiagnosticsMessage(diagnostics_blob));
 		diagnostics_blob.setNull();
 
 		// 4.5. retrieve layout for reflection
 		// will always be 0 for raster shaders at least
 		int targetIndex = 0;
 		slang::ProgramLayout* program_layout = linked_program->getLayout(targetIndex, diagnostics_blob.writeRef());
-		ASSERT_MSG(program_layout, "Failed to get ProgramLayout*, therefore shader reflection will also fail! Diagnostics Below:\n{}", static_cast<const char*>(diagnostics_blob->getBufferPointer()));
+		ASSERT_MSG(program_layout, "Failed to get ProgramLayout*, therefore shader reflection will also fail! Diagnostics Below:\n{}", ResolveDiagnosticsMessage(diagnostics_blob));
 		diagnostics_blob.setNull();
-
-//		Slang::ComPtr<slang::IBlob> jsonBlob;
-//		SlangResult json_result = program_layout->toJson(jsonBlob.writeRef());
-//		ASSERT_MSG(SLANG_SUCCEEDED(json_result), "Failed to get JSON from program_layout!");
-//		std::ofstream file("testshader.json", std::ios::trunc);  // trunc = overwrite
-//		if (file) {
-//			file << (const char*)jsonBlob->getBufferPointer();
-//			printf("wrote json file at %s\n", std::filesystem::absolute("testshader.json").c_str());
-//		} else {
-//			printf("failed to write json file!\n");
-//		}
-
 
 		// 5. retrieve kernel code
 		Slang::ComPtr<slang::IBlob> spirvBlob;
 		// use getTargetCode instead of something like getEntryPointCode as this works with multiple entry points
 		SlangResult code_result = linked_program->getTargetCode(0, spirvBlob.writeRef(), diagnostics_blob.writeRef());
-		ASSERT_MSG(SLANG_SUCCEEDED(code_result), "Code retrieval failed! Diagnostics Below:\n{}", static_cast<const char*>(diagnostics_blob->getBufferPointer()));
+		ASSERT_MSG(SLANG_SUCCEEDED(code_result), "Code retrieval failed! Diagnostics Below:\n{}", ResolveDiagnosticsMessage(diagnostics_blob));
 
 
 		// 5+. bonus: retreive metadata to determine if parameters are used or not
 		Slang::ComPtr<slang::IMetadata> target_metadata;
 		SlangResult metadata_result = linked_program->getTargetMetadata(0, target_metadata.writeRef(), diagnostics_blob.writeRef());
-		ASSERT_MSG(SLANG_SUCCEEDED(metadata_result), "Metadata retrieval Failed! Diagnostics Below:\n{}", static_cast<const char*>(diagnostics_blob->getBufferPointer()));
+		ASSERT_MSG(SLANG_SUCCEEDED(metadata_result), "Metadata retrieval Failed! Diagnostics Below:\n{}", ResolveDiagnosticsMessage(diagnostics_blob));
 
 		CompileResult result;
 		result._linkedProgram = linked_program;

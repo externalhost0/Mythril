@@ -15,12 +15,18 @@
 #include "GraphicsPipeline.h"
 #include "Window.h"
 #include "SlangCompiler.h"
+#include "Plugins.h"
 
 #include <future>
 #include <filesystem>
 #include <volk.h>
 #include <slang/slang.h>
 #include <slang/slang-com-ptr.h>
+
+#ifdef MYTH_ENABLED_IMGUI
+#include <imgui.h>
+#include <imgui_impl_vulkan.h>
+#endif
 
 namespace mythril {
 	class CTXBuilder;
@@ -72,12 +78,16 @@ namespace mythril {
 	struct SamplerSpec {
 		SamplerFilter magFilter = SamplerFilter::Linear;
 		SamplerFilter minFilter = SamplerFilter::Linear;
+		SamplerMipMap mipMap = SamplerMipMap::Disabled;
 		SamplerWrap wrapU = SamplerWrap::Repeat;
 		SamplerWrap wrapV = SamplerWrap::Repeat;
 		SamplerWrap wrapW = SamplerWrap::Repeat;
 
-		SamplerMip mipMap = SamplerMip::Disabled;
-		bool anistrophic = true;
+		bool compareEnabled = false;
+		CompareOp compareOp = CompareOp::LessEqual;
+
+		bool anistrophic = false;
+		uint8_t maxAnisotropic = 1;
 		const char* debugName = "Unnamed Sampler";
 	};
 	struct BufferSpec {
@@ -111,7 +121,7 @@ namespace mythril {
 		const char* debugName = "Unnamed Texture";
 	};
 	struct ShaderSpec {
-		const char* filePath = nullptr;
+		std::filesystem::path filePath;
 		const char* debugName = "Unnamed Shader";
 	};
 
@@ -191,6 +201,8 @@ namespace mythril {
 		VkQueue presentQueue = VK_NULL_HANDLE;
 		uint32_t presentQueueFamilyIndex = -1;
 	};
+
+
 	class CTX final {
 		void construct(SwapchainArgs args);
 	public:
@@ -214,7 +226,9 @@ namespace mythril {
 		DescriptorSetWriter openUpdate(InternalGraphicsPipelineHandle pipelineHandle) {
 			DescriptorSetWriter updater(*this);
 			GraphicsPipeline* pipeline = _graphicsPipelinePool.get(pipelineHandle);
-			ASSERT_MSG(!pipeline->_managedDescriptorSets.empty(), "Pipeline '{}' has no managed desriptor sets, therefore attempts to open a DescriptorSetWriter are disallowed!", pipeline->_debugName);
+			ASSERT_MSG(!pipeline->_managedDescriptorSets.empty(),
+					   "Pipeline '{}' has no managed desriptor sets, therefore attempts to open a DescriptorSetWriter are disallowed!\n\t This error might also occur because you don't use the pipeline during rendering!",
+					   pipeline->_debugName);
 			updater.currentPipeline = pipeline;
 			return updater;
 		};
@@ -229,6 +243,7 @@ namespace mythril {
 		void resizeTexture(InternalTextureHandle handle, VkExtent2D newExtent);
 		InternalSamplerHandle createSampler(SamplerSpec spec);
 		InternalGraphicsPipelineHandle createGraphicsPipeline(GraphicsPipelineSpec spec);
+		InternalComputePipelineHandle createComputePipeline(ComputePipelineSpec spec);
 		InternalShaderHandle createShader(ShaderSpec spec);
 
 		VkDeviceAddress gpuAddress(InternalBufferHandle handle, size_t offset = 0);
@@ -347,7 +362,9 @@ namespace mythril {
 		HandlePool<InternalComputePipelineHandle, ComputePipeline> _computePipelinePool;
 
 		// some rare stuff
-		std::vector<std::unique_ptr<class BasePlugin>> _plugins = {};
+#ifdef MYTH_ENABLED_IMGUI
+		ImGuiPlugin _imguiPlugin;
+#endif
 		SlangCompiler _slangCompiler;
 		Window _window;
 
@@ -360,7 +377,20 @@ namespace mythril {
 		friend class AllocatedBuffer;
 		friend class AllocatedTexture;
 		friend class ImGuiPlugin;
-
 	};
+
+#ifdef MYTH_ENABLED_IMGUI
+	struct MyUserData {
+		CTX* ctx;
+		VkSampler sampler;
+		std::unordered_map<InternalTextureHandle, VkDescriptorSet> handleMap;
+	};
+#endif
 }
+#ifdef MYTH_ENABLED_IMGUI
+namespace ImGui {
+	void Image(mythril::InternalTextureHandle texHandle, const ImVec2 &image_size = {0, 0}, const ImVec2 &uv0 = {0, 0}, const ImVec2 &uv1 = {1, 1});
+}
+#endif
+
 

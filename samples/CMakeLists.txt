@@ -44,7 +44,6 @@ macro(ADD_SAMPLE sample_name)
                 COMMENT "Touching source to trigger rebuild"
         )
     endif()
-
 endmacro()
 
 # for some of the examples
@@ -54,6 +53,7 @@ CPMAddPackage(
         GIT_TAG 1.0.1
 )
 add_compile_definitions(GLM_FORCE_DEPTH_ZERO_TO_ONE)
+add_compile_definitions(GLM_ENABLE_EXPERIMENTAL)
 #add_compile_definitions(GLM_FORCE_LEFT_HANDED)
 
 CPMAddPackage(
@@ -71,6 +71,20 @@ if (stb_image_ADDED)
     target_include_directories(stb_image INTERFACE ${stb_image_SOURCE_DIR})
 endif()
 
+CPMAddPackage(
+        NAME imguizmo
+        GITHUB_REPOSITORY "CedricGuillemet/ImGuizmo"
+        GIT_TAG master
+        DOWNLOAD_ONLY True
+)
+if (imguizmo_ADDED)
+    file(GLOB IMGUIZMO_SOURCES ${imguizmo_SOURCE_DIR}/*.cpp)
+    file(GLOB IMGUIZMO_HEADERS ${imguizmo_SOURCE_DIR}/*.h)
+
+    add_library(imguizmo STATIC ${IMGUIZMO_SOURCES} ${IMGUIZMO_HEADERS})
+    target_link_libraries(imguizmo PUBLIC imgui)
+    target_include_directories(imguizmo PUBLIC ${imguizmo_SOURCE_DIR})
+endif ()
 
 ADD_SAMPLE("01_ClearWindow")
 ADD_SAMPLE("02_Cube" LIBS glm)
@@ -78,4 +92,4 @@ ADD_SAMPLE("03_CubeMSAA" LIBS glm)
 ADD_SAMPLE("04_PostProcessingCube" LIBS glm)
 ADD_SAMPLE("05_ImGui" OPTIONS MYTH_ENABLE_IMGUI_STANDARD=ON)
 ADD_SAMPLE("06_ComplexShader" LIBS glm OPTIONS MYTH_ENABLE_IMGUI_STANDARD=ON)
-ADD_SAMPLE("07_HDR" LIBS glm fastgltf stb_image OPTIONS MYTH_ENABLED_IMGUI_STANDARD=ON)
+ADD_SAMPLE("07_HDR" LIBS glm fastgltf stb_image imguizmo OPTIONS MYTH_ENABLED_IMGUI_STANDARD=ON)

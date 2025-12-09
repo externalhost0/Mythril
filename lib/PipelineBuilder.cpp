@@ -6,6 +6,7 @@
 #include "vkinfo.h"
 #include "vkenums.h"
 #include "HelperMacros.h"
+#include "Logger.h"
 
 #include <algorithm>
 #include <volk.h>
@@ -51,6 +52,7 @@ namespace mythril {
 		// disable blending if format doesnt accept it
 		for (int i = 0; i < blendAttachments.size(); i++) {
 			if (isIntegarFormat(_colorAttachmentFormats[i])) {
+				LOG_SYSTEM(LogType::Warning, "Color Attachment {} does not support blending and has blendEnabled to VK_FALSE", i);
 				blendAttachments[i].blendEnable = VK_FALSE;
 			}
 		}
@@ -98,8 +100,17 @@ namespace mythril {
 		this->Clear(); // clear the entire pipeline struct to reuse the PipelineBuilder
 		return newPipeline;
 	}
-	PipelineBuilder& PipelineBuilder::add_shader_module(const VkShaderModule& module, VkShaderStageFlags stageFlags, const char* entryPoint) {
-		_shaderStages.push_back(vkinfo::CreatePipelineShaderStageInfo(static_cast<VkShaderStageFlagBits>(stageFlags), module, entryPoint));
+	PipelineBuilder& PipelineBuilder::add_shader_module(const VkShaderModule& module, VkShaderStageFlags stageFlags, const char* entryPoint, VkSpecializationInfo* spInfo) {
+		VkPipelineShaderStageCreateInfo info = {};
+		info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+		info.pNext = nullptr;
+		info.stage = static_cast<VkShaderStageFlagBits>(stageFlags);
+		info.module = module;
+		info.pName = entryPoint; // entry point default to "main"
+
+		info.pSpecializationInfo = spInfo;
+
+		_shaderStages.push_back(info);
 		return *this;
 	}
 	PipelineBuilder& PipelineBuilder::set_polygon_mode(PolygonMode polygonMode) {
@@ -153,13 +164,30 @@ namespace mythril {
 		return *this;
 	}
 
+	// Off
 	void PipelineBuilder::_setBlendtoOff() {
 		_colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
 		_colorBlendAttachment.blendEnable = VK_FALSE;
 	}
+	// Normal
+	void PipelineBuilder::_setBlendtoAlphaBlend() {
+		_colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+		_colorBlendAttachment.blendEnable = VK_TRUE;
+		// source alpha is from alpha channel
+		_colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+
+		_colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA; // diff
+
+		_colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
+		_colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+		_colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA; // diff
+		_colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
+	}
+	// Additive
 	void PipelineBuilder::_setBlendtoAdditive() {
 		_colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
 		_colorBlendAttachment.blendEnable = VK_TRUE;
+		// source alpha is from alpha channel
 		_colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
 
 		_colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE; // diff
@@ -169,16 +197,46 @@ namespace mythril {
 		_colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
 		_colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
 	}
-	void PipelineBuilder::_setBlendtoAlphaBlend() {
+	// Multiply
+	void PipelineBuilder::_setBlendtoMultiply() {
 		_colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
 		_colorBlendAttachment.blendEnable = VK_TRUE;
-		_colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+		// source alpha is from color
+		_colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_DST_COLOR; // diff
+
+		_colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ZERO; // diff
+
+		_colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
+		_colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+		_colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+		_colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
+	}
+	// Premultiplied
+	void PipelineBuilder::_setBlendtoPremultiplied() {
+		_colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+		_colorBlendAttachment.blendEnable = VK_TRUE;
+		// source alpha is constant 1
+		_colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE; // diff
 
 		_colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA; // diff
 
 		_colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
-		_colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+		_colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
 		_colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA; // diff
+		_colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
+	}
+	// Stencil Mask
+	void PipelineBuilder::_setBlendtoMask() {
+		_colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+		_colorBlendAttachment.blendEnable = VK_TRUE;
+		// source alpha is from alpha channel
+		_colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+
+		_colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ZERO;
+
+		_colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
+		_colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+		_colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
 		_colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
 	}
 
@@ -192,6 +250,12 @@ namespace mythril {
 				break;
 			case BlendingMode::ALPHA_BLEND:
 				this->_setBlendtoAlphaBlend();
+				break;
+			case BlendingMode::MASK:
+				this->_setBlendtoMask();
+				break;
+			case BlendingMode::MULTIPLY:
+				this->_setBlendtoMultiply();
 				break;
 		}
 		return *this;
