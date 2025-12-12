@@ -388,7 +388,6 @@ void DrawLightingUI(GPU::LightingData& lightingData) {
 }
 
 
-
 const std::vector<GPU::Vertex> cubeVertices = {
 		// front face
 		{{-1.f, -1.f, -1.f}}, // A 0
@@ -499,7 +498,6 @@ int main() {
 		.format = VK_FORMAT_D32_SFLOAT_S8_UINT,
 		.debugName = "Depth Texture"
 	});
-
 
 	constexpr uint32_t shadow_map_size = 4096;
 	mythril::InternalTextureHandle shadowMap = ctx->createTexture({
@@ -651,7 +649,7 @@ int main() {
 
 
 	// load gltf asset
-	AssetData sponzaData = loadGLTFAsset("KhronosGroup_glTF-Sample-Assets_Models-Sponza/glTF/Sponza.gltf");
+	AssetData sponzaData = loadGLTFAsset("KhronosGroup_glTF-Sample-Assets-Sponza/glTF/Sponza.gltf");
 	AssetCompiled sponzaCompiled = compileGLTFAsset(*ctx, sponzaData);
 
 	// load my arrow visualizer

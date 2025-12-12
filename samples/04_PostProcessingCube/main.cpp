@@ -178,7 +178,7 @@ int main() {
 	auto startTime = std::chrono::high_resolution_clock::now();
 
 	mythril::RenderGraph graph;
-	graph.addPass("main", mythril::PassSource::Type::Graphics)
+	graph.addGraphicsPass("main")
 	.write({
 		.texture = colorTarget,
 		.clearValue = {0.2f, 0.2f, 0.2f, 1.f},
@@ -216,7 +216,7 @@ int main() {
 		cmd.cmdBindIndexBuffer(cubeIndexBuffer);
 		cmd.cmdDrawIndexed(cubeIndices.size());
 	});
-	graph.addPass("post_processing", mythril::PassSource::Type::Graphics)
+	graph.addGraphicsPass("post_processing")
 	.write({
 		.texture = postColorTarget,
 		.loadOp = mythril::LoadOperation::NO_CARE,

@@ -469,7 +469,7 @@ int main() {
 
 	auto startTime = std::chrono::high_resolution_clock::now();
 	mythril::RenderGraph graph;
-	graph.addPass("geometry", mythril::PassSource::Type::Graphics)
+	graph.addGraphicsPass("geometry")
 	.write({
 		.texture = colorTarget,
 		.clearValue = {0.2f, 0.2f, 0.2f, 1.f},
@@ -508,7 +508,7 @@ int main() {
 		cmd.cmdDrawIndexed(cubeIndices.size());
 	});
 
-	graph.addPass("gui", mythril::PassSource::Type::Graphics)
+	graph.addGraphicsPass("gui")
 	.write({
 		.texture = colorTarget,
 		.loadOp = mythril::LoadOperation::LOAD,

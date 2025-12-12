@@ -179,9 +179,11 @@ namespace mythril {
 		// more like awaitingDestruction :0
 		this->_awaitingCreation = true;
 
+#ifdef MYTH_ENABLED_IMGUI
 		if (this->_imguiPlugin.isEnabled()) {
 			this->_imguiPlugin.onDestroy();
 		}
+#endif
 
 		destroy(this->_staging->_stagingBuffer);
 		this->_staging.reset(nullptr);

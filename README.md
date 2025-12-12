@@ -6,7 +6,6 @@ It aims to provide a easy to create and highly abstracted API for Vulkan, aswell
 * RenderGraph implementation.
 * Automatic shader reflection.
 * Abstracted and easy to use resource descriptors.
-* [NOT YET DONE] Tracy, profiles the rendering logic. Learn more about Tracy [here](https://github.com/wolfpld/tracy).
 
 
 ### Minimal Example:
@@ -72,12 +71,11 @@ int main() {
 ![Minimal Example Screenshot][basic_window_img]
 
 ## Building
-* C++ 20
+* C++ 20 (Clang 16.0.0+)
 * CMake 3.28+
 * Vulkan SDK 1.4.3+
 
 ## Installing
-
 You can easily include with CPM.
 ```cmake
 CPMAddPackage(

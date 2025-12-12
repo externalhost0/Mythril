@@ -31,7 +31,7 @@ int main() {
 	});
 
 	mythril::RenderGraph graph;
-	graph.addPass("main", mythril::PassSource::Type::Graphics)
+	graph.addGraphicsPass("main")
 	.write({
 		.texture = colorTarget,
 		.clearValue = {1, 0, 0, 1},
