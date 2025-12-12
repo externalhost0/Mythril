@@ -8,8 +8,8 @@
 #include "HelperMacros.h"
 #include "Logger.h"
 
-#include <algorithm>
 #include <volk.h>
+#include <algorithm>
 
 namespace mythril {
 	// some helper functions //

@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <vector>
+#include <stdexcept>
 
 namespace mythril {
 	template <typename T, size_t MaxSize>

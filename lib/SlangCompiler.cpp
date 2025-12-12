@@ -6,7 +6,9 @@
 #include "HelperMacros.h"
 
 #include <vector>
+#include <array>
 #include <fstream>
+#include <filesystem>
 
 namespace mythril {
 	void SlangCompiler::create() {
@@ -89,7 +91,7 @@ namespace mythril {
 		std::array<const char*, 16> sp_cstrings = {};
 		int64_t sp_count = 0;
 		for (const std::filesystem::path& path : this->_shaderSearchPaths) {
-			sp_cstrings[sp_count++] = path.c_str();
+			sp_cstrings[sp_count++] = reinterpret_cast<const char*>(path.c_str());
 		}
 
 		slang::SessionDesc sessionDesc = {
@@ -117,7 +119,7 @@ namespace mythril {
 		// 1. load module
 		Slang::ComPtr<slang::IModule> slang_module;
 		Slang::ComPtr<slang::IBlob> diagnostics_blob;
-		slang_module = this->_slangSession->loadModule(filepath.c_str(), diagnostics_blob.writeRef());
+		slang_module = this->_slangSession->loadModule(reinterpret_cast<const char*>(filepath.c_str()), diagnostics_blob.writeRef());
 		ASSERT_MSG(slang_module, "Failed Slang module creation, this might happen for a bunch of different reasons like filepath couldnt be found or the shader is invalid, Diagnostics Below:\n{}", ResolveDiagnosticsMessage(diagnostics_blob));
 		diagnostics_blob.setNull();
 

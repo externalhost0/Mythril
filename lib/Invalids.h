@@ -19,7 +19,5 @@ template<> constexpr inline int16_t Invalid<int16_t> = -1;
 template<> constexpr inline int32_t Invalid<int32_t> = -1;
 template<> constexpr inline int64_t Invalid<int64_t> = -1;
 
-template<> constexpr inline size_t  Invalid<size_t>  = static_cast<size_t>(-1);
-
 template<> constexpr inline float   Invalid<float>  = std::numeric_limits<float>::quiet_NaN();
 template<> constexpr inline double  Invalid<double> = std::numeric_limits<double>::quiet_NaN();

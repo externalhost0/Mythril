@@ -10,6 +10,8 @@
 #include <volk.h>
 #include <slang/slang.h>
 
+#include <variant>
+
 namespace mythril {
 	enum class ShaderStages {
 		Vertex,
