@@ -18,7 +18,9 @@
 #include "Plugins.h"
 
 #include <future>
+#include <deque>
 #include <filesystem>
+
 #include <volk.h>
 #include <slang/slang.h>
 #include <slang/slang-com-ptr.h>

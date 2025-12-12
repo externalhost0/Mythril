@@ -2,6 +2,9 @@ cmake_minimum_required(VERSION 3.28)
 set(PARENT_PROJECT_NAME mythril)
 project(${PARENT_PROJECT_NAME} LANGUAGES C CXX)
 
+# https://github.com/libsdl-org/SDL/blob/main/docs/INTRO-cmake.md#:~:text=build%20directory%20automatically.-,set,-(CMAKE_RUNTIME_OUTPUT_DIRECTORY%20%22
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/$<CONFIGURATION>")
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/$<CONFIGURATION>")
 # ------------------- IMPORTANT | User Options ---------------------------
 # default options
 option(MYTH_ENABLE_IMGUI_STANDARD "Enable ImGui Plugin Main Branch" OFF)
@@ -31,14 +34,19 @@ if(MYTH_RUN_SAMPLES)
 endif()
 
 # -------------------------- VULKAN --------------------------------
+set(VULKAN_SDK_DIR "$ENV{VULKAN_SDK}")
 
+if(NOT VULKAN_SDK_DIR)
+    message(FATAL_ERROR "VULKAN_SDK environment variable not set!")
+endif()
 # link VULKAN SDK and the also installed Slang Shading Lang Binaries
-find_package(Vulkan REQUIRED COMPONENTS)
+find_package(Vulkan REQUIRED)
 if(NOT VULKAN_FOUND)
     message(FATAL_ERROR "Vulkan SDK not installed.")
 endif()
 # -------------------------- SLANG SHADERS ------------------------
-set(SLANG_INCLUDE_DIR "${Vulkan_INCLUDE_DIR}/slang")
+set(SLANG_INCLUDE_DIR "${Vulkan_INCLUDE_DIRS}/slang")
+set(SLANG_LIBRARY_DIR "${VULKAN_SDK_DIR}/Lib")
 find_library(SLANG_LIBRARY
         NAMES slang
         PATHS "${SLANG_LIBRARY_DIR}"
@@ -58,7 +66,7 @@ CPMAddPackage(
         GITHUB_REPOSITORY "KhronosGroup/SPIRV-Reflect"
         GIT_TAG vulkan-sdk-1.4.328
         OPTIONS
-        "SPIRV_REFLECT_STATIC_LIB=OFF"
+        "SPIRV_REFLECT_STATIC_LIB=ON"
 )
 add_library(SPIRV-Reflect STATIC
         ${SPIRV-Reflect_SOURCE_DIR}/spirv_reflect.c
@@ -197,6 +205,9 @@ target_link_libraries(${PARENT_PROJECT_NAME}
         vk-bootstrap
         SPIRV-Reflect
         slang
+        -static
+        -static-libgcc
+        -static-libstdc++
 )
 
 # adds imgui if enabled
