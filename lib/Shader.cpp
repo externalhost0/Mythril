@@ -318,6 +318,13 @@ namespace mythril {
 		SpvReflectResult spv_result = spvReflectCreateShaderModule(size, code, &spirv_module);
 		ASSERT_MSG(spv_result == SPV_REFLECT_RESULT_SUCCESS, "Initial reflection of the SpvReflectShaderModule failed!");
 
+		VkShaderStageFlags vkShaderStageFlags = 0;
+		uint32_t entry_point_count = spirv_module.entry_point_count;
+		for (int i_entryPoint = 0; i_entryPoint < entry_point_count; i_entryPoint++) {
+			SpvReflectEntryPoint reflectedEntryPoint = spirv_module.entry_points[i_entryPoint];
+			vkShaderStageFlags |= reflectedEntryPoint.shader_stage;
+		}
+
 		// define return value
 		ReflectionResult result = {};
 
@@ -394,8 +401,7 @@ namespace mythril {
 				vkds_layout_binding.binding = reflected_binding->binding;
 				vkds_layout_binding.descriptorType = static_cast<VkDescriptorType>(reflected_binding->descriptor_type);
 				vkds_layout_binding.descriptorCount = reflected_binding->count;
-				// fixme, correctly get stageflags, this is also done for push constants
-				vkds_layout_binding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+				vkds_layout_binding.stageFlags = vkShaderStageFlags;
 				vkds_layout_binding.pImmutableSamplers = nullptr;
 				// thats all the info for a binding
 				// this is for lookup when updating
@@ -426,7 +432,7 @@ namespace mythril {
 			VkPushConstantRange pc_range = {};
 			pc_range.size = block->size;
 			pc_range.offset = block->offset;
-			pc_range.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+			pc_range.stageFlags = vkShaderStageFlags;
 			pc_ranges[i_block] = pc_range;
 
 			result.retrivedPushConstants.emplace_back(GatherPushConstantInformation(*block));

@@ -16,9 +16,74 @@
 #include <imgui_impl_vulkan.h>
 #endif
 
-namespace mythril {
-	constexpr uint16_t kMaxColorAttachments = 16;
+#ifdef DEBUG
+#define MAYBE_WARN_PASS_OPERATION_MISMATCH(goalType)               \
+if (this->getCurrentPassType() != goalType)                        \
+LOG_SYSTEM_NOSOURCE(LogType::Warning,                              \
+"Calling '{}' inside a pass not of type '{}' is not reccomended!", \
+__func__,                                                          \
+PassSourceTypeToString(goalType));
+#else
+#define MAYBE_WARN_PASS_OPERATION_MISMATCH(goalType) (void(0))
+#endif
 
+
+namespace mythril {
+	static const char* PassSourceTypeToString(PassSource::Type type) {
+		switch (type) {
+			case PassSource::Type::Graphics: return "Graphics";
+			case PassSource::Type::Compute: return "Compute";
+		}
+	}
+
+	PassSource::Type CommandBuffer::getCurrentPassType() {
+		if (std::holds_alternative<InternalGraphicsPipelineHandle>(_currentPipelineHandle)) return PassSource::Type::Graphics;
+		else if (std::holds_alternative<InternalComputePipelineHandle>(_currentPipelineHandle)) return PassSource::Type::Compute;
+		assert(false);
+	}
+
+	static void MaybeWarnPipelineRebind(const PipelineCommon& pipeline, const char* debugName) {
+		static std::unordered_map<VkPipeline, int> g_rebindWarningCount;
+		int& count = g_rebindWarningCount[pipeline._vkPipeline];
+		static constexpr unsigned int kMaxWarns = 5;
+		if (count < kMaxWarns) {
+			LOG_SYSTEM(LogType::Warning, "Called to rebind already bound pipeline '{}'", debugName);
+		} else if (count == kMaxWarns) {
+			LOG_SYSTEM(LogType::Warning, "Pipeline '{}' has triggered this warning >{} times and will now be silenced.", debugName, kMaxWarns);
+		}
+		count++;
+	}
+
+	static void MaybeWarnPushConstantSizeMismatch(PipelineCommon& common, uint32_t cpuSize) {
+		static std::unordered_map<VkPipeline, int> g_pushConstantWarningCount;
+		int& count = g_pushConstantWarningCount[common._vkPipeline];
+		static constexpr unsigned int kMaxWarns = 5;
+
+		bool matches = false;
+		for (const VkPushConstantRange& push : common.signature.pushes) {
+			if (push.size == cpuSize) {
+				matches = true;
+				break;
+			}
+		}
+		if (!matches) {
+			if (count < kMaxWarns) {
+				std::ostringstream ss;
+				bool first = true;
+				for (const VkPushConstantRange& push : common.signature.pushes) {
+					if (!first) ss << ", ";
+					first = false;
+					ss << push.size;
+				}
+				LOG_SYSTEM(LogType::Warning, "Push constant CPU size is different than GPU size! Your CPU structure has a size of '{}' while the shader's push constant has sizes '[{}]' respectively.", cpuSize, ss.str());
+			} else if (count == kMaxWarns) {
+				LOG_SYSTEM(LogType::Warning, "Push constant size mismatch for pipeline has triggered this warning >{} times and will now be silenced.", kMaxWarns);
+			}
+			count++;
+		}
+	}
+
+	constexpr uint16_t kMaxColorAttachments = 16;
 	// enforce that a valid CommandBuffer can only be created via this constructor
 	CommandBuffer::CommandBuffer(CTX* ctx, CommandBuffer::Type type) : _ctx(ctx), _cmdType(type), _wrapper(&ctx->_imm->acquire()), _isDryRun(false) {};
 	CommandBuffer::~CommandBuffer() {
@@ -36,21 +101,32 @@ namespace mythril {
 	// ALL PUBLIC COMMANDS AVAILBLE TO USER //
 	void CommandBuffer::cmdDraw(uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstInstance) {
 		if (_isDryRun) return;
+		MAYBE_WARN_PASS_OPERATION_MISMATCH(PassSource::Type::Graphics);
 
 		vkCmdDraw(_wrapper->_cmdBuf, vertexCount, instanceCount, firstVertex, firstInstance);
 	}
 	void CommandBuffer::cmdDrawIndexed(uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex, int32_t vertexOffset, uint32_t baseInstance) {
 		if (_isDryRun) return;
+		MAYBE_WARN_PASS_OPERATION_MISMATCH(PassSource::Type::Graphics);
 
 		vkCmdDrawIndexed(_wrapper->_cmdBuf, indexCount, instanceCount, firstIndex, vertexOffset, baseInstance);
 	}
 
 	void CommandBuffer::cmdBindIndexBuffer(InternalBufferHandle handle) {
 		if (_isDryRun) return;
+		MAYBE_WARN_PASS_OPERATION_MISMATCH(PassSource::Type::Graphics);
 
 		const AllocatedBuffer& buffer = _ctx->viewBuffer(handle);
 		vkCmdBindIndexBuffer(_wrapper->_cmdBuf, buffer._vkBuffer, 0, VK_INDEX_TYPE_UINT32);
 	}
+
+	void CommandBuffer::cmdDispatchThreadGroup(const Dimensions& threadGroupCount) {
+		if (_isDryRun) return;
+		MAYBE_WARN_PASS_OPERATION_MISMATCH(PassSource::Type::Compute);
+
+		vkCmdDispatch(_wrapper->_cmdBuf, threadGroupCount.width, threadGroupCount.height, threadGroupCount.depth);
+	}
+
 	void CommandBuffer::cmdTransitionLayout(InternalTextureHandle source, VkImageLayout newLayout) {
 		if (_isDryRun) return;
 
@@ -99,6 +175,10 @@ namespace mythril {
 
 	void CommandBuffer::cmdPushConstants(const void* data, uint32_t size, uint32_t offset) {
 		if (_isDryRun) return;
+		if (!_currentPipelineCommon) {
+			LOG_SYSTEM(LogType::Warning, "No pipeline currently bound, will not perform push constants!");
+			return;
+		}
 
 		ASSERT_MSG(size % 4 == 0, "Push constant size needs to be a multiple of 4. Is size {}", size);
 		const VkPhysicalDeviceLimits& limits = _ctx->_vkPhysDeviceProperties.limits;
@@ -106,67 +186,79 @@ namespace mythril {
 			LOG_SYSTEM(LogType::Error, "Push constants size exceeded %u (max %u bytes)", size + offset, limits.maxPushConstantsSize);
 		}
 
-		if (_currentPipelineHandle.empty()) {
-			LOG_SYSTEM(LogType::Warning, "No pipeline currently bound, will not perform push constants!");
-			return;
+		// we just use the enum for PassSource::Type even though it makes no sense cause thats not what we are testing for
+		PassSource::Type type = getCurrentPassType();
+		VkShaderStageFlags stages;
+		switch (type) {
+			case PassSource::Type::Compute: {
+				stages = VK_SHADER_STAGE_COMPUTE_BIT;
+			} break;
+			case PassSource::Type::Graphics: {
+				stages = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+			}
 		}
-		size_t pcsize = _ctx->_graphicsPipelinePool.get(_currentPipelineHandle)->signature.pushes[0].size;
-		if (pcsize != size) {
-//			LOG_SYSTEM(LogType::Warning, "Push constant CPU size is different than GPU size! Your CPU structure has a size of '{}' while shader's push constant has size of '{}'", size, pcsize);
-		}
-
-		const GraphicsPipeline& pipeline = *_ctx->_graphicsPipelinePool.get(_currentPipelineHandle);
-		const VkShaderStageFlags stageFlags =  VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-		vkCmdPushConstants(_wrapper->_cmdBuf, pipeline._vkPipelineLayout, static_cast<VkShaderStageFlagBits>(stageFlags), offset, pcsize, data);
-	}
-
-	void MaybeWarnRebind(const IPipeline* pipeline, VkPipeline lastBound) {
-		static std::unordered_map<VkPipeline, int> g_rebindWarningCount;
-		VkPipeline vkPipe = pipeline->_vkPipeline;
-		if (lastBound != vkPipe)
-			return;
-		int& count = g_rebindWarningCount[vkPipe];
-		constexpr unsigned int maxWarns = 5;
-		if (count < maxWarns) {
-			LOG_SYSTEM(LogType::Warning, "Called to rebind already bound pipeline '{}'", pipeline->_debugName);
-		} else if (count == maxWarns) {
-			LOG_SYSTEM(LogType::Warning, "Pipeline '{}' has triggered this warning >{} times and will now be silenced.", pipeline->_debugName, maxWarns);
-		}
-		count++;
-	}
-
-	void CommandBuffer::cmdBindRenderPipeline(InternalGraphicsPipelineHandle handle) {
-		ASSERT_MSG(this->_ctx, "You forgot to assign ctx to your CommandBuffer dude.");
-		if (_isDryRun) {
-			// we perform construction inside our dry run, which is when we compile the RenderGraph
-			// we do this so we dont stutter mid gameplay loop
-			_ctx->resolveRenderPipeline(handle);
-			return;
-		}
-		if (handle.empty()) {
-			LOG_SYSTEM(LogType::Warning, "Binded render pipeline was empty/invalid!");
-			return;
-		}
-		// use _currentPipeline
-		_currentPipelineHandle = handle;
-		const GraphicsPipeline* pipeline = _ctx->_graphicsPipelinePool.get(_currentPipelineHandle);
-
-		// only bind pipeline if its not currently bound
-		if (_lastBoundvkPipeline == pipeline->_vkPipeline) {
 #ifdef DEBUG
-			MaybeWarnRebind(static_cast<const IPipeline*>(pipeline), _lastBoundvkPipeline);
+		MaybeWarnPushConstantSizeMismatch(*_currentPipelineCommon, size);
+#endif
+		vkCmdPushConstants(_wrapper->_cmdBuf, _currentPipelineCommon->_vkPipelineLayout, static_cast<VkShaderStageFlagBits>(stages), offset, size, data);
+	}
+
+	void CommandBuffer::cmdBindPipelineImpl(const PipelineCommon* common, VkPipelineBindPoint bindPoint, const char* debugName) {
+		// only bind pipeline if its not currently bound
+		if (common->_vkPipeline == _lastBoundvkPipeline) {
+#ifdef DEBUG
+			MaybeWarnPipelineRebind(*common, debugName);
 #endif
 			return;
 		}
-		_lastBoundvkPipeline = pipeline->_vkPipeline;
-		vkCmdBindPipeline(_wrapper->_cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->_vkPipeline);
-		if (pipeline->_vkBindableDescriptorSets.empty()) return;
-		vkCmdBindDescriptorSets(_wrapper->_cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->_vkPipelineLayout,
+		// what we should be actually doing anyways
+		_lastBoundvkPipeline = common->_vkPipeline;
+		vkCmdBindPipeline(_wrapper->_cmdBuf, bindPoint, common->_vkPipeline);
+		if (common->_vkBindableDescriptorSets.empty()) return;
+		vkCmdBindDescriptorSets(_wrapper->_cmdBuf, bindPoint, common->_vkPipelineLayout,
 								0,
-								pipeline->_vkBindableDescriptorSets.size(),
-								pipeline->_vkBindableDescriptorSets.data(),
+								common->_vkBindableDescriptorSets.size(),
+								common->_vkBindableDescriptorSets.data(),
 								0,
 								nullptr);
+	}
+
+	void CommandBuffer::cmdBindGraphicsPipeline(InternalGraphicsPipelineHandle handle) {
+		ASSERT(this->_ctx);
+		if (handle.empty()) {
+			LOG_SYSTEM(LogType::Warning, "Binded render pipeline was invalid/empty!");
+			return;
+		}
+		if (_isDryRun) {
+			this->_ctx->checkAndUpdateBindlessDescriptorSetImpl();
+			// we perform construction inside our dry run for all pipelines, which is when we compile the RenderGraph
+			// we do this so we dont stutter mid gameplay loop
+			_ctx->resolveGraphicsPipelineImpl(*_ctx->_graphicsPipelinePool.get(handle));
+			return;
+		}
+		this->_currentPipelineHandle = handle;
+		this->_currentPipelineCommon = &_ctx->_graphicsPipelinePool.get(handle)->_common;
+		const PipelineCommon* common = this->_currentPipelineCommon;
+		this->cmdBindPipelineImpl(common, VK_PIPELINE_BIND_POINT_GRAPHICS);
+	}
+
+	void CommandBuffer::cmdBindComputePipeline(InternalComputePipelineHandle handle) {
+		ASSERT(this->_ctx);
+
+		if (getCurrentPassType() != PassSource::Type::Compute)
+		if (handle.empty()) {
+			LOG_SYSTEM(LogType::Warning, "Binded compute pipeline was invalid/empty!");
+			return;
+		}
+		if (_isDryRun) {
+			this->_ctx->checkAndUpdateBindlessDescriptorSetImpl();
+			_ctx->resolveComputePipelineImpl(*_ctx->_computePipelinePool.get(handle));
+			return;
+		}
+		this->_currentPipelineHandle = handle;
+		this->_currentPipelineCommon = &this->_ctx->_computePipelinePool.get(handle)->_common;
+		const PipelineCommon* common = this->_currentPipelineCommon;
+		this->cmdBindPipelineImpl(common, VK_PIPELINE_BIND_POINT_COMPUTE);
 	}
 
 	// current issues with host buffer

@@ -5,7 +5,7 @@
 #include "CTX.h"
 #include "vkutil.h"
 #include "Logger.h"
-#include "PipelineBuilder.h"
+#include "GraphicsPipelineBuilder.h"
 #include "GraphicsPipeline.h"
 #include "mythril/CTXBuilder.h"
 #include "Plugins.h"
@@ -25,16 +25,6 @@
 #include <slang/slang-cpp-types-core.h>
 
 namespace mythril {
-	// we dont use combined image samplers
-	enum Bindings {
-		kGlobalBinding = 0,
-
-		kSamplerBinding = 0,
-		kTextureBinding = 1,
-		kStorageImageBinding = 2,
-
-		kNumOfBindings,
-	};
 	// https://docs.shader-slang.org/en/latest/external/slang/docs/user-guide/03-convenience-features.html#descriptorhandle-for-bindless-descriptor-access:~:text=None%20provides%20the%20following%20bindings%20for%20descriptor%20types%3A-,Enum,-Value
 	namespace BindlessSpaceIndex {
 		enum Type : uint8_t {
@@ -51,59 +41,7 @@ namespace mythril {
 			kNumOfBinds = 3
 		};
 	}
-	static void CheckUpdateBindingCall(GraphicsPipeline* pipeline, InternalBufferHandle bufHandle) {
-		ASSERT_MSG(pipeline, "You must call updateBinding within opening and submitting a DescriptorSetWriter!");
-		ASSERT_MSG(pipeline->_vkPipeline != VK_NULL_HANDLE, "Pipeline '{}' has not yet been resolved, pipeline was probably not included when compiling RenderGraph!", pipeline->_debugName);
-		ASSERT_MSG(bufHandle.valid(), "Handle must be for a valid buffer object!");
-	}
-	void DescriptorSetWriter::updateBinding(mythril::InternalBufferHandle bufHandle, const char* name) {
-		CheckUpdateBindingCall(this->currentPipeline, bufHandle);
 
-		for (size_t i = 0; i < this->currentPipeline->signature.setSignatures.size(); i++) {
-			const DescriptorSetSignature& set_signature = this->currentPipeline->signature.setSignatures[i];
-			auto it = set_signature.nameToBinding.find(name);
-			if (it != set_signature.nameToBinding.end()) {
-				updateBinding(bufHandle, static_cast<int>(i), static_cast<int>(it->second));
-				return;
-			}
-		}
-		ASSERT_MSG(false, "Variable name '{}' could not be found in pipeline '{}'!", name, this->currentPipeline->_debugName);
-	}
-
-	void DescriptorSetWriter::updateBinding(InternalBufferHandle bufHandle, int set, int binding) {
-		CheckUpdateBindingCall(this->currentPipeline, bufHandle);
-
-		AllocatedBuffer* buf = _ctx->_bufferPool.get(bufHandle);
-		ASSERT_MSG(buf->isUniformBuffer(), "Buffer passed to be written to descriptor binding must be uniform, aka uses 'BufferUsageBits_Uniform'!");
-		ASSERT_MSG(buf->_bufferSize > 0, "Buffer size must be greater than 0!");
-
-		const DescriptorSetSignature& set_signature = currentPipeline->signature.setSignatures[set];
-		VkDescriptorSet vkset = currentPipeline->_managedDescriptorSets[set].vkDescriptorSet;
-		ASSERT_MSG(vkset != VK_NULL_HANDLE, "VkDescriptorSet gathered is NULL!");
-		this->writer.writeBuffer(vkset, binding, buf->_vkBuffer, buf->_bufferSize, 0, set_signature.bindings[binding].descriptorType);
-	}
-
-	void DWriter::writeBuffer(VkDescriptorSet set, unsigned int binding, VkBuffer buffer, size_t size, size_t offset, VkDescriptorType type) {
-		VkDescriptorBufferInfo& info = this->_bufferInfos.emplace_back(VkDescriptorBufferInfo{
-				.buffer = buffer,
-				.offset = offset,
-				.range = size
-		});
-
-		VkWriteDescriptorSet write = {
-				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-				.pNext = nullptr,
-				.dstSet = set,
-				.dstBinding = static_cast<uint32_t>(binding),
-				.descriptorCount = 1,
-				.descriptorType = type,
-				.pBufferInfo = &info
-		};
-		this->_writes.push_back(write);
-	}
-	void DWriter::updateSets(VkDevice device) {
-		vkUpdateDescriptorSets(device, static_cast<uint32_t>(_writes.size()), _writes.data(), 0, nullptr);
-	}
 
 	static VkMemoryPropertyFlags StorageTypeToVkMemoryPropertyFlags(StorageType storage) {
 		VkMemoryPropertyFlags memFlags{0};
@@ -151,6 +89,30 @@ namespace mythril {
 			return false;
 		}
 		return true;
+	}
+
+	DescriptorSetWriter CTX::openUpdateImpl(PipelineCommon* common, const char* debugName) {
+		ASSERT_MSG(common, "Handle is invalid/empty!");
+		DescriptorSetWriter updater(*this);
+		ASSERT_MSG(!common->_managedDescriptorSets.empty(),
+				   "Pipeline '{}' has no managed desriptor sets, therefore attempts to open a DescriptorSetWriter are disallowed!\n\t This error might also occur because you don't use the pipeline during rendering!",
+				   debugName);
+		updater.currentPipelineCommon = common;
+		updater.currentPipelineDebugName = debugName;
+		return updater;
+	}
+	DescriptorSetWriter CTX::openUpdate(InternalGraphicsPipelineHandle handle) {
+		GraphicsPipeline* pipeline = _graphicsPipelinePool.get(handle);
+		return openUpdateImpl(&pipeline->_common, pipeline->_debugName);
+	}
+	DescriptorSetWriter CTX::openUpdate(InternalComputePipelineHandle handle) {
+		ComputePipeline* pipeline = _computePipelinePool.get(handle);
+		return openUpdateImpl(&pipeline->_common, pipeline->_debugName);
+	}
+	void CTX::submitUpdate(DescriptorSetWriter &updater) {
+		updater.writer.updateSets(_vkDevice);
+		updater.writer.clear();
+		updater.currentPipelineCommon = nullptr;
 	}
 
 	void CTX::construct(SwapchainArgs args) {
@@ -236,9 +198,15 @@ namespace mythril {
 			}
 		}
 		if (_graphicsPipelinePool.numObjects()) {
-			LOG_SYSTEM(LogType::Info, "Cleaned up {} render pipelines", _graphicsPipelinePool.numObjects());
+			LOG_SYSTEM(LogType::Info, "Cleaned up {} graphics pipelines", _graphicsPipelinePool.numObjects());
 			for (int i = 0; i < _graphicsPipelinePool._objects.size(); i++) {
 				destroy(_graphicsPipelinePool.getHandle(_graphicsPipelinePool.findObject(&_graphicsPipelinePool._objects[i]._obj).index()));
+			}
+		}
+		if (_computePipelinePool.numObjects()) {
+			LOG_SYSTEM(LogType::Info, "Cleaned up {} compute pipelines", _computePipelinePool.numObjects());
+			for (int i = 0; i < _computePipelinePool._objects.size(); i++) {
+				destroy(_computePipelinePool.getHandle(_computePipelinePool.findObject(&_computePipelinePool._objects[i]._obj).index()));
 			}
 		}
 		if (_samplerPool.numObjects()) {
@@ -605,7 +573,7 @@ namespace mythril {
 		}
 		return descriptor_sets;
 	}
-	VkPipelineLayout CTX::buildPipelineLayout(const std::vector<VkDescriptorSetLayout>& layouts, const std::vector<VkPushConstantRange>& ranges) {
+	static VkPipelineLayout BuildPipelineLayout(VkDevice device, const std::vector<VkDescriptorSetLayout>& layouts, const std::vector<VkPushConstantRange>& ranges) {
 		const VkPipelineLayoutCreateInfo pipeline_layout_info = {
 				.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
 				.setLayoutCount = static_cast<uint32_t>(layouts.size()),
@@ -614,11 +582,11 @@ namespace mythril {
 				.pPushConstantRanges =  ranges.data(),
 		};
 		VkPipelineLayout plLayout = VK_NULL_HANDLE;
-		VK_CHECK(vkCreatePipelineLayout(_vkDevice, &pipeline_layout_info, nullptr, &plLayout));
+		VK_CHECK(vkCreatePipelineLayout(device, &pipeline_layout_info, nullptr, &plLayout));
 		return plLayout;
 	}
 
-	PipelineLayoutSignature MergeSignatures(const std::vector<PipelineLayoutSignature>& pipelineSignatures) {
+	static PipelineLayoutSignature MergeSignatures(const std::vector<PipelineLayoutSignature>& pipelineSignatures) {
 		// the signature that will be returned
 		PipelineLayoutSignature out;
 		std::unordered_map<uint32_t, DescriptorSetSignature> setMap;
@@ -758,14 +726,90 @@ namespace mythril {
 		bundle->vkInfo.dataSize = bundle->packedData.size();
 		bundle->vkInfo.pData = bundle->packedData.data();
 
-		return bundle;	}
+		return bundle;
+	}
 
-	GraphicsPipeline* CTX::resolveRenderPipeline(InternalGraphicsPipelineHandle handle) {
-		GraphicsPipeline* graphics_pipeline = _graphicsPipelinePool.get(handle);
-		if (!graphics_pipeline) {
-			LOG_SYSTEM(LogType::Warning, "Graphics pipeline does not exist, use a valid handle!");
-			return VK_NULL_HANDLE;
+	PipelineCommon CTX::buildPipelineCommonDataExceptVkPipelineImpl(const PipelineLayoutSignature& signature) {
+		const LayoutBuildResult result = this->buildDescriptorResultFromSignature(signature);
+		VkPipelineLayout vk_pipeline_layout = BuildPipelineLayout(this->_vkDevice, result.allLayouts, signature.pushes);
+		const std::vector<VkDescriptorSet> vk_descriptor_sets = this->allocateDescriptorSets(result.allocatableLayouts);
+
+		// return value
+		PipelineCommon common;
+		common._vkPipelineLayout = vk_pipeline_layout;
+		common.signature = signature;
+
+		// convert data into the managed stuct
+		unsigned int managed_sets_size = result.allocatableLayouts.size();
+		common._managedDescriptorSets.reserve(managed_sets_size);
+		for (int i = 0; i < managed_sets_size; i++) {
+			common._managedDescriptorSets.push_back({ vk_descriptor_sets[i], result.allocatableLayouts[i] });
 		}
+		// constructs another vector of descriptor sets but with the special bindless set in the correct index
+		// this vector should ONLY be used by cmdBindPipeline which also calls a vkCmdBindDescriptorSets
+		unsigned int total_sets_size = result.allLayouts.size();
+		common._vkBindableDescriptorSets.reserve(total_sets_size);
+		for (int i = 0; i < total_sets_size; i++) {
+			if (common.signature.setSignatures[i].isBindless) {
+				common._vkBindableDescriptorSets.push_back(this->_vkBindlessDSet);
+				continue;
+			}
+			common._vkBindableDescriptorSets.push_back(vk_descriptor_sets[i]);
+		}
+		return common;
+	}
+
+	// graphics pipeline doesnt have one of these because that is abstracted inside the GraphicsPipelineBuilder class
+	VkPipeline CTX::buildComputePipelineImpl(VkPipelineLayout layout, ComputePipelineSpec spec) {
+		uint32_t sc_count = 0;
+		while (sc_count < 16 && spec.specConstants[sc_count].size) {
+			sc_count++;
+		}
+		// a compute pipeline only has one shader anyways
+		Shader* shader = _shaderPool.get(spec.shader);
+
+		if (shader->_specializationInfo.specializationConstants.size() != sc_count)
+			LOG_SYSTEM(LogType::Warning, "You have specialization constants used in the compute shader '{}' that are not defined in the pipeline creation for '{}'!", shader->_debugName, spec.debugName);
+		std::unique_ptr<SpecializationInfoBundle> spec_constants_bundle = BuildSpecializationInfoBundle(spec.specConstants, sc_count, shader->_specializationInfo.nameToID);
+
+		VkPipelineShaderStageCreateInfo shader_stage_ci = {
+				.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+				.pNext = nullptr,
+				.flags = 0,
+				.stage = VK_SHADER_STAGE_COMPUTE_BIT,
+				.module = shader->vkShaderModule,
+				.pName = "cs_main",
+				.pSpecializationInfo = &spec_constants_bundle->vkInfo,
+		};
+		VkComputePipelineCreateInfo pipeline_ci = {
+				.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
+				.pNext = nullptr,
+				.flags = 0,
+				.stage = shader_stage_ci,
+				.layout = layout
+		};
+
+		VkPipeline vk_pipeline = VK_NULL_HANDLE;
+		VK_CHECK(vkCreateComputePipelines(_vkDevice, nullptr, 1, &pipeline_ci, nullptr, &vk_pipeline));
+		ASSERT(vk_pipeline);
+		return vk_pipeline;
+	}
+
+	void CTX::resolveComputePipelineImpl(ComputePipeline& pipeline) {
+		// aliases
+		ComputePipelineSpec& spec = pipeline._spec;
+		Shader* shader = _shaderPool.get(spec.shader);
+
+		// resolvement &
+		// assignment
+		PipelineCommon common = this->buildPipelineCommonDataExceptVkPipelineImpl(shader->_pipelineSignature);
+		pipeline._common = common;
+		pipeline._common._vkPipeline = this->buildComputePipelineImpl(common._vkPipelineLayout, spec);
+
+		// good to go, maybe later you could return it
+	}
+
+	void CTX::resolveGraphicsPipelineImpl(GraphicsPipeline& pipeline) {
 		// updating descriptor layout //
 //		if (graphics_pipeline->_vkLastDescriptorSetLayout != _vkBindlessDSL) {
 //			deferTask(std::packaged_task<void()>([device = _vkDevice, pipeline = graphics_pipeline->_vkPipeline]() {
@@ -778,20 +822,10 @@ namespace mythril {
 //			graphics_pipeline->_vkLastDescriptorSetLayout = _vkBindlessDSL;
 //		}
 
-		// if we are drying then dont do this because descriptor sets may not havent been updated yet
-		this->checkAndUpdateBindlessDescriptorSetImpl();
-
-
-		// RETURN EXISTING PIPELINE //
-		if (graphics_pipeline->_vkPipeline != VK_NULL_HANDLE) {
-			return graphics_pipeline;
-		}
-		// or, CREATE NEW PIPELINE //
-
-		GraphicsPipelineSpec& spec = graphics_pipeline->_spec;
+		GraphicsPipelineSpec& spec = pipeline._spec;
 
 		// things the user defined previously
-		PipelineBuilder builder = {};
+		GraphicsPipelineBuilder builder = {};
 		builder.set_cull_mode(spec.cull);
 		builder.set_polygon_mode(spec.polygon);
 		builder.set_topology_mode(spec.topology);
@@ -862,33 +896,11 @@ namespace mythril {
 
 		const PipelineLayoutSignature merged_pl_signature = MergeSignatures(pipeline_layout_signatures);
 
-		const LayoutBuildResult result = buildDescriptorResultFromSignature(merged_pl_signature);
-		VkPipelineLayout vk_pipeline_layout = buildPipelineLayout(result.allLayouts, merged_pl_signature.pushes);
-		const std::vector<VkDescriptorSet> vk_descriptor_sets = allocateDescriptorSets(result.allocatableLayouts);
+		PipelineCommon common = buildPipelineCommonDataExceptVkPipelineImpl(merged_pl_signature);
+		pipeline._common = common;
+		pipeline._common._vkPipeline = builder.build(_vkDevice, common._vkPipelineLayout);
 
-		// convert data into the managed stuct
-		unsigned int managed_sets_size = result.allocatableLayouts.size();
-		graphics_pipeline->_managedDescriptorSets.reserve(managed_sets_size);
-		for (int i = 0; i < managed_sets_size; i++) {
-			graphics_pipeline->_managedDescriptorSets.push_back({ vk_descriptor_sets[i], result.allocatableLayouts[i] });
-		}
-		// constructs another vector of descriptor sets but with the special bindless set in the correct index
-		// this vector should ONLY be used by cmdBindPipeline which also calls a vkCmdBindDescriptorSets
-		unsigned int total_sets_size = result.allLayouts.size();
-		graphics_pipeline->_vkBindableDescriptorSets.reserve(total_sets_size);
-		for (int i = 0; i < total_sets_size; i++) {
-			if (merged_pl_signature.setSignatures[i].isBindless) {
-				graphics_pipeline->_vkBindableDescriptorSets.push_back(this->_vkBindlessDSet);
-				continue;
-			}
-			graphics_pipeline->_vkBindableDescriptorSets.push_back(vk_descriptor_sets[i]);
-		}
-
-		graphics_pipeline->signature = merged_pl_signature;
-		graphics_pipeline->_vkPipeline = builder.build(_vkDevice, vk_pipeline_layout);
-		graphics_pipeline->_vkPipelineLayout = vk_pipeline_layout;
-
-		return graphics_pipeline;
+		// good to go, maybe later you could return it
 	}
 
 	VkDescriptorPool DescriptorAllocatorGrowable::createPoolImpl(VkDevice device, uint32_t setCount, std::span<PoolSizeRatio> poolRatios) {
@@ -978,7 +990,6 @@ namespace mythril {
 		this->_readyPools.push_back(pool_to_use);
 		return descriptor_set;
 	}
-
 
 	void CTX::generateMipmaps(InternalTextureHandle handle) {
 		if (handle.empty()) {
@@ -1352,36 +1363,38 @@ namespace mythril {
 		return obj;
 	}
 
-
 	InternalGraphicsPipelineHandle CTX::createGraphicsPipeline(GraphicsPipelineSpec spec) {
 		// all creating a pipeline does is assign the spec to it
-		// actual construction is done upon first use (lazily)
+		// actual construction was done upon first use (lazily)
+		// now its done when compile is called && has been by a dryRun,
+		// if that fails then we do compile on first actual use
 		GraphicsPipeline obj = {};
-		obj._spec = std::move(spec);
-		// _debugName
+		obj._spec = spec;
 		snprintf(obj._debugName, sizeof(obj._debugName) - 1, "%s", spec.debugName);
 		InternalGraphicsPipelineHandle handle = _graphicsPipelinePool.create(std::move(obj));
 		return handle;
 	}
 	InternalComputePipelineHandle CTX::createComputePipeline(ComputePipelineSpec spec) {
 		ComputePipeline obj = {};
+		obj._spec = spec;
 		snprintf(obj._debugName, sizeof(obj._debugName) - 1, "%s", spec.debugName);
 		InternalComputePipelineHandle handle = _computePipelinePool.create(std::move(obj));
 		return handle;
 	}
 
 	InternalShaderHandle CTX::createShader(ShaderSpec spec) {
-		ASSERT_MSG(exists(spec.filePath), "Filepath does not exist.");
+		ASSERT_MSG(exists(spec.filePath), "Shader filepath '{}' does not exist.", spec.filePath.string());
 		// lazily create slang session & slang global session
 		if (!_slangCompiler.sessionExists()) {
 			_slangCompiler.create();
 		}
-		CompileResult compile_result = _slangCompiler.compileFile(spec.filePath);
 		// TODO: this is some of the worst code i have ever written in my life, i am so sorry future me who will come back here and have to clean it
+		// thank you past me you were right but now it should be alot better
 		Shader obj;
 		// _debugName
 		snprintf(obj._debugName, sizeof(obj._debugName) - 1, "%s", spec.debugName);
 
+		CompileResult compile_result = _slangCompiler.compileFile(spec.filePath);
 		ReflectionResult reflection_result = ReflectSPIRV(compile_result.getSpirvCode(), compile_result.getSpirvSize());
 		obj._pipelineSignature = reflection_result.pipelineLayoutSignature;
 		obj._descriptorSets = std::move(reflection_result.retrievedDescriptorSets);
@@ -1501,9 +1514,6 @@ namespace mythril {
 		ASSERT(cmd._wrapper);
 		const bool isPresenting = cmd._cmdType == CommandBuffer::Type::Graphics;
 		if (isPresenting) {
-			ASSERT_MSG(_swapchain->_vkCurrentImageLayout == VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-					   "Swapchain image layout is not VK_IMAGE_LAYOUT_PRESENT_SRC_KHR!");
-
 			const uint64_t signalValue = _swapchain->_currentFrameNum + _swapchain->getNumOfSwapchainImages();
 			_swapchain->_timelineWaitValues[_swapchain->_currentImageIndex] = signalValue;
 			_imm->signalSemaphore(_timelineSemaphore, signalValue);
@@ -1576,23 +1586,42 @@ namespace mythril {
 		}));
 		_shaderPool.destroy(handle);
 	}
+
 	void CTX::destroy(InternalGraphicsPipelineHandle handle) {
 		GraphicsPipeline* graphics_pipeline = _graphicsPipelinePool.get(handle);
-		if (!graphics_pipeline) {
-			return;
-		}
-		deferTask(std::packaged_task<void()>([device = _vkDevice, managedlayouts = graphics_pipeline->_managedDescriptorSets]() {
+		if (!graphics_pipeline) return;
+		PipelineCommon& common = graphics_pipeline->_common;
+		// we only destroy managed descriptor sets because other descriptor sets,
+		// namely the bindless one is something that is still in use by other pipelines
+		deferTask(std::packaged_task<void()>([device = _vkDevice, managedlayouts = common._managedDescriptorSets]() {
 			for (const auto& managedlayout : managedlayouts) {
 				vkDestroyDescriptorSetLayout(device, managedlayout.vkDescriptorSetLayout, nullptr);
 			}
 		}));
-		deferTask(std::packaged_task<void()>([device = _vkDevice, pipeline = graphics_pipeline->_vkPipeline]() {
+		deferTask(std::packaged_task<void()>([device = _vkDevice, pipeline = common._vkPipeline]() {
 			vkDestroyPipeline(device, pipeline, nullptr);
 		}));
-		deferTask(std::packaged_task<void()>([device = _vkDevice, layout = graphics_pipeline->_vkPipelineLayout]() {
+		deferTask(std::packaged_task<void()>([device = _vkDevice, layout = common._vkPipelineLayout]() {
 			vkDestroyPipelineLayout(device, layout, nullptr);
 		}));
 		_graphicsPipelinePool.destroy(handle);
+	}
+	void CTX::destroy(InternalComputePipelineHandle handle) {
+		ComputePipeline* compute_pipeline = _computePipelinePool.get(handle);
+		if (!compute_pipeline) return;
+		PipelineCommon& common = compute_pipeline->_common;
+		deferTask(std::packaged_task<void()>([device = _vkDevice, managedlayouts = common._managedDescriptorSets]() {
+			for (const auto& managedlayout : managedlayouts) {
+				vkDestroyDescriptorSetLayout(device, managedlayout.vkDescriptorSetLayout, nullptr);
+			}
+		}));
+		deferTask(std::packaged_task<void()>([device = _vkDevice, pipeline = common._vkPipeline]() {
+			vkDestroyPipeline(device, pipeline, nullptr);
+		}));
+		deferTask(std::packaged_task<void()>([device = _vkDevice, layout = common._vkPipelineLayout]() {
+			vkDestroyPipelineLayout(device, layout, nullptr);
+		}));
+		_computePipelinePool.destroy(handle);
 	}
 
 
@@ -1616,7 +1645,8 @@ namespace ImGui {
 		} else {
 			const mythril::AllocatedTexture& texture = userData->ctx->viewTexture(texHandle);
 			ASSERT_MSG(texture.isSampledImage(), "Texture must have sampled flag!");
-			VkDescriptorSet ds = ImGui_ImplVulkan_AddTexture(userData->sampler, texture.getImageView(), texture.getLayout());
+			VkDescriptorSet ds = ImGui_ImplVulkan_AddTexture(userData->sampler, texture.getImageView(),
+															 texture.getImageLayout());
 			userData->handleMap.insert({texHandle, ds});
 			im_image_ds = ds;
 		}

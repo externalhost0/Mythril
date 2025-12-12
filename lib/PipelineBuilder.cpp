@@ -2,7 +2,7 @@
 // Created by Hayden Rivas on 10/11/25.
 //
 
-#include "PipelineBuilder.h"
+#include "GraphicsPipelineBuilder.h"
 #include "vkinfo.h"
 #include "vkenums.h"
 #include "HelperMacros.h"
@@ -20,7 +20,7 @@ namespace mythril {
 				format == VK_FORMAT_R8G8B8A8_UINT || format == VK_FORMAT_R16G16B16A16_UINT || format == VK_FORMAT_R32G32B32A32_UINT);
 	}
 
-	void PipelineBuilder::Clear() {
+	void GraphicsPipelineBuilder::Clear() {
 		// clear all of the structs we need back to 0 with their correct stype
 		_inputAssembly = { .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO };
 		_rasterizer = { .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO };
@@ -34,7 +34,7 @@ namespace mythril {
 		_shaderStages.clear();
 	}
 	// build() needs to be the last function called on the builder!
-	VkPipeline PipelineBuilder::build(VkDevice device, VkPipelineLayout layout) {
+	VkPipeline GraphicsPipelineBuilder::build(VkDevice device, VkPipelineLayout layout) {
 		// the create info for the pipeline we are building
 		VkGraphicsPipelineCreateInfo graphics_pipeline_ci = { .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO, .pNext = nullptr };
 
@@ -100,7 +100,7 @@ namespace mythril {
 		this->Clear(); // clear the entire pipeline struct to reuse the PipelineBuilder
 		return newPipeline;
 	}
-	PipelineBuilder& PipelineBuilder::add_shader_module(const VkShaderModule& module, VkShaderStageFlags stageFlags, const char* entryPoint, VkSpecializationInfo* spInfo) {
+	GraphicsPipelineBuilder& GraphicsPipelineBuilder::add_shader_module(const VkShaderModule& module, VkShaderStageFlags stageFlags, const char* entryPoint, VkSpecializationInfo* spInfo) {
 		VkPipelineShaderStageCreateInfo info = {};
 		info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 		info.pNext = nullptr;
@@ -113,13 +113,13 @@ namespace mythril {
 		_shaderStages.push_back(info);
 		return *this;
 	}
-	PipelineBuilder& PipelineBuilder::set_polygon_mode(PolygonMode polygonMode) {
+	GraphicsPipelineBuilder& GraphicsPipelineBuilder::set_polygon_mode(PolygonMode polygonMode) {
 		_rasterizer.polygonMode = toVulkan(polygonMode);
 		_rasterizer.lineWidth = 1.0f; // we cant change width, metal doesnt support wide lines
 
 		return *this;
 	}
-	PipelineBuilder& PipelineBuilder::set_topology_mode(TopologyMode topoMode) {
+	GraphicsPipelineBuilder& GraphicsPipelineBuilder::set_topology_mode(TopologyMode topoMode) {
 		VkPrimitiveTopology topology = toVulkan(topoMode);
 		_inputAssembly.topology = topology;
 		_inputAssembly.primitiveRestartEnable = VK_TRUE;
@@ -131,13 +131,13 @@ namespace mythril {
 
 		return *this;
 	}
-	PipelineBuilder& PipelineBuilder::set_cull_mode(CullMode cullMode) {
+	GraphicsPipelineBuilder& GraphicsPipelineBuilder::set_cull_mode(CullMode cullMode) {
 		_rasterizer.cullMode = toVulkan(cullMode);
 		_rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
 
 		return *this;
 	}
-	PipelineBuilder& PipelineBuilder::set_multisampling_mode(SampleCount count) {
+	GraphicsPipelineBuilder& GraphicsPipelineBuilder::set_multisampling_mode(SampleCount count) {
 		_multisampling.sampleShadingEnable = VK_FALSE;
 		_multisampling.rasterizationSamples = toVulkan(count);
 		_multisampling.minSampleShading = 1.0f;
@@ -148,7 +148,7 @@ namespace mythril {
 		return *this;
 	}
 	// for multiple formats
-	PipelineBuilder& PipelineBuilder::set_color_formats(std::span<VkFormat> formats) {
+	GraphicsPipelineBuilder& GraphicsPipelineBuilder::set_color_formats(std::span<VkFormat> formats) {
 		for (const VkFormat& format : formats) {
 			_colorAttachmentFormats.push_back(format);
 		}
@@ -158,19 +158,19 @@ namespace mythril {
 		return *this;
 	}
 
-	PipelineBuilder& PipelineBuilder::set_depth_format(VkFormat format) {
+	GraphicsPipelineBuilder& GraphicsPipelineBuilder::set_depth_format(VkFormat format) {
 		_renderInfo.depthAttachmentFormat = format;
 
 		return *this;
 	}
 
 	// Off
-	void PipelineBuilder::_setBlendtoOff() {
+	void GraphicsPipelineBuilder::_setBlendtoOff() {
 		_colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
 		_colorBlendAttachment.blendEnable = VK_FALSE;
 	}
 	// Normal
-	void PipelineBuilder::_setBlendtoAlphaBlend() {
+	void GraphicsPipelineBuilder::_setBlendtoAlphaBlend() {
 		_colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
 		_colorBlendAttachment.blendEnable = VK_TRUE;
 		// source alpha is from alpha channel
@@ -184,7 +184,7 @@ namespace mythril {
 		_colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
 	}
 	// Additive
-	void PipelineBuilder::_setBlendtoAdditive() {
+	void GraphicsPipelineBuilder::_setBlendtoAdditive() {
 		_colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
 		_colorBlendAttachment.blendEnable = VK_TRUE;
 		// source alpha is from alpha channel
@@ -198,7 +198,7 @@ namespace mythril {
 		_colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
 	}
 	// Multiply
-	void PipelineBuilder::_setBlendtoMultiply() {
+	void GraphicsPipelineBuilder::_setBlendtoMultiply() {
 		_colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
 		_colorBlendAttachment.blendEnable = VK_TRUE;
 		// source alpha is from color
@@ -212,7 +212,7 @@ namespace mythril {
 		_colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
 	}
 	// Premultiplied
-	void PipelineBuilder::_setBlendtoPremultiplied() {
+	void GraphicsPipelineBuilder::_setBlendtoPremultiplied() {
 		_colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
 		_colorBlendAttachment.blendEnable = VK_TRUE;
 		// source alpha is constant 1
@@ -226,7 +226,7 @@ namespace mythril {
 		_colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
 	}
 	// Stencil Mask
-	void PipelineBuilder::_setBlendtoMask() {
+	void GraphicsPipelineBuilder::_setBlendtoMask() {
 		_colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
 		_colorBlendAttachment.blendEnable = VK_TRUE;
 		// source alpha is from alpha channel
@@ -240,7 +240,7 @@ namespace mythril {
 		_colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
 	}
 
-	PipelineBuilder& PipelineBuilder::set_blending_mode(BlendingMode mode) {
+	GraphicsPipelineBuilder& GraphicsPipelineBuilder::set_blending_mode(BlendingMode mode) {
 		switch (mode) {
 			case BlendingMode::OFF:
 				this->_setBlendtoOff();

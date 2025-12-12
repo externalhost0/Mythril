@@ -67,10 +67,13 @@ namespace mythril {
 		features13.synchronization2 = true;
 		features13.dynamicRendering = true;
 		features13.subgroupSizeControl = true;
+		features13.computeFullSubgroups = true;
+		features13.maintenance4 = true;
 		//vulkan 1.2 features
 		VkPhysicalDeviceVulkan12Features features12 = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES };
 		features12.shaderInt8 = true;
 		features12.shaderFloat16 = true;
+		features12.shaderSubgroupExtendedTypes = true;
 		features12.bufferDeviceAddress = true;
 		features12.descriptorIndexing = true;
 		features12.timelineSemaphore = true;
@@ -99,11 +102,12 @@ namespace mythril {
 		features.fillModeNonSolid = true;
 		features.independentBlend = true;
 		features.shaderInt64 = true;
+		features.shaderInt16 = true;
 		features.multiDrawIndirect = true;
+		features.depthBiasClamp = true;
 		features.drawIndirectFirstInstance = true;
 		features.samplerAnisotropy = true;
 		features.shaderImageGatherExtended = true;
-		features.samplerAnisotropy = true;
 
 		vkb::PhysicalDeviceSelector physicalDeviceSelector{inputs.vkbInstance};
 		vkb::Result<vkb::PhysicalDevice> physicalDeviceResult = physicalDeviceSelector
@@ -307,11 +311,8 @@ namespace mythril {
 		}
 		// now we can build plugins!
 #ifdef MYTH_ENABLED_IMGUI
-		if (_usingImGui) {
-			ctx->_imguiPlugin.onInit(*ctx, ctx->_window._getSDLwindow(), this->_imgui_spec.format);
-		}
+		if (_usingImGui) ctx->_imguiPlugin.onInit(*ctx, ctx->_window._getSDLwindow(), this->_imgui_spec.format);
 #endif
-
 		return ctx;
 	}
 

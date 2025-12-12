@@ -33,7 +33,7 @@
 #ifdef DEBUG
 // DO NOT PASS SIDE EFFECT FUNCTIONS
 #define ASSERT_MSG(ERROR, FORMAT, ...) do { \
-    if (!(ERROR)) {                         \
+    if (!static_cast<bool>(ERROR)) [[unlikely]] {                         \
         fmt::print(stderr, "[ASSERT_MSG] | {}:{} -> {} -> Error:\n\t" FORMAT "\n", __FILE__, __LINE__, __func__ __VA_OPT__(,) __VA_ARGS__); \
         std::raise(SIGABRT); \
     } \
@@ -45,8 +45,8 @@
 
 #ifdef DEBUG
 #define ASSERT(ERROR) do { \
-    if (!(ERROR)) {        \
-        fmt::print(stderr, "[ASSERT] | {}:{} -> {}\n", __FILE__, __LINE__, __func__); \
+    if (!static_cast<bool>(ERROR)) [[unlikely]] {        \
+        fmt::print(stderr, "[ASSERT] | {}:{} -> {} -> Expression: " #ERROR "\n", __FILE__, __LINE__, __func__); \
         std::raise(SIGABRT); \
     } \
     ASSUME_(ERROR); \

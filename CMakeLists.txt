@@ -177,6 +177,7 @@ add_library(${PARENT_PROJECT_NAME} STATIC
         lib/Window.cpp
         lib/Shader.cpp
         lib/SlangCompiler.cpp
+        lib/DescriptorWriter.cpp
 
         ${OPTIONAL_SOURCES}
 )

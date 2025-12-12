@@ -466,12 +466,13 @@ int main() {
 	.build();
 
 	VkExtent2D extent2D = ctx->getWindow().getFramebufferSize();
-	mythril::InternalTextureHandle colorTarget = ctx->createTexture({
+	VkFormat offscreenFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
+	mythril::InternalTextureHandle offscreenColorTarget = ctx->createTexture({
 		.dimension = extent2D,
 		.samples = mythril::SampleCount::X1,
-		.usage = mythril::TextureUsageBits::TextureUsageBits_Attachment | mythril::TextureUsageBits_Sampled,
+		.usage = mythril::TextureUsageBits::TextureUsageBits_Attachment | mythril::TextureUsageBits_Sampled | mythril::TextureUsageBits::TextureUsageBits_Storage,
 		.storage = mythril::StorageType::Device,
-		.format = VK_FORMAT_R16G16B16A16_SFLOAT,
+		.format = offscreenFormat,
 		.debugName = "Color Texture"
 	});
 	mythril::InternalTextureHandle msaaColorTarget = ctx->createTexture({
@@ -479,9 +480,18 @@ int main() {
 		.samples = mythril::SampleCount::X4,
 		.usage = mythril::TextureUsageBits::TextureUsageBits_Attachment,
 		.storage = mythril::StorageType::Memoryless,
-		.format = VK_FORMAT_R16G16B16A16_SFLOAT,
+		.format = offscreenFormat,
 		.debugName = "MSAA Color Texture"
 	});
+	mythril::InternalTextureHandle msaaDepthTarget = ctx->createTexture({
+		.dimension = extent2D,
+		.samples = mythril::SampleCount::X4,
+		.usage = mythril::TextureUsageBits::TextureUsageBits_Attachment,
+		.storage = mythril::StorageType::Memoryless,
+		.format = VK_FORMAT_D32_SFLOAT_S8_UINT,
+		.debugName = "Depth Texture"
+	});
+
 	mythril::InternalTextureHandle depthTarget = ctx->createTexture({
 		.dimension = extent2D,
 		.samples = mythril::SampleCount::X1,
@@ -499,6 +509,37 @@ int main() {
 		.format = VK_FORMAT_D16_UNORM,
 		.debugName = "Shadow Map Texture"
 	});
+	constexpr uint32_t bloom_size = 512;
+	mythril::InternalTextureHandle brightTarget = ctx->createTexture({
+		.dimension = {bloom_size, bloom_size},
+		.usage = mythril::TextureUsageBits::TextureUsageBits_Sampled | mythril::TextureUsageBits_Storage,
+		.format = offscreenFormat,
+		.debugName = "Bright Pass Texture"
+	});
+	mythril::InternalTextureHandle bloomPassTarget = ctx->createTexture({
+		.dimension = {bloom_size, bloom_size},
+		.usage = mythril::TextureUsageBits::TextureUsageBits_Sampled | mythril::TextureUsageBits_Storage,
+		.format = offscreenFormat,
+		.debugName = "Bloom Pass Texture"
+	});
+
+	mythril::InternalTextureHandle bloomTargetsPingAndPong[2] = {
+			ctx->createTexture({
+				.dimension = {bloom_size, bloom_size},
+				.usage = mythril::TextureUsageBits::TextureUsageBits_Sampled | mythril::TextureUsageBits::TextureUsageBits_Storage,
+				.format = offscreenFormat,
+				.debugName = "Bloom Tex 0"
+			}),
+			ctx->createTexture({
+				.dimension = {bloom_size, bloom_size},
+				.usage = mythril::TextureUsageBits::TextureUsageBits_Sampled | mythril::TextureUsageBits::TextureUsageBits_Storage,
+				.format = offscreenFormat,
+				.debugName = "Bloom Tex 1"
+			})
+	};
+
+
+
 	mythril::InternalSamplerHandle shadowSampler = ctx->createSampler({
 		.magFilter = mythril::SamplerFilter::Nearest,
 		.minFilter = mythril::SamplerFilter::Nearest,
@@ -552,16 +593,6 @@ int main() {
 		.debugName = "Shadow Graphics Pipeline"
 	});
 
-	mythril::InternalShaderHandle fullscreenShader = ctx->createShader({
-		.filePath = "Fullscreen.slang",
-		.debugName = "Fullscreen Shader"
-	});
-	mythril::InternalGraphicsPipelineHandle fullscreenPipeline = ctx->createGraphicsPipeline({
-		.vertexShader = {fullscreenShader},
-		.fragmentShader = {fullscreenShader},
-		.debugName = "Fullscreen Graphics Pipeline"
-	});
-
 	mythril::InternalShaderHandle redDebugShader = ctx->createShader({
 		.filePath = "RedDebug.slang",
 		.debugName = "Red Shader"
@@ -581,16 +612,42 @@ int main() {
 	});
 
 
-//	mythril::InternalShaderHandle brightPassShader = ctx->createShader({
-//		.filePath = "",
-//		.debugName = "Bright Pass Shader"
-//	});
-//	mythril::InternalComputePipelineHandle compteBloomPipelineX = ctx->createComputePipeline({
-//		.shader = {brightPassShader},
-//		.debugName = "Compute Bloom X"
-//	});
+	mythril::InternalSamplerHandle clampSampler = ctx->createSampler({
+		.wrapU = mythril::SamplerWrap::Clamp,
+		.wrapV = mythril::SamplerWrap::Clamp,
+		.wrapW = mythril::SamplerWrap::Clamp,
+		.debugName = "Clamp Sampler"
+	});
+	mythril::InternalShaderHandle brightPassShader = ctx->createShader({
+		.filePath = "BrightCompute.slang",
+		.debugName = "Bright Pass Shader"
+	});
+	mythril::InternalComputePipelineHandle pipelineBrightPass = ctx->createComputePipeline({
+		.shader = {brightPassShader},
+		.debugName = "Compute Bright Pass"
+	});
 
+	mythril::InternalShaderHandle bloomPassShader = ctx->createShader({
+		.filePath = "BloomCompute.slang",
+		.debugName = "Bloom Pass Shader"
+	});
 
+	const uint32_t kHorizontal = true;
+	mythril::InternalComputePipelineHandle compteBloomPipelineX = ctx->createComputePipeline({
+		.shader = {bloomPassShader},
+		.specConstants = {
+				{&kHorizontal, sizeof(kHorizontal), "kIsHorizontal"}
+		},
+		.debugName = "Compute Bloom X"
+	});
+	const uint32_t kVertical = false;
+	mythril::InternalComputePipelineHandle compteBloomPipelineY = ctx->createComputePipeline({
+		.shader = {bloomPassShader},
+		.specConstants = {
+				{&kVertical, sizeof(kVertical), "kIsHorizontal"}
+		},
+		.debugName = "Compute Bloom Y"
+	});
 
 
 	// load gltf asset
@@ -626,7 +683,7 @@ int main() {
 
 
 	// depth prepass for shadows from directional light
-	graph.addPass("shadow_map", mythril::PassSource::Type::Graphics)
+	graph.addGraphicsPass("shadow_map")
 	.write({
 		.texture = shadowMap,
 		.clearValue = { 1.f, 0 },
@@ -634,7 +691,7 @@ int main() {
 		.storeOp = mythril::StoreOperation::STORE
 	})
 	.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
-		cmd.cmdBindRenderPipeline(shadowPipeline);
+		cmd.cmdBindGraphicsPipeline(shadowPipeline);
 		cmd.cmdBindDepthState({mythril::CompareOperation::CompareOp_Less, true});
 
 		glm::vec3 lightDir = sun_quaternion * glm::vec3(0, 0, -1);
@@ -675,9 +732,9 @@ int main() {
 		}
 	});
 
-	graph.addPass("geometry_opaque", mythril::PassSource::Type::Graphics)
+	graph.addGraphicsPass("geometry_opaque")
 	.write({
-		.texture = colorTarget,
+		.texture = offscreenColorTarget,
 		.clearValue = {0.349f, 0.635f, 0.82f, 1.f},
 		.loadOp = mythril::LoadOperation::CLEAR,
 		.storeOp = mythril::StoreOperation::STORE
@@ -690,7 +747,7 @@ int main() {
 	})
 	.read({ .texture = shadowMap })
 	.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
-		cmd.cmdBindRenderPipeline(opaquePipeline);
+		cmd.cmdBindGraphicsPipeline(opaquePipeline);
 		cmd.cmdBindDepthState({mythril::CompareOperation::CompareOp_Less, true});
 		auto model = glm::mat4(1.0);
 		model = glm::scale(model, glm::vec3(kMODELSCALE));
@@ -721,9 +778,9 @@ int main() {
 			cmd.cmdDrawIndexed(mesh.indexCount);
 		}
 	});
-	graph.addPass("geometry_transparent", mythril::PassSource::Type::Graphics)
+	graph.addGraphicsPass("geometry_transparent")
 	.write({
-		.texture = colorTarget,
+		.texture = offscreenColorTarget,
 		.loadOp = mythril::LoadOperation::LOAD,
 		.storeOp = mythril::StoreOperation::STORE
 	})
@@ -734,7 +791,7 @@ int main() {
 	})
 	.read({ .texture = shadowMap })
 	.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
-		cmd.cmdBindRenderPipeline(transparentPipeline);
+		cmd.cmdBindGraphicsPipeline(transparentPipeline);
 		cmd.cmdBindDepthState({mythril::CompareOperation::CompareOp_Less, true});
 		auto model = glm::mat4(1.0);
 		model = glm::scale(model, glm::vec3(kMODELSCALE));
@@ -762,16 +819,65 @@ int main() {
 			cmd.cmdPushConstants(push);
 			cmd.cmdBindIndexBuffer(mesh.indexBufHandle);
 			cmd.cmdDrawIndexed(mesh.indexCount);
+			static constexpr uint32_t threadNum = 16;
 		}
 	});
-	graph.addPass("shadow_pos_debug", mythril::PassSource::Type::Graphics)
+	float exposure = 1.f;
+	graph.addComputePass("HDR")
+	.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
+		cmd.cmdBindComputePipeline(pipelineBrightPass);
+
+		// on cpu its 40 due to alignment rules, but on gpu its 36 with C style layout
+		// therefore we definitely should add paddding onto the gpu struct to match
+		struct PushConstants {
+			uint64_t colorTex;
+			uint64_t outTex;
+			uint64_t luminanceTex;
+			uint64_t sampler;
+			float exposure;
+		} push {
+			.colorTex = offscreenColorTarget.index(),
+			.outTex = brightTarget.index(),
+			.luminanceTex = 0,
+			.sampler = clampSampler.index(),
+			.exposure = exposure
+		};
+		cmd.cmdPushConstants(push);
+		static constexpr uint32_t threadNum = 16;
+		cmd.cmdDispatchThreadGroup({bloom_size/threadNum, bloom_size/threadNum, 1});
+	});
+	const char* pass_names[2] = { "Blur Pass X", "Blur Pass Y" };
+	for (int i = 0; i < 2; i++) {
+		graph.addComputePass(pass_names[i])
+		.read({
+			.texture = (i & 1) ? bloomTargetsPingAndPong[0] : bloomTargetsPingAndPong[1]
+		})
+		.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
+			bool isXPass = i & 1;
+			cmd.cmdBindComputePipeline(isXPass ? compteBloomPipelineX : compteBloomPipelineY);
+			struct PushConstants {
+				uint64_t texIn;
+				uint64_t texOut;
+				uint64_t sampler;
+			} push {
+				.texIn = isXPass ? bloomTargetsPingAndPong[0].index() : bloomTargetsPingAndPong[1].index(),
+				.texOut = isXPass ? bloomTargetsPingAndPong[1].index() : bloomTargetsPingAndPong[0].index(),
+				.sampler = clampSampler.index()
+			};
+			cmd.cmdPushConstants(push);
+			static constexpr uint32_t threadNum = 16;
+			cmd.cmdDispatchThreadGroup({bloom_size/threadNum, bloom_size/threadNum, 1});
+		});
+	}
+
+	graph.addGraphicsPass("shadow_pos_debug")
 	.write({
-		.texture = colorTarget,
+		.texture = offscreenColorTarget,
 		.loadOp = mythril::LoadOperation::LOAD,
 		.storeOp = mythril::StoreOperation::STORE
 	})
 	.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
-		cmd.cmdBindRenderPipeline(redDebugPipeline);
+		cmd.cmdBindGraphicsPipeline(redDebugPipeline);
 		cmd.cmdBindDepthState({mythril::CompareOperation::CompareOp_Less, true});
 
 		glm::mat4 model = glm::translate(glm::mat4(1.0), scene_center);
@@ -791,31 +897,9 @@ int main() {
 			cmd.cmdDrawIndexed(mesh.indexCount);
 		}
 	});
-//	graph.addPass("test", mythril::PassSource::Type::Graphics)
-//	.write({
-//		.texture = colorTarget,
-//		.clearValue = { 0, 0, 0, 1},
-//		.loadOp = mythril::LoadOperation::CLEAR,
-//		.storeOp = mythril::StoreOperation::STORE
-//	})
-//	.read({
-//		.texture = shadowMap
-//	})
-//	.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
-//		cmd.cmdBindRenderPipeline(fullscreenPipeline);
-//		struct P {
-//			uint64_t texture;
-//			uint64_t sampler;
-//		} push {
-//			.texture = shadowMap.index(),
-//			.sampler = 0
-//		};
-//		cmd.cmdPushConstants(push);
-//		cmd.cmdDraw(3);
-//	});
-	graph.addPass("gui", mythril::PassSource::Type::Graphics)
+	graph.addGraphicsPass("gui")
 	.write({
-		.texture = colorTarget,
+		.texture = offscreenColorTarget,
 		.loadOp = mythril::LoadOperation::LOAD,
 		.storeOp = mythril::StoreOperation::STORE
 	})
@@ -869,7 +953,7 @@ int main() {
 
 			const mythril::Window &window = ctx->getWindow();
 			VkExtent2D new_extent_2d = window.getFramebufferSize();
-			ctx->resizeTexture(colorTarget, new_extent_2d);
+			ctx->resizeTexture(offscreenColorTarget, new_extent_2d);
 			ctx->resizeTexture(depthTarget, new_extent_2d);
 			graph.compile(*ctx);
 		}

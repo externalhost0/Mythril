@@ -16,7 +16,7 @@
 namespace mythril {
 	// forward declarations
 	class CTX;
-	class RenderPass;
+	class PipelineCommon;
 
 	// we only use it for the cmdBeginRendering command anyways
 	struct Dependencies {
@@ -30,6 +30,24 @@ namespace mythril {
 		bool isDepthWriteEnabled = false;
 	};
 
+	// https://github.com/corporateshark/lightweightvk/blob/f5598737c2179e329e519e1fe094ade1cafbc97c/lvk/LVK.h#L315
+	struct Dimensions {
+		uint32_t width = 1;
+		uint32_t height = 1;
+		uint32_t depth = 1;
+		inline Dimensions divide1D(uint32_t v) const {
+			return {.width = width / v, .height = height, .depth = depth};
+		}
+		inline Dimensions divide2D(uint32_t v) const {
+			return {.width = width / v, .height = height / v, .depth = depth};
+		}
+		inline Dimensions divide3D(uint32_t v) const {
+			return {.width = width / v, .height = height / v, .depth = depth / v};
+		}
+		inline bool operator==(const Dimensions& other) const {
+			return width == other.width && height == other.height && depth == other.depth;
+		}
+	};
 
 	// lets RAII this guy
 	class CommandBuffer final {
@@ -53,7 +71,8 @@ namespace mythril {
 
 		// ALL BELOW COMMANDS HAVE SPECIAL BEHAVIOR ON DRYRUN //
 
-		void cmdBindRenderPipeline(InternalGraphicsPipelineHandle handle);
+		void cmdBindComputePipeline(InternalComputePipelineHandle handle);
+		void cmdBindGraphicsPipeline(InternalGraphicsPipelineHandle handle);
 		void cmdBindDepthState(const DepthState& state);
 
 		// ALL BELOW COMMANDS SHOULD RETURN ON DRYRUN //
@@ -73,6 +92,8 @@ namespace mythril {
 		void cmdDraw(uint32_t vertexCount, uint32_t instanceCount = 1, uint32_t firstVertex = 0, uint32_t firstInstance = 0);
 		void cmdDrawIndexed(uint32_t indexCount, uint32_t instanceCount = 1, uint32_t firstIndex = 0, int32_t vertexOffset = 0, uint32_t baseInstance = 0);
 
+		void cmdDispatchThreadGroup(const Dimensions& threadGroupCount);
+
 		void cmdTransitionLayout(InternalTextureHandle source, VkImageLayout newLayout);
 		void cmdCopyImage(InternalTextureHandle source, InternalTextureHandle destination);
 		void cmdBlitImage(InternalTextureHandle source, InternalTextureHandle destination);
@@ -83,6 +104,9 @@ namespace mythril {
 		void cmdDrawImGui();
 #endif
 	private:
+		// just repeated logic
+		void cmdBindPipelineImpl(const PipelineCommon* common, VkPipelineBindPoint bindPoint, const char* debugName = "Unnamed Pipeline");
+
 		// all functions that still have equivalent Vulkan commands but should be abstracted away from user
 		void cmdBeginRenderingImpl();
 		void cmdEndRenderingImpl();
@@ -103,6 +127,9 @@ namespace mythril {
 		void cmdSetScissorImpl(VkExtent2D extent2D);
 
 		void bufferBarrierImpl(InternalBufferHandle bufhandle, VkPipelineStageFlags2 srcStage, VkPipelineStageFlags2 dstStage);
+
+		// helpers
+		PassSource::Type getCurrentPassType();
 	private:
 		// pretty important members for communication to the rest of the renderer
 		CTX* _ctx = nullptr;
@@ -110,7 +137,10 @@ namespace mythril {
 
 		// all set via RenderGraph
 		VkPipeline _lastBoundvkPipeline = VK_NULL_HANDLE;
-		InternalGraphicsPipelineHandle _currentPipelineHandle;
+
+		// avoid lookup and store the common data
+		PipelineCommon* _currentPipelineCommon = nullptr;
+		std::variant<InternalGraphicsPipelineHandle, InternalComputePipelineHandle> _currentPipelineHandle;
 		PassCompiled _activePass;
 
 		bool _isRendering = false; // cmdBeginRendering

@@ -13,6 +13,8 @@ namespace mythril {
 	struct AllocatedSampler {
 	public:
 		[[nodiscard]] inline VkSampler getSampler() const { return _vkSampler; }
+
+		const char* getDebugName() const { return _debugName; }
 	private:
 		VkSampler _vkSampler = VK_NULL_HANDLE;
 		char _debugName[128] = {0};
@@ -34,12 +36,15 @@ namespace mythril {
 		[[nodiscard]] inline bool isSwapchainImage() const { return _isSwapchainImage; }
 		[[nodiscard]] inline VkSampleCountFlagBits getSampleCount() const { return _vkSampleCountFlagBits; }
 		[[nodiscard]] inline VkImageType getType() const { return _vkImageType; }
-		[[nodiscard]] inline VkImageLayout getLayout() const { return _vkCurrentImageLayout; }
+		[[nodiscard]] inline VkImageLayout getImageLayout() const { return _vkCurrentImageLayout; }
 		[[nodiscard]] inline VkExtent2D getExtentAs2D() const { return {_vkExtent.width, _vkExtent.height}; }
 
 		// FIXME: check this and above at getSampler() as really const
+		[[nodiscard]] inline VkImage getImage() const { return _vkImage; }
 		[[nodiscard]] inline VkImageView getImageView() const { return _vkImageView; }
 		[[nodiscard]] inline VkFormat getFormat() const { return _vkFormat; }
+
+		const char* getDebugName() const { return _debugName; }
 	private:
 		VkImage _vkImage = VK_NULL_HANDLE;
 		VkImageView _vkImageView = VK_NULL_HANDLE;
@@ -86,6 +91,7 @@ namespace mythril {
 		[[nodiscard]] inline bool isStorageBuffer() const { return (_vkUsageFlags & VK_BUFFER_USAGE_STORAGE_BUFFER_BIT) > 0; }
 		[[nodiscard]] inline bool isUniformBuffer() const { return (_vkUsageFlags & VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT) > 0; }
 
+		const char* getDebugName() const { return _debugName; }
 	private:
 		VkBuffer _vkBuffer = VK_NULL_HANDLE;
 		VkDeviceMemory _vkMemory = VK_NULL_HANDLE;

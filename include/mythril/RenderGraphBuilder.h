@@ -4,11 +4,15 @@
 
 #pragma once
 
+#include "../../lib/ObjectHandles.h"
+#include "../../lib/vkenums.h"
+
 
 #include <unordered_set>
 #include <unordered_map>
 #include <optional>
 #include <functional>
+#include <utility>
 
 #include <volk.h>
 
@@ -79,21 +83,23 @@ namespace mythril {
 	struct ReadSpec {
 		InternalTextureHandle texture;
 		// expectedLayout is always SHADER_READ_ONLY
+		// im leaving this exposed for end-user but im not really sure what other layouts they want, maybe GENERAL
 		VkImageLayout expectedLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 	};
 
 	// user defined information from addPass and RenderPassBuilder
 	struct PassSource {
+		enum class Type { Graphics, Compute };
+
+		PassSource(const char* name, Type type)
+		: name(name), type(type) {}
+
 		// these three members are sent straight over to PassCompiled
 		std::string name;
-		enum class Type {
-			Graphics,
-			Compute,
-			General
-		} type = Type::Graphics;
+		Type type;
 		std::function<void(CommandBuffer&)> executeCallback;
 
-		std::vector<WriteSpec> writeOperations;
+		std::vector<WriteSpec> writeOperations; // empty for compute
 		std::vector<ReadSpec> readOperations;
 	};
 	struct CompiledBarrier {
@@ -120,35 +126,76 @@ namespace mythril {
 	// forward declare just for RenderPassBuilder
 	class RenderGraph;
 
-	class RenderPassBuilder {
+	class IPassBuilder {
 	public:
-		RenderPassBuilder() = delete;
-		RenderPassBuilder(RenderGraph& graph, std::string name, PassSource::Type type)
-		: _graphRef(graph) {
-			this->_passSource.name = std::move(name);
-			this->_passSource.type = type;
-		}
-
-		// currently we only accept textures, should take buffers later and handle them differently
-		RenderPassBuilder& write(WriteSpec spec);
-		RenderPassBuilder& read(ReadSpec spec);
-
-		// always the last command, must be called for RenderPassBuilder
-		void setExecuteCallback(const std::function<void(CommandBuffer& cmd)>& callback);
-	private:
-		PassSource _passSource;
-
+		IPassBuilder() = delete;
+		virtual ~IPassBuilder() = default;
+		IPassBuilder(RenderGraph& graphRef, const char* name, PassSource::Type type)
+		: _graphRef(graphRef), _passSource(name, type) {
+			assert(!_passSource.name.empty());
+			assert(_passSource.type == type);
+		};
+		virtual void setExecuteCallback(const std::function<void(CommandBuffer& cmd)>& callback) = 0;
+	protected:
 		RenderGraph& _graphRef;
+		PassSource _passSource;
+	};
+
+	class GraphicsPassBuilder : public IPassBuilder {
+	public:
+		GraphicsPassBuilder(RenderGraph& graphRef, const char* name) : IPassBuilder(graphRef, name, PassSource::Type::Graphics) {}
+
+		GraphicsPassBuilder& write(WriteSpec spec);
+		GraphicsPassBuilder& read(ReadSpec spec);
+		void setExecuteCallback(const std::function<void (CommandBuffer &)>& callback) override;
+
 		friend class RenderGraph;
 	};
+	class ComputePassBuilder : public IPassBuilder {
+	public:
+		ComputePassBuilder(RenderGraph& graphRef, const char* name) : IPassBuilder(graphRef, name, PassSource::Type::Compute) {};
+		// compute passes dont write to textures like renderpasses so we dont offer a write operation
+		ComputePassBuilder& read(ReadSpec spec);
+		void setExecuteCallback(const std::function<void (CommandBuffer &)>& callback) override;
+
+		friend class RenderGraph;
+	};
+
+//	class RenderPassBuilder {
+//	public:
+//		RenderPassBuilder() = delete;
+//		RenderPassBuilder(RenderGraph& graphRef, std::string name, PassSource::Type type)
+//		: _graphRef(graph) {
+//			this->_passSource.name = std::move(name);
+//			this->_passSource.type = type;
+//		}
+//
+//		// currently we only accept textures, should take buffers later and handle them differently
+//		RenderPassBuilder& write(WriteSpec spec);
+//		RenderPassBuilder& read(ReadSpec spec);
+//
+//		// always the last command, must be called for RenderPassBuilder
+//		void setExecuteCallback(const std::function<void(CommandBuffer& cmd)>& callback);
+//	private:
+//		PassSource _passSource;
+//
+//		RenderGraph& _graphRef;
+//		friend class RenderGraph;
+//	};
 
 	class CTX;
 
 	class RenderGraph {
 	public:
-		inline RenderPassBuilder addPass(const char* name, PassSource::Type type) {
-			return RenderPassBuilder{*this, name, type};
-		};
+		inline ComputePassBuilder addComputePass(const char* name) {
+			return ComputePassBuilder{*this, name};
+		}
+		inline GraphicsPassBuilder addGraphicsPass(const char* name) {
+			return GraphicsPassBuilder{*this, name};
+		}
+//		inline RenderPassBuilder addPass(const char* name, PassSource::Type type) {
+//			return RenderPassBuilder{*this, name, type};
+//		};
 		// 2 step,
 		// 1. transform passes
 		// 2. build pipelines
@@ -164,5 +211,7 @@ namespace mythril {
 		bool _hasCompiled = false;
 
 		friend class RenderPassBuilder;
+		friend class GraphicsPassBuilder;
+		friend class ComputePassBuilder;
 	};
 }

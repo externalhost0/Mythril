@@ -192,7 +192,7 @@ int main() {
 		.loadOp = mythril::LoadOperation::CLEAR
 	})
 	.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
-		cmd.cmdBindRenderPipeline(mainPipeline);
+		cmd.cmdBindGraphicsPipeline(mainPipeline);
 
 		VkExtent2D windowSize = ctx->getWindow().getWindowSize();
 		Camera camera = {
@@ -226,7 +226,7 @@ int main() {
 		.texture = resolveColorTarget
 	})
 	.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
-		cmd.cmdBindRenderPipeline(postPipeline);
+		cmd.cmdBindGraphicsPipeline(postPipeline);
 
 		auto currentTime = std::chrono::high_resolution_clock::now();
 		float time = std::chrono::duration<float>(currentTime - startTime).count();

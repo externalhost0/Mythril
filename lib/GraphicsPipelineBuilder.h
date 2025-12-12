@@ -11,10 +11,10 @@
 #include <volk.h>
 
 namespace mythril {
-	class PipelineBuilder {
+	class GraphicsPipelineBuilder {
 	public:
-		PipelineBuilder() { Clear(); };
-		~PipelineBuilder() = default;
+		GraphicsPipelineBuilder() { Clear(); };
+		~GraphicsPipelineBuilder() = default;
 	public:
 		VkPipelineInputAssemblyStateCreateInfo _inputAssembly = {};
 		VkPipelineRasterizationStateCreateInfo _rasterizer = {};
@@ -31,18 +31,18 @@ namespace mythril {
 		void Clear();
 	public:
 		// program
-		PipelineBuilder& add_shader_module(const VkShaderModule& module, VkShaderStageFlags stageFlags, const char* entryPoint, VkSpecializationInfo* spInfo = nullptr);
+		GraphicsPipelineBuilder& add_shader_module(const VkShaderModule& module, VkShaderStageFlags stageFlags, const char* entryPoint, VkSpecializationInfo* spInfo = nullptr);
 
 		// props
-		PipelineBuilder& set_topology_mode(TopologyMode mode);
-		PipelineBuilder& set_polygon_mode(PolygonMode mode);
-		PipelineBuilder& set_multisampling_mode(SampleCount count);
-		PipelineBuilder& set_cull_mode(CullMode mode);
-		PipelineBuilder& set_blending_mode(BlendingMode mode);
+		GraphicsPipelineBuilder& set_topology_mode(TopologyMode mode);
+		GraphicsPipelineBuilder& set_polygon_mode(PolygonMode mode);
+		GraphicsPipelineBuilder& set_multisampling_mode(SampleCount count);
+		GraphicsPipelineBuilder& set_cull_mode(CullMode mode);
+		GraphicsPipelineBuilder& set_blending_mode(BlendingMode mode);
 
 		// formats
-		PipelineBuilder& set_color_formats(std::span<VkFormat> formats);
-		PipelineBuilder& set_depth_format(VkFormat format);
+		GraphicsPipelineBuilder& set_color_formats(std::span<VkFormat> formats);
+		GraphicsPipelineBuilder& set_depth_format(VkFormat format);
 	private:
 		void _setBlendtoOff();
 		void _setBlendtoAlphaBlend();

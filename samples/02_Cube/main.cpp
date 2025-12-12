@@ -165,7 +165,7 @@ int main() {
 		.loadOp = mythril::LoadOperation::CLEAR,
 	})
 	.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
-		cmd.cmdBindRenderPipeline(mainPipeline);
+		cmd.cmdBindGraphicsPipeline(mainPipeline);
 
 		VkExtent2D windowSize = ctx->getWindow().getWindowSize();
 		Camera camera = {

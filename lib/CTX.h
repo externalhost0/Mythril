@@ -16,6 +16,7 @@
 #include "Window.h"
 #include "SlangCompiler.h"
 #include "Plugins.h"
+#include "DescriptorWriter.h"
 
 #include <future>
 #include <filesystem>
@@ -147,61 +148,11 @@ namespace mythril {
 	};
 
 
-	class DWriter {
-	public:
-		void writeBuffer(VkDescriptorSet set, unsigned int binding, VkBuffer buffer, size_t size, size_t offset, VkDescriptorType type);
-		void updateSets(VkDevice device);
-		void clear() {
-			this->_writes.clear();
-			this->_bufferInfos.clear();
-		};
-	private:
-		std::deque<VkDescriptorBufferInfo> _bufferInfos;
-		std::vector<VkWriteDescriptorSet> _writes;
-	};
-
-	class DescriptorSetWriter {
-	public:
-		void updateBinding(InternalBufferHandle bufHandle, const char* name);
-		void updateBinding(InternalBufferHandle bufHandle, int set, int binding);
-	private:
-		explicit DescriptorSetWriter(CTX& ctx) : _ctx(&ctx) {};
-
-		DWriter writer = {};
-		GraphicsPipeline* currentPipeline = nullptr;
-		CTX* _ctx = nullptr;
-
-		friend class CTX;
-	};
 
 	struct LayoutBuildResult {
 		std::vector<VkDescriptorSetLayout> allLayouts; // includes specials ie bindless set
 		std::vector<VkDescriptorSetLayout> allocatableLayouts; // excludes specials
 	};
-
-	struct CTXRequirements {
-		VkInstance instance = VK_NULL_HANDLE;
-		VkDebugUtilsMessengerEXT debugMessenger = VK_NULL_HANDLE;
-		VkSurfaceKHR surface = VK_NULL_HANDLE;
-		VkPhysicalDevice physDevice = VK_NULL_HANDLE;
-		VkDevice device = VK_NULL_HANDLE;
-		VmaAllocator allocator = VK_NULL_HANDLE;
-		VkPhysicalDeviceProperties physDeviceProps = {};
-#if defined(VK_API_VERSION_1_3)
-		VkPhysicalDeviceVulkan13Properties physDevice13Props = {};
-#endif
-#if defined(VK_API_VERSION_1_2)
-		VkPhysicalDeviceVulkan12Properties physDevice12Props = {};
-#endif
-#if defined(VK_API_VERSION_1_1)
-		VkPhysicalDeviceVulkan11Properties physDevice11Props = {};
-#endif
-		VkQueue graphicsQueue = VK_NULL_HANDLE;
-		uint32_t graphicsQueueFamilyIndex = -1;
-		VkQueue presentQueue = VK_NULL_HANDLE;
-		uint32_t presentQueueFamilyIndex = -1;
-	};
-
 
 	class CTX final {
 		void construct(SwapchainArgs args);
@@ -223,20 +174,9 @@ namespace mythril {
 		CommandBuffer& openCommand(CommandBuffer::Type type);
 		SubmitHandle submitCommand(CommandBuffer& cmd);
 
-		DescriptorSetWriter openUpdate(InternalGraphicsPipelineHandle pipelineHandle) {
-			DescriptorSetWriter updater(*this);
-			GraphicsPipeline* pipeline = _graphicsPipelinePool.get(pipelineHandle);
-			ASSERT_MSG(!pipeline->_managedDescriptorSets.empty(),
-					   "Pipeline '{}' has no managed desriptor sets, therefore attempts to open a DescriptorSetWriter are disallowed!\n\t This error might also occur because you don't use the pipeline during rendering!",
-					   pipeline->_debugName);
-			updater.currentPipeline = pipeline;
-			return updater;
-		};
-		void submitUpdate(DescriptorSetWriter& updater) {
-			updater.writer.updateSets(_vkDevice);
-			updater.writer.clear();
-			updater.currentPipeline = nullptr;
-		};
+		DescriptorSetWriter openUpdate(InternalGraphicsPipelineHandle handle);
+		DescriptorSetWriter openUpdate(InternalComputePipelineHandle handle);
+		void submitUpdate(DescriptorSetWriter& updater);
 
 		InternalBufferHandle createBuffer(BufferSpec spec);
 		InternalTextureHandle createTexture(TextureSpec spec);
@@ -274,19 +214,33 @@ namespace mythril {
 		void destroy(InternalBufferHandle handle);
 		void destroy(InternalTextureHandle handle);
 		void destroy(InternalSamplerHandle handle);
-		void destroy(InternalGraphicsPipelineHandle handle);
 		void destroy(InternalShaderHandle handle);
+		void destroy(InternalGraphicsPipelineHandle handle);
+		void destroy(InternalComputePipelineHandle handle);
+
+		DescriptorSetWriter openUpdateImpl(PipelineCommon* common, const char* debugName);
 
 		// helpers
 		void generateMipmaps(InternalTextureHandle handle);
-		GraphicsPipeline* resolveRenderPipeline(InternalGraphicsPipelineHandle handle);
 
+		// all things related to our pipeline constructions
+		PipelineCommon buildPipelineCommonDataExceptVkPipelineImpl(const PipelineLayoutSignature& signature);
+
+		// return values from resolvings are ignored for now
+		void resolveGraphicsPipelineImpl(GraphicsPipeline& pipeline);
+		void resolveComputePipelineImpl(ComputePipeline& pipeline);
+
+		VkPipeline buildGraphicsPipelineImpl(VkPipelineLayout layout, GraphicsPipelineSpec spec);
+		VkPipeline buildComputePipelineImpl(VkPipelineLayout layout, ComputePipelineSpec spec);
+
+		// for buffers
 		void upload(InternalBufferHandle handle, const void* data, size_t size, size_t offset = 0);
 		void download(InternalBufferHandle handle, void* data, size_t size, size_t offset);
-
+		// for textures
 		void upload(InternalTextureHandle handle, const void* data, const TexRange& range);
 		void download(InternalTextureHandle handle, void* data, const TexRange& range);
 
+		// because they are big functions :(
 		AllocatedBuffer createBufferImpl(VkDeviceSize bufferSize, VkBufferUsageFlags usageFlags, VkMemoryPropertyFlags memFlags);
 		AllocatedTexture createTextureImpl(VkImageUsageFlags usageFlags,
 										   VkMemoryPropertyFlags memFlags,
@@ -302,9 +256,25 @@ namespace mythril {
 		void checkAndUpdateBindlessDescriptorSetImpl();
 		void growBindlessDescriptorPoolImpl(uint32_t newMaxSamplerCount, uint32_t newMaxTextureCount);
 
+
+		template<typename T>
+		constexpr PipelineCommon& getPipelienCommonData(T handle) {
+			static_assert(
+					std::is_same_v<T, InternalGraphicsPipelineHandle> ||
+					std::is_same_v<T, InternalComputePipelineHandle>);
+			if constexpr (std::is_same_v<T, InternalGraphicsPipelineHandle>) {
+				auto* obj =_graphicsPipelinePool.get(handle);
+				ASSERT(obj);
+				return obj->_common;
+			} else if constexpr (std::is_same_v<T, InternalComputePipelineHandle>) {
+				auto* obj = _computePipelinePool.get(handle);
+				ASSERT(obj);
+				return obj->_common;
+			}
+		}
+
 		LayoutBuildResult buildDescriptorResultFromSignature(const PipelineLayoutSignature &pipelineSignature);
 		std::vector<VkDescriptorSet> allocateDescriptorSets(const std::vector<VkDescriptorSetLayout>& layouts);
-		VkPipelineLayout buildPipelineLayout(const std::vector<VkDescriptorSetLayout>& layouts, const std::vector<VkPushConstantRange>& ranges);
 		// pack tasks
 		void deferTask(std::packaged_task<void()>&& task, SubmitHandle handle = SubmitHandle()) const;
 		void processDeferredTasks();
@@ -380,6 +350,7 @@ namespace mythril {
 	};
 
 #ifdef MYTH_ENABLED_IMGUI
+	// data that is stored alongside th ImGui singleton so that it can be called from anywhere
 	struct MyUserData {
 		CTX* ctx;
 		VkSampler sampler;

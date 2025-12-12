@@ -4,6 +4,10 @@
 
 #pragma once
 
+#include "vkenums.h"
+#include "Shader.h"
+
+#include <volk.h>
 #include <slang/slang.h>
 
 namespace mythril {
@@ -48,11 +52,6 @@ namespace mythril {
 			this->size = size;
 			this->identifier = id;
 		}
-		// implicit construction (recommended)
-//		template<typename T>
-//		SpecializationConstantEntry(const T& type, const std::variant<std::string, int>& id) {
-//			SpecializationConstantEntry(&type, sizeof(T), id);
-//		}
 		const void* data = nullptr;
 		size_t size = 0;
 		std::variant<std::string, int> identifier;
@@ -73,53 +72,75 @@ namespace mythril {
 		SpecializationConstantEntry specConstants[16];
 		const char* debugName = "Unnamed Graphics Pipeline";
 	};
-	struct RayTracingPipelineSpec {
-		InternalShaderHandle shader;
-		const char* debugName = "Unnamed RayTracing Pipeline";
-	};
 	struct ComputePipelineSpec {
 		InternalShaderHandle shader;
 		SpecializationConstantEntry specConstants[16];
 		const char* debugName = "Unnamed Compute Pipeline";
 	};
+	struct RayTracingPipelineSpec {
+		InternalShaderHandle shader;
+		SpecializationConstantEntry specConstants[16];
+		const char* debugName = "Unnamed RayTracing Pipeline";
+	};
 
 
-	struct IPipeline {
+	// information that any type of pipeline also has
+	struct PipelineCommon {
+		// information all pipelines have anyways
 		VkPipeline _vkPipeline = VK_NULL_HANDLE;
 		VkPipelineLayout _vkPipelineLayout = VK_NULL_HANDLE;
-		char _debugName[128] = {0};
-	};
-	class RayTracingPipeline : public IPipeline {
 
-	private:
-		friend class CTX;
-		friend class CommandBuffer;
-	};
-
-	class GraphicsPipeline : public IPipeline {
-	public:
-
-	private:
-		GraphicsPipelineSpec _spec;
+		// used upon resolving to build vkPipelineLayout
 		PipelineLayoutSignature signature;
-
+		// a managed descriptor set stores its layout per lifetime necessities
 		struct ManagedDescriptorSet {
 			VkDescriptorSet vkDescriptorSet = VK_NULL_HANDLE;
 			VkDescriptorSetLayout vkDescriptorSetLayout = VK_NULL_HANDLE;
 		};
+		// used for allocation and destruction
 		std::vector<ManagedDescriptorSet> _managedDescriptorSets;
+
+		// used for binding in cmdBind*Pipeline
+		// should only serve as refrences to descriptor sets, not tracking
 		std::vector<VkDescriptorSet> _vkBindableDescriptorSets;
+	};
+
+	enum class PipelineType { Graphics, Compute, RayTracing };
+
+	class RayTracingPipeline {
+	public:
+	private:
+		RayTracingPipelineSpec _spec;
+		PipelineCommon _common;
+
+		char _debugName[128] = {0};
+
+		friend class CTX;
+		friend class CommandBuffer;
+	};
+
+	class GraphicsPipeline {
+	public:
+
+	private:
+		GraphicsPipelineSpec _spec;
+		PipelineCommon _common;
+
+		char _debugName[128] = {0};
 
 		friend class CTX;
 		friend class CommandBuffer;
 		friend class DescriptorSetWriter;
 	};
 
-	class ComputePipeline : public IPipeline {
+	class ComputePipeline {
 	public:
 
 	private:
+		ComputePipelineSpec _spec;
+		PipelineCommon _common;
 
+		char _debugName[128] = {0};
 
 		friend class CTX;
 		friend class CommandBuffer;

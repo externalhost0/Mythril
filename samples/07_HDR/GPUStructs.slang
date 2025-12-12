@@ -1,4 +1,9 @@
 
+// REQUIRED FOR SLANG
+export T getDescriptorFromHandle<T : IOpaqueDescriptor>(DescriptorHandle<T> handleValue) {
+    return defaultGetDescriptorFromHandle(handleValue, BindlessDescriptorOptions.None);
+}
+
 struct Vertex
 {
     float3 position;

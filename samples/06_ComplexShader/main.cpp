@@ -482,7 +482,7 @@ int main() {
 		.loadOp = mythril::LoadOperation::CLEAR
 	})
 	.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
-		cmd.cmdBindRenderPipeline(mainPipeline);
+		cmd.cmdBindGraphicsPipeline(mainPipeline);
 
 		auto currentTime = std::chrono::high_resolution_clock::now();
 		float time = std::chrono::duration<float>(currentTime - startTime).count();
