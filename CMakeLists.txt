@@ -9,7 +9,7 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
 # ==================== User Options ====================
 option(MYTH_ENABLE_IMGUI_STANDARD "Enable ImGui Plugin Main Branch" OFF)
 option(MYTH_ENABLE_IMGUI_DOCKING "Enable ImGui Plugin Docking Branch" OFF)
-option(MYTH_ENABLE_TEST_CASES "Enable Test Cases" ON)
+option(MYTH_ENABLE_TEST_CASES "Enable Test Cases (NOT DONE YET)" OFF)
 option(MYTH_RUN_SAMPLES "Enable sample apps" ON)
 
 # ==================== C++ Standard ====================
@@ -42,7 +42,7 @@ elseif(UNIX)
 endif()
 
 if(NOT VULKAN_SDK_DIR)
-    message(FATAL_ERROR "VULKAN_SDK environment variable not set!")
+    message(FATAL_ERROR "VULKAN_SDK environment variable not set/resolved!")
 endif()
 
 find_package(Vulkan REQUIRED)
@@ -51,28 +51,87 @@ if(NOT Vulkan_FOUND)
 endif()
 
 # ==================== Slang Shader Compiler ====================
-set(SLANG_INCLUDE_DIR "${Vulkan_INCLUDE_DIRS}/slang")
-if(WIN32)
-    set(SLANG_LIBRARY_DIR "${VULKAN_SDK_DIR}/Lib")
-elseif(APPLE)
-    set(SLANG_LIBRARY_DIR "${VULKAN_SDK_DIR}/lib")
+option(MYTH_USE_LOCAL_SLANG "Use local Slang build instead of Vulkan SDK version" ON)
+set(MYTH_LOCAL_SLANG_DIR "$ENV{HOME}/Libs/slang" CACHE PATH "Path to local Slang source directory")
+
+if(MYTH_USE_LOCAL_SLANG)
+    message(STATUS "Looking for local Slang at: ${MYTH_LOCAL_SLANG_DIR}")
+
+    # Try to find built library in common configurations
+    set(SLANG_BUILD_CONFIGS "Release" "Debug" "RelWithDebInfo")
+    set(SLANG_LIBRARY_FOUND FALSE)
+
+    foreach(CONFIG ${SLANG_BUILD_CONFIGS})
+        if(APPLE)
+            set(POTENTIAL_LIB "${MYTH_LOCAL_SLANG_DIR}/build/${CONFIG}/lib/libslang.dylib")
+            set(POTENTIAL_INCLUDE "${MYTH_LOCAL_SLANG_DIR}")
+        elseif(WIN32)
+            set(POTENTIAL_LIB "${MYTH_LOCAL_SLANG_DIR}/build/${CONFIG}/bin/slang.dll")
+            set(POTENTIAL_IMPLIB "${MYTH_LOCAL_SLANG_DIR}/build/${CONFIG}/lib/slang.lib")
+            set(POTENTIAL_INCLUDE "${MYTH_LOCAL_SLANG_DIR}")
+        else()
+            set(POTENTIAL_LIB "${MYTH_LOCAL_SLANG_DIR}/build/${CONFIG}/lib/libslang.so")
+            set(POTENTIAL_INCLUDE "${MYTH_LOCAL_SLANG_DIR}")
+        endif()
+
+        if(EXISTS "${POTENTIAL_LIB}")
+            set(LOCAL_SLANG_LIBRARY "${POTENTIAL_LIB}")
+            set(LOCAL_SLANG_INCLUDE "${POTENTIAL_INCLUDE}")
+            set(SLANG_LIBRARY_FOUND TRUE)
+            message(STATUS "Found local Slang (${CONFIG}): ${LOCAL_SLANG_LIBRARY}")
+            break()
+        endif()
+    endforeach()
+
+    if(NOT SLANG_LIBRARY_FOUND)
+        message(FATAL_ERROR
+                "Local Slang library not found at ${MYTH_LOCAL_SLANG_DIR}/build/\n"
+                "Please build Slang first:\n"
+                "  cd ${MYTH_LOCAL_SLANG_DIR}\n"
+                "  cmake --workflow --preset release\n"
+                "Or check that MYTH_LOCAL_SLANG_DIR points to the correct directory.")
+    endif()
+
+    add_library(slang SHARED IMPORTED)
+    set_target_properties(slang PROPERTIES
+            IMPORTED_LOCATION "${LOCAL_SLANG_LIBRARY}"
+            INTERFACE_INCLUDE_DIRECTORIES "${LOCAL_SLANG_INCLUDE}"
+    )
+
+    # On Windows, also need the import library
+    if(WIN32 AND POTENTIAL_IMPLIB AND EXISTS "${POTENTIAL_IMPLIB}")
+        set_target_properties(slang PROPERTIES
+                IMPORTED_IMPLIB "${POTENTIAL_IMPLIB}"
+        )
+    endif()
+
+else()
+    # Use Slang from Vulkan SDK (default)
+    set(SLANG_INCLUDE_DIR "${Vulkan_INCLUDE_DIRS}/slang")
+    if(WIN32)
+        set(SLANG_LIBRARY_DIR "${VULKAN_SDK_DIR}/Lib")
+    elseif(APPLE)
+        set(SLANG_LIBRARY_DIR "${VULKAN_SDK_DIR}/lib")
+    endif()
+
+    find_library(SLANG_LIBRARY
+            NAMES slang
+            PATHS "${SLANG_LIBRARY_DIR}"
+            REQUIRED
+    )
+
+    if(NOT SLANG_LIBRARY)
+        message(FATAL_ERROR "Slang library not found! Please install a newer version of Vulkan SDK or enable MYTH_USE_LOCAL_SLANG.")
+    endif()
+
+    message(STATUS "Using Slang from Vulkan SDK: ${SLANG_LIBRARY}")
+
+    add_library(slang UNKNOWN IMPORTED)
+    set_target_properties(slang PROPERTIES
+            IMPORTED_LOCATION "${SLANG_LIBRARY}"
+            INTERFACE_INCLUDE_DIRECTORIES "${SLANG_INCLUDE_DIR}"
+    )
 endif()
-
-find_library(SLANG_LIBRARY
-        NAMES slang
-        PATHS "${SLANG_LIBRARY_DIR}"
-        REQUIRED
-)
-
-if(NOT SLANG_LIBRARY)
-    message(FATAL_ERROR "Slang library not found! Please install a newer version of Vulkan SDK.")
-endif()
-
-add_library(slang UNKNOWN IMPORTED)
-set_target_properties(slang PROPERTIES
-        IMPORTED_LOCATION "${SLANG_LIBRARY}"
-        INTERFACE_INCLUDE_DIRECTORIES "${SLANG_INCLUDE_DIR}"
-)
 
 # ==================== SPIRV-Reflect ====================
 CPMAddPackage(
@@ -208,11 +267,18 @@ endif()
 
 add_library(mythril STATIC ${MYTHRIL_SOURCES})
 
+target_compile_options(mythril PRIVATE
+        $<$<OR:$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>,$<CXX_COMPILER_ID:GNU>>:
+        -Wall>
+        $<$<CXX_COMPILER_ID:MSVC>:
+        /W4>)
+
 target_include_directories(mythril
         PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:include>
         PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/lib
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/lib>
 )
 

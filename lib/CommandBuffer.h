@@ -16,7 +16,7 @@
 namespace mythril {
 	// forward declarations
 	class CTX;
-	class PipelineCommon;
+	struct PipelineCommon;
 
 	// we only use it for the cmdBeginRendering command anyways
 	struct Dependencies {

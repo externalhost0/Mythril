@@ -85,7 +85,7 @@ namespace mythril {
 
 	constexpr uint16_t kMaxColorAttachments = 16;
 	// enforce that a valid CommandBuffer can only be created via this constructor
-	CommandBuffer::CommandBuffer(CTX* ctx, CommandBuffer::Type type) : _ctx(ctx), _cmdType(type), _wrapper(&ctx->_imm->acquire()), _isDryRun(false) {};
+	CommandBuffer::CommandBuffer(CTX* ctx, CommandBuffer::Type type) : _ctx(ctx), _wrapper(&ctx->_imm->acquire()), _cmdType(type), _isDryRun(false) {};
 	CommandBuffer::~CommandBuffer() {
 		ASSERT_MSG(!_isRendering, "Please call to end rendering before destroying a Command Buffer!");
 	}

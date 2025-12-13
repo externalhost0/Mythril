@@ -346,8 +346,8 @@ namespace mythril {
 		friend class StagingDevice;
 		friend class Swapchain;
 		friend class CTXBuilder;
-		friend class AllocatedBuffer;
-		friend class AllocatedTexture;
+		friend struct AllocatedBuffer;
+		friend struct AllocatedTexture;
 		friend class ImGuiPlugin;
 	};
 

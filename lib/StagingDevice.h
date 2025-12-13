@@ -15,8 +15,8 @@
 
 namespace mythril {
 	class CTX;
-	class AllocatedBuffer;
-	class AllocatedTexture;
+	struct AllocatedBuffer;
+	struct AllocatedTexture;
 
 	constexpr uint8_t kMaxMipLevels = 16;
 

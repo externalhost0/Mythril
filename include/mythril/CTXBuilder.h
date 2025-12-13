@@ -11,7 +11,7 @@
 
 #include <VkBootstrap.h>
 
-class SDL_Window;
+struct SDL_Window;
 
 namespace mythril {
 

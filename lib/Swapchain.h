@@ -10,7 +10,7 @@
 
 namespace mythril {
 	class CTX;
-	class AllocatedTexture;
+	struct AllocatedTexture;
 
 	struct SwapchainArgs {
 		uint16_t width = 0;

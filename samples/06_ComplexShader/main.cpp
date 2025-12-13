@@ -8,11 +8,11 @@
 #include "glm/ext/matrix_transform.hpp"
 #include "glm/ext/matrix_clip_space.hpp"
 
-#include "imgui.h"
-#include "backends/imgui_impl_vulkan.h"
-#include "backends/imgui_impl_sdl3.h"
+#include <imgui.h>
+#include <backends/imgui_impl_vulkan.h>
+#include <backends/imgui_impl_sdl3.h>
 
-#include "SDL3/SDL.h"
+#include <SDL3/SDL.h>
 
 // for shader structs
 #include "GPUStructs.h"
@@ -389,7 +389,8 @@ int main() {
 		.resizeable = true
 	})
 	.set_shader_search_paths({
-		"../../include/"
+		"../../include/",
+		"../include/"
 	})
 	.with_ImGui()
 	.build();

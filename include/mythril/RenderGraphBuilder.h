@@ -23,7 +23,7 @@ namespace mythril {
 		float r, g, b, a;
 		ClearColor(float r, float g, float b, float a) : r(r), g(g), b(b), a(a) {};
 		VkClearColorValue getAsVkClearColorValue() const {
-			return { r, g, b, a };
+			return { {r, g, b, a} };
 		}
 	};
 	struct ClearDepthStencil {

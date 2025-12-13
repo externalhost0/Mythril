@@ -101,7 +101,8 @@ int main() {
 		.resizeable = false
 	})
 	.set_shader_search_paths({
-		"../../include/"
+		"../../include/",
+		"../include/"
 	})
 	.build();
 
