@@ -620,7 +620,7 @@ int main() {
 		.filePath = "BrightCompute.slang",
 		.debugName = "Bright Pass Shader"
 	});
-	mythril::InternalComputePipelineHandle pipelineBrightPass = ctx->createComputePipeline({
+	mythril::InternalComputePipelineHandle computeBrightPipeline = ctx->createComputePipeline({
 		.shader = {brightPassShader},
 		.debugName = "Compute Bright Pass"
 	});
@@ -631,7 +631,7 @@ int main() {
 	});
 
 	const uint32_t kHorizontal = true;
-	mythril::InternalComputePipelineHandle compteBloomPipelineX = ctx->createComputePipeline({
+	mythril::InternalComputePipelineHandle computeBloomPipelineX = ctx->createComputePipeline({
 		.shader = {bloomPassShader},
 		.specConstants = {
 				{&kHorizontal, sizeof(kHorizontal), "kIsHorizontal"}
@@ -639,7 +639,7 @@ int main() {
 		.debugName = "Compute Bloom X"
 	});
 	const uint32_t kVertical = false;
-	mythril::InternalComputePipelineHandle compteBloomPipelineY = ctx->createComputePipeline({
+	mythril::InternalComputePipelineHandle computeBloomPipelineY = ctx->createComputePipeline({
 		.shader = {bloomPassShader},
 		.specConstants = {
 				{&kVertical, sizeof(kVertical), "kIsHorizontal"}
@@ -823,7 +823,7 @@ int main() {
 	float exposure = 1.f;
 	graph.addComputePass("HDR")
 	.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
-		cmd.cmdBindComputePipeline(pipelineBrightPass);
+		cmd.cmdBindComputePipeline(computeBrightPipeline);
 
 		// on cpu its 40 due to alignment rules, but on gpu its 36 with C style layout
 		// therefore we definitely should add paddding onto the gpu struct to match
@@ -852,7 +852,7 @@ int main() {
 		})
 		.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
 			bool isXPass = i & 1;
-			cmd.cmdBindComputePipeline(isXPass ? compteBloomPipelineX : compteBloomPipelineY);
+			cmd.cmdBindComputePipeline(isXPass ? computeBloomPipelineX : computeBloomPipelineY);
 			struct PushConstants {
 				uint64_t texIn;
 				uint64_t texOut;
@@ -920,6 +920,16 @@ int main() {
 	}
 	{
 		mythril::DescriptorSetWriter writer = ctx->openUpdate(redDebugPipeline);
+		writer.updateBinding(frameDataHandle, "frame");
+		ctx->submitUpdate(writer);
+	}
+	{
+		mythril::DescriptorSetWriter writer = ctx->openUpdate(computeBloomPipelineY);
+		writer.updateBinding(frameDataHandle, "frame");
+		ctx->submitUpdate(writer);
+	}
+	{
+		mythril::DescriptorSetWriter writer = ctx->openUpdate(computeBloomPipelineX);
 		writer.updateBinding(frameDataHandle, "frame");
 		ctx->submitUpdate(writer);
 	}
@@ -1023,7 +1033,6 @@ int main() {
 		ImGui_ImplSDL3_NewFrame();
 		ImGui::NewFrame();
 
-
 		ImGui::Begin("shadow_controls");
 		ImGui::DragFloat("Near Plane", &near, 0.1f, 100.f);
 		ImGui::DragFloat("Far Plane", &far, 0.1f, 1000.f);
@@ -1074,7 +1083,8 @@ int main() {
 		lightingData.directionalLights.direction = sun_quaternion * glm::vec3(0, 0, -1);
 		const GPU::FrameData frameData {
 			.camera = cameraData,
-			.lighting = lightingData
+			.lighting = lightingData,
+			.one = 1
 		};
 
 		mythril::CommandBuffer& cmd = ctx->openCommand(mythril::CommandBuffer::Type::Graphics);
@@ -1082,7 +1092,6 @@ int main() {
 		graph.execute(cmd);
 		ctx->submitCommand(cmd);
 	}
-
 	return 0;
 }
 

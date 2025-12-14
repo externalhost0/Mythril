@@ -17,14 +17,39 @@
 #endif
 
 #ifdef DEBUG
-#define MAYBE_WARN_PASS_OPERATION_MISMATCH(goalType)               \
+#define CHECK_PASS_OPERATION_MISMATCH(goalType)               \
 if (this->getCurrentPassType() != goalType)                        \
 LOG_SYSTEM_NOSOURCE(LogType::Warning,                              \
 "Calling '{}' inside a pass not of type '{}' is not reccomended!", \
 __func__,                                                          \
 PassSourceTypeToString(goalType));
 #else
-#define MAYBE_WARN_PASS_OPERATION_MISMATCH(goalType) (void(0))
+#define CHECK_PASS_OPERATION_MISMATCH(goalType) (void(0))
+#endif
+
+#ifdef DEBUG
+#define CHECK_PIPELINE_REBIND(common, lastBound, debugName) \
+	do { \
+		if ((common)->_vkPipeline == (lastBound)) { \
+			static std::unordered_map<VkPipeline, int> g_rebindWarningCount; \
+			int& count = g_rebindWarningCount[(common)->_vkPipeline]; \
+			static constexpr unsigned int kMaxWarns = 5; \
+			if (count < kMaxWarns) { \
+				LOG_SYSTEM(LogType::Warning, "Called to rebind already bound pipeline '{}'", debugName); \
+			} else if (count == kMaxWarns) { \
+				LOG_SYSTEM(LogType::Warning, "Pipeline '{}' has triggered this warning >{} times and will now be silenced.", debugName, kMaxWarns); \
+			} \
+			count++; \
+			return; \
+		} \
+	} while(0)
+#else
+#define CHECK_PIPELINE_REBIND(common, lastBound, debugName) \
+	do { \
+		if ((common)->_vkPipeline == (lastBound)) { \
+			return; \
+		} \
+	} while(0)
 #endif
 
 
@@ -40,18 +65,6 @@ namespace mythril {
 		if (std::holds_alternative<InternalGraphicsPipelineHandle>(_currentPipelineHandle)) return PassSource::Type::Graphics;
 		else if (std::holds_alternative<InternalComputePipelineHandle>(_currentPipelineHandle)) return PassSource::Type::Compute;
 		assert(false);
-	}
-
-	static void MaybeWarnPipelineRebind(const PipelineCommon& pipeline, const char* debugName) {
-		static std::unordered_map<VkPipeline, int> g_rebindWarningCount;
-		int& count = g_rebindWarningCount[pipeline._vkPipeline];
-		static constexpr unsigned int kMaxWarns = 5;
-		if (count < kMaxWarns) {
-			LOG_SYSTEM(LogType::Warning, "Called to rebind already bound pipeline '{}'", debugName);
-		} else if (count == kMaxWarns) {
-			LOG_SYSTEM(LogType::Warning, "Pipeline '{}' has triggered this warning >{} times and will now be silenced.", debugName, kMaxWarns);
-		}
-		count++;
 	}
 
 	static void MaybeWarnPushConstantSizeMismatch(PipelineCommon& common, uint32_t cpuSize) {
@@ -101,20 +114,20 @@ namespace mythril {
 	// ALL PUBLIC COMMANDS AVAILBLE TO USER //
 	void CommandBuffer::cmdDraw(uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstInstance) {
 		if (_isDryRun) return;
-		MAYBE_WARN_PASS_OPERATION_MISMATCH(PassSource::Type::Graphics);
+		CHECK_PASS_OPERATION_MISMATCH(PassSource::Type::Graphics);
 
 		vkCmdDraw(_wrapper->_cmdBuf, vertexCount, instanceCount, firstVertex, firstInstance);
 	}
 	void CommandBuffer::cmdDrawIndexed(uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex, int32_t vertexOffset, uint32_t baseInstance) {
 		if (_isDryRun) return;
-		MAYBE_WARN_PASS_OPERATION_MISMATCH(PassSource::Type::Graphics);
+		CHECK_PASS_OPERATION_MISMATCH(PassSource::Type::Graphics);
 
 		vkCmdDrawIndexed(_wrapper->_cmdBuf, indexCount, instanceCount, firstIndex, vertexOffset, baseInstance);
 	}
 
 	void CommandBuffer::cmdBindIndexBuffer(InternalBufferHandle handle) {
 		if (_isDryRun) return;
-		MAYBE_WARN_PASS_OPERATION_MISMATCH(PassSource::Type::Graphics);
+		CHECK_PASS_OPERATION_MISMATCH(PassSource::Type::Graphics);
 
 		const AllocatedBuffer& buffer = _ctx->viewBuffer(handle);
 		vkCmdBindIndexBuffer(_wrapper->_cmdBuf, buffer._vkBuffer, 0, VK_INDEX_TYPE_UINT32);
@@ -122,7 +135,7 @@ namespace mythril {
 
 	void CommandBuffer::cmdDispatchThreadGroup(const Dimensions& threadGroupCount) {
 		if (_isDryRun) return;
-		MAYBE_WARN_PASS_OPERATION_MISMATCH(PassSource::Type::Compute);
+		CHECK_PASS_OPERATION_MISMATCH(PassSource::Type::Compute);
 
 		vkCmdDispatch(_wrapper->_cmdBuf, threadGroupCount.width, threadGroupCount.height, threadGroupCount.depth);
 	}
@@ -203,14 +216,8 @@ namespace mythril {
 		vkCmdPushConstants(_wrapper->_cmdBuf, _currentPipelineCommon->_vkPipelineLayout, static_cast<VkShaderStageFlagBits>(stages), offset, size, data);
 	}
 
-	void CommandBuffer::cmdBindPipelineImpl(const PipelineCommon* common, VkPipelineBindPoint bindPoint, const char* debugName) {
+	void CommandBuffer::cmdBindPipelineImpl(const PipelineCommon *common, VkPipelineBindPoint bindPoint) {
 		// only bind pipeline if its not currently bound
-		if (common->_vkPipeline == _lastBoundvkPipeline) {
-#ifdef DEBUG
-			MaybeWarnPipelineRebind(*common, debugName);
-#endif
-			return;
-		}
 		// what we should be actually doing anyways
 		_lastBoundvkPipeline = common->_vkPipeline;
 		vkCmdBindPipeline(_wrapper->_cmdBuf, bindPoint, common->_vkPipeline);
@@ -225,39 +232,51 @@ namespace mythril {
 
 	void CommandBuffer::cmdBindGraphicsPipeline(InternalGraphicsPipelineHandle handle) {
 		ASSERT(this->_ctx);
+
 		if (handle.empty()) {
 			LOG_SYSTEM(LogType::Warning, "Binded render pipeline was invalid/empty!");
 			return;
 		}
+		GraphicsPipeline* pipeline = _ctx->_graphicsPipelinePool.get(handle);
+		this->_ctx->checkAndUpdateBindlessDescriptorSetImpl();
 		if (_isDryRun) {
-			this->_ctx->checkAndUpdateBindlessDescriptorSetImpl();
+			if (pipeline->_common._vkPipeline) {
+				LOG_SYSTEM(LogType::Error, "Dry run attempting to resolve Pipeline '{}' that has already been built!", pipeline->_debugName);
+				return;
+			}
 			// we perform construction inside our dry run for all pipelines, which is when we compile the RenderGraph
 			// we do this so we dont stutter mid gameplay loop
-			_ctx->resolveGraphicsPipelineImpl(*_ctx->_graphicsPipelinePool.get(handle));
+			_ctx->resolveGraphicsPipelineImpl(*pipeline);
 			return;
 		}
 		this->_currentPipelineHandle = handle;
-		this->_currentPipelineCommon = &_ctx->_graphicsPipelinePool.get(handle)->_common;
+		this->_currentPipelineCommon = &pipeline->_common;
 		const PipelineCommon* common = this->_currentPipelineCommon;
+		CHECK_PIPELINE_REBIND(common, _lastBoundvkPipeline, pipeline->_debugName);
 		this->cmdBindPipelineImpl(common, VK_PIPELINE_BIND_POINT_GRAPHICS);
 	}
 
 	void CommandBuffer::cmdBindComputePipeline(InternalComputePipelineHandle handle) {
 		ASSERT(this->_ctx);
 
-		if (getCurrentPassType() != PassSource::Type::Compute)
 		if (handle.empty()) {
 			LOG_SYSTEM(LogType::Warning, "Binded compute pipeline was invalid/empty!");
 			return;
 		}
+		ComputePipeline* pipeline = _ctx->_computePipelinePool.get(handle);
+		this->_ctx->checkAndUpdateBindlessDescriptorSetImpl();
 		if (_isDryRun) {
-			this->_ctx->checkAndUpdateBindlessDescriptorSetImpl();
-			_ctx->resolveComputePipelineImpl(*_ctx->_computePipelinePool.get(handle));
+			if (pipeline->_common._vkPipeline) {
+				LOG_SYSTEM(LogType::Error, "Dry run attempting to resolve Pipeline '{}' that has already been built!", pipeline->_debugName);
+				return;
+			}
+			_ctx->resolveComputePipelineImpl(*pipeline);
 			return;
 		}
 		this->_currentPipelineHandle = handle;
-		this->_currentPipelineCommon = &this->_ctx->_computePipelinePool.get(handle)->_common;
+		this->_currentPipelineCommon = &pipeline->_common;
 		const PipelineCommon* common = this->_currentPipelineCommon;
+		CHECK_PIPELINE_REBIND(common, _lastBoundvkPipeline, pipeline->_debugName);
 		this->cmdBindPipelineImpl(common, VK_PIPELINE_BIND_POINT_COMPUTE);
 	}
 

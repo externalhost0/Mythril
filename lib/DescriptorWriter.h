@@ -36,7 +36,7 @@ namespace mythril {
 
 		DWriter writer = {};
 		PipelineCommon* currentPipelineCommon = nullptr;
-		const char* currentPipelineDebugName;
+		const char* currentPipelineDebugName = nullptr;
 		CTX* _ctx = nullptr;
 
 		friend class CTX;

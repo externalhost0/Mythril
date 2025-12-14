@@ -47,6 +47,7 @@ namespace GPU {
 	struct FrameData {
 		CameraData camera;
 		LightingData lighting;
+		int one;
 	};
 
 	struct GeometryPushConstants {

@@ -103,10 +103,18 @@ namespace mythril {
 	}
 	DescriptorSetWriter CTX::openUpdate(InternalGraphicsPipelineHandle handle) {
 		GraphicsPipeline* pipeline = _graphicsPipelinePool.get(handle);
+		if (!pipeline->_common._vkPipelineLayout) {
+			LOG_SYSTEM(LogType::Error, "Pipeline '{}' has not been resolved, will do it now.", pipeline->_debugName);
+			this->resolveGraphicsPipelineImpl(*pipeline);
+		}
 		return openUpdateImpl(&pipeline->_common, pipeline->_debugName);
 	}
 	DescriptorSetWriter CTX::openUpdate(InternalComputePipelineHandle handle) {
 		ComputePipeline* pipeline = _computePipelinePool.get(handle);
+		if (!pipeline->_common._vkPipelineLayout) {
+			LOG_SYSTEM(LogType::Error, "Pipeline '{}' has not been resolved, will do it now.", pipeline->_debugName);
+			this->resolveComputePipelineImpl(*pipeline);
+		}
 		return openUpdateImpl(&pipeline->_common, pipeline->_debugName);
 	}
 	void CTX::submitUpdate(DescriptorSetWriter &updater) {
@@ -236,6 +244,7 @@ namespace mythril {
 		_samplerPool.clear();
 		_shaderPool.clear();
 		_graphicsPipelinePool.clear();
+		_computePipelinePool.clear();
 		// make sure imm tasks are complete
 		waitDeferredTasks();
 		_imm.reset(nullptr);
@@ -807,7 +816,7 @@ namespace mythril {
 		PipelineCommon common = this->buildPipelineCommonDataExceptVkPipelineImpl(shader->_pipelineSignature);
 		pipeline._common = common;
 		pipeline._common._vkPipeline = this->buildComputePipelineImpl(common._vkPipelineLayout, spec);
-
+		LOG_DEBUG("Compute pipeline '{}' VkPipeline Address: '{}'", spec.debugName, (void*)pipeline._common._vkPipeline);
 		// good to go, maybe later you could return it
 	}
 

@@ -51,7 +51,7 @@ if(NOT Vulkan_FOUND)
 endif()
 
 # ==================== Slang Shader Compiler ====================
-option(MYTH_USE_LOCAL_SLANG "Use local Slang build instead of Vulkan SDK version" ON)
+option(MYTH_USE_LOCAL_SLANG "Use local Slang build instead of Vulkan SDK version" OFF)
 set(MYTH_LOCAL_SLANG_DIR "$ENV{HOME}/Libs/slang" CACHE PATH "Path to local Slang source directory")
 
 if(MYTH_USE_LOCAL_SLANG)
@@ -104,7 +104,6 @@ if(MYTH_USE_LOCAL_SLANG)
                 IMPORTED_IMPLIB "${POTENTIAL_IMPLIB}"
         )
     endif()
-
 else()
     # Use Slang from Vulkan SDK (default)
     set(SLANG_INCLUDE_DIR "${Vulkan_INCLUDE_DIRS}/slang")
@@ -271,7 +270,7 @@ target_compile_options(mythril PRIVATE
         $<$<OR:$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>,$<CXX_COMPILER_ID:GNU>>:
         -Wall>
         $<$<CXX_COMPILER_ID:MSVC>:
-        /W4>)
+        /permissive->)
 
 target_include_directories(mythril
         PUBLIC
@@ -290,8 +289,9 @@ target_link_libraries(mythril
         PUBLIC
         SDL3::SDL3
         fmt::fmt
-        GPUOpen::VulkanMemoryAllocator
         volk::volk
+        GPUOpen::VulkanMemoryAllocator
+        PRIVATE
         vk-bootstrap::vk-bootstrap
         SPIRV-Reflect
         slang

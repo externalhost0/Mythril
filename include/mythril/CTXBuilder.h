@@ -9,7 +9,6 @@
 #include <string>
 #include <memory>
 
-#include <VkBootstrap.h>
 
 struct SDL_Window;
 

@@ -105,7 +105,7 @@ namespace mythril {
 #endif
 	private:
 		// just repeated logic
-		void cmdBindPipelineImpl(const PipelineCommon* common, VkPipelineBindPoint bindPoint, const char* debugName = "Unnamed Pipeline");
+		void cmdBindPipelineImpl(const PipelineCommon* common, VkPipelineBindPoint bindPoint);
 
 		// all functions that still have equivalent Vulkan commands but should be abstracted away from user
 		void cmdBeginRenderingImpl();
