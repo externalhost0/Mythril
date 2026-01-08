@@ -35,17 +35,21 @@ namespace mythril {
 		uint32_t width = 1;
 		uint32_t height = 1;
 		uint32_t depth = 1;
-		inline Dimensions divide1D(uint32_t v) const {
+
+		consteval Dimensions divide1D(const uint32_t v) const {
 			return {.width = width / v, .height = height, .depth = depth};
 		}
-		inline Dimensions divide2D(uint32_t v) const {
+		consteval Dimensions divide2D(const uint32_t v) const {
 			return {.width = width / v, .height = height / v, .depth = depth};
 		}
-		inline Dimensions divide3D(uint32_t v) const {
+		consteval Dimensions divide3D(const uint32_t v) const {
 			return {.width = width / v, .height = height / v, .depth = depth / v};
 		}
-		inline bool operator==(const Dimensions& other) const {
+		constexpr bool operator==(const Dimensions& other) const {
 			return width == other.width && height == other.height && depth == other.depth;
+		}
+		constexpr bool operator!=(const Dimensions& other) const {
+			return !(*this==other);
 		}
 	};
 
@@ -63,19 +67,23 @@ namespace mythril {
 		~CommandBuffer();
 
 		VkCommandBufferSubmitInfo requestSubmitInfo() const;
-		inline bool isDrying() const { return _isDryRun; };
+		bool isDrying() const { return _isDryRun; }
 	public:
 		// all possible commands user can call inside setExecuteCallback
 		// all commands in this section NEED to detect if they are being called while in a dryRun
 		// most commands will include: if (_isDryRun) return;
 
 		// ALL BELOW COMMANDS HAVE SPECIAL BEHAVIOR ON DRYRUN //
-
 		void cmdBindComputePipeline(InternalComputePipelineHandle handle);
 		void cmdBindGraphicsPipeline(InternalGraphicsPipelineHandle handle);
-		void cmdBindDepthState(const DepthState& state);
-
 		// ALL BELOW COMMANDS SHOULD RETURN ON DRYRUN //
+		void cmdBindDepthState(const DepthState& state);
+		void cmdSetDepthBiasEnable(bool enable);
+		void cmdSetDepthBias(float constantFactor, float slopeFactor, float clamp);
+
+		void cmdBeginRendering();
+		void cmdEndRendering();
+
 		void cmdBindIndexBuffer(InternalBufferHandle buffer);
 		// we can pass in structs of any type for push constants!!
 		// make sure it is mirrored on the shader code
@@ -93,6 +101,7 @@ namespace mythril {
 		void cmdDrawIndexed(uint32_t indexCount, uint32_t instanceCount = 1, uint32_t firstIndex = 0, int32_t vertexOffset = 0, uint32_t baseInstance = 0);
 
 		void cmdDispatchThreadGroup(const Dimensions& threadGroupCount);
+		void cmdGenerateMipmap(InternalTextureHandle handle);
 
 		void cmdTransitionLayout(InternalTextureHandle source, VkImageLayout newLayout);
 		void cmdCopyImage(InternalTextureHandle source, InternalTextureHandle destination);
@@ -110,9 +119,6 @@ namespace mythril {
 		// all functions that still have equivalent Vulkan commands but should be abstracted away from user
 		void cmdBeginRenderingImpl();
 		void cmdEndRenderingImpl();
-
-		void cmdSetDepthBiasEnableImpl(bool enable);
-		void cmdSetDepthBiasImpl(float constantFactor, float slopeFactor, float clamp);
 
 		void cmdTransitionLayoutImpl(InternalTextureHandle source, VkImageLayout currentLayout, VkImageLayout newLayout);
 		void cmdTransitionSwapchainLayoutImpl(VkImageLayout newLayout);

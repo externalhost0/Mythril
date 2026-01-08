@@ -1,6 +1,8 @@
 //
 // Created by Hayden Rivas on 10/7/25.
 //
+
+// VK_ logic settings shouod be defined in the cmake file
 #define VOLK_IMPLEMENTATION
 #include <volk.h>
 

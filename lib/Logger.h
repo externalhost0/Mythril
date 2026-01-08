@@ -13,19 +13,22 @@ namespace mythril {
 		Info = 0,
 		Warning,
 		Error,
-		FatalError
+		FatalError,
+		Suggestion
 	};
 	constexpr const char* level_strings[] = {
 			"Info",
 			"Warning",
 			"Error",
-			"Fatal Error"
+			"Fatal Error",
+			"Suggestion"
 	};
 	constexpr fmt::color level_colors[] = {
 			fmt::color::antique_white,
 			fmt::color::gold,
 			fmt::color::red,
-			fmt::color::magenta
+			fmt::color::magenta,
+			fmt::color::cadet_blue
 	};
 	constexpr const char* GetLogLevelAsString(LogType level) {
 		return level_strings[(int) level];

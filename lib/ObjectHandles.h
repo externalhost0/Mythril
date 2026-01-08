@@ -11,11 +11,11 @@
 
 namespace mythril {
 	template<typename Type>
-	class ObjectHandle final {
+	class InternalObjectHandle final {
 	public:
-		ObjectHandle() = default;
+		InternalObjectHandle() = default;
 
-		ObjectHandle(uint32_t index, uint32_t gen) : _index(index), _generation(gen) {};
+		InternalObjectHandle(uint32_t index, uint32_t gen) : _index(index), _generation(gen) {};
 
 		uint32_t index() const {
 			return _index;
@@ -33,23 +33,22 @@ namespace mythril {
 			return _generation == 0;
 		}
 
+		bool operator==(const InternalObjectHandle<Type>& other) const {
+			return this->_index == other._index && this->_generation == other._generation;
+		}
+
 	private:
 		uint32_t _index = 0;
 		uint32_t _generation = 0;
 	};
 
-	template<typename Type>
-	bool operator==(const ObjectHandle<Type>& a, const ObjectHandle<Type>& b) {
-		return a.index() == b.index() && a.gen() == b.gen();
-	}
 
-
-	using InternalBufferHandle = ObjectHandle<struct BufferTag>;
-	using InternalTextureHandle = ObjectHandle<struct TextureTag>;
-	using InternalSamplerHandle = ObjectHandle<struct SamplerTag>;
-	using InternalShaderHandle = ObjectHandle<struct ShaderTag>;
-	using InternalGraphicsPipelineHandle = ObjectHandle<struct GraphicsPipelineTag>;
-	using InternalComputePipelineHandle = ObjectHandle<struct ComputePipelineTag>;
+	using InternalBufferHandle = InternalObjectHandle<struct BufferTag>;
+	using InternalTextureHandle = InternalObjectHandle<struct TextureTag>;
+	using InternalSamplerHandle = InternalObjectHandle<struct SamplerTag>;
+	using InternalShaderHandle = InternalObjectHandle<struct ShaderTag>;
+	using InternalGraphicsPipelineHandle = InternalObjectHandle<struct GraphicsPipelineTag>;
+	using InternalComputePipelineHandle = InternalObjectHandle<struct ComputePipelineTag>;
 
 
 
@@ -151,8 +150,8 @@ namespace mythril {
 }
 namespace std {
 	template<typename Type>
-	struct hash<mythril::ObjectHandle < Type>> {
-		size_t operator()(const mythril::ObjectHandle <Type> &handle) const noexcept {
+	struct hash<mythril::InternalObjectHandle < Type>> {
+		size_t operator()(const mythril::InternalObjectHandle <Type> &handle) const noexcept {
 			// Simple combination of index and generation
 			uint64_t combined = (static_cast<uint64_t>(handle.index()) << 32) | handle.gen();
 			return std::hash<uint64_t>()(combined);

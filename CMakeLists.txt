@@ -181,7 +181,7 @@ CPMAddPackage(
 CPMAddPackage(
         NAME SDL3
         GITHUB_REPOSITORY "libsdl-org/SDL"
-        GIT_TAG release-3.2.24
+        GIT_TAG release-3.4.0
         OPTIONS
         "SDL_SHARED OFF"
         "SDL_STATIC ON"
@@ -258,6 +258,7 @@ set(MYTHRIL_SOURCES
         lib/Shader.cpp
         lib/SlangCompiler.cpp
         lib/DescriptorWriter.cpp
+        lib/DescriptorAllocatorGrowable.cpp
 )
 
 if(MYTH_ENABLE_IMGUI_STANDARD OR MYTH_ENABLE_IMGUI_DOCKING)
@@ -283,6 +284,7 @@ target_include_directories(mythril
 
 target_compile_definitions(mythril PUBLIC
         VK_NO_PROTOTYPES
+        VK_ENABLE_BETA_EXTENSIONS # for portability subset, and more specific imageView swizzle
 )
 
 target_link_libraries(mythril

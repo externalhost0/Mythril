@@ -177,7 +177,7 @@ struct GeometryPushConstants
     DescriptorHandle<Texture2D> baseColorTexture;
     DescriptorHandle<Texture2D> normalTexture;
     DescriptorHandle<Texture2D> roughnessMetallicTexture;
-    DescriptorHandle<SamplerState> samplerState;
+    DescriptorHandle<SamplerState> linearSampler;
     DescriptorHandle<Texture2D> shadowTexture;
     DescriptorHandle<SamplerState> shadowSampler;
     float4x4 lightSpaceMatrix;

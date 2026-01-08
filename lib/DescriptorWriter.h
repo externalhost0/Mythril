@@ -5,7 +5,7 @@
 #pragma once
 
 #include "ObjectHandles.h"
-#include "GraphicsPipeline.h"
+#include "Pipelines.h"
 
 #include <volk.h>
 #include <deque>

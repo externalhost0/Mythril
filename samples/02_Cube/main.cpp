@@ -166,6 +166,7 @@ int main() {
 		.loadOp = mythril::LoadOperation::CLEAR,
 	})
 	.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
+		cmd.cmdBeginRendering();
 		cmd.cmdBindGraphicsPipeline(mainPipeline);
 
 		VkExtent2D windowSize = ctx->getWindow().getWindowSize();
@@ -189,6 +190,7 @@ int main() {
 		cmd.cmdPushConstants(constants);
 		cmd.cmdBindIndexBuffer(cubeIndexBuffer);
 		cmd.cmdDrawIndexed(cubeIndices.size());
+		cmd.cmdEndRendering();
 	});
 	graph.compile(*ctx);
 

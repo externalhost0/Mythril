@@ -4,11 +4,14 @@
 
 #pragma once
 
+#include "faststl/StackVector.h"
+
 #include <volk.h>
 #include <slang/slang.h>
 #include <string>
 #include <vector>
 #include <unordered_map>
+
 
 namespace mythril {
 	enum class FieldKind {
@@ -103,8 +106,7 @@ namespace mythril {
 		std::unordered_map<std::string, int> nameToID;
 	};
 
-
-	class Shader {
+	class AllocatedShader {
 	public:
 		struct DescriptorBindingInfo : IParameterInfo {
 			uint32_t setIndex;
@@ -151,16 +153,18 @@ namespace mythril {
 		// pc = push constants
 		// sc = specialization constants
 
+		// we allow the user
+		StackVector<const char*, 4> entryPoints;
+
 		// pipeline layout requires ds & pc
 		PipelineLayoutSignature pipelineLayoutSignature;
 		// pipeline requires sc
 		SpecializationInfo specializationInfo;
 
 		// optional information for user-created reflection systems
-		std::vector<Shader::DescriptorSetInfo> retrievedDescriptorSets;
-		std::vector<Shader::PushConstantInfo> retrivedPushConstants;
+		std::vector<AllocatedShader::DescriptorSetInfo> retrievedDescriptorSets;
+		std::vector<AllocatedShader::PushConstantInfo> retrivedPushConstants;
 	};
 
 	ReflectionResult ReflectSPIRV(const uint32_t* code, size_t size);
-
 }

@@ -6,6 +6,7 @@
 
 #include <csignal>
 #include <fmt/printf.h>
+#include <source_location>
 
 // when not in DEBUG we do not delete x unlike the other macros, as this includes actual vulkan calls
 #ifdef DEBUG
@@ -42,6 +43,20 @@
 #else
 #define ASSERT_MSG(ERROR, FORMAT, ...) ((void)0)
 #endif
+
+#ifdef DEBUG
+// DO NOT PASS SIDE EFFECT FUNCTIONS
+#define ASSERT_MSG_NOSOURCE(ERROR, FORMAT, ...) do { \
+    if (!static_cast<bool>(ERROR)) [[unlikely]] {                         \
+        fmt::print(stderr, "[ASSERT_MSG] | {} -> Error:\n\t" FORMAT "\n", __func__ __VA_OPT__(,) __VA_ARGS__); \
+        std::raise(SIGABRT); \
+    } \
+    ASSUME_(ERROR); \
+} while(0)
+#else
+#define ASSERT_MSG_NOSOURCE(ERROR, FORMAT, ...) ((void)0)
+#endif
+
 
 #ifdef DEBUG
 #define ASSERT(ERROR) do { \

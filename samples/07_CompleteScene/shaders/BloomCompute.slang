@@ -47,7 +47,7 @@ void cs_main(uint3 threadId: SV_DispatchThreadID) {
         return;
 
     const float2 texCoord = (threadId.xy + float2(0.5)) / size;
-    const float texScaler = 1.0*frame.one / (kIsHorizontal ? size.x : size.y);
+    const float texScaler = 1.0 * frame.one  / (kIsHorizontal ? size.x : size.y);
 
     float3 c = float3(0.0);
 

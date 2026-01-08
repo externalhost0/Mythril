@@ -8,7 +8,7 @@
 #include "CTX.h"
 #include "vkutil.h"
 #include "Logger.h"
-#include "GraphicsPipeline.h"
+#include "Pipelines.h"
 
 #include <volk.h>
 #ifdef MYTH_ENABLED_IMGUI
@@ -26,6 +26,16 @@ PassSourceTypeToString(goalType));
 #else
 #define CHECK_PASS_OPERATION_MISMATCH(goalType) (void(0))
 #endif
+
+
+#ifdef DEBUG
+#define CHECK_SHOULD_BE_RENDERING() \
+	if (!_isRendering) \
+		LOG_SYSTEM_NOSOURCE(LogType::Warning, "Calling '{}' must be done between cmdBeginRendering() and cmdEndRendering()", __func__);
+#else
+#define CHECK_SHOULD_BE_RENDERING() (void(0))
+#endif
+
 
 #ifdef DEBUG
 #define CHECK_PIPELINE_REBIND(common, lastBound, debugName) \
@@ -52,6 +62,8 @@ PassSourceTypeToString(goalType));
 	} while(0)
 #endif
 
+#define DRY_RETURN() if (_isDryRun) return;
+
 
 namespace mythril {
 	static const char* PassSourceTypeToString(PassSource::Type type) {
@@ -63,7 +75,7 @@ namespace mythril {
 
 	PassSource::Type CommandBuffer::getCurrentPassType() {
 		if (std::holds_alternative<InternalGraphicsPipelineHandle>(_currentPipelineHandle)) return PassSource::Type::Graphics;
-		else if (std::holds_alternative<InternalComputePipelineHandle>(_currentPipelineHandle)) return PassSource::Type::Compute;
+		if (std::holds_alternative<InternalComputePipelineHandle>(_currentPipelineHandle)) return PassSource::Type::Compute;
 		assert(false);
 	}
 
@@ -88,7 +100,10 @@ namespace mythril {
 					first = false;
 					ss << push.size;
 				}
-				LOG_SYSTEM(LogType::Warning, "Push constant CPU size is different than GPU size! Your CPU structure has a size of '{}' while the shader's push constant has sizes '[{}]' respectively.", cpuSize, ss.str());
+				LOG_SYSTEM(LogType::Warning,
+					"Push constant CPU size is different than GPU size! Your CPU structure has a size of '{}' while the shader's push constant has sizes '[{}]' respectively.",
+					cpuSize,
+					ss.str());
 			} else if (count == kMaxWarns) {
 				LOG_SYSTEM(LogType::Warning, "Push constant size mismatch for pipeline has triggered this warning >{} times and will now be silenced.", kMaxWarns);
 			}
@@ -98,7 +113,13 @@ namespace mythril {
 
 	constexpr uint16_t kMaxColorAttachments = 16;
 	// enforce that a valid CommandBuffer can only be created via this constructor
-	CommandBuffer::CommandBuffer(CTX* ctx, CommandBuffer::Type type) : _ctx(ctx), _wrapper(&ctx->_imm->acquire()), _cmdType(type), _isDryRun(false) {};
+	CommandBuffer::CommandBuffer(CTX* ctx, CommandBuffer::Type type) :
+	_ctx(ctx),
+	_wrapper(&ctx->_imm->acquire()),
+	_activePass(),
+	_cmdType(type),
+	_isDryRun(false) {}
+
 	CommandBuffer::~CommandBuffer() {
 		ASSERT_MSG(!_isRendering, "Please call to end rendering before destroying a Command Buffer!");
 	}
@@ -112,21 +133,34 @@ namespace mythril {
 	}
 
 	// ALL PUBLIC COMMANDS AVAILBLE TO USER //
+	void CommandBuffer::cmdBeginRendering() {
+		DRY_RETURN();
+		this->cmdBeginRenderingImpl();
+	}
+
+	void CommandBuffer::cmdEndRendering() {
+		DRY_RETURN();
+		this->cmdEndRenderingImpl();
+	}
+
 	void CommandBuffer::cmdDraw(uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstInstance) {
-		if (_isDryRun) return;
+		DRY_RETURN();
+		CHECK_SHOULD_BE_RENDERING();
 		CHECK_PASS_OPERATION_MISMATCH(PassSource::Type::Graphics);
 
 		vkCmdDraw(_wrapper->_cmdBuf, vertexCount, instanceCount, firstVertex, firstInstance);
 	}
 	void CommandBuffer::cmdDrawIndexed(uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex, int32_t vertexOffset, uint32_t baseInstance) {
-		if (_isDryRun) return;
+		DRY_RETURN();
+		CHECK_SHOULD_BE_RENDERING();
 		CHECK_PASS_OPERATION_MISMATCH(PassSource::Type::Graphics);
 
 		vkCmdDrawIndexed(_wrapper->_cmdBuf, indexCount, instanceCount, firstIndex, vertexOffset, baseInstance);
 	}
 
 	void CommandBuffer::cmdBindIndexBuffer(InternalBufferHandle handle) {
-		if (_isDryRun) return;
+		DRY_RETURN();
+		CHECK_SHOULD_BE_RENDERING();
 		CHECK_PASS_OPERATION_MISMATCH(PassSource::Type::Graphics);
 
 		const AllocatedBuffer& buffer = _ctx->viewBuffer(handle);
@@ -134,24 +168,59 @@ namespace mythril {
 	}
 
 	void CommandBuffer::cmdDispatchThreadGroup(const Dimensions& threadGroupCount) {
-		if (_isDryRun) return;
+		DRY_RETURN()
 		CHECK_PASS_OPERATION_MISMATCH(PassSource::Type::Compute);
 
 		vkCmdDispatch(_wrapper->_cmdBuf, threadGroupCount.width, threadGroupCount.height, threadGroupCount.depth);
 	}
+	void CommandBuffer::cmdGenerateMipmap(InternalTextureHandle handle) {
+		DRY_RETURN()
+
+		if (handle.empty()) {
+			LOG_SYSTEM(LogType::Warning, "Texture handle '{}' is invalid!", this->_ctx->viewTexture(handle).getDebugName());
+			return;
+		}
+		AllocatedTexture* tex = this->_ctx->_texturePool.get(handle);
+		if (tex->_numLevels <= 1) {
+			LOG_SYSTEM(LogType::Warning, "Texture cannot have mipmaps when # of levels is less than 2.");
+			return;
+		}
+		ASSERT(tex->_vkCurrentImageLayout != VK_IMAGE_LAYOUT_UNDEFINED);
+		tex->generateMipmap(_wrapper->_cmdBuf);
+	}
 
 	void CommandBuffer::cmdTransitionLayout(InternalTextureHandle source, VkImageLayout newLayout) {
-		if (_isDryRun) return;
+		DRY_RETURN()
 
 		cmdTransitionLayoutImpl(source, _ctx->viewTexture(source)._vkCurrentImageLayout, newLayout);
 	}
+
+	static constexpr bool TextureCopyInstead(const AllocatedTexture& source, const AllocatedTexture& destination) {
+		if (source.getFormat() != destination.getFormat()) {
+			return false;
+		}
+		if (source.getType() != destination.getType()) {
+			return false;
+		}
+		if (source.getDimensions() != destination.getDimensions()) {
+			return false;
+		}
+		if (source.getSampleCount() != destination.getSampleCount()) {
+			return false;
+		}
+		return true;
+	}
 	void CommandBuffer::cmdBlitImage(InternalTextureHandle source, InternalTextureHandle destination) {
-		if (_isDryRun) return;
+		DRY_RETURN()
 		ASSERT_MSG(source.valid() && destination.valid(), "Textures must be valid handles!");
 
 #ifdef DEBUG
-		VkImageView source_vkImageView = _ctx->viewTexture(source)._vkImageView;
-		VkImageView dest_vkImageView = _ctx->viewTexture(destination)._vkImageView;
+		// check if textures are being used elsewhere
+		auto& sourceTexture = _ctx->viewTexture(source);
+		auto& destinationTexture = _ctx->viewTexture(destination);
+
+		VkImageView source_vkImageView = sourceTexture._vkImageView;
+		VkImageView dest_vkImageView = destinationTexture._vkImageView;
 		for (const auto& color_attachment : this->_activePass.colorAttachments) {
 			ASSERT_MSG(
 					color_attachment.imageView != source_vkImageView &&
@@ -165,7 +234,10 @@ namespace mythril {
 					depth_attachment.imageView != dest_vkImageView,
 					"You cannot blit an image currently being used by a RenderPass!");
 		}
-
+		// check if copy could have been used instead
+		if (TextureCopyInstead(sourceTexture, destinationTexture)) {
+			LOG_SYSTEM(LogType::Suggestion, "Usage of cmdBlitImage can be replaced by cmdCopyImage");
+		}
 #endif
 		auto& sourceTex = _ctx->viewTexture(source);
 		auto& destinationTex = _ctx->viewTexture(destination);
@@ -180,14 +252,14 @@ namespace mythril {
 		cmdBlitImageImpl(source, destination, sourceTex.getExtentAs2D(), destinationTex.getExtentAs2D());
 	}
 	void CommandBuffer::cmdCopyImage(InternalTextureHandle source, InternalTextureHandle destination) {
-		if (_isDryRun) return;
+		DRY_RETURN()
 
 		// needs to be same so doesnt matter if we take source or destination size
 		cmdCopyImageImpl(source, destination, _ctx->viewTexture(source).getExtentAs2D());
 	}
 
 	void CommandBuffer::cmdPushConstants(const void* data, uint32_t size, uint32_t offset) {
-		if (_isDryRun) return;
+		DRY_RETURN()
 		if (!_currentPipelineCommon) {
 			LOG_SYSTEM(LogType::Warning, "No pipeline currently bound, will not perform push constants!");
 			return;
@@ -201,7 +273,7 @@ namespace mythril {
 
 		// we just use the enum for PassSource::Type even though it makes no sense cause thats not what we are testing for
 		PassSource::Type type = getCurrentPassType();
-		VkShaderStageFlags stages;
+		VkShaderStageFlags stages = 0;
 		switch (type) {
 			case PassSource::Type::Compute: {
 				stages = VK_SHADER_STAGE_COMPUTE_BIT;
@@ -237,11 +309,11 @@ namespace mythril {
 			LOG_SYSTEM(LogType::Warning, "Binded render pipeline was invalid/empty!");
 			return;
 		}
-		GraphicsPipeline* pipeline = _ctx->_graphicsPipelinePool.get(handle);
+		AllocatedGraphicsPipeline* pipeline = _ctx->_graphicsPipelinePool.get(handle);
 		this->_ctx->checkAndUpdateBindlessDescriptorSetImpl();
 		if (_isDryRun) {
-			if (pipeline->_common._vkPipeline) {
-				LOG_SYSTEM(LogType::Error, "Dry run attempting to resolve Pipeline '{}' that has already been built!", pipeline->_debugName);
+			if (pipeline->_common._vkPipeline != VK_NULL_HANDLE) {
+				// LOG_SYSTEM(LogType::Error, "Dry run attempting to resolve Pipeline '{}' that has already been built!", pipeline->_debugName);
 				return;
 			}
 			// we perform construction inside our dry run for all pipelines, which is when we compile the RenderGraph
@@ -263,10 +335,10 @@ namespace mythril {
 			LOG_SYSTEM(LogType::Warning, "Binded compute pipeline was invalid/empty!");
 			return;
 		}
-		ComputePipeline* pipeline = _ctx->_computePipelinePool.get(handle);
+		AllocatedComputePipeline* pipeline = _ctx->_computePipelinePool.get(handle);
 		this->_ctx->checkAndUpdateBindlessDescriptorSetImpl();
 		if (_isDryRun) {
-			if (pipeline->_common._vkPipeline) {
+			if (pipeline->_common._vkPipeline != VK_NULL_HANDLE) {
 				LOG_SYSTEM(LogType::Error, "Dry run attempting to resolve Pipeline '{}' that has already been built!", pipeline->_debugName);
 				return;
 			}
@@ -282,7 +354,7 @@ namespace mythril {
 
 	// current issues with host buffer
 	void CommandBuffer::cmdUpdateBuffer(InternalBufferHandle handle, size_t offset, size_t size, const void* data) {
-		if (_isDryRun) return;
+		DRY_RETURN()
 
 		ASSERT_MSG(!_isRendering, "You cannot update a buffer while rendering! Please move this command either before or after rendering.");
 		ASSERT(handle.valid());
@@ -306,7 +378,7 @@ namespace mythril {
 		bufferBarrierImpl(handle, VK_PIPELINE_STAGE_2_TRANSFER_BIT, dstStage);
 	}
 	void CommandBuffer::cmdCopyImageToBuffer(InternalTextureHandle source, InternalBufferHandle destination, const VkBufferImageCopy& region) {
-		if (_isDryRun) return;
+		DRY_RETURN()
 
 		auto& sourceTex = _ctx->viewTexture(source);
 		VkImageLayout currentLayout = sourceTex._vkCurrentImageLayout;
@@ -317,17 +389,27 @@ namespace mythril {
 		vkCmdCopyImageToBuffer(_wrapper->_cmdBuf, sourceTex._vkImage, properLayout, _ctx->viewBuffer(destination)._vkBuffer, 1, &region);
 	}
 	void CommandBuffer::cmdBindDepthState(const DepthState& state) {
-		if (_isDryRun) return;
+		DRY_RETURN()
 		// https://github.com/corporateshark/lightweightvk/blob/master/lvk/vulkan/VulkanClasses.cpp#L2458
 		const VkCompareOp op = toVulkan(state.compareOp);
 		vkCmdSetDepthWriteEnable(_wrapper->_cmdBuf, state.isDepthWriteEnabled ? VK_TRUE : VK_FALSE);
 		vkCmdSetDepthTestEnable(_wrapper->_cmdBuf, (op != VK_COMPARE_OP_ALWAYS || state.isDepthWriteEnabled) ? VK_TRUE : VK_FALSE);
 		vkCmdSetDepthCompareOp(_wrapper->_cmdBuf, op);
 	}
+	void CommandBuffer::cmdSetDepthBiasEnable(bool enable) {
+		DRY_RETURN();
+		vkCmdSetDepthBiasEnable(_wrapper->_cmdBuf, enable ? VK_TRUE : VK_FALSE);
+	}
+	void CommandBuffer::cmdSetDepthBias(float constantFactor, float slopeFactor, float clamp) {
+		DRY_RETURN();
+		vkCmdSetDepthBias(_wrapper->_cmdBuf, constantFactor, clamp, slopeFactor);
+	}
+
 
 #ifdef MYTH_ENABLED_IMGUI
 	void CommandBuffer::cmdDrawImGui() {
-		if (_isDryRun) return;
+		DRY_RETURN()
+		CHECK_SHOULD_BE_RENDERING();
 #ifdef DEBUG
 		for (const auto& color_attachment : this->_activePass.colorAttachments) {
 			ASSERT_MSG(color_attachment.resolveImageView == VK_NULL_HANDLE, "Rendering of ImGui cannot be done inside a multisampled texture!");
@@ -493,7 +575,7 @@ namespace mythril {
 		barrier.dstAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT | VK_ACCESS_2_MEMORY_READ_BIT;
 		barrier.oldLayout = _ctx->_swapchain->getCurrentSwapchainTexture()._vkCurrentImageLayout;
 		barrier.newLayout = newLayout;
-		barrier.subresourceRange = vkinfo::CreateImageSubresourceRange(vkutil::AspectMaskFromAttachmentLayout(newLayout));
+		barrier.subresourceRange = VkImageSubresourceRange{vkutil::AspectMaskFromAttachmentLayout(newLayout), 0, 1, 0, 1};
 		barrier.image = _ctx->_swapchain->getCurrentSwapchainTexture()._vkImage;
 		VkDependencyInfo info = { .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO, .pNext = nullptr };
 		info.imageMemoryBarrierCount = 1;
@@ -534,12 +616,6 @@ namespace mythril {
 		copyinfo.pRegions = &copyRegion;
 
 		vkCmdCopyImage2KHR(_wrapper->_cmdBuf, &copyinfo);
-	}
-	void CommandBuffer::cmdSetDepthBiasEnableImpl(bool enable) {
-		vkCmdSetDepthBiasEnable(_wrapper->_cmdBuf, enable ? VK_TRUE : VK_FALSE);
-	}
-	void CommandBuffer::cmdSetDepthBiasImpl(float constantFactor, float slopeFactor, float clamp) {
-		vkCmdSetDepthBias(_wrapper->_cmdBuf, constantFactor, clamp, slopeFactor);
 	}
 	void CommandBuffer::cmdBlitImageImpl(InternalTextureHandle source, InternalTextureHandle destination, VkExtent2D srcSize, VkExtent2D dstSize) {
 		VkImageBlit2 blitRegion = { .sType = VK_STRUCTURE_TYPE_IMAGE_BLIT_2, .pNext = nullptr };
@@ -606,7 +682,7 @@ namespace mythril {
 				.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
 
 				.image = sourceTex._vkImage,
-				.subresourceRange = vkinfo::CreateImageSubresourceRange(vkutil::AspectMaskFromFormat(sourceTex._vkFormat))
+				.subresourceRange = VkImageSubresourceRange{vkutil::AspectMaskFromFormat(sourceTex._vkFormat), 0, 1, 0, 1}
 		};
 		VkDependencyInfo dependency_i = {
 				.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,

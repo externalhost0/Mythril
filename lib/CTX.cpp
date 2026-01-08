@@ -4,17 +4,12 @@
 
 #include "CTX.h"
 #include "vkutil.h"
+#include "vkstring.h"
 #include "Logger.h"
 #include "GraphicsPipelineBuilder.h"
-#include "GraphicsPipeline.h"
+#include "Pipelines.h"
 #include "mythril/CTXBuilder.h"
 #include "Plugins.h"
-
-#include <iostream>
-
-#define VMA_STATIC_VULKAN_FUNCTIONS 0
-#define VMA_DYNAMIC_VULKAN_FUNCTIONS 0
-#include <vk_mem_alloc.h>
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
@@ -41,7 +36,6 @@ namespace mythril {
 			kNumOfBinds = 3
 		};
 	}
-
 
 	static VkMemoryPropertyFlags StorageTypeToVkMemoryPropertyFlags(StorageType storage) {
 		VkMemoryPropertyFlags memFlags{0};
@@ -101,23 +95,23 @@ namespace mythril {
 		updater.currentPipelineDebugName = debugName;
 		return updater;
 	}
-	DescriptorSetWriter CTX::openUpdate(InternalGraphicsPipelineHandle handle) {
-		GraphicsPipeline* pipeline = _graphicsPipelinePool.get(handle);
+	DescriptorSetWriter CTX::openDescriptorUpdate(InternalGraphicsPipelineHandle handle) {
+		AllocatedGraphicsPipeline* pipeline = _graphicsPipelinePool.get(handle);
 		if (!pipeline->_common._vkPipelineLayout) {
 			LOG_SYSTEM(LogType::Error, "Pipeline '{}' has not been resolved, will do it now.", pipeline->_debugName);
 			this->resolveGraphicsPipelineImpl(*pipeline);
 		}
 		return openUpdateImpl(&pipeline->_common, pipeline->_debugName);
 	}
-	DescriptorSetWriter CTX::openUpdate(InternalComputePipelineHandle handle) {
-		ComputePipeline* pipeline = _computePipelinePool.get(handle);
+	DescriptorSetWriter CTX::openDescriptorUpdate(InternalComputePipelineHandle handle) {
+		AllocatedComputePipeline* pipeline = _computePipelinePool.get(handle);
 		if (!pipeline->_common._vkPipelineLayout) {
 			LOG_SYSTEM(LogType::Error, "Pipeline '{}' has not been resolved, will do it now.", pipeline->_debugName);
 			this->resolveComputePipelineImpl(*pipeline);
 		}
 		return openUpdateImpl(&pipeline->_common, pipeline->_debugName);
 	}
-	void CTX::submitUpdate(DescriptorSetWriter &updater) {
+	void CTX::submitDescriptorUpdate(DescriptorSetWriter &updater) {
 		updater.writer.updateSets(_vkDevice);
 		updater.writer.clear();
 		updater.currentPipelineCommon = nullptr;
@@ -477,7 +471,7 @@ namespace mythril {
 			}));
 		}
 
-		VkShaderStageFlags stage_flags =
+		constexpr VkShaderStageFlags stage_flags =
 				VK_SHADER_STAGE_VERTEX_BIT |
 				VK_SHADER_STAGE_FRAGMENT_BIT |
 				VK_SHADER_STAGE_COMPUTE_BIT;
@@ -504,14 +498,14 @@ namespace mythril {
 		}
 		const VkDescriptorSetLayoutBindingFlagsCreateInfo dsl_bf_ci = {
 				.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO,
-				.bindingCount = (uint32_t) BindlessSpaceIndex::kNumOfBinds,
+				.bindingCount = static_cast<uint32_t>(BindlessSpaceIndex::kNumOfBinds),
 				.pBindingFlags = bindingFlags,
 		};
 		const VkDescriptorSetLayoutCreateInfo dsl_ci = {
 				.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
 				.pNext = &dsl_bf_ci,
 				.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT,
-				.bindingCount = (uint32_t) BindlessSpaceIndex::kNumOfBinds,
+				.bindingCount = static_cast<uint32_t>(BindlessSpaceIndex::kNumOfBinds),
 				.pBindings = bindings,
 		};
 		VK_CHECK(vkCreateDescriptorSetLayout(_vkDevice, &dsl_ci, nullptr, &_vkBindlessDSL));
@@ -777,11 +771,11 @@ namespace mythril {
 			sc_count++;
 		}
 		// a compute pipeline only has one shader anyways
-		Shader* shader = _shaderPool.get(spec.shader);
+		AllocatedShader* shader = _shaderPool.get(spec.shader);
 
 		if (shader->_specializationInfo.specializationConstants.size() != sc_count)
 			LOG_SYSTEM(LogType::Warning, "You have specialization constants used in the compute shader '{}' that are not defined in the pipeline creation for '{}'!", shader->_debugName, spec.debugName);
-		std::unique_ptr<SpecializationInfoBundle> spec_constants_bundle = BuildSpecializationInfoBundle(spec.specConstants, sc_count, shader->_specializationInfo.nameToID);
+		const std::unique_ptr<SpecializationInfoBundle> spec_constants_bundle = BuildSpecializationInfoBundle(spec.specConstants, sc_count, shader->_specializationInfo.nameToID);
 
 		VkPipelineShaderStageCreateInfo shader_stage_ci = {
 				.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
@@ -806,21 +800,20 @@ namespace mythril {
 		return vk_pipeline;
 	}
 
-	void CTX::resolveComputePipelineImpl(ComputePipeline& pipeline) {
+	void CTX::resolveComputePipelineImpl(AllocatedComputePipeline& pipeline) {
 		// aliases
 		ComputePipelineSpec& spec = pipeline._spec;
-		Shader* shader = _shaderPool.get(spec.shader);
+		AllocatedShader* shader = _shaderPool.get(spec.shader);
 
 		// resolvement &
 		// assignment
 		PipelineCommon common = this->buildPipelineCommonDataExceptVkPipelineImpl(shader->_pipelineSignature);
 		pipeline._common = common;
 		pipeline._common._vkPipeline = this->buildComputePipelineImpl(common._vkPipelineLayout, spec);
-		LOG_DEBUG("Compute pipeline '{}' VkPipeline Address: '{}'", spec.debugName, (void*)pipeline._common._vkPipeline);
 		// good to go, maybe later you could return it
 	}
 
-	void CTX::resolveGraphicsPipelineImpl(GraphicsPipeline& pipeline) {
+	void CTX::resolveGraphicsPipelineImpl(AllocatedGraphicsPipeline& pipeline) {
 		// updating descriptor layout //
 //		if (graphics_pipeline->_vkLastDescriptorSetLayout != _vkBindlessDSL) {
 //			deferTask(std::packaged_task<void()>([device = _vkDevice, pipeline = graphics_pipeline->_vkPipeline]() {
@@ -871,7 +864,7 @@ namespace mythril {
 			if (!vertStage.entryPoint) {
 				vertStage.entryPoint = "vs_main";
 			}
-			Shader* shader = _shaderPool.get(vertStage.handle);
+			AllocatedShader* shader = _shaderPool.get(vertStage.handle);
 			if (shader->_specializationInfo.specializationConstants.size() > sc_count)
 				LOG_SYSTEM(LogType::Warning, "You have specialization constants used in the vertex shader '{}' that are not defined in the pipeline creation for '{}'!", shader->_debugName, spec.debugName);
 			vertSpecConstantsBundle = BuildSpecializationInfoBundle(spec.specConstants, sc_count, shader->_specializationInfo.nameToID);
@@ -884,7 +877,7 @@ namespace mythril {
 			if (!fragStage.entryPoint) {
 				fragStage.entryPoint = "fs_main";
 			}
-			Shader* shader = _shaderPool.get(fragStage.handle);
+			AllocatedShader* shader = _shaderPool.get(fragStage.handle);
 			if (shader->_specializationInfo.specializationConstants.size() > sc_count)
 				LOG_SYSTEM(LogType::Warning, "You have specialization constants used in the fragment shader '{}' that are not defined in the pipeline creation for '{}'!", shader->_debugName, spec.debugName);
 			fragSpecConstantsBundle = BuildSpecializationInfoBundle(spec.specConstants, sc_count, shader->_specializationInfo.nameToID);
@@ -897,7 +890,7 @@ namespace mythril {
 			if (!geometryStage.entryPoint) {
 				geometryStage.entryPoint = "gs_main";
 			}
-			Shader* shader = _shaderPool.get(geometryStage.handle);
+			AllocatedShader* shader = _shaderPool.get(geometryStage.handle);
 			if (shader->_specializationInfo.specializationConstants.size() > sc_count)
 				LOG_SYSTEM(LogType::Warning, "You have specialization constants used in the geometry shader '{}' that are not defined in the pipeline creation for '{}'!", shader->_debugName, spec.debugName);
 			geomSpecConstantsBundle = BuildSpecializationInfoBundle(spec.specConstants, sc_count, shader->_specializationInfo.nameToID);
@@ -910,112 +903,9 @@ namespace mythril {
 		PipelineCommon common = buildPipelineCommonDataExceptVkPipelineImpl(merged_pl_signature);
 		pipeline._common = common;
 		pipeline._common._vkPipeline = builder.build(_vkDevice, common._vkPipelineLayout);
-
 		// good to go, maybe later you could return it
 	}
 
-	VkDescriptorPool DescriptorAllocatorGrowable::createPoolImpl(VkDevice device, uint32_t setCount, std::span<PoolSizeRatio> poolRatios) {
-		std::vector<VkDescriptorPoolSize> pool_sizes;
-		pool_sizes.reserve(this->_ratios.size());
-		for (const PoolSizeRatio& ratio : poolRatios) {
-			pool_sizes.push_back(VkDescriptorPoolSize{
-					.type = ratio.type,
-					.descriptorCount = static_cast<uint32_t>(ratio.ratio * (float)setCount)
-			});
-		}
-		VkDescriptorPoolCreateInfo dsp_ci = {};
-		dsp_ci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-		dsp_ci.flags = 0;
-		dsp_ci.maxSets = setCount;
-		dsp_ci.poolSizeCount = static_cast<uint32_t>(pool_sizes.size());
-		dsp_ci.pPoolSizes = pool_sizes.data();
-
-		VkDescriptorPool descriptor_pool = VK_NULL_HANDLE;
-		vkCreateDescriptorPool(device, &dsp_ci, nullptr, &descriptor_pool);
-		return descriptor_pool;
-	}
-
-	VkDescriptorPool DescriptorAllocatorGrowable::getPoolImpl(VkDevice device) {
-		VkDescriptorPool new_pool = VK_NULL_HANDLE;
-		if (!this->_readyPools.empty()) {
-			new_pool = this->_readyPools.back();
-			_readyPools.pop_back();
-		} else {
-			new_pool = this->createPoolImpl(device, this->_setsPerPool, this->_ratios);
-			this->_setsPerPool *= 2;
-
-			if (this->_setsPerPool > 4092) {
-				this->_setsPerPool = 4092;
-			}
-		}
-		ASSERT_MSG(new_pool != VK_NULL_HANDLE, "Cant get a null pool!");
-		return new_pool;
-	}
-	void DescriptorAllocatorGrowable::initialize(VkDevice device, uint32_t initialSets, std::span<PoolSizeRatio> poolRatios) {
-		this->_ratios.clear();
-		for (auto& ratio : poolRatios) {
-			this->_ratios.push_back(ratio);
-		}
-		VkDescriptorPool new_pool = this->createPoolImpl(device, initialSets, poolRatios);
-		this->_setsPerPool = initialSets * 2;
-		this->_readyPools.push_back(new_pool);
-	}
-	void DescriptorAllocatorGrowable::clearPools(VkDevice device) {
-		for (auto ready_pool : this->_readyPools) {
-			vkResetDescriptorPool(device, ready_pool, 0);
-		}
-		for (auto full_pool : this->_fullPools) {
-			vkResetDescriptorPool(device, full_pool, 0);
-			_readyPools.push_back(full_pool);
-		}
-		this->_fullPools.clear();
-	}
-	void DescriptorAllocatorGrowable::destroyPools(VkDevice device) {
-		for (auto ready_pool : this->_readyPools) {
-			vkDestroyDescriptorPool(device, ready_pool, nullptr);
-		}
-		this->_readyPools.clear();
-		for (auto full_pool : this->_fullPools) {
-			vkDestroyDescriptorPool(device, full_pool, nullptr);
-		}
-		this->_fullPools.clear();
-	}
-	VkDescriptorSet DescriptorAllocatorGrowable::allocateSet(VkDevice device, VkDescriptorSetLayout layout, void* pNext) {
-		VkDescriptorPool pool_to_use = this->getPoolImpl(device);
-
-		VkDescriptorSetAllocateInfo ds_ai = {
-				.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-				.pNext = pNext,
-				.descriptorPool = pool_to_use,
-				.descriptorSetCount = 1,
-				.pSetLayouts = &layout
-		};
-		VkDescriptorSet descriptor_set = VK_NULL_HANDLE;
-		VkResult result = vkAllocateDescriptorSets(device, &ds_ai, &descriptor_set);
-		if (result == VK_ERROR_OUT_OF_POOL_MEMORY || result == VK_ERROR_FRAGMENTED_POOL) {
-			_fullPools.push_back(pool_to_use);
-			pool_to_use = this->getPoolImpl(device);
-			ds_ai.descriptorPool = pool_to_use;
-			VK_CHECK(vkAllocateDescriptorSets(device, &ds_ai, &descriptor_set));
-		}
-		this->_readyPools.push_back(pool_to_use);
-		return descriptor_set;
-	}
-
-	void CTX::generateMipmaps(InternalTextureHandle handle) {
-		if (handle.empty()) {
-			LOG_SYSTEM(LogType::Warning, "Generate mipmap request with empty handle!");
-			return;
-		}
-		AllocatedTexture* image = _texturePool.get(handle);
-		if (image->_numLevels <= 1) {
-			return;
-		}
-		ASSERT(image->_vkCurrentImageLayout != VK_IMAGE_LAYOUT_UNDEFINED);
-		const ImmediateCommands::CommandBufferWrapper& wrapper = _imm->acquire();
-		image->generateMipmap(wrapper._cmdBuf);
-		_imm->submit(wrapper);
-	}
 	InternalSamplerHandle CTX::createSampler(SamplerSpec spec) {
 		// creating sampler requires little work so we dont need an _Impl function for it
 		VkSamplerCreateInfo info = {
@@ -1031,29 +921,30 @@ namespace mythril {
 				.addressModeW = toVulkan(spec.wrapW),
 
 				.mipLodBias = 0.f,
-				.anisotropyEnable = VK_FALSE,
-				.maxAnisotropy = 0.0f,
+				.anisotropyEnable = spec.anistrophic ? VK_TRUE : VK_FALSE,
+				.maxAnisotropy = static_cast<float>(spec.maxAnisotropic),
 
-				.compareEnable = spec.compareEnabled ? VK_TRUE : VK_FALSE,
-				.compareOp = toVulkan(spec.compareOp),
+				.compareEnable = spec.depthCompareEnabled ? VK_TRUE : VK_FALSE,
+				.compareOp = spec.depthCompareEnabled ? toVulkan(spec.depthCompareOp) : VK_COMPARE_OP_ALWAYS,
 
-				.minLod = -1000,
-				.maxLod = 1000,
+				.minLod = static_cast<float>(spec.mipLodMin),
+				.maxLod = (spec.mipMap == mythril::SamplerMipMap::Disabled) ? static_cast<float>(spec.mipLodMin) : static_cast<float>(spec.mipLodMax),
 
 				.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK,
 				.unnormalizedCoordinates = VK_FALSE,
 		};
 		if (spec.maxAnisotropic > 1) {
-			float maxSamplerAnisotropy = this->_vkPhysDeviceProperties.limits.maxSamplerAnisotropy;
+			const float maxSamplerAnisotropy = this->_vkPhysDeviceProperties.limits.maxSamplerAnisotropy;
 			const bool isAnisotropicFilteringSupported = maxSamplerAnisotropy > 1;
 			ASSERT_MSG(isAnisotropicFilteringSupported, "Anisotropic filtering is not supported by the device.");
 			info.anisotropyEnable = spec.anistrophic ? VK_TRUE : VK_FALSE;
-			if (maxSamplerAnisotropy < spec.maxAnisotropic) {
+			// fixme: not sure why maxAnisotropic is of type uint_
+			if (maxSamplerAnisotropy < static_cast<float>(spec.maxAnisotropic)) {
 				LOG_SYSTEM(LogType::Warning,
 						   "Supplied sampler anisotropic value greater than max supported by the device, setting to {}",
 						   static_cast<double>(maxSamplerAnisotropy));
 			}
-			info.maxAnisotropy = std::min((float)maxSamplerAnisotropy, (float)spec.maxAnisotropic);
+			info.maxAnisotropy = std::min(static_cast<float>(maxSamplerAnisotropy), static_cast<float>(spec.maxAnisotropic));
 		}
 
 		AllocatedSampler obj = {};
@@ -1153,7 +1044,10 @@ namespace mythril {
 
 	void CTX::resizeTexture(InternalTextureHandle handle, VkExtent2D newExtent) {
 		AllocatedTexture* image = _texturePool.get(handle);
-		if (!image) return;
+		if (!image) {
+			LOG_SYSTEM(LogType::Warning, "'resizeTexture' ");
+			return;
+		}
 
 		// copies destroy for Texture logic
 		deferTask(std::packaged_task<void()>([device = _vkDevice, imageView = image->_vkImageView]() {
@@ -1192,6 +1086,7 @@ namespace mythril {
 				image->_numLevels,
 				image->_numLayers,
 				image->_vkSampleCountFlagBits,
+				image->_vkComponentMappings,
 				createFlags
 				);
 		vmaSetAllocationName(_vmaAllocator, newImage._vmaAllocation, newImage._debugName);
@@ -1208,8 +1103,10 @@ namespace mythril {
 		image->_vkCurrentImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 		image->_mappedPtr = newImage._mappedPtr;
 	}
+
 	InternalTextureHandle CTX::createTexture(TextureSpec spec) {
-		ASSERT(spec.usage);
+		ASSERT_MSG(spec.usage, "You must set the usage field on a TextureSpec!");
+		ASSERT_MSG(!(spec.generateMipmaps && spec.initialData == nullptr), "'generateMipMaps' can only be true when 'initialData' is non-null!");
 		// resolve usage flags
 		VkImageUsageFlags usage_flags = (spec.storage == StorageType::Device) ? VK_IMAGE_USAGE_TRANSFER_DST_BIT : 0;
 
@@ -1231,10 +1128,11 @@ namespace mythril {
 			// for now, always set this flag so we can read it back
 			usage_flags |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
 		}
-		if (spec.numMipLevels == 0) {
+		if (spec.numMipLevels < 1) {
 			LOG_SYSTEM(LogType::Warning, "The number of mip levels specified must be greater than 0!");
 			spec.numMipLevels = 1;
 		}
+		uint32_t _numLevels = spec.numMipLevels;
 		ASSERT_MSG(usage_flags != 0, "Invalid usage flags for texture creation!");
 		ASSERT_MSG(spec.type == TextureType::Type_2D || spec.type == TextureType::Type_3D || spec.type == TextureType::Type_Cube, "Only 2D, 3D and Cube textures are supported.");
 
@@ -1243,7 +1141,6 @@ namespace mythril {
 		// resolve memory flags
 		const VkMemoryPropertyFlags mem_flags = StorageTypeToVkMemoryPropertyFlags(spec.storage);
 		// resolve extent3D
-
 		VkExtent3D extent3D = { spec.dimension.width, spec.dimension.height, 1};
 
 		// resolve actions based on texture type
@@ -1266,11 +1163,10 @@ namespace mythril {
 				_numLayers *= 6;
 				_imageCreateFlags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
 				break;
-			default:
-				ASSERT_MSG(false, "Program should never reach this!");
+			default: assert(false);
 		}
-
-		AllocatedTexture obj = createTextureImpl(usage_flags, mem_flags, extent3D, spec.format, _imagetype, _imageviewtype, 1, _numLayers, sample_bits, _imageCreateFlags);
+		const VkComponentMapping component_mappings = spec.components.toVkComponentMapping();
+		AllocatedTexture obj = createTextureImpl(usage_flags, mem_flags, extent3D, spec.format, _imagetype, _imageviewtype, _numLevels, _numLayers, sample_bits, component_mappings, _imageCreateFlags);
 		// members that are only needed for recreation
 		obj._vkMemoryPropertyFlags = mem_flags;
 		obj._vkImageViewType = _imageviewtype;
@@ -1280,9 +1176,10 @@ namespace mythril {
 		// if we have some data we want to upload, do that
 		_awaitingCreation = true;
 		if (spec.initialData) {
+			// enforces that the number of miplevels we want to upload will be accomadated by the texture
 			ASSERT(spec.dataNumMipLevels <= spec.numMipLevels);
 			ASSERT(spec.type == TextureType::Type_2D || spec.type == TextureType::Type_Cube);
-			TexRange range = {
+			const TexRange range = {
 					.dimensions = extent3D,
 					.numLayers = static_cast<uint32_t>((spec.type == TextureType::Type_Cube) ? 6 : 1),
 					.numMipLevels = spec.dataNumMipLevels
@@ -1294,6 +1191,51 @@ namespace mythril {
 		}
 		return {handle};
 	}
+	// todo: review this, as it seems alot of the data can simply be read straight from the copy instead of being resolved again
+	// https://github.com/corporateshark/lightweightvk/blob/master/lvk/vulkan/VulkanClasses.cpp#L4351
+	InternalTextureHandle CTX::createTextureView(InternalTextureHandle handle, TextureViewSpec spec) {
+		if (!handle.valid()) {
+			LOG_SYSTEM(LogType::Warning, "Texture handle is empty!");
+			return {};
+		}
+		// make a copy of the allocated texture object
+		AllocatedTexture copied_obj = *this->_texturePool.get(handle);
+		// very important!
+		copied_obj._isOwning = false;
+		const VkImageAspectFlags texture_aspect_flags = copied_obj.getImageAspectFlags();
+		// lose all data associated with original image
+		memset(&copied_obj._vkImageViewStorage, 0, sizeof(copied_obj._vkImageViewStorage));
+
+		const VkComponentMapping component_mappings = spec.components.toVkComponentMapping();
+		ASSERT_MSG(vkutil::GetNumImagePlanes(copied_obj._vkFormat) == 1, "Unsupported multiplanar image.");
+
+		VkImageViewCreateInfo image_view_ci = {
+				.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+				.pNext = nullptr,
+				.image = copied_obj._vkImage,
+				.viewType = copied_obj._vkImageViewType,
+				.format = copied_obj._vkFormat,
+				.components = component_mappings,
+				.subresourceRange = {
+						.aspectMask = texture_aspect_flags,
+						.baseMipLevel = spec.mipLevel,
+						.levelCount = spec.numMipLevels,
+						.baseArrayLayer = spec.layer,
+						.layerCount = spec.numLayers
+				},
+		};
+		VK_CHECK(vkCreateImageView(_vkDevice, &image_view_ci, nullptr, &copied_obj._vkImageView));
+		if (copied_obj._vkUsageFlags & VK_IMAGE_USAGE_STORAGE_BIT) {
+			if (!vkutil::IsComponentMappingAnIdentity(component_mappings)) {
+				image_view_ci.components = {};
+				VK_CHECK(vkCreateImageView(_vkDevice, &image_view_ci, nullptr, &copied_obj._vkImageViewStorage));
+			}
+		}
+
+		InternalTextureHandle new_handle = this->_texturePool.create(std::move(copied_obj));
+		this->_awaitingCreation = true;
+		return {new_handle};
+	}
 	AllocatedTexture CTX::createTextureImpl(VkImageUsageFlags usageFlags,
 											VkMemoryPropertyFlags memFlags,
 											VkExtent3D extent3D,
@@ -1303,6 +1245,7 @@ namespace mythril {
 											uint32_t numLevels,
 											uint32_t numLayers,
 											VkSampleCountFlagBits sampleCountFlagBits,
+											VkComponentMapping componentMapping,
 											VkImageCreateFlags createFlags) {
 		ASSERT_MSG(numLevels > 0, "The texture must contain at least one mip-level!");
 		ASSERT_MSG(numLayers > 0, "The texture must contain at least one layer!");
@@ -1310,13 +1253,12 @@ namespace mythril {
 		ASSERT_MSG(extent3D.height > 0, "The texture must have a height greater than 0!");
 		ASSERT_MSG(extent3D.depth > 0, "The texture must have a depth greater than 0!");
 
-		VkImageCreateFlags image_cf = createFlags;
 
 		VkImageCreateInfo image_ci = {
 				.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
 				.pNext = nullptr,
 
-				.flags = image_cf,
+				.flags = createFlags,
 				.imageType = imageType,
 				.format = format,
 				.extent = extent3D,
@@ -1332,7 +1274,6 @@ namespace mythril {
 				.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
 		};
 
-		// initialize before external memory, as some flags need to be set for VMA
 		VmaAllocationCreateInfo allocation_ci = {};
 		allocation_ci.usage = (memFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) ? VMA_MEMORY_USAGE_CPU_TO_GPU : VMA_MEMORY_USAGE_AUTO;
 
@@ -1343,8 +1284,8 @@ namespace mythril {
 		obj._vkSampleCountFlagBits = sampleCountFlagBits;
 		obj._vkImageType = imageType;
 		obj._vkFormat = format;
-		obj._numLayers = numLayers;
 		obj._numLevels = numLevels;
+		obj._numLayers = numLayers;
 		vkGetPhysicalDeviceFormatProperties(_vkPhysicalDevice, obj._vkFormat, &obj._vkFormatProperties);
 
 		// if memory is manually managed on host
@@ -1353,23 +1294,28 @@ namespace mythril {
 		}
 		// create image views
 		const VkImageAspectFlags aspectMask = vkutil::AspectMaskFromFormat(obj._vkFormat);
-		const VkImageViewCreateInfo image_view_ci = {
+		VkImageViewCreateInfo image_view_ci = {
 				.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
 				.pNext = nullptr,
+				.flags = 0,
 				.image = obj._vkImage,
 				.viewType = imageViewType,
 				.format = format,
+				.components = componentMapping,
 				.subresourceRange = {
 						.aspectMask = aspectMask,
 						.baseMipLevel = 0,
-						.levelCount = VK_REMAINING_MIP_LEVELS,
+						.levelCount = numLevels,
 						.baseArrayLayer = 0,
 						.layerCount = numLayers
-				}
+				},
 		};
 		VK_CHECK(vkCreateImageView(_vkDevice, &image_view_ci, nullptr, &obj._vkImageView));
 		if (obj._vkUsageFlags & VK_IMAGE_USAGE_STORAGE_BIT) {
-			VK_CHECK(vkCreateImageView(_vkDevice, &image_view_ci, nullptr, &obj._vkImageViewStorage));
+			if (!vkutil::IsComponentMappingAnIdentity(componentMapping)) {
+				image_view_ci.components = {};
+				VK_CHECK(vkCreateImageView(_vkDevice, &image_view_ci, nullptr, &obj._vkImageViewStorage));
+			}
 		}
 		return obj;
 	}
@@ -1379,14 +1325,14 @@ namespace mythril {
 		// actual construction was done upon first use (lazily)
 		// now its done when compile is called && has been by a dryRun,
 		// if that fails then we do compile on first actual use
-		GraphicsPipeline obj = {};
+		AllocatedGraphicsPipeline obj = {};
 		obj._spec = spec;
 		snprintf(obj._debugName, sizeof(obj._debugName) - 1, "%s", spec.debugName);
 		InternalGraphicsPipelineHandle handle = _graphicsPipelinePool.create(std::move(obj));
 		return handle;
 	}
 	InternalComputePipelineHandle CTX::createComputePipeline(ComputePipelineSpec spec) {
-		ComputePipeline obj = {};
+		AllocatedComputePipeline obj = {};
 		obj._spec = spec;
 		snprintf(obj._debugName, sizeof(obj._debugName) - 1, "%s", spec.debugName);
 		InternalComputePipelineHandle handle = _computePipelinePool.create(std::move(obj));
@@ -1401,7 +1347,7 @@ namespace mythril {
 		}
 		// TODO: this is some of the worst code i have ever written in my life, i am so sorry future me who will come back here and have to clean it
 		// thank you past me you were right but now it should be alot better
-		Shader obj;
+		AllocatedShader obj;
 		// _debugName
 		snprintf(obj._debugName, sizeof(obj._debugName) - 1, "%s", spec.debugName);
 
@@ -1426,6 +1372,32 @@ namespace mythril {
 		return _shaderPool.create(std::move(obj));
 	}
 
+	// functions that wrap around existing functions for AllocatedObjects
+	void CTX::transitionLayout(InternalTextureHandle handle, VkImageLayout newLayout, VkImageSubresourceRange range) {
+		if (handle.empty()) {
+			LOG_SYSTEM(LogType::Warning, "Transition layout with empty handle!");
+			return;
+		}
+		AllocatedTexture* image = _texturePool.get(handle);
+		const ImmediateCommands::CommandBufferWrapper& wrapper = _imm->acquire();
+		image->transitionLayout(wrapper._cmdBuf, newLayout, range);
+		_imm->submit(wrapper);
+	}
+	void CTX::generateMipmaps(InternalTextureHandle handle) {
+		if (handle.empty()) {
+			LOG_SYSTEM(LogType::Warning, "Generate mipmap with empty handle!");
+			return;
+		}
+		AllocatedTexture* image = _texturePool.get(handle);
+		if (image->_numLevels <= 1) {
+			LOG_SYSTEM(LogType::Warning, "Generate mipmap request of texture with less then 2 levels, returning early.");
+			return;
+		}
+		ASSERT(image->_vkCurrentImageLayout != VK_IMAGE_LAYOUT_UNDEFINED);
+		const ImmediateCommands::CommandBufferWrapper& wrapper = _imm->acquire();
+		image->generateMipmap(wrapper._cmdBuf);
+		_imm->submit(wrapper);
+	}
 	void CTX::upload(InternalBufferHandle handle, const void* data, size_t size, size_t offset) {
 		if (!data) {
 			LOG_SYSTEM(LogType::Warning, "Attempting to upload data which is null!");
@@ -1569,17 +1541,14 @@ namespace mythril {
 			}));
 		}
 		// necessary for swapchain imges which swapchain is created from
-		if (!image->_isOwning) {
-			_texturePool.destroy(handle);
-			_awaitingCreation = true;
-			return;
+		if (image->_isOwning) {
+			if (image->_mappedPtr) {
+				vmaUnmapMemory(_vmaAllocator, image->_vmaAllocation);
+			}
+			deferTask(std::packaged_task<void()>([vma = _vmaAllocator, image = image->_vkImage, allocation = image->_vmaAllocation]() {
+				vmaDestroyImage(vma, image, allocation);
+			}));
 		}
-		if (image->_mappedPtr) {
-			vmaUnmapMemory(_vmaAllocator, image->_vmaAllocation);
-		}
-		deferTask(std::packaged_task<void()>([vma = _vmaAllocator, image = image->_vkImage, allocation = image->_vmaAllocation]() {
-			vmaDestroyImage(vma, image, allocation);
-		}));
 		_texturePool.destroy(handle);
 		_awaitingCreation = true;
 	}
@@ -1591,7 +1560,7 @@ namespace mythril {
 		_samplerPool.destroy(handle);
 	}
 	void CTX::destroy(InternalShaderHandle handle) {
-		Shader* shader = _shaderPool.get(handle);
+		AllocatedShader* shader = _shaderPool.get(handle);
 		deferTask(std::packaged_task<void()>([device = _vkDevice, module = shader->vkShaderModule]() {
 			vkDestroyShaderModule(device, module, nullptr);
 		}));
@@ -1599,7 +1568,7 @@ namespace mythril {
 	}
 
 	void CTX::destroy(InternalGraphicsPipelineHandle handle) {
-		GraphicsPipeline* graphics_pipeline = _graphicsPipelinePool.get(handle);
+		AllocatedGraphicsPipeline* graphics_pipeline = _graphicsPipelinePool.get(handle);
 		if (!graphics_pipeline) return;
 		PipelineCommon& common = graphics_pipeline->_common;
 		// we only destroy managed descriptor sets because other descriptor sets,
@@ -1618,7 +1587,7 @@ namespace mythril {
 		_graphicsPipelinePool.destroy(handle);
 	}
 	void CTX::destroy(InternalComputePipelineHandle handle) {
-		ComputePipeline* compute_pipeline = _computePipelinePool.get(handle);
+		AllocatedComputePipeline* compute_pipeline = _computePipelinePool.get(handle);
 		if (!compute_pipeline) return;
 		PipelineCommon& common = compute_pipeline->_common;
 		deferTask(std::packaged_task<void()>([device = _vkDevice, managedlayouts = common._managedDescriptorSets]() {
@@ -1634,34 +1603,35 @@ namespace mythril {
 		}));
 		_computePipelinePool.destroy(handle);
 	}
-
-
 }
 #ifdef MYTH_ENABLED_IMGUI
 namespace ImGui {
-	void Image(mythril::InternalTextureHandle texHandle, const ImVec2& image_size, const ImVec2& uv0, const ImVec2& uv1) {
+	void Image(mythril::InternalTextureHandle texHandle, uint32_t mipLevel, const ImVec2& image_size, const ImVec2& uv0, const ImVec2& uv1) {
 		ASSERT_MSG(texHandle.valid(), "Texture handle is invalid!");
-		auto userData = reinterpret_cast<mythril::MyUserData*>(ImGui::GetIO().UserData);
+		auto mydata = reinterpret_cast<mythril::MyUserData*>(ImGui::GetIO().UserData);
 		ImVec2 size;
 		if (image_size.x <= 0 && image_size.y <= 0) {
-			VkExtent2D extent2D = userData->ctx->viewTexture(texHandle).getExtentAs2D();
+			const VkExtent2D extent2D = mydata->ctx->viewTexture(texHandle).getExtentAs2D();
 			size = { static_cast<float>(extent2D.width), static_cast<float>(extent2D.height) };
 		} else {
 			size = image_size;
 		}
+		const mythril::AllocatedTexture& texture = mydata->ctx->viewTexture(texHandle);
+
+		// will always be set
 		VkDescriptorSet im_image_ds;
-		auto iterator = userData->handleMap.find(texHandle);
-		if (iterator != userData->handleMap.end()) {
+		if (const auto iterator = mydata->handleMap.find(texHandle); iterator != mydata->handleMap.end()) {
 			im_image_ds = iterator->second;
 		} else {
-			const mythril::AllocatedTexture& texture = userData->ctx->viewTexture(texHandle);
-			ASSERT_MSG(texture.isSampledImage(), "Texture must have sampled flag!");
-			VkDescriptorSet ds = ImGui_ImplVulkan_AddTexture(userData->sampler, texture.getImageView(),
-															 texture.getImageLayout());
-			userData->handleMap.insert({texHandle, ds});
+			ASSERT_MSG(texture.isSampledImage(), "Texture '{}' must have sampled flag!", texture.getDebugName());
+			VkDescriptorSet ds = ImGui_ImplVulkan_AddTexture(mydata->sampler, texture.getImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+			mydata->handleMap.insert({texHandle, ds});
 			im_image_ds = ds;
 		}
-		ImGui::Image((ImTextureID)im_image_ds, size, uv0, uv1);
+		ImGui::Image(reinterpret_cast<ImTextureID>(im_image_ds), size, uv0, uv1);
+	}
+	void Image(mythril::InternalTextureHandle texHandle, const ImVec2& image_size, const ImVec2& uv0, const ImVec2& uv1) {
+		Image(texHandle, 0, image_size, uv0, uv1);
 	}
 
 }

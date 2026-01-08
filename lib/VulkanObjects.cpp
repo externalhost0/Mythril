@@ -4,6 +4,7 @@
 #include "VulkanObjects.h"
 #include "HelperMacros.h"
 #include "vkutil.h"
+#include "vkstring.h"
 #include "Logger.h"
 #include "CTX.h"
 
@@ -50,6 +51,7 @@ namespace mythril {
 	}
 
 	void AllocatedTexture::transitionLayout(VkCommandBuffer cmd, VkImageLayout newImageLayout, const VkImageSubresourceRange& subresourceRange) {
+		// resolvement if attachment optional layout is asked to be a specific type
 		const VkImageLayout oldImageLayout = (_vkCurrentImageLayout == VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL)
 											 ? (isDepthAttachment() ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL)
 											 : _vkCurrentImageLayout;
@@ -77,7 +79,7 @@ namespace mythril {
 
 			// FIXME: the warning is printing a void *
 			if (!hardwareDownscalingSupported) {
-				LOG_SYSTEM(LogType::Warning, "Doesn't support hardware downscaling of this image format: {}", (void*)_vkFormat);
+				LOG_SYSTEM(LogType::Warning, "Doesn't support hardware downscaling of image format: {}", vkstring::VulkanFormatToString(_vkFormat));
 				return;
 			}
 		}
@@ -94,6 +96,7 @@ namespace mythril {
 		const VkImageAspectFlags imageAspectFlags = vkutil::AspectMaskFromFormat(_vkFormat);
 		const VkImageLayout originalImageLayout = _vkCurrentImageLayout;
 		ASSERT(originalImageLayout != VK_IMAGE_LAYOUT_UNDEFINED);
+		// transfer base image to be ready for blitting
 		this->transitionLayout(cmd, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VkImageSubresourceRange{imageAspectFlags, 0, 1, 0, _numLayers});
 
 		// now make the mipmaps

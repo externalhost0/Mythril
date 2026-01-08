@@ -33,58 +33,55 @@ namespace mythril {
 	}
 
 	void SlangCompiler::createSessionImpl() {
-		SlangResult global_result = slang::createGlobalSession(this->_globalSlangSession.writeRef());
+		const SlangResult global_result = slang::createGlobalSession(this->_globalSlangSession.writeRef());
 		ASSERT_MSG(SLANG_SUCCEEDED(global_result), "Slang failed to create global session!");
 
 		slang::TargetDesc targetDesc = {
-				.format = SLANG_SPIRV,
-				.profile = this->_globalSlangSession->findProfile("spirv_1_6+vulkan_1_4")
+			.format = SLANG_SPIRV,
+			.profile = this->_globalSlangSession->findProfile("spirv_1_6"),
 		};
 		// by default emits spirv
-		std::array<slang::CompilerOptionEntry, 6> entries = {
-				slang::CompilerOptionEntry{
-						.name = slang::CompilerOptionName::VulkanUseEntryPointName,
-						.value = {
-								.kind = slang::CompilerOptionValueKind::Int,
-								.intValue0 = true
-						}
-				},
-				slang::CompilerOptionEntry{
-						.name = slang::CompilerOptionName::Optimization,
-						.value = {
-								.kind = slang::CompilerOptionValueKind::Int,
-								.intValue0 = SLANG_OPTIMIZATION_LEVEL_DEFAULT
-						}
-				},
-				slang::CompilerOptionEntry{
-						.name = slang::CompilerOptionName::VulkanInvertY,
-						.value = {
-								.kind = slang::CompilerOptionValueKind::Int,
-								.intValue0 = true
-						}
-				},
-				slang::CompilerOptionEntry{
-						.name = slang::CompilerOptionName::Capability,
-						.value = {
-								.kind = slang::CompilerOptionValueKind::String,
-								.stringValue0 = "vk_mem_model"
-						}
-				},
-				slang::CompilerOptionEntry{
-					.name = slang::CompilerOptionName::DebugInformation,
-					.value = {
-							.kind = slang::CompilerOptionValueKind::Int,
-							.intValue0 = SLANG_DEBUG_INFO_LEVEL_MAXIMAL
-					}
-				},
+		std::array entries = {
+			// capabilities
+			slang::CompilerOptionEntry{ .name = slang::CompilerOptionName::Capability,
+				.value = { .kind = slang::CompilerOptionValueKind::String, .stringValue0 = "vk_mem_model" }
+			},
+			slang::CompilerOptionEntry{
+				.name = slang::CompilerOptionName::VulkanUseEntryPointName,
+				.value = {
+					.kind = slang::CompilerOptionValueKind::Int,
+					.intValue0 = true
+				}
+			},
+			slang::CompilerOptionEntry{
+				.name = slang::CompilerOptionName::Optimization,
+				.value = {
+					.kind = slang::CompilerOptionValueKind::Int,
+					.intValue0 = SLANG_OPTIMIZATION_LEVEL_DEFAULT
+				}
+			},
+			slang::CompilerOptionEntry{
+				.name = slang::CompilerOptionName::VulkanInvertY,
+				.value = {
+					.kind = slang::CompilerOptionValueKind::Int,
+					.intValue0 = true
+				}
+			},
+			slang::CompilerOptionEntry{
+				.name = slang::CompilerOptionName::DebugInformation,
+				.value = {
+					.kind = slang::CompilerOptionValueKind::Int,
+					.intValue0 = SLANG_DEBUG_INFO_LEVEL_MAXIMAL
+				}
+			},
 				// forces scalar layout which is awesome, means we can have a header file that is shared by c++ and slang
-				slang::CompilerOptionEntry{
-					.name = slang::CompilerOptionName::ForceCLayout,
-					.value = {
-							.kind = slang::CompilerOptionValueKind::Int,
-							.intValue0 = true
-					}
-				},
+			slang::CompilerOptionEntry{
+				.name = slang::CompilerOptionName::ForceCLayout,
+				.value = {
+					.kind = slang::CompilerOptionValueKind::Int,
+					.intValue0 = true
+				}
+			},
 		};
 
 		ASSERT_MSG(this->_shaderSearchPaths.size() <= 16, "You cannot have more than 16 searchpaths in SlangCompiler, this is arbitrary btw lol");
@@ -94,7 +91,7 @@ namespace mythril {
 			sp_cstrings[sp_count++] = reinterpret_cast<const char*>(path.c_str());
 		}
 
-		slang::SessionDesc sessionDesc = {
+		const slang::SessionDesc sessionDesc = {
 				.targets = &targetDesc,
 				.targetCount = 1,
 
@@ -106,7 +103,7 @@ namespace mythril {
 				.compilerOptionEntries = entries.data(),
 				.compilerOptionEntryCount = entries.size(),
 		};
-		SlangResult session_result = this->_globalSlangSession->createSession(sessionDesc, this->_slangSession.writeRef());
+		const SlangResult session_result = this->_globalSlangSession->createSession(sessionDesc, this->_slangSession.writeRef());
 		ASSERT_MSG(SLANG_SUCCEEDED(session_result), "Slang failed to create session!");
 	}
 

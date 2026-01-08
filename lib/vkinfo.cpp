@@ -178,15 +178,6 @@ namespace mythril::vkinfo {
 		info.pStencilAttachment = VK_NULL_HANDLE;
 		return info;
 	}
-	VkImageSubresourceRange CreateImageSubresourceRange(VkImageAspectFlags aspectMask) {
-		VkImageSubresourceRange subImage {};
-		subImage.aspectMask = aspectMask;
-		subImage.baseMipLevel = 0;
-		subImage.levelCount = VK_REMAINING_MIP_LEVELS;
-		subImage.baseArrayLayer = 0;
-		subImage.layerCount = VK_REMAINING_ARRAY_LAYERS;
-		return subImage;
-	}
 	VkSubmitInfo2 CreateSubmitInfo(VkCommandBufferSubmitInfo* cmd, VkSemaphoreSubmitInfo* signalSemaphoreInfo, VkSemaphoreSubmitInfo* waitSemaphoreInfo) {
 		VkSubmitInfo2 info = {};
 		info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
@@ -362,7 +353,12 @@ namespace mythril::vkinfo {
 		info.dstStageMask = dstStage.stage;
 		info.dstAccessMask = dstStage.access;
 
-		info.subresourceRange = CreateImageSubresourceRange(vkutil::AspectMaskFromFormat(format));
+		info.subresourceRange = VkImageSubresourceRange{vkutil::AspectMaskFromFormat(format),
+			0,
+			VK_REMAINING_MIP_LEVELS,
+			0,
+			VK_REMAINING_ARRAY_LAYERS
+		};
 
 		return info;
 	}

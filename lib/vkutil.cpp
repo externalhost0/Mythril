@@ -2,13 +2,15 @@
 // Created by Hayden Rivas on 10/6/25.
 //
 
+#include "vkutil.h"
+#include "vkstring.h"
+#include "HelperMacros.h"
+#include "Logger.h"
+
 #include <array>
 #include <algorithm>
 
 #include <volk.h>
-
-#include "vkutil.h"
-#include "HelperMacros.h"
 
 namespace mythril::vkutil {
 	enum class IOSurfacePixelFormat : uint32_t {
@@ -32,14 +34,16 @@ namespace mythril::vkutil {
 		const bool compressed = false;
 		const uint8_t numPlanes = 1;
 	};
+
 #define PROPS(fmt, bpb, ...) TextureFormatProperties { VK_FORMAT_##fmt, bpb, ##__VA_ARGS__ }
-	static constexpr std::array<TextureFormatProperties, 20> kTextureFormatTable = {{
+	static constexpr std::array<TextureFormatProperties, 21> kTextureFormatTable = {{
 		PROPS(R8_UNORM, 1),                       // 9
 		PROPS(R8G8_UNORM, 2),                     // 16
 		PROPS(R8G8B8A8_UNORM, 4),                 // 37
 		PROPS(R8G8B8A8_SRGB, 4),                  // 43
 		PROPS(B8G8R8A8_UNORM, 4),                 // 44
 		PROPS(B8G8R8A8_SRGB, 4),                  // 50
+		PROPS(R16_SFLOAT, 2),                     // 76
 		PROPS(R16G16B16A16_SFLOAT, 8),            // 97
 		PROPS(R32_UINT, 4),                       // 98
 		PROPS(R32G32_UINT, 8),                    // 99
@@ -55,6 +59,40 @@ namespace mythril::vkutil {
 		PROPS(G8_B8R8_2PLANE_420_UNORM, 24, 4, 4, 1, 1, false, false, true, 2), // 1000157000
 		PROPS(G8_B8_R8_3PLANE_420_UNORM, 24, 4, 4, 1, 1, false, false, true, 3), // 1000157001
 	}};
+//	static constexpr std::array<TextureFormatProperties, 32> kTextureFormatTable = {{
+//		PROPS(UNDEFINED, 1),                      // 0
+//		PROPS(R8_UNORM, 1),                       // 9
+//		PROPS(R8G8_UNORM, 2),                     // 16
+//		PROPS(R8G8B8A8_UNORM, 4),                 // 37
+//		PROPS(R8G8B8A8_SRGB, 4),                  // 43
+//		PROPS(B8G8R8A8_UNORM, 4),                 // 44
+//		PROPS(B8G8R8A8_SRGB, 4),                  // 50
+//		PROPS(A2R10G10B10_UNORM_PACK32, 4),       // 58
+//		PROPS(A2B10G10R10_UNORM_PACK32, 4),       // 64
+//		PROPS(R16_UNORM, 2),                      // 70
+//		PROPS(R16_UINT, 2),                       // 74
+//		PROPS(R16_SFLOAT, 2),                     // 76
+//		PROPS(R16G16_UNORM, 4),                   // 77
+//		PROPS(R16G16_UINT, 4),                    // 81
+//		PROPS(R16G16_SFLOAT, 4),                  // 83
+//		PROPS(R16G16B16A16_SFLOAT, 8),            // 97
+//		PROPS(R32_UINT, 4),                       // 98
+//		PROPS(R32_SFLOAT, 4),                     // 100
+//		PROPS(R32G32_UINT, 8),                    // 101
+//		PROPS(R32G32_SFLOAT, 8),                  // 103
+//		PROPS(R32G32B32A32_UINT, 16),             // 107
+//		PROPS(R32G32B32A32_SFLOAT, 16),           // 109
+//		PROPS(D16_UNORM, 2, 1, 1, 1, 1, true),                         // 124
+//		PROPS(D32_SFLOAT, 4, 1, 1, 1, 1, true),                       // 126
+//		PROPS(D24_UNORM_S8_UINT, 4, 1, 1, 1, 1, true, true),          // 129
+//		PROPS(D32_SFLOAT_S8_UINT, 5, 1, 1, 1, 1, true, true),         // 130
+//		PROPS(BC7_UNORM_BLOCK, 16, 4, 4, 1, 1, false, false, true),   // 145
+//		PROPS(ETC2_R8G8B8_UNORM_BLOCK, 8, 4, 4, 1, 1, false, false, true),  // 147
+//		PROPS(ETC2_R8G8B8_SRGB_BLOCK, 8, 4, 4, 1, 1, false, false, true),   // 148
+//		PROPS(G8_B8R8_2PLANE_420_UNORM, 24, 4, 4, 1, 1, false, false, true, 2),  // 1000156000
+//		PROPS(G8_B8_R8_3PLANE_420_UNORM, 24, 4, 4, 1, 1, false, false, true, 3), // 1000156001
+//	}};
+#undef PROPS
 
 	constexpr const TextureFormatProperties* GetFormatProperties(VkFormat format) {
 		auto cmp = [](const TextureFormatProperties& a, VkFormat b) {
@@ -64,7 +102,7 @@ namespace mythril::vkutil {
 		if (it != kTextureFormatTable.end() && it->format == format) {
 			return &(*it);
 		}
-		return nullptr;
+		ASSERT_MSG(false, "VkFormat '{}' not currently supported!", vkstring::VulkanFormatToString(format));
 	}
 	uint32_t GetTextureBytesPerLayer(uint32_t width, uint32_t height, VkFormat format, uint32_t level) {
 		const uint32_t levelWidth  = std::max(width >> level, 1u);
@@ -110,9 +148,6 @@ namespace mythril::vkutil {
 		}
 		return plane0;
 	}
-	uint32_t GetAlignedSize(uint32_t value, uint32_t alignment) {
-		return (value + alignment - 1) & ~(alignment - 1);
-	}
 
 	VkImageAspectFlags AspectMaskFromAttachmentLayout(VkImageLayout layout) {
 		switch (layout) {
@@ -137,36 +172,6 @@ namespace mythril::vkutil {
 			default:
 				return VK_IMAGE_ASPECT_COLOR_BIT;
 		}
-	}
-	bool IsFormatDepth(VkFormat format) {
-		switch (format) {
-			case VK_FORMAT_D16_UNORM:
-			case VK_FORMAT_D32_SFLOAT:
-
-			case VK_FORMAT_D16_UNORM_S8_UINT:
-			case VK_FORMAT_D24_UNORM_S8_UINT:
-			case VK_FORMAT_D32_SFLOAT_S8_UINT:
-			case VK_FORMAT_X8_D24_UNORM_PACK32:
-				return true;
-			default: return false;
-		}
-	}
-	bool IsFormatStencil(VkFormat format) {
-		switch (format) {
-			case VK_FORMAT_S8_UINT:
-
-			case VK_FORMAT_D16_UNORM_S8_UINT:
-			case VK_FORMAT_D24_UNORM_S8_UINT:
-			case VK_FORMAT_D32_SFLOAT_S8_UINT:
-				return true;
-			default: return false;
-		}
-	}
-	bool IsFormatDepthOrStencil(VkFormat format) {
-		return IsFormatDepth(format) || IsFormatStencil(format);
-	}
-	bool IsFormatDepthAndStencil(VkFormat format) {
-		return IsFormatDepth(format) && IsFormatStencil(format);
 	}
 
 	uint32_t GetBytesPerPixel(VkFormat format) {
@@ -215,7 +220,7 @@ namespace mythril::vkutil {
 				.imageMemoryBarrierCount = 1,
 				.pImageMemoryBarriers = &barrier
 		};
-		vkCmdPipelineBarrier2KHR(cmd, &di);
+		vkCmdPipelineBarrier2(cmd, &di);
 	}
 	StageAccess getPipelineStageAccess(VkImageLayout layout) {
 		switch (layout) {
@@ -262,10 +267,6 @@ namespace mythril::vkutil {
 				};
 			default:
 				ASSERT_MSG(false, "Unsupported image layout transition!");
-				return {
-						.stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
-						.access = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT,
-				};
 		}
 	};
 	VkSemaphore CreateTimelineSemaphore(VkDevice device, unsigned int numImages) {

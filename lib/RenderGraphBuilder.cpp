@@ -11,23 +11,16 @@
 #include "mythril/RenderGraphBuilder.h"
 #include "vkutil.h"
 #include "Logger.h"
+#include "vkstring.h"
 
 namespace mythril {
-
-	static const char* PassTypeToString(PassSource::Type type) {
-		switch (type) {
-			case PassSource::Type::Graphics: return "Graphics";
-			case PassSource::Type::Compute: return "Compute";
-		}
-	}
-
 	// *PassBuilders and their respective operations + the always necessary setExecuteCallback
-	GraphicsPassBuilder& GraphicsPassBuilder::write(WriteSpec spec) {
+	GraphicsPassBuilder& GraphicsPassBuilder::write(const WriteSpec &spec) {
 		// we will save the data and cannot actually use it until we do some processing for more information in compile()
 		this->_passSource.writeOperations.push_back(spec);
 		return *this;
 	}
-	GraphicsPassBuilder& GraphicsPassBuilder::read(ReadSpec spec) {
+	GraphicsPassBuilder& GraphicsPassBuilder::read(const ReadSpec& spec) {
 		this->_passSource.readOperations.push_back(spec);
 		return *this;
 	}
@@ -38,7 +31,7 @@ namespace mythril {
 		this->_graphRef._hasCompiled = false;
 	}
 
-	ComputePassBuilder& ComputePassBuilder::read(ReadSpec spec) {
+	ComputePassBuilder& ComputePassBuilder::read(const ReadSpec& spec) {
 		this->_passSource.readOperations.push_back(spec);
 		return *this;
 	}
@@ -52,11 +45,11 @@ namespace mythril {
 	// checks if all textures in writeSpec are the same resolution
 	static void ValidateWriteOperationResolutions(const CTX& ctx, const PassSource& source, VkExtent2D refrenceExtent2D) {
 		// alias
-		std::vector<WriteSpec> writeOperations = source.writeOperations;
+		const std::vector<WriteSpec> writeOperations = source.writeOperations;
 		for (size_t i = 0; i < writeOperations.size(); ++i) {
 			const WriteSpec &writeOp = writeOperations[i];
 			const AllocatedTexture &texture = ctx.viewTexture(writeOp.texture);
-			VkExtent2D extent = texture.getExtentAs2D();
+			const VkExtent2D extent = texture.getExtentAs2D();
 
 			// check all writeOp.textures
 			ASSERT_MSG(extent.width == refrenceExtent2D.width && extent.height == refrenceExtent2D.height,
@@ -68,7 +61,7 @@ namespace mythril {
 			// check all writeOp.resolveTextures
 			if (writeOp.resolveTexture.has_value()) {
 				const AllocatedTexture &resolveTexture = ctx.viewTexture(writeOp.resolveTexture.value());
-				VkExtent2D resolveExtent = resolveTexture.getExtentAs2D();
+				const VkExtent2D resolveExtent = resolveTexture.getExtentAs2D();
 
 				ASSERT_MSG(resolveExtent.width == refrenceExtent2D.width &&
 						   resolveExtent.height == refrenceExtent2D.height,
@@ -84,7 +77,7 @@ namespace mythril {
 		const AllocatedTexture& currentTexture = ctx.viewTexture(readSpec.texture);
 		ASSERT_MSG(currentTexture.getImage() != VK_NULL_HANDLE, "Texture read operation could not be compiled for '{}'!", currentTexture.getDebugName());
 
-		VkImageMemoryBarrier2 barrier = vkinfo::CreateImageMemoryBarrier2(
+		const VkImageMemoryBarrier2 barrier = vkinfo::CreateImageMemoryBarrier2(
 				currentTexture.getImage(),
 				currentTexture.getFormat(),
 				currentTexture.getImageLayout(),
@@ -92,7 +85,7 @@ namespace mythril {
 				false);
 		return {barrier, readSpec.texture};
 	}
-	CompiledBarrier CompileWriteOperation(CTX& ctx, const WriteSpec writeSpec, VkImageLayout vkNewImageLayout) {
+	CompiledBarrier CompileWriteOperation(CTX& ctx, const WriteSpec& writeSpec, VkImageLayout vkNewImageLayout) {
 		const AllocatedTexture& currentTexture = ctx.viewTexture(writeSpec.texture);
 		ASSERT_MSG(currentTexture.getImage() != VK_NULL_HANDLE, "Texture read operation could not be compiled for '{}'!", currentTexture.getDebugName());
 
@@ -126,6 +119,8 @@ namespace mythril {
 				ctx._texturePool.get(readOperation.texture)->_vkCurrentImageLayout = readOperation.expectedLayout;
 			}
 
+
+			// STEP 2: PROCESS WRITE OPERATIONS
 			if (source.type == PassSource::Type::Graphics) {
 				ASSERT_MSG(!source.writeOperations.empty(),
 						   "Graphics Pass '{}' has no write operations, which is not allowed.",
@@ -135,14 +130,13 @@ namespace mythril {
 				VkExtent2D refrenceExtent2D = ctx.viewTexture(source.writeOperations.front().texture).getExtentAs2D();
 				compiled.extent2D = refrenceExtent2D;
 
-				// STEP 2: PROCESS WRITE OPERATIONS
 #ifdef DEBUG
 				// Validate all attached textures resolution
 				ValidateWriteOperationResolutions(ctx, source, refrenceExtent2D);
 #endif
 				// tracking depth attachment status
 				bool hasDepthAttachment = false;
-				for (const WriteSpec &writeOperation: source.writeOperations) {
+				for (const WriteSpec& writeOperation: source.writeOperations) {
 					const AllocatedTexture &currentTexture = ctx.viewTexture(writeOperation.texture);
 					ASSERT_MSG(currentTexture._vkImage != VK_NULL_HANDLE,
 							   "Pass '{}': Texture write operation references invalid vkImage for '{}'",
@@ -264,9 +258,24 @@ namespace mythril {
 		_hasCompiled = true;
 	}
 
+	// checks that all read textures are valid & have the correct layout
+	static void ValidateReadImageLayouts(CTX& ctx, const std::vector<PassSource>& passes) {
+		for (const PassSource& pass : passes) {
+			for (const ReadSpec& read : pass.readOperations) {
+				ASSERT(read.texture.valid());
+				const VkImageLayout currentImageLayout = ctx.viewTexture(read.texture).getImageLayout();
+				ASSERT_MSG(read.expectedLayout == currentImageLayout, "Texture '{}' does not have expected layout '{}' instead is in '{}'!", ctx.viewTexture(read.texture).getDebugName(), vkstring::VulkanImageLayoutToString(read.expectedLayout), vkstring::VulkanImageLayoutToString(currentImageLayout));
+			}
+		}
+	}
+
 	void RenderGraph::execute(CommandBuffer& cmd) {
 		ASSERT_MSG(this->_hasCompiled, "RenderGraph must be compiled before it can be executed!");
 		ASSERT(!this->_compiledPasses.empty());
+
+#ifdef DEBUG
+		ValidateReadImageLayouts(*cmd._ctx, _sourcePasses);
+#endif
 
 		for (const PassCompiled& pass : _compiledPasses) {
 			cmd._activePass = pass;
@@ -276,6 +285,14 @@ namespace mythril {
 				std::vector<VkImageMemoryBarrier2> barriers;
 				barriers.reserve(pass.preBarriers.size());
 				for (const CompiledBarrier& cb : pass.preBarriers) {
+					// if we repeat ourselves in specifying we can just skip
+					// if (cb.barrier.oldLayout == cb.barrier.newLayout) {
+					// 	LOG_DEBUG("Unnecessary read operation for texture '{}' in pass '{}', is already in the image layout '{}'",
+					// 		cmd._ctx->viewTexture(cb.textureHandle).getDebugName(),
+					// 		pass.name,
+					// 		vkstring::VulkanImageLayoutToString(cb.barrier.oldLayout));
+					// 	continue;
+					// }
 					barriers.push_back(cb.barrier);
 				}
 				// write image barrier
@@ -292,21 +309,11 @@ namespace mythril {
 					cmd._ctx->_texturePool.get(cb.textureHandle)->_vkCurrentImageLayout = cb.barrier.newLayout;
 				}
 			}
-
-			// perform callback, wrapped in certain commands depending on type
-			switch (pass.type) {
-				case PassSource::Type::Compute: {
-					pass.executeCallback(cmd);
-				} break;
-				case PassSource::Type::Graphics: {
-					cmd.cmdBeginRenderingImpl();
-					pass.executeCallback(cmd);
-					cmd.cmdEndRenderingImpl();
-				} break;
-			}
+			// perform callback
+			pass.executeCallback(cmd);
 		}
 		// todo: implement hints for this sort of thing, dont do it automatically
-		ASSERT_MSG(_lastColorTexture.valid(), "Last used color texture to be blit to swapchain is invalid!");
+		ASSERT_MSG(_lastColorTexture.valid(), "Last writen color texture to be blit to swapchain is invalid!");
 		cmd.cmdPrepareToSwapchainImpl(_lastColorTexture);
 	}
 }

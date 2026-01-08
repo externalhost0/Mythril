@@ -168,7 +168,7 @@ int main() {
 		.texture = colorTarget,
 		.clearValue = {0.2f, 0.2f, 0.2f, 1.f},
 		.loadOp = mythril::LoadOperation::CLEAR,
-		.storeOp = mythril::StoreOperation::STORE,
+		.storeOp = mythril::StoreOperation::NO_CARE,
 		.resolveTexture = resolveColorTarget
 	})
 	.write({
@@ -177,6 +177,7 @@ int main() {
 		.loadOp = mythril::LoadOperation::CLEAR
 	})
 	.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
+		cmd.cmdBeginRendering();
 		cmd.cmdBindGraphicsPipeline(mainPipeline);
 
 		VkExtent2D windowSize = ctx->getWindow().getWindowSize();
@@ -200,6 +201,7 @@ int main() {
 		cmd.cmdPushConstants(constants);
 		cmd.cmdBindIndexBuffer(cubeIndexBuffer);
 		cmd.cmdDrawIndexed(cubeIndices.size());
+		cmd.cmdEndRendering();
 	});
 	graph.compile(*ctx);
 

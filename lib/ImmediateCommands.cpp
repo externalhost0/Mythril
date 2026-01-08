@@ -84,7 +84,7 @@ namespace mythril {
 	}
 
 	void ImmediateCommands::_purge() {
-		const uint32_t numBuffers = kMaxCommandBuffers;
+		constexpr uint32_t numBuffers = kMaxCommandBuffers;
 
 		for (uint32_t i = 0; i != numBuffers; i++) {
 			// always start checking with the oldest submitted buffer, then wrap around
@@ -93,7 +93,6 @@ namespace mythril {
 				continue;
 			}
 			const VkResult result = vkWaitForFences(_vkDevice, 1, &buf._fence, VK_TRUE, 0);
-
 			if (result == VK_SUCCESS) {
 				VK_CHECK(vkResetCommandBuffer(buf._cmdBuf, VkCommandBufferResetFlags{0}));
 				VK_CHECK(vkResetFences(_vkDevice, 1, &buf._fence));
@@ -106,7 +105,7 @@ namespace mythril {
 			}
 		}
 	}
-	bool ImmediateCommands::isReady(SubmitHandle handle, bool fastCheckNoVulkan) const {
+	bool ImmediateCommands::isReady(const SubmitHandle handle, const bool fastCheckNoVulkan) const {
 		if (handle.empty()) {
 			// a null handle
 			return true;
@@ -200,10 +199,10 @@ namespace mythril {
 			_purge();
 		}
 		while (!_numAvailableCommandBuffers) {
-			LOG_SYSTEM(LogType::Info, "Waiting for command buffers..");
+			LOG_SYSTEM(LogType::Warning, "Waiting for command buffers..");
 			_purge();
 		}
-		ImmediateCommands::CommandBufferWrapper* current = nullptr;
+		CommandBufferWrapper* current = nullptr;
 		// we are ok with any available buffer
 		for (CommandBufferWrapper& buf : _buffers) {
 			if (buf._cmdBuf == VK_NULL_HANDLE) {

@@ -40,6 +40,8 @@ int main() {
 	})
 	.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
 		// do absolutely nothing, just begin and end a pass
+		cmd.cmdBeginRendering();
+		cmd.cmdEndRendering();
 	});
 	graph.compile(*ctx);
 

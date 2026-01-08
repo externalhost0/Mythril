@@ -305,7 +305,7 @@ void DrawFieldInfoRecursive(const std::vector<mythril::FieldInfo>& fields) {
 		ImGui::PopID();
 	}
 }
-void DrawShaderInfo(const mythril::Shader& shader) {
+void DrawShaderInfo(const mythril::AllocatedShader& shader) {
 	char title_buf[128];
 	const char* windowName = "Shader Inspector";
 	snprintf(title_buf, sizeof(title_buf), "%s - %s", windowName, shader.getnamefordebugpurpose().data());
@@ -318,11 +318,11 @@ void DrawShaderInfo(const mythril::Shader& shader) {
 			ImGui::Text("Total Sets: %zu", descriptor_set_infos.size());
 			ImGui::Separator();
 
-			for (const mythril::Shader::DescriptorSetInfo& setInfo : descriptor_set_infos) {
+			for (const mythril::AllocatedShader::DescriptorSetInfo& setInfo : descriptor_set_infos) {
 				char set_buf[64];
 				snprintf(set_buf, sizeof(set_buf), "Set %u", setInfo.setIndex);
 				if (ImGui::TreeNode(set_buf)) {
-					for (const mythril::Shader::DescriptorBindingInfo& bindingInfo : setInfo.bindingInfos) {
+					for (const mythril::AllocatedShader::DescriptorBindingInfo& bindingInfo : setInfo.bindingInfos) {
 						ImGui::Text("Variable Name: %s", bindingInfo.varName.c_str());
 						ImGui::Text("Type Name: %s", bindingInfo.typeName.c_str());
 						ImGui::Text("Set Index: %u", bindingInfo.setIndex);
@@ -350,20 +350,20 @@ void DrawShaderInfo(const mythril::Shader& shader) {
 			ImGui::Separator();
 
 			for (size_t i = 0; i < pushConstants.size(); i++) {
-				const mythril::Shader::PushConstantInfo& pc = pushConstants[i];
+				const mythril::AllocatedShader::PushConstantInfo& push = pushConstants[i];
 				char push_buf[128];
-				snprintf(push_buf, sizeof(push_buf), "Push Constant %zu : \"%s\"", i, pc.varName.c_str());
+				snprintf(push_buf, sizeof(push_buf), "Push Constant %zu : \"%s\"", i, push.varName.c_str());
 				if (ImGui::TreeNode(push_buf)) {
-					ImGui::Text("Variable Name: %s", pc.varName.c_str());
-					ImGui::Text("Type Name: %s", pc.typeName.c_str());
-					ImGui::Text("Offset: %u", pc.offset);
-					ImGui::Text("Size: %u bytes", pc.size);
-					ImGui::Text("Used Stages: %s", mythril::VkShaderStageToString(pc.usedStages).c_str());
+					ImGui::Text("Variable Name: %s", push.varName.c_str());
+					ImGui::Text("Type Name: %s", push.typeName.c_str());
+					ImGui::Text("Offset: %u", push.offset);
+					ImGui::Text("Size: %u bytes", push.size);
+					ImGui::Text("Used Stages: %s", mythril::VkShaderStageToString(push.usedStages).c_str());
 
 					// fields
-					if (!pc.fields.empty()) {
+					if (!push.fields.empty()) {
 						ImGui::Separator();
-						DrawFieldInfoRecursive(pc.fields);
+						DrawFieldInfoRecursive(push.fields);
 					}
 					ImGui::TreePop();
 				}
@@ -483,6 +483,7 @@ int main() {
 		.loadOp = mythril::LoadOperation::CLEAR
 	})
 	.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
+		cmd.cmdBeginRendering();
 		cmd.cmdBindGraphicsPipeline(mainPipeline);
 
 		auto currentTime = std::chrono::high_resolution_clock::now();
@@ -507,6 +508,7 @@ int main() {
 		cmd.cmdPushConstants(push);
 		cmd.cmdBindIndexBuffer(cubeIndexBuffer);
 		cmd.cmdDrawIndexed(cubeIndices.size());
+		cmd.cmdEndRendering();
 	});
 
 	graph.addGraphicsPass("gui")
@@ -516,7 +518,9 @@ int main() {
 		.storeOp = mythril::StoreOperation::STORE
 	})
 	.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
+		cmd.cmdBeginRendering();
 		cmd.cmdDrawImGui();
+		cmd.cmdEndRendering();
 	});
 
 	graph.compile(*ctx);
@@ -524,10 +528,10 @@ int main() {
 
 	// now we should update descriptor sets for the first & only time
 	// we can update multiple descriptor sets at the same time & in the same call
-	mythril::DescriptorSetWriter writer = ctx->openUpdate(mainPipeline);
+	mythril::DescriptorSetWriter writer = ctx->openDescriptorUpdate(mainPipeline);
 	writer.updateBinding(perFrameDataBuffer, "perFrame"); // set 0, binding 0
 	writer.updateBinding(perMaterialDataBuffer, "perMaterial"); // set 1, binding 0
-	ctx->submitUpdate(writer);
+	ctx->submitDescriptorUpdate(writer);
 
 	std::srand(std::time(0));
 	bool quit = false;
@@ -564,6 +568,11 @@ int main() {
 		DrawShaderInfo(ctx->viewShader(standardShader));
 
 		ImGui::Begin("Cube Uniforms");
+		ImGui::Text("Original Shader design by 'nasana'.");
+		ImGui::TextLinkOpenURL("Click Here For Their Work", "https://www.shadertoy.com/view/WtdXR8");
+		ImGui::Spacing();
+		ImGui::Separator();
+		ImGui::Spacing();
 		static float col[3] = {1.f, 0.f, 0.f };
 		ImGui::ColorPicker3("Tint Color", col);
 		static float distort_amount = 0.6f;

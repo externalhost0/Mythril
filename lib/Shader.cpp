@@ -5,6 +5,8 @@
 #include "Shader.h"
 #include "HelperMacros.h"
 #include "Logger.h"
+#include "vkstring.h"
+#include "faststl/StackString.h"
 
 #include <string>
 #include <optional>
@@ -16,50 +18,6 @@
 
 
 namespace mythril {
-	static const char* VulkanDescriptorTypeToString(VkDescriptorType type) {
-		switch (type) {
-			case VK_DESCRIPTOR_TYPE_SAMPLER:
-				return "VK_DESCRIPTOR_TYPE_SAMPLER";
-			case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
-				return "VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER";
-			case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
-				return "VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE";
-			case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
-				return "VK_DESCRIPTOR_TYPE_STORAGE_IMAGE";
-			case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
-				return "VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER";
-			case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
-				return "VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER";
-			case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
-				return "VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER";
-			case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
-				return "VK_DESCRIPTOR_TYPE_STORAGE_BUFFER";
-			case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
-				return "VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC";
-			case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
-				return "VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC";
-			case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
-				return "VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT";
-			case VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK:
-				return "VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK";
-			case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR:
-				return "VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR";
-			case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV:
-				return "VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV";
-			case VK_DESCRIPTOR_TYPE_SAMPLE_WEIGHT_IMAGE_QCOM:
-				return "VK_DESCRIPTOR_TYPE_SAMPLE_WEIGHT_IMAGE_QCOM";
-			case VK_DESCRIPTOR_TYPE_BLOCK_MATCH_IMAGE_QCOM:
-				return "VK_DESCRIPTOR_TYPE_BLOCK_MATCH_IMAGE_QCOM";
-			case VK_DESCRIPTOR_TYPE_TENSOR_ARM:
-				return "VK_DESCRIPTOR_TYPE_TENSOR_ARM";
-			case VK_DESCRIPTOR_TYPE_MUTABLE_EXT:
-				return "VK_DESCRIPTOR_TYPE_MUTABLE_EXT";
-			case VK_DESCRIPTOR_TYPE_PARTITIONED_ACCELERATION_STRUCTURE_NV:
-				return "VK_DESCRIPTOR_TYPE_PARTITIONED_ACCELERATION_STRUCTURE_NV";
-			default:
-				ASSERT_MSG(false, "VkDescriptorType should have a value.");
-		}
-	}
 
 	const char* FieldKindToString(FieldKind fieldKind) {
 		switch (fieldKind) {
@@ -222,10 +180,10 @@ namespace mythril {
 	}
 
 
-	static Shader::DescriptorBindingInfo GatherDescriptorBindingInformation(const SpvReflectDescriptorBinding& descriptorBind) {
+	static AllocatedShader::DescriptorBindingInfo GatherDescriptorBindingInformation(const SpvReflectDescriptorBinding& descriptorBind) {
 		// alias top level type
 		const SpvReflectTypeDescription& blockType = *descriptorBind.type_description;
-		Shader::DescriptorBindingInfo info = {};
+		AllocatedShader::DescriptorBindingInfo info = {};
 		// descriptor info
 		info.descriptorType = static_cast<VkDescriptorType>(descriptorBind.descriptor_type);
 		info.descriptorCount = descriptorBind.count;
@@ -240,10 +198,10 @@ namespace mythril {
 	}
 
 
-	static Shader::PushConstantInfo GatherPushConstantInformation(const SpvReflectBlockVariable& blockVar) {
+	static AllocatedShader::PushConstantInfo GatherPushConstantInformation(const SpvReflectBlockVariable& blockVar) {
 		// alias top level type
 		const SpvReflectTypeDescription& blockType = *blockVar.type_description;
-		Shader::PushConstantInfo info = {};
+		AllocatedShader::PushConstantInfo info = {};
 		// top level info
 		info.size = blockVar.size;
 		info.offset = blockVar.offset;
@@ -318,15 +276,25 @@ namespace mythril {
 		SpvReflectResult spv_result = spvReflectCreateShaderModule(size, code, &spirv_module);
 		ASSERT_MSG(spv_result == SPV_REFLECT_RESULT_SUCCESS, "Initial reflection of the SpvReflectShaderModule failed!");
 
+		// define return value
+		ReflectionResult result = {};
+
+#ifdef DEBUG
+		std::unordered_map<VkShaderStageFlags, int> numOfStageEntryPoints;
+#endif
 		VkShaderStageFlags vkShaderStageFlags = 0;
 		uint32_t entry_point_count = spirv_module.entry_point_count;
 		for (int i_entryPoint = 0; i_entryPoint < entry_point_count; i_entryPoint++) {
 			SpvReflectEntryPoint reflectedEntryPoint = spirv_module.entry_points[i_entryPoint];
-			vkShaderStageFlags |= reflectedEntryPoint.shader_stage;
+			auto vk_shader_stage_flag = static_cast<VkShaderStageFlagBits>(reflectedEntryPoint.shader_stage);
+#ifdef DEBUG
+			numOfStageEntryPoints[vk_shader_stage_flag]++;
+			ASSERT_MSG(numOfStageEntryPoints[vk_shader_stage_flag] < 2, "You cannot have more than 1 entrypoint for the same shader stage! '{}' is the second entrypoint that targets '{}'",
+					   reflectedEntryPoint.name,
+					   vkstring::VulkanShaderStageFlagBitsToString(vk_shader_stage_flag).c_str());
+#endif
+			vkShaderStageFlags |= vk_shader_stage_flag;
 		}
-
-		// define return value
-		ReflectionResult result = {};
 
 		// collect specialization constants
 		uint32_t sc_count = 0;
@@ -377,7 +345,7 @@ namespace mythril {
 
 			// for bonus reflection, as done in push constants aswell
 			// filled in later by each binding, must be done as we move across bindings in order to avoid bindless descriptor
-			Shader::DescriptorSetInfo set_info = {};
+			AllocatedShader::DescriptorSetInfo set_info = {};
 			set_info.setIndex = reflected_set->set;
 
 			// now move through all the descriptor bindings in the set
@@ -394,7 +362,7 @@ namespace mythril {
 				ASSERT_MSG(
 						vk_descriptor_type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER ||
 						vk_descriptor_type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-						"VkDescriptorType '{}' not currently supported!", VulkanDescriptorTypeToString(vk_descriptor_type));
+						"VkDescriptorType '{}' not currently supported!", vkstring::VulkanDescriptorTypeToString(vk_descriptor_type));
 
 				// fill in the vk struct
 				VkDescriptorSetLayoutBinding vkds_layout_binding = {};

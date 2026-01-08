@@ -61,8 +61,8 @@ namespace GPU {
 		uint64_t shadowTexture;
         uint64_t shadowSampler;
 		glm::mat4 lightSpaceMatrix;
-        float minBias;
-        float maxBias;
+        float depthBiasConstant;
+        float depthBiasSlope;
 	};
 
 }

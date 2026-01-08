@@ -68,6 +68,7 @@ namespace mythril {
 		PolygonMode polygon = PolygonMode::FILL;
 		BlendingMode blend = BlendingMode::OFF;
 		CullMode cull = CullMode::OFF;
+		// todo: easily make multisample resolveable during compile and remove this field
 		SampleCount multisample = SampleCount::X1;
 
 		// max spec constants of 16
@@ -109,7 +110,7 @@ namespace mythril {
 
 	enum class PipelineType { Graphics, Compute, RayTracing };
 
-	class RayTracingPipeline {
+	class AllocatedRayTracingPipeline {
 	public:
 	private:
 		RayTracingPipelineSpec _spec;
@@ -121,7 +122,7 @@ namespace mythril {
 		friend class CommandBuffer;
 	};
 
-	class GraphicsPipeline {
+	class AllocatedGraphicsPipeline {
 	public:
 
 	private:
@@ -135,7 +136,7 @@ namespace mythril {
 		friend class DescriptorSetWriter;
 	};
 
-	class ComputePipeline {
+	class AllocatedComputePipeline {
 	public:
 
 	private:

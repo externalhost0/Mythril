@@ -38,8 +38,8 @@ using uint4 = glm::uvec4;
 
 template<typename T>
 struct Ptr {
-	VkDeviceAddress addr;
-	Ptr(VkDeviceAddress addr) : addr(addr) {}
+	uint64_t addr;
+	Ptr(uint64_t addr) : addr(addr) {}
 };
 
 template<typename T>

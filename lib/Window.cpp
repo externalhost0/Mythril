@@ -43,13 +43,13 @@ namespace mythril {
 		return _windowMode;
 	}
 
-	void Window::setWindowSize(VkExtent2D newExtent) {
+	void Window::setWindowSize(const VkExtent2D newExtent) {
 		ASSERT_MSG(_sdlWindow, "Window must be created before it can be operated on!");
 		SDL_SetWindowSize(_sdlWindow, static_cast<int>(newExtent.width), static_cast<int>(newExtent.height));
 	}
-	void Window::setWindowMode(WindowMode newMode) {
-		ASSERT_MSG(newMode != WindowMode::Headless, "You cannot set display mode to Headless during execution.");
-		switch (newMode) {
+	void Window::setWindowMode(const WindowMode mode) {
+		ASSERT_MSG(mode != WindowMode::Headless, "You cannot set display mode to Headless during execution.");
+		switch (mode) {
 			case WindowMode::Windowed: {
 				if (!SDL_SetWindowFullscreen(_sdlWindow, false)) {
 					LOG_SYSTEM(LogType::Error, "Failed to set window mode as Windowed. SDL Error: {}", SDL_GetError());
@@ -63,10 +63,10 @@ namespace mythril {
 			case WindowMode::Headless:
 				ASSERT_MSG(false, "WindowMode can never be set to HEADLESS during runtime!");
 		}
-		_windowMode = newMode;
+		_windowMode = mode;
 	}
 
-	void Window::setMouseMode(bool relativeEnabled) {
+	void Window::setMouseMode(const bool relativeEnabled) {
 		SDL_SetWindowRelativeMouseMode(this->_sdlWindow, relativeEnabled);
 	}
 }

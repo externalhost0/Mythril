@@ -193,6 +193,7 @@ int main() {
 		.loadOp = mythril::LoadOperation::CLEAR
 	})
 	.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
+		cmd.cmdBeginRendering();
 		cmd.cmdBindGraphicsPipeline(mainPipeline);
 
 		VkExtent2D windowSize = ctx->getWindow().getWindowSize();
@@ -216,6 +217,7 @@ int main() {
 		cmd.cmdPushConstants(push);
 		cmd.cmdBindIndexBuffer(cubeIndexBuffer);
 		cmd.cmdDrawIndexed(cubeIndices.size());
+		cmd.cmdEndRendering();
 	});
 	graph.addGraphicsPass("post_processing")
 	.write({
@@ -227,6 +229,7 @@ int main() {
 		.texture = resolveColorTarget
 	})
 	.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
+		cmd.cmdBeginRendering();
 		cmd.cmdBindGraphicsPipeline(postPipeline);
 
 		auto currentTime = std::chrono::high_resolution_clock::now();
@@ -238,6 +241,7 @@ int main() {
 		};
 		cmd.cmdPushConstants(push);
 		cmd.cmdDraw(3);
+		cmd.cmdEndRendering();
 	});
 	graph.compile(*ctx);
 

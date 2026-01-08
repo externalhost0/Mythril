@@ -45,7 +45,9 @@ int main() {
 		.storeOp = mythril::StoreOperation::STORE
 	})
 	.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
+		cmd.cmdBeginRendering();
 		cmd.cmdDrawImGui();
+		cmd.cmdEndRendering();
 	});
 	graph.compile(*ctx);
 

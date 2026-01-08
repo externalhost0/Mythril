@@ -41,9 +41,9 @@ namespace mythril {
 		void waitSemaphore(VkSemaphore semaphore);
 		void signalSemaphore(VkSemaphore semaphore, uint64_t signalValue);
 
-		inline VkSemaphore acquireLastSubmitSemaphore() { return std::exchange(_lastSubmitSemaphore.semaphore, VK_NULL_HANDLE); }
-		inline SubmitHandle getLastSubmitHandle() const { return _lastSubmitHandle; };
-		inline SubmitHandle getNextSubmitHandle() const { return _nextSubmitHandle; };
+		VkSemaphore acquireLastSubmitSemaphore() { return std::exchange(_lastSubmitSemaphore.semaphore, VK_NULL_HANDLE); }
+		SubmitHandle getLastSubmitHandle() const { return _lastSubmitHandle; };
+		SubmitHandle getNextSubmitHandle() const { return _nextSubmitHandle; };
 	private:
 		void _purge();
 	private:

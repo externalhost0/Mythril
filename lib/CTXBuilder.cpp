@@ -10,20 +10,49 @@
 #include "Logger.h"
 #include "Plugins.h"
 
-#include <VkBootstrap.h>
-
 #include <volk.h>
+#include <VkBootstrap.h>
 #include <vk_mem_alloc.h>
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
 
 namespace mythril {
+	static constexpr const char* ResolveDeviceExtension_AMDDisplay(const VkColorSpaceKHR colorSpaceKhr) {
+		switch (colorSpaceKhr) {
+			case VK_COLOR_SPACE_DISPLAY_NATIVE_AMD: return VK_AMD_DISPLAY_NATIVE_HDR_EXTENSION_NAME;
+			default: return nullptr;
+		}
+	}
+	static constexpr const char* ResolveInstanceExtension_Colorspace(const VkColorSpaceKHR colorSpaceKhr) {
+		switch (colorSpaceKhr) {
+			case VK_COLOR_SPACE_ADOBERGB_LINEAR_EXT:
+			case VK_COLOR_SPACE_ADOBERGB_NONLINEAR_EXT:
+			case VK_COLOR_SPACE_BT2020_LINEAR_EXT:
+			case VK_COLOR_SPACE_BT709_LINEAR_EXT:
+			case VK_COLOR_SPACE_BT709_NONLINEAR_EXT:
+			case VK_COLOR_SPACE_DCI_P3_NONLINEAR_EXT:
+			case VK_COLOR_SPACE_DISPLAY_P3_LINEAR_EXT:
+			case VK_COLOR_SPACE_DISPLAY_P3_NONLINEAR_EXT:
+			case VK_COLOR_SPACE_DOLBYVISION_EXT:
+			case VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT:
+			case VK_COLOR_SPACE_EXTENDED_SRGB_NONLINEAR_EXT:
+			case VK_COLOR_SPACE_HDR10_HLG_EXT:
+			case VK_COLOR_SPACE_HDR10_ST2084_EXT:
+			case VK_COLOR_SPACE_PASS_THROUGH_EXT:
+				return VK_EXT_SWAPCHAIN_COLOR_SPACE_EXTENSION_NAME;
+			default: return nullptr;
+		}
+	}
+
+
+
+
 	struct VulkanInstanceInputs {
 		const char* appName = nullptr;
 		const char* engineName = nullptr;
 	};
-	static vkb::Instance CreateVulkanInstance(VulkanInstanceInputs inputs) {
+	static vkb::Instance CreateVulkanInstance(VulkanInstanceInputs inputs, std::span<const char*> instance_extensions) {
 		vkb::InstanceBuilder instanceBuilder;
 		vkb::Result<vkb::Instance> instanceResult = instanceBuilder
 				.set_app_name(inputs.appName)
@@ -31,6 +60,7 @@ namespace mythril {
 				.require_api_version(VK_API_VERSION_1_3)
 				.set_minimum_instance_version(1, 4, 304)
 				.request_validation_layers()
+				.enable_extensions(instance_extensions)
 #ifdef DEBUG
 				.use_default_debug_messenger()
 #endif
@@ -108,10 +138,12 @@ namespace mythril {
 		features.drawIndirectFirstInstance = true;
 		features.samplerAnisotropy = true;
 		features.shaderImageGatherExtended = true;
+		features.depthClamp = true;
+		features.depthBiasClamp = true;
 
 		vkb::PhysicalDeviceSelector physicalDeviceSelector{inputs.vkbInstance};
 		vkb::Result<vkb::PhysicalDevice> physicalDeviceResult = physicalDeviceSelector
-				.set_minimum_version(1, 2)
+				.set_minimum_version(1, 3)
 				.set_surface(inputs.vkSurface)
 				.add_required_extension(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME)
 				.add_required_extension(VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME)
@@ -146,12 +178,19 @@ namespace mythril {
 		VkPhysicalDeviceExtendedDynamicState2FeaturesEXT dynamic_state_feature_2 = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_2_FEATURES_EXT };
 		dynamic_state_feature_2.pNext = nullptr;
 		dynamic_state_feature_2.extendedDynamicState2 = VK_TRUE;
-
+#ifdef VK_ENABLE_BETA_EXTENSIONS
+		VkPhysicalDevicePortabilitySubsetFeaturesKHR portability_subset_features = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PORTABILITY_SUBSET_FEATURES_KHR };
+		portability_subset_features.pNext = nullptr;
+		portability_subset_features.imageViewFormatSwizzle = VK_TRUE;
+#endif
 		vkb::DeviceBuilder logicalDeviceBuilder{vkbPhysicalDevice};
 		vkb::Result<vkb::Device> logicalDeviceResult = logicalDeviceBuilder
 				.add_pNext(&dynamic_state_feature)
 				.add_pNext(&dynamic_state_feature_2)
-				.build();
+#ifdef VK_ENABLE_BETA_EXTENSIONS
+				.add_pNext(&portability_subset_features)
+#endif
+		.build();
 
 		ASSERT_MSG(logicalDeviceResult.has_value(), "Failed to create Vulkan Logical Device. Error: {}", logicalDeviceResult.error().message());
 		vkb::Device vkb_device = logicalDeviceResult.value();
@@ -174,19 +213,20 @@ namespace mythril {
 		VkPhysicalDevice vkPhysicalDevice;
 		VkDevice vkLogicalDevice;
 	};
-	static VmaAllocator CreateVulkanMemoryAllocator(VulkanMemoryAllocatorInputs inputs) {
-		VmaAllocatorCreateInfo allocatorInfo = {};
-		allocatorInfo.physicalDevice = inputs.vkPhysicalDevice;
-		allocatorInfo.device = inputs.vkLogicalDevice;
-		allocatorInfo.instance = inputs.vkInstance;
-		allocatorInfo.vulkanApiVersion = VK_API_VERSION_1_3;
-		allocatorInfo.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT | VMA_ALLOCATOR_CREATE_KHR_DEDICATED_ALLOCATION_BIT;
+	static VmaAllocator CreateVulkanMemoryAllocator(const VulkanMemoryAllocatorInputs& inputs) {
+		VmaAllocatorCreateInfo allocatorInfo = {
+			.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT | VMA_ALLOCATOR_CREATE_KHR_DEDICATED_ALLOCATION_BIT,
+			.physicalDevice = inputs.vkPhysicalDevice,
+			.device = inputs.vkLogicalDevice,
+			.instance = inputs.vkInstance,
+			.vulkanApiVersion = VK_API_VERSION_1_3,
+		};
 		VmaVulkanFunctions vulkanFunctions;
-		VkResult volkimport_result = vmaImportVulkanFunctionsFromVolk(&allocatorInfo, &vulkanFunctions);
+		const VkResult volkimport_result = vmaImportVulkanFunctionsFromVolk(&allocatorInfo, &vulkanFunctions);
 		ASSERT_MSG(volkimport_result == VK_SUCCESS, "Failed to import vulkan functions from Volk for VMA Allocator create!");
 		allocatorInfo.pVulkanFunctions = &vulkanFunctions;
 		VmaAllocator vma_allocator = VK_NULL_HANDLE;
-		VkResult allocator_result = vmaCreateAllocator(&allocatorInfo, &vma_allocator);
+		const VkResult allocator_result = vmaCreateAllocator(&allocatorInfo, &vma_allocator);
 		ASSERT_MSG(allocator_result == VK_SUCCESS, "Failed to create vma Allocator!");
 		return vma_allocator;
 	}
@@ -223,15 +263,6 @@ namespace mythril {
 
 		return output;
 	}
-
-	const char* ResolveAdditional_SwapchainColorSpace(VkColorSpaceKHR colorSpaceKhr) {
-		switch (colorSpaceKhr) {
-			case VkColorSpaceKHR::VK_COLOR_SPACE_SRGB_NONLINEAR_KHR: return nullptr;
-			case VkColorSpaceKHR::VK_COLOR_SPACE_DISPLAY_NATIVE_AMD: return VK_AMD_DISPLAY_NATIVE_HDR_EXTENSION_NAME;
-			default: return VK_EXT_SWAPCHAIN_COLOR_SPACE_EXTENSION_NAME;
-		}
-	}
-
 	std::unique_ptr<CTX> CTXBuilder::build() {
 		// mythril should only provide graphics related things
 		// fixme as this means that we have no audio
@@ -244,23 +275,26 @@ namespace mythril {
 		VkResult volk_result = volkInitialize();
 		ASSERT_MSG(volk_result == VK_SUCCESS, "Volk failed to initialize!");
 
+		std::vector<const char*> conditional_instance_extensions = {};
+		if (auto extension_name = ResolveInstanceExtension_Colorspace(this->_swapchain_spec.colorSpace))
+			conditional_instance_extensions.push_back(extension_name);
 		vkb::Instance vkb_instance = CreateVulkanInstance({
 			.appName = this->_vkinfo_spec.app_name,
 			.engineName = this->_vkinfo_spec.engine_name
-		});
+		}, conditional_instance_extensions);
 		VkSurfaceKHR vk_surface = CreateVulkanSurface({
 			.vkInstance = vkb_instance.instance,
 			.sdlWindow = window._sdlWindow
 		});
 
-		std::vector<const char*> additional_extensions = {};
-		const char* swapchain_extension = ResolveAdditional_SwapchainColorSpace(this->_swapchain_spec.colorSpace);
-		if (swapchain_extension) additional_extensions.push_back(swapchain_extension);
+		std::vector<const char*> conditional_device_extensions = {};
+		if (auto extension_name = ResolveDeviceExtension_AMDDisplay(this->_swapchain_spec.colorSpace))
+			conditional_device_extensions.push_back(extension_name);
 
 		vkb::PhysicalDevice vkb_physical_device = CreateVulkanPhysicalDevice({
 			.vkbInstance = vkb_instance,
 			.vkSurface = vk_surface
-		}, additional_extensions);
+		}, conditional_device_extensions);
 		vkb::Device vkb_device = CreateVulkanLogicalDevice(vkb_physical_device);
 		VmaAllocator vma_allocator = CreateVulkanMemoryAllocator({
 			.vkInstance = vkb_instance.instance,
@@ -270,7 +304,7 @@ namespace mythril {
 		VulkanQueueOutputs queue_output = CreateVulkanQueues(vkb_device);
 
 		// most of the setup we need to worry about is done in the constructor
-		std::unique_ptr<CTX> ctx = std::make_unique<CTX>();
+		auto ctx = std::make_unique<CTX>();
 		// manually transfer the values to ctx
 		ctx->_vkInstance = vkb_instance.instance;
 		ctx->_vkDebugMessenger = vkb_instance.debug_messenger;

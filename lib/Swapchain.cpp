@@ -25,7 +25,7 @@ namespace mythril {
 				})
 				.set_desired_present_mode(args.presentMode) // VERY IMPORTANT, decides framerate/buffer/sync
 				.set_desired_extent(width, height)
-				.add_image_usage_flags(VkImageUsageFlagBits::VK_IMAGE_USAGE_TRANSFER_DST_BIT)
+				.add_image_usage_flags(VK_IMAGE_USAGE_TRANSFER_DST_BIT)
 				.build();
 		ASSERT_MSG(swapchain_result.has_value(), "[VULKAN] {}", swapchain_result.error().message());
 

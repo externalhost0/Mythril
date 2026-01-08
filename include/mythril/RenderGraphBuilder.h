@@ -130,7 +130,7 @@ namespace mythril {
 	public:
 		IPassBuilder() = delete;
 		virtual ~IPassBuilder() = default;
-		IPassBuilder(RenderGraph& graphRef, const char* name, PassSource::Type type)
+		IPassBuilder(RenderGraph& graphRef, const char* name, const PassSource::Type type)
 		: _graphRef(graphRef), _passSource(name, type) {
 			assert(!_passSource.name.empty());
 			assert(_passSource.type == type);
@@ -145,8 +145,8 @@ namespace mythril {
 	public:
 		GraphicsPassBuilder(RenderGraph& graphRef, const char* name) : IPassBuilder(graphRef, name, PassSource::Type::Graphics) {}
 
-		GraphicsPassBuilder& write(WriteSpec spec);
-		GraphicsPassBuilder& read(ReadSpec spec);
+		GraphicsPassBuilder& write(const WriteSpec& spec);
+		GraphicsPassBuilder& read(const ReadSpec& spec);
 		void setExecuteCallback(const std::function<void (CommandBuffer &)>& callback) override;
 
 		friend class RenderGraph;
@@ -155,7 +155,7 @@ namespace mythril {
 	public:
 		ComputePassBuilder(RenderGraph& graphRef, const char* name) : IPassBuilder(graphRef, name, PassSource::Type::Compute) {};
 		// compute passes dont write to textures like renderpasses so we dont offer a write operation
-		ComputePassBuilder& read(ReadSpec spec);
+		ComputePassBuilder& read(const ReadSpec& spec);
 		void setExecuteCallback(const std::function<void (CommandBuffer &)>& callback) override;
 
 		friend class RenderGraph;
@@ -187,15 +187,12 @@ namespace mythril {
 
 	class RenderGraph {
 	public:
-		inline ComputePassBuilder addComputePass(const char* name) {
+		ComputePassBuilder addComputePass(const char* name) {
 			return ComputePassBuilder{*this, name};
 		}
-		inline GraphicsPassBuilder addGraphicsPass(const char* name) {
+		GraphicsPassBuilder addGraphicsPass(const char* name) {
 			return GraphicsPassBuilder{*this, name};
 		}
-//		inline RenderPassBuilder addPass(const char* name, PassSource::Type type) {
-//			return RenderPassBuilder{*this, name, type};
-//		};
 		// 2 step,
 		// 1. transform passes
 		// 2. build pipelines

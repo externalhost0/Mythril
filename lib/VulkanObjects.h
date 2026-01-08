@@ -4,8 +4,13 @@
 
 #pragma once
 
+#include "vkutil.h"
+
 #include <volk.h>
 #include <vk_mem_alloc.h>
+
+#include "CommandBuffer.h"
+
 
 namespace mythril {
 	class CTX;
@@ -27,22 +32,26 @@ namespace mythril {
 		void generateMipmap(VkCommandBuffer cmd);
 		void transitionLayout(VkCommandBuffer cmd, VkImageLayout newImageLayout, const VkImageSubresourceRange &subresourceRange);
 
-		[[nodiscard]] inline bool isSampledImage() const { return (_vkUsageFlags & VK_IMAGE_USAGE_SAMPLED_BIT) > 0; }
-		[[nodiscard]] inline bool isStorageImage() const { return (_vkUsageFlags & VK_IMAGE_USAGE_STORAGE_BIT) > 0; }
-		[[nodiscard]] inline bool isColorAttachment() const { return (_vkUsageFlags & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) > 0; }
-		[[nodiscard]] inline bool isDepthAttachment() const { return (_vkUsageFlags & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) > 0; }
-		[[nodiscard]] inline bool isAttachment() const { return (_vkUsageFlags & (VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)) > 0; }
+		[[nodiscard]] bool isSampledImage() const { return (_vkUsageFlags & VK_IMAGE_USAGE_SAMPLED_BIT) > 0; }
+		[[nodiscard]] bool isStorageImage() const { return (_vkUsageFlags & VK_IMAGE_USAGE_STORAGE_BIT) > 0; }
+		[[nodiscard]] bool isColorAttachment() const { return (_vkUsageFlags & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) > 0; }
+		[[nodiscard]] bool isDepthAttachment() const { return (_vkUsageFlags & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) > 0; }
+		[[nodiscard]] bool isAttachment() const { return (_vkUsageFlags & (VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)) > 0; }
+		[[nodiscard]] bool isSwapchainImage() const { return _isSwapchainImage; }
 
-		[[nodiscard]] inline bool isSwapchainImage() const { return _isSwapchainImage; }
-		[[nodiscard]] inline VkSampleCountFlagBits getSampleCount() const { return _vkSampleCountFlagBits; }
-		[[nodiscard]] inline VkImageType getType() const { return _vkImageType; }
-		[[nodiscard]] inline VkImageLayout getImageLayout() const { return _vkCurrentImageLayout; }
-		[[nodiscard]] inline VkExtent2D getExtentAs2D() const { return {_vkExtent.width, _vkExtent.height}; }
+		[[nodiscard]] bool hasMipmaps() const { return _numLevels > 1; }
+
+		[[nodiscard]] VkSampleCountFlagBits getSampleCount() const { return _vkSampleCountFlagBits; }
+		[[nodiscard]] VkImageType getType() const { return _vkImageType; }
+		[[nodiscard]] VkImageLayout getImageLayout() const { return _vkCurrentImageLayout; }
+		[[nodiscard]] VkExtent2D getExtentAs2D() const { return {_vkExtent.width, _vkExtent.height}; }
+		[[nodiscard]] Dimensions getDimensions() const { return {_vkExtent.width, _vkExtent.height, _vkExtent.depth}; }
+		[[nodiscard]] VkImageAspectFlags getImageAspectFlags() const { return vkutil::AspectMaskFromFormat(_vkFormat); }
 
 		// FIXME: check this and above at getSampler() as really const
-		[[nodiscard]] inline VkImage getImage() const { return _vkImage; }
-		[[nodiscard]] inline VkImageView getImageView() const { return _vkImageView; }
-		[[nodiscard]] inline VkFormat getFormat() const { return _vkFormat; }
+		[[nodiscard]] VkImage getImage() const { return _vkImage; }
+		[[nodiscard]] VkImageView getImageView() const { return _vkImageView; }
+		[[nodiscard]] VkFormat getFormat() const { return _vkFormat; }
 
 		const char* getDebugName() const { return _debugName; }
 	private:
@@ -55,6 +64,7 @@ namespace mythril {
 		VkFormatProperties _vkFormatProperties = {};
 		uint32_t _numLevels = 1u;
 		uint32_t _numLayers = 1u;
+		VkComponentMapping _vkComponentMappings = {};
 
 		VkImageLayout _vkCurrentImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 		VkImageType _vkImageType = VK_IMAGE_TYPE_MAX_ENUM;
@@ -63,7 +73,7 @@ namespace mythril {
 		VkSampleCountFlagBits _vkSampleCountFlagBits = VK_SAMPLE_COUNT_1_BIT;
 		VkMemoryPropertyFlags _vkMemoryPropertyFlags = 0;
 
-		VmaAllocation _vmaAllocation = nullptr;
+		VmaAllocation _vmaAllocation = VK_NULL_HANDLE;
 
 		void* _mappedPtr = nullptr;
 		bool _isResolveAttachment = false;
@@ -80,7 +90,6 @@ namespace mythril {
 
 	struct AllocatedBuffer {
 	public:
-
 		void bufferSubData(const CTX &ctx, size_t offset, size_t size, const void *data);
 		void getBufferSubData(const CTX &ctx, size_t offset, size_t size, void *data);
 		void flushMappedMemory(const CTX &ctx, VkDeviceSize offset, VkDeviceSize size) const;
@@ -102,7 +111,7 @@ namespace mythril {
 		VkMemoryPropertyFlags _vkMemoryPropertyFlags = 0;
 		VkDeviceAddress _vkDeviceAddress = 0; // optional, for shader access
 
-		void *_mappedPtr = nullptr;
+		void* _mappedPtr = nullptr;
 		bool _isCoherentMemory = false;
 		char _debugName[128] = {0};
 

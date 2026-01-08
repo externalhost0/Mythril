@@ -38,7 +38,6 @@ namespace mythril::vkinfo {
 
 	VkImageViewCreateInfo CreateImageViewInfo(VkFormat format, VkImage image, VkImageAspectFlags aspectFlags);
 	VkImageCreateInfo CreateImageInfo(VkExtent3D extent, VkFormat format, VkImageUsageFlags usage_flags, uint32_t mipmap_levels = 1, VkSampleCountFlags sample_flag = VK_SAMPLE_COUNT_1_BIT);
-	VkImageSubresourceRange CreateImageSubresourceRange(VkImageAspectFlags aspectMask);
 
 	VkImageMemoryBarrier2 CreateImageMemoryBarrier2(VkImage image, VkFormat format, VkImageLayout currentLayout, VkImageLayout newLayout, bool isResolveAttachment = false);
 }
