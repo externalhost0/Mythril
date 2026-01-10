@@ -195,6 +195,7 @@ namespace mythril::vkutil {
 		return props->format;
 	}
 
+	// we make alot of calls to this so this small function helps
 	void ImageMemoryBarrier2(VkCommandBuffer cmd, VkImage image, StageAccess src, StageAccess dst, VkImageLayout oldLayout, VkImageLayout newLayout, VkImageSubresourceRange range) {
 		const VkImageMemoryBarrier2 barrier = {
 				.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,

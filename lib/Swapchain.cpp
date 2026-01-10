@@ -10,6 +10,7 @@
 #include "HelperMacros.h"
 #include "Logger.h"
 #include "vkinfo.h"
+#include "vkstring.h"
 #include "VulkanObjects.h"
 
 namespace mythril {
@@ -99,8 +100,8 @@ namespace mythril {
 	}
 
 	// helper, though possibly unsafe, if initialize behaves correctly this should also be fine
-	const AllocatedTexture& Swapchain::getCurrentSwapchainTexture() const {
-		return *_ctx._texturePool.get(_swapchainTextures[_currentImageIndex]);
+	const AllocatedTexture& Swapchain::getCurrentSwapchainTextureObject() const {
+		return *_ctx._texturePool.get(this->getCurrentSwapchainTextureHandle());
 	}
 
 	void Swapchain::acquire() {
@@ -114,9 +115,9 @@ namespace mythril {
 			ASSERT_MSG(_currentImageIndex < (sizeof(_timelineWaitValues)/sizeof(_timelineWaitValues[0])), "Image index out of range");
 			VK_CHECK(vkWaitSemaphores(_ctx._vkDevice, &waitInfo, UINT64_MAX));
 			VkSemaphore acquireSemaphore = _vkAcquireSemaphores[_currentImageIndex];
-			VkResult r = vkAcquireNextImageKHR(_ctx._vkDevice, _vkSwapchain, UINT64_MAX, acquireSemaphore, nullptr, &_currentImageIndex);
-			if (r != VK_SUCCESS && r != VK_SUBOPTIMAL_KHR && r != VK_ERROR_OUT_OF_DATE_KHR) {
-				ASSERT(r);
+			const VkResult result = vkAcquireNextImageKHR(_ctx._vkDevice, _vkSwapchain, UINT64_MAX, acquireSemaphore, nullptr, &_currentImageIndex);
+			if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR && result != VK_ERROR_OUT_OF_DATE_KHR) {
+				ASSERT(result);
 			}
 			_getNextImage = false;
 			_ctx._imm->waitSemaphore(acquireSemaphore);
@@ -124,7 +125,9 @@ namespace mythril {
 	}
 
 	void Swapchain::present() {
-		ASSERT_MSG(_vkCurrentImageLayout == VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, "Swapchain image layout is not VK_IMAGE_LAYOUT_PRESENT_SRC_KHR!");
+		ASSERT_MSG(getCurrentSwapchainTextureObject().getImageLayout() == VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+			"Swapchain image layout is not in VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, currently in {}!",
+			vkstring::VulkanImageLayoutToString(getCurrentSwapchainTextureObject().getImageLayout()));
 		VkSemaphore semaphore = _ctx._imm->acquireLastSubmitSemaphore();
 
 		const VkPresentInfoKHR present_info = {
@@ -136,7 +139,7 @@ namespace mythril {
 				.pSwapchains = &_vkSwapchain,
 				.pImageIndices = &_currentImageIndex,
 		};
-		VkResult presentResult = vkQueuePresentKHR(_ctx._vkGraphicsQueue, &present_info);
+		const VkResult presentResult = vkQueuePresentKHR(_ctx._vkGraphicsQueue, &present_info);
 		if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR || _isDirty) {
 			_isDirty = true;
 			if (presentResult == VK_ERROR_OUT_OF_DATE_KHR) return;

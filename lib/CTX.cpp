@@ -128,8 +128,8 @@ namespace mythril {
 		// DEFAULT VULKAN OBJECTS
 		{
 			// pattern xor
-			const uint32_t texWidth = 256;
-			const uint32_t texHeight = 256;
+			constexpr uint32_t texWidth = 256;
+			constexpr uint32_t texHeight = 256;
 			std::vector<uint32_t> pixels(texWidth * texHeight);
 			for (uint32_t y = 0; y != texHeight; y++) {
 				for (uint32_t x = 0; x != texWidth; x++) {
@@ -167,6 +167,7 @@ namespace mythril {
 																	   this->_swapchain->getNumOfSwapchainImages() - 1);
 			this->growBindlessDescriptorPoolImpl(this->_currentMaxTextureCount, this->_currentMaxSamplerCount);
 
+			// i think these are reasonable defaults
 			// https://vkguide.dev/docs/new_chapter_4/descriptor_abstractions/#:~:text=the%20end%20of-,init_descriptors,-()
 			std::vector<DescriptorAllocatorGrowable::PoolSizeRatio> frame_sizes = {
 					{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 3},
@@ -1119,7 +1120,7 @@ namespace mythril {
 			usage_flags |= VK_IMAGE_USAGE_STORAGE_BIT;
 		}
 		if (spec.usage & TextureUsageBits::TextureUsageBits_Attachment) {
-			usage_flags |= (vkutil::IsFormatDepthOrStencil(spec.format)) ? VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT : VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+			usage_flags |= vkutil::IsFormatDepthOrStencil(spec.format) ? VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT : VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 			if (spec.storage == StorageType::Memoryless) {
 				usage_flags |= VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT;
 			}
@@ -1232,6 +1233,7 @@ namespace mythril {
 			}
 		}
 
+		snprintf(copied_obj._debugName, sizeof(copied_obj._debugName) - 1, "%s", spec.debugName);
 		InternalTextureHandle new_handle = this->_texturePool.create(std::move(copied_obj));
 		this->_awaitingCreation = true;
 		return {new_handle};
@@ -1283,14 +1285,33 @@ namespace mythril {
 		obj._vkUsageFlags = usageFlags;
 		obj._vkSampleCountFlagBits = sampleCountFlagBits;
 		obj._vkImageType = imageType;
+		obj._vkImageViewType = imageViewType;
 		obj._vkFormat = format;
 		obj._numLevels = numLevels;
 		obj._numLayers = numLayers;
 		vkGetPhysicalDeviceFormatProperties(_vkPhysicalDevice, obj._vkFormat, &obj._vkFormatProperties);
 
+		const VkPhysicalDeviceImageFormatInfo2 info = {
+			.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_FORMAT_INFO_2,
+			.pNext = nullptr,
+			.format = obj.getFormat(),
+			.type = obj.getType(),
+			.usage = obj._vkUsageFlags,
+			.flags = createFlags
+		};
+		VkImageFormatProperties2 props = {
+			.sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2,
+			.pNext = nullptr
+		};
+		VK_CHECK(vkGetPhysicalDeviceImageFormatProperties2(_vkPhysicalDevice, &info, &props));
+		ASSERT_MSG(props.imageFormatProperties.maxMipLevels >= obj._numLevels,
+			"Requested image exceeds maxMipLevels, requested '{}', cannot be greater than '{}'",
+			obj._numLevels, props.imageFormatProperties.maxMipLevels);
+
+
 		// if memory is manually managed on host
 		if (memFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
-			vmaMapMemory(_vmaAllocator, obj._vmaAllocation, &obj._mappedPtr);
+			VK_CHECK(vmaMapMemory(_vmaAllocator, obj._vmaAllocation, &obj._mappedPtr));
 		}
 		// create image views
 		const VkImageAspectFlags aspectMask = vkutil::AspectMaskFromFormat(obj._vkFormat);
@@ -1299,7 +1320,7 @@ namespace mythril {
 				.pNext = nullptr,
 				.flags = 0,
 				.image = obj._vkImage,
-				.viewType = imageViewType,
+				.viewType = obj._vkImageViewType,
 				.format = format,
 				.components = componentMapping,
 				.subresourceRange = {

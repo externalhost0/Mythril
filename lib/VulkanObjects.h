@@ -19,7 +19,7 @@ namespace mythril {
 	public:
 		[[nodiscard]] inline VkSampler getSampler() const { return _vkSampler; }
 
-		const char* getDebugName() const { return _debugName; }
+		[[nodiscard]] std::string_view getDebugName() const { return _debugName; }
 	private:
 		VkSampler _vkSampler = VK_NULL_HANDLE;
 		char _debugName[128] = {0};
@@ -53,7 +53,7 @@ namespace mythril {
 		[[nodiscard]] VkImageView getImageView() const { return _vkImageView; }
 		[[nodiscard]] VkFormat getFormat() const { return _vkFormat; }
 
-		const char* getDebugName() const { return _debugName; }
+		[[nodiscard]] std::string_view getDebugName() const { return _debugName; }
 	private:
 		VkImage _vkImage = VK_NULL_HANDLE;
 		VkImageView _vkImageView = VK_NULL_HANDLE;
@@ -95,12 +95,12 @@ namespace mythril {
 		void flushMappedMemory(const CTX &ctx, VkDeviceSize offset, VkDeviceSize size) const;
 		void invalidateMappedMemory(const CTX &ctx, VkDeviceSize offset, VkDeviceSize size) const;
 
-		[[nodiscard]] inline bool isMapped() const { return _mappedPtr != nullptr; }
-		[[nodiscard]] inline uint8_t* getMappedPtr() const { return static_cast<uint8_t* >(_mappedPtr); }
-		[[nodiscard]] inline bool isStorageBuffer() const { return (_vkUsageFlags & VK_BUFFER_USAGE_STORAGE_BUFFER_BIT) > 0; }
-		[[nodiscard]] inline bool isUniformBuffer() const { return (_vkUsageFlags & VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT) > 0; }
+		[[nodiscard]] bool isMapped() const { return _mappedPtr != nullptr; }
+		[[nodiscard]] uint8_t* getMappedPtr() const { return static_cast<uint8_t* >(_mappedPtr); }
+		[[nodiscard]] bool isStorageBuffer() const { return (_vkUsageFlags & VK_BUFFER_USAGE_STORAGE_BUFFER_BIT) > 0; }
+		[[nodiscard]] bool isUniformBuffer() const { return (_vkUsageFlags & VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT) > 0; }
 
-		const char* getDebugName() const { return _debugName; }
+		[[nodiscard]] std::string_view getDebugName() const { return _debugName; }
 	private:
 		VkBuffer _vkBuffer = VK_NULL_HANDLE;
 		VkDeviceMemory _vkMemory = VK_NULL_HANDLE;

@@ -112,6 +112,7 @@ namespace mythril {
 
 	class AllocatedRayTracingPipeline {
 	public:
+		[[nodiscard]] std::string_view getDebugName() const { return _debugName; }
 	private:
 		RayTracingPipelineSpec _spec;
 		PipelineCommon _common;
@@ -124,7 +125,7 @@ namespace mythril {
 
 	class AllocatedGraphicsPipeline {
 	public:
-
+		[[nodiscard]] std::string_view getDebugName() const { return _debugName; }
 	private:
 		GraphicsPipelineSpec _spec;
 		PipelineCommon _common;
@@ -138,7 +139,7 @@ namespace mythril {
 
 	class AllocatedComputePipeline {
 	public:
-
+		[[nodiscard]] std::string_view getDebugName() const { return _debugName; }
 	private:
 		ComputePipelineSpec _spec;
 		PipelineCommon _common;

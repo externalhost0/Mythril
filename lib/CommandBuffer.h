@@ -17,6 +17,7 @@ namespace mythril {
 	// forward declarations
 	class CTX;
 	struct PipelineCommon;
+	struct AllocatedTexture;
 
 	// we only use it for the cmdBeginRendering command anyways
 	struct Dependencies {
@@ -61,7 +62,6 @@ namespace mythril {
 			Graphics,
 			Compute,
 		};
-
 		CommandBuffer() = default;
 		explicit CommandBuffer(CTX* ctx, Type type);
 		~CommandBuffer();
@@ -103,8 +103,11 @@ namespace mythril {
 		void cmdDispatchThreadGroup(const Dimensions& threadGroupCount);
 		void cmdGenerateMipmap(InternalTextureHandle handle);
 
+
+		void cmdTransitionLayout(InternalTextureHandle source, VkImageLayout newLayout, VkImageSubresourceRange range);
 		void cmdTransitionLayout(InternalTextureHandle source, VkImageLayout newLayout);
 		void cmdCopyImage(InternalTextureHandle source, InternalTextureHandle destination);
+
 		void cmdBlitImage(InternalTextureHandle source, InternalTextureHandle destination);
 		void cmdCopyImageToBuffer(InternalTextureHandle source, InternalBufferHandle destination, const VkBufferImageCopy& region);
 
@@ -120,11 +123,7 @@ namespace mythril {
 		void cmdBeginRenderingImpl();
 		void cmdEndRenderingImpl();
 
-		void cmdTransitionLayoutImpl(InternalTextureHandle source, VkImageLayout currentLayout, VkImageLayout newLayout);
-		void cmdTransitionSwapchainLayoutImpl(VkImageLayout newLayout);
-
-		void cmdBlitToSwapchainImpl(InternalTextureHandle source);
-		void cmdPrepareToSwapchainImpl(InternalTextureHandle source);
+		void cmdTransitionLayoutImpl(InternalTextureHandle source, VkImageLayout currentLayout, VkImageLayout newLayout, VkImageSubresourceRange range);
 
 		void cmdCopyImageImpl(InternalTextureHandle source, InternalTextureHandle destination, VkExtent2D size);
 		void cmdBlitImageImpl(InternalTextureHandle source, InternalTextureHandle destination, VkExtent2D srcSize, VkExtent2D dstSize);
@@ -136,6 +135,8 @@ namespace mythril {
 
 		// helpers
 		PassSource::Type getCurrentPassType();
+		void CheckTextureRenderingUsage(const AllocatedTexture& source, const AllocatedTexture& destination, const char* operation);
+		void CheckImageLayoutAuto(InternalTextureHandle sourceHandle, InternalTextureHandle destinationHandle, const char* operation);
 	private:
 		// pretty important members for communication to the rest of the renderer
 		CTX* _ctx = nullptr;

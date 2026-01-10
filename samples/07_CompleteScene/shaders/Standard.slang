@@ -129,7 +129,7 @@ float ShadowCalculation(float4 lightspacePos) {
     // bounds check
     if (projCoords.x < 0.0 || projCoords.x > 1.0 ||
         projCoords.y < 0.0 || projCoords.y > 1.0)
-        return 1.0;
+        return 0.0;
     float currentDepth = projCoords.z;
 
     // PCF 3x3

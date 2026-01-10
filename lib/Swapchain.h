@@ -31,7 +31,8 @@ namespace mythril {
 	public:
 		inline uint32_t getNumOfSwapchainImages() const { return _numSwapchainImages; }
 		inline bool isDirty() const { return _isDirty; }
-		const AllocatedTexture& getCurrentSwapchainTexture() const;
+		const InternalTextureHandle& getCurrentSwapchainTextureHandle() const { return _swapchainTextures[_currentImageIndex]; }
+		const AllocatedTexture& getCurrentSwapchainTextureObject() const;
 		inline VkExtent2D getSwapchainExtent() const { return _vkExtent2D; };
 	private:
 
@@ -46,7 +47,6 @@ namespace mythril {
 		uint64_t _timelineWaitValues[kMAX_SWAPCHAIN_IMAGES] = {}; // this HERE NEEDS FIXING
 		VkSemaphore _vkAcquireSemaphores[kMAX_SWAPCHAIN_IMAGES] = {};
 
-		VkImageLayout _vkCurrentImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 		uint32_t _currentImageIndex = 0;
 		uint32_t _currentFrameNum = 0;
 		uint32_t _numSwapchainImages = 0;

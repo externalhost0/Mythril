@@ -308,7 +308,7 @@ void DrawFieldInfoRecursive(const std::vector<mythril::FieldInfo>& fields) {
 void DrawShaderInfo(const mythril::AllocatedShader& shader) {
 	char title_buf[128];
 	const char* windowName = "Shader Inspector";
-	snprintf(title_buf, sizeof(title_buf), "%s - %s", windowName, shader.getnamefordebugpurpose().data());
+	snprintf(title_buf, sizeof(title_buf), "%s - %s", windowName, shader.getDebugName().data());
 	if (ImGui::Begin(title_buf)) {
 		ImGui::PushID(&shader);
 

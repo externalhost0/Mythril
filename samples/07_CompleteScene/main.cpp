@@ -492,50 +492,51 @@ int main() {
 	})
 	.set_swapchain_spec({
 		.format = offscreenFormat,
-		.colorSpace = VK_COLOR_SPACE_EXTENDED_SRGB_NONLINEAR_EXT
 	})
 	.build();
 
 
 	const VkExtent2D extent2D = ctx->getWindow().getFramebufferSize();
+	constexpr unsigned int kNumColorMips = 5;
 	mythril::InternalTextureHandle offscreenColorTarget = ctx->createTexture({
 		.dimension = extent2D,
+		.format = offscreenFormat,
 		.samples = mythril::SampleCount::X1,
 		.usage = mythril::TextureUsageBits::TextureUsageBits_Attachment | mythril::TextureUsageBits_Sampled | mythril::TextureUsageBits::TextureUsageBits_Storage,
 		.storage = mythril::StorageType::Device,
-		.format = offscreenFormat,
-		.debugName = "Color Texture"
+		.numMipLevels = kNumColorMips,
+		.debugName = "Offscreen Color Texture"
 	});
 	mythril::InternalTextureHandle msaaColorTarget = ctx->createTexture({
 		.dimension = extent2D,
+		.format = offscreenFormat,
 		.samples = mythril::SampleCount::X4,
 		.usage = mythril::TextureUsageBits::TextureUsageBits_Attachment,
 		.storage = mythril::StorageType::Memoryless,
-		.format = offscreenFormat,
 		.debugName = "MSAA Color Texture"
 	});
 	mythril::InternalTextureHandle msaaDepthTarget = ctx->createTexture({
 		.dimension = extent2D,
+		.format = VK_FORMAT_D32_SFLOAT,
 		.samples = mythril::SampleCount::X4,
 		.usage = mythril::TextureUsageBits::TextureUsageBits_Attachment,
 		.storage = mythril::StorageType::Memoryless,
-		.format = VK_FORMAT_D32_SFLOAT,
 		.debugName = "Depth Texture"
 	});
 
 	mythril::InternalTextureHandle depthTarget = ctx->createTexture({
 		.dimension = extent2D,
+		.format = VK_FORMAT_D32_SFLOAT,
 		.samples = mythril::SampleCount::X1,
 		.usage = mythril::TextureUsageBits::TextureUsageBits_Attachment | mythril::TextureUsageBits_Sampled,
-		.format = VK_FORMAT_D32_SFLOAT,
 		.debugName = "Depth Texture"
 	});
 
 	constexpr uint32_t shadow_map_size = 4096;
 	mythril::InternalTextureHandle shadowMap = ctx->createTexture({
 		.dimension = {shadow_map_size, shadow_map_size},
-		.usage = mythril::TextureUsageBits::TextureUsageBits_Attachment | mythril::TextureUsageBits::TextureUsageBits_Sampled,
 		.format = VK_FORMAT_D16_UNORM,
+		.usage = mythril::TextureUsageBits::TextureUsageBits_Attachment | mythril::TextureUsageBits::TextureUsageBits_Sampled,
 		.debugName = "Shadow Map Texture"
 	});
 	constexpr uint32_t bloom_size = 512;
@@ -546,40 +547,55 @@ int main() {
 			.b = mythril::Swizzle::Swizzle_R,
 			.a = mythril::Swizzle::Swizzle_1
 	};
-	mythril::InternalTextureHandle luminanceViews[10];
-	// first luminance is a texture
-	luminanceViews[0] = ctx->createTexture({
+	// mythril::InternalTextureHandle luminanceViews[10];
+	constexpr uint8_t numMipLumLevels = mythril::vkutil::CalcNumMipLevels(bloom_size, bloom_size);
+	mythril::InternalTextureHandle luminanceTexture = ctx->createTexture({
 		.dimension = {bloom_size, bloom_size},
-		.numMipLevels = mythril::vkutil::CalcNumMipLevels(bloom_size, bloom_size),
-		.usage = mythril::TextureUsageBits::TextureUsageBits_Sampled | mythril::TextureUsageBits::TextureUsageBits_Storage,
 		.format = VK_FORMAT_R16_SFLOAT,
+		.usage = mythril::TextureUsageBits::TextureUsageBits_Sampled |
+		         mythril::TextureUsageBits::TextureUsageBits_Storage,
+		.numMipLevels = numMipLumLevels,
 		.components = swizzle,
-		.debugName = "Average Luminance Texture"
+		.debugName = "Luminance Texture"
 	});
-	// other 9 is a mipmap chain of views
-	for (uint32_t i = 1; i < 10; i++) {
-		luminanceViews[i] = ctx->createTextureView(luminanceViews[0], {
-			.mipLevel = i,
-			.components = swizzle
-		});
-	}
+	mythril::InternalTextureHandle averageluminanceTexture = ctx->createTextureView(luminanceTexture, {
+		.mipLevel = numMipLumLevels-1,
+		.components = swizzle,
+		.debugName = "Average Luminance Texture View"
+	});
+	// first luminance is a texture
+	// luminanceViews[0] = ctx->createTexture({
+	// 	.dimension = {bloom_size, bloom_size},
+	// 	.numMipLevels = mythril::vkutil::CalcNumMipLevels(bloom_size, bloom_size),
+	// 	.usage = mythril::TextureUsageBits::TextureUsageBits_Sampled | mythril::TextureUsageBits::TextureUsageBits_Storage,
+	// 	.format = VK_FORMAT_R16_SFLOAT,
+	// 	.components = swizzle,
+	// 	.debugName = "Average Luminance Texture"
+	// });
+	// // other 9 is a mipmap chain of views
+	// for (uint32_t i = 1; i < 10; i++) {
+	// 	luminanceViews[i] = ctx->createTextureView(luminanceViews[0], {
+	// 		.mipLevel = i,
+	// 		.components = swizzle
+	// 	});
+	// }
 	mythril::InternalTextureHandle brightTarget = ctx->createTexture({
 		.dimension = {bloom_size, bloom_size},
-		.usage = mythril::TextureUsageBits::TextureUsageBits_Sampled | mythril::TextureUsageBits_Storage,
 		.format = offscreenFormat,
+		.usage = mythril::TextureUsageBits::TextureUsageBits_Sampled | mythril::TextureUsageBits_Storage,
 		.debugName = "Bright Pass Texture"
 	});
 	mythril::InternalTextureHandle bloomTargetsPingAndPong[2] = {
 			ctx->createTexture({
 				.dimension = {bloom_size, bloom_size},
-				.usage = mythril::TextureUsageBits::TextureUsageBits_Sampled | mythril::TextureUsageBits::TextureUsageBits_Storage,
 				.format = offscreenFormat,
+				.usage = mythril::TextureUsageBits::TextureUsageBits_Sampled | mythril::TextureUsageBits::TextureUsageBits_Storage,
 				.debugName = "Bloom Tex 0"
 			}),
 			ctx->createTexture({
 				.dimension = {bloom_size, bloom_size},
-				.usage = mythril::TextureUsageBits::TextureUsageBits_Sampled | mythril::TextureUsageBits::TextureUsageBits_Storage,
 				.format = offscreenFormat,
+				.usage = mythril::TextureUsageBits::TextureUsageBits_Sampled | mythril::TextureUsageBits::TextureUsageBits_Storage,
 				.debugName = "Bloom Tex 1"
 			})
 	};
@@ -715,25 +731,28 @@ int main() {
 		.shader = {adaptationShader},
 		.debugName = "Adaptation Compute Pipeline"
 	});
-	const uint16_t brightPixel = glm::packHalf1x16(50);
-	const mythril::TextureSpec lumtexspec = {
+	const uint16_t brightPixel = glm::packHalf1x16(0);
+	const mythril::TextureSpec lumtexspec0 = {
 		.dimension = {1, 1},
+		.format = VK_FORMAT_R16_SFLOAT,
 		.usage = mythril::TextureUsageBits::TextureUsageBits_Sampled | mythril::TextureUsageBits_Storage,
 		.storage = mythril::StorageType::Device,
-		.format = VK_FORMAT_R16_SFLOAT,
 		.components = swizzle,
-		.initialData = &brightPixel
+		.initialData = &brightPixel,
+		.debugName = "Luminance Adaptation 0"
 	};
+	mythril::TextureSpec lumtexspec1 = lumtexspec0;
+	lumtexspec1.debugName = "Luminance Adaptation 1";
 	mythril::InternalTextureHandle adaptedLuminanceTextures[2] = {
-		ctx->createTexture(lumtexspec),
-		ctx->createTexture(lumtexspec)
+		ctx->createTexture(lumtexspec0),
+		ctx->createTexture(lumtexspec1)
 	};
 
 	mythril::InternalTextureHandle finalColorTarget = ctx->createTexture({
 		.dimension = extent2D,
+		.format = offscreenFormat,
 		.usage = mythril::TextureUsageBits::TextureUsageBits_Attachment,
 		.storage = mythril::StorageType::Device,
-		.format = offscreenFormat,
 		.debugName = "Final Color Target (Takes in OffscreenColor)"
 	});
 
@@ -805,7 +824,7 @@ int main() {
 		);
 
 		lightSpaceMatrix = lightProj * lightView;
-		
+
 		auto model = glm::mat4(1.0);
 		model = glm::scale(model, glm::vec3(kMODELSCALE));
 		for (const MeshCompiled& mesh : sponzaCompiled.meshes) {
@@ -951,11 +970,58 @@ int main() {
 		cmd.cmdEndRendering();
 	});
 
+	// mythril::InternalShaderHandle downsampleComputeShader = ctx->createShader({
+	// 	.filePath = "shaders/Downsample.slang",
+	// 	.debugName = "Downsample Compute Shader"
+	// });
+	// mythril::InternalComputePipelineHandle downsampleComputePipeline = ctx->createComputePipeline({
+	// 	.shader = downsampleComputeShader,
+	// 	.debugName = "Downsample Compute Pipeline"
+	// });
+	// mythril::InternalTextureHandle downsampledColor = ctx->createTexture({
+	// 	.format = VK_FORMAT_R16G16B16_SFLOAT,
+	// });
+	// mythril::ComputePipeline downsamplingComputePipeling;
+	// graph.addComputePass("Downsampling")
+	// .read({ .texture = offscreenColorTarget })
+	// .setExecuteCallback([&](mythril::CommandBuffer& cmd) {
+	// 	cmd.cmdBindComputePipeline(downsampleComputePipeline);
+	// 	cmd.cmdDispatchThreadGroup({8, 8, 1});
+	// });
+	//
+	// mythril::InternalShaderHandle upsampleComputeShader = ctx->createShader({
+	// 	.filePath = "shaders/Upsample.slang",
+	// 	.debugName = "Upsample Compute Shader"
+	// });
+	// mythril::InternalComputePipelineHandle upsampleComputePipeline = ctx->createComputePipeline({
+	// 	.shader = upsampleComputeShader,
+	// 	.debugName = "Upsample Compute Pipeline"
+	// });
+	// graph.addComputePass("Upsampling")
+	// .read({ .texture = offscreenColorTarget })
+	// .setExecuteCallback([&](mythril::CommandBuffer& cmd) {
+	// 	cmd.cmdBindComputePipeline(upsampleComputePipeline);
+	// 	for (int i = 0; i < kNumColorMips; i++) {
+	// 		struct PushConstants {
+	// 			uint64_t inTex;
+	// 			uint64_t outTex;
+	// 			uint64_t sampler;
+	// 		} push{
+	// 			.inTex = offscreenColorTarget.index(),
+	// 			.outTex = offscreenColorTarget.index(),
+	// 			.sampler = 0
+	// 		};
+	// 		cmd.cmdPushConstants(push);
+	// 		cmd.cmdDispatchThreadGroup({8, 8, 1});
+	// 	}
+	// });
+
+
 	float exposure_bright = 1.f;
 	graph.addComputePass("Bright Extraction")
 	.read({ .texture = offscreenColorTarget })
 	.read({ .texture = brightTarget })
-	.read({ .texture =  luminanceViews[0] })
+	.read({ .texture =  luminanceTexture })
 	.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
 		cmd.cmdBindComputePipeline(computeBrightPipeline);
 
@@ -970,14 +1036,14 @@ int main() {
 		} push {
 			.colorTex = offscreenColorTarget.index(),
 			.outTex = brightTarget.index(),
-			.luminanceTex = luminanceViews[0].index(),
+			.luminanceTex = luminanceTexture.index(),
 			.sampler = clampSampler.index(),
 			.exposure = exposure_bright
 		};
 		cmd.cmdPushConstants(push);
 		constexpr uint32_t threadNum = 16;
 		cmd.cmdDispatchThreadGroup({bloom_size/threadNum, bloom_size/threadNum, 1});
-		cmd.cmdGenerateMipmap(luminanceViews[0]);
+		cmd.cmdGenerateMipmap(luminanceTexture);
 	});
 
 	// makes two different passes, one for an x blur and another for y blur
@@ -1012,11 +1078,11 @@ int main() {
 	graph.addComputePass("adaptation")
 	.read({ .texture = adaptedLuminanceTextures[0] })
 	.read({ .texture = adaptedLuminanceTextures[1] })
-	.read({ .texture = luminanceViews[0] })
+	.read({ .texture = luminanceTexture })
 	.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
 		cmd.cmdBindComputePipeline(adaptationComputePipeline);
 	    auto ct = std::chrono::steady_clock::now();
-		float dt = std::chrono::duration<float>(ct - st).count();
+		const float dt = std::chrono::duration<float>(ct - st).count();
 		st = ct;
 
 		struct PushConstant {
@@ -1025,7 +1091,7 @@ int main() {
 			uint64_t nextAdaptedLumTex;
 			float adaptionSpeed;
 		} push {
-			.currentSceneLumTex = luminanceViews[9].index(),
+			.currentSceneLumTex = averageluminanceTexture.index(),
 			.prevAdaptedLumTex = adaptedLuminanceTextures[0].index(),
 			.nextAdaptedLumTex = adaptedLuminanceTextures[1].index(),
 			.adaptionSpeed = adaptationSpeed * dt
@@ -1042,9 +1108,10 @@ int main() {
 		None = 0,
 		Reinhard = 1,
 		Uchimira = 2,
-		KhronosPBR = 3
-	} tone_mapping_mode = ToneMappingMode::KhronosPBR;
-	float maxWhite = 1.f;
+		KhronosPBR = 3,
+		AgX = 4
+	} tone_mapping_mode = ToneMappingMode::Reinhard;
+	float maxWhite = 1.5f;
 	float P = 1.f;
 	float a = 1.05f;
 	float m = 0.1f;
@@ -1053,6 +1120,10 @@ int main() {
 	float b = 0.0f;
 	float startCompression = 0.15f;
 	float desaturation = 0.15f;
+	glm::vec3 slope = {1.f, 1.f, 1.f};
+	glm::vec3 offset = {0.f, 0.f, 0.f};
+	glm::vec3 power = {1.f, 1.f, 1.f};
+	float saturation = 1.f;
 	graph.addGraphicsPass("composite")
 	.write({
 		.texture = finalColorTarget,
@@ -1086,6 +1157,11 @@ int main() {
 			// Khronos PBR
 			float startCompression; // highlight compression start
 			float desaturation;
+			// AgX
+			glm::vec3 slope;
+			glm::vec3 offset;
+			glm::vec3 power;
+			float saturation;
 		} push {
 			.colorTex = offscreenColorTarget.index(),
 			.avgLuminanceTex = adaptedLuminanceTextures[0].index(),
@@ -1103,7 +1179,11 @@ int main() {
 			.c = c,
 			.b = b,
 			.startCompression = startCompression,
-			.desaturation = desaturation
+			.desaturation = desaturation,
+			.slope = slope,
+			.offset = offset,
+			.power = power,
+			.saturation = saturation
 		};
 		cmd.cmdPushConstants(push);
 		cmd.cmdDraw(3);
@@ -1116,10 +1196,17 @@ int main() {
 		.loadOp = mythril::LoadOperation::LOAD,
 		.storeOp = mythril::StoreOperation::STORE
 	})
-	.setExecuteCallback([](mythril::CommandBuffer& cmd) {
+	.read({ .texture = shadowMap })
+	.read({ .texture = brightTarget })
+	.read({ .texture = bloomTargetsPingAndPong[0] })
+	.read({ .texture = bloomTargetsPingAndPong[1] })
+	.read({ .texture = adaptedLuminanceTextures[0] })
+	.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
 		cmd.cmdBeginRendering();
 		cmd.cmdDrawImGui();
 		cmd.cmdEndRendering();
+		cmd.cmdCopyImage(finalColorTarget, ctx->getCurrentSwapchainTexture());
+		cmd.cmdTransitionLayout(ctx->getCurrentSwapchainTexture(), VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
 	});
 	graph.compile(*ctx);
 
@@ -1297,6 +1384,7 @@ int main() {
 			if (ImGui::MenuItem("Reinhard")) tone_mapping_mode = ToneMappingMode::Reinhard;
 			if (ImGui::MenuItem("Uchimura")) tone_mapping_mode = ToneMappingMode::Uchimira;
 			if (ImGui::MenuItem("KhronosPBR")) tone_mapping_mode = ToneMappingMode::KhronosPBR;
+			if (ImGui::MenuItem("AgX")) tone_mapping_mode = ToneMappingMode::AgX;
 			ImGui::EndMenu();
 		}
 
@@ -1319,8 +1407,15 @@ int main() {
 			} break;
 			case ToneMappingMode::KhronosPBR: {
 				ImGui::Text("KhronosPBR Options");
-				ImGui::DragFloat("Highlight Compression Start", &startCompression, 0.01f, 0.0001f, 1.f);
-				ImGui::DragFloat("Desaturation", &desaturation, 0.01f, 0.0001f, 50.f);
+				ImGui::DragFloat("Highlight Compression Start", &startCompression, 0.01f, 0.04f, 0.8f);
+				ImGui::DragFloat("Desaturation", &desaturation, 0.01f, 0.001f, 1.f);
+			} break;
+			case ToneMappingMode::AgX: {
+				ImGui::Text("AgX Options");
+				ImGui::SliderFloat3("Slope", &slope[0], 0.f, 1.f);
+				ImGui::SliderFloat3("Offset", &offset[0], 0.f, 1.f);
+				ImGui::SliderFloat3("Power", &power[0], 0.f, 1.f);
+				ImGui::DragFloat("Saturation", &saturation, 0.1f, 0.1f, 10.f);
 			} break;
 		}
 
@@ -1362,7 +1457,7 @@ int main() {
 			glm::decompose(transformMatrix, scale, rotation, position, skew, perspective);
 			sun_quaternion = glm::normalize(rotation);
 		}
-		
+
 		lightingData.directionalLights.direction = sun_quaternion * glm::vec3(0, 0, -1);
 		const GPU::FrameData frameData {
 			.camera = cameraData,

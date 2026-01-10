@@ -29,19 +29,19 @@ void cs_main(uint3 threadId: SV_DispatchThreadID) {
 
     float2 dxdy = (uv1 - uv0) / 3;
 
-    float4 color = float4(0);
+    float3 color = float3(0.f);
 
     // 3x3 box filter
     for (int v = 0; v != 3; v++) {
         for (int u = 0; u != 3; u++) {
-            color += push.colorTex.SampleLevel(push.sampler, uv0 + float2(u, v) * dxdy, 0);
+            color += push.colorTex.SampleLevel(push.sampler, uv0 + float2(u, v) * dxdy, 0).rgb;
         }
     }
 
     float luminance = push.exposure * dot(color.rgb / 9, float3(0.2126, 0.7152, 0.0722));
 
-    float3 rgb = luminance > 1.0 ? color.rgb : float3(0);
+    float3 rgb = luminance > 1.f ? color.rgb : float3(0.f);
 
-    push.outTex.Store(xy, float4(rgb, 1));
+    push.outTex.Store(xy, float4(rgb, 1.f));
     push.luminanceTex.Store(xy, float4(luminance));
 }

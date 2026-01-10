@@ -49,6 +49,8 @@ int main() {
 	})
 	.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
 		// do absolutely nothing, just begin and end a pass
+		cmd.cmdBeginRendering();
+		cmd.cmdEndRendering();
 	});
 	graph.compile(*ctx);
 
@@ -104,7 +106,7 @@ This project is distributed under the **Mozilla Public License Version 2.0**, pl
 
 # Acknowledgments
 
-- [LightweightVK](https://github.com/corporateshark/lightweightvk/tree/master) - Basically why Mythril exists, I loved how simply lightweightvk is but found we could abstract the hell out of it.
+- [LightweightVK](https://github.com/corporateshark/lightweightvk/tree/master) - Basically why Mythril exists, I loved how simply lightweightvk is but found we could abstract even more out of it.
 
 <!-- image definitions -->
 [basic_window_img]: docs/img/basic_window.png

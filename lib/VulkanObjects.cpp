@@ -71,13 +71,14 @@ namespace mythril {
 		vkutil::ImageMemoryBarrier2(cmd, _vkImage, src, dst, oldImageLayout, newImageLayout, subresourceRange);
 		_vkCurrentImageLayout = newImageLayout;
 	}
+	// this will only do LINEAR or NEAREST filtering, hence why we do this manually for advanced techniques like our bloom
+	// https://docs.vulkan.org/samples/latest/samples/api/texture_mipmap_generation/README.html#:~:text=%2C%0A%20%20%20%20%26image_blit%2C%0A%20%20%20%20VK_FILTER_LINEAR)%3B-,vkCmdBlitImage,-does%20the%20down
 	void AllocatedTexture::generateMipmap(VkCommandBuffer cmd) {
 		// Check if device supports downscaling for color or depth/stencil buffer based on image format
 		{
-			const uint32_t formatFeatureMask = (VK_FORMAT_FEATURE_BLIT_SRC_BIT | VK_FORMAT_FEATURE_BLIT_DST_BIT);
+			constexpr uint32_t formatFeatureMask = (VK_FORMAT_FEATURE_BLIT_SRC_BIT | VK_FORMAT_FEATURE_BLIT_DST_BIT);
 			const bool hardwareDownscalingSupported = (_vkFormatProperties.optimalTilingFeatures & formatFeatureMask) == formatFeatureMask;
 
-			// FIXME: the warning is printing a void *
 			if (!hardwareDownscalingSupported) {
 				LOG_SYSTEM(LogType::Warning, "Doesn't support hardware downscaling of image format: {}", vkstring::VulkanFormatToString(_vkFormat));
 				return;
@@ -101,8 +102,8 @@ namespace mythril {
 
 		// now make the mipmaps
 		for (uint32_t layer = 0; layer < _numLayers; ++layer) {
-			auto mipWidth = (int32_t)_vkExtent.width;
-			auto mipHeight = (int32_t)_vkExtent.height;
+			auto mipWidth = static_cast<int32_t>(_vkExtent.width);
+			auto mipHeight = static_cast<int32_t>(_vkExtent.height);
 
 			for (uint32_t i = 1; i < _numLevels; ++i) {
 				// 1: Transition the i-th level to VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL; it will be copied into from the (i-1)-th layer
@@ -140,7 +141,7 @@ namespace mythril {
 							   &blit,
 							   blitFilter);
 				// 3: Transition i-th level to VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL as it will be read from in the next iteration
-				ImageMemoryBarrier2(cmd,
+				vkutil::ImageMemoryBarrier2(cmd,
 									_vkImage,
 									vkutil::StageAccess{.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = VK_ACCESS_2_TRANSFER_WRITE_BIT},
 									vkutil::StageAccess{.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = VK_ACCESS_2_TRANSFER_READ_BIT},
@@ -152,6 +153,8 @@ namespace mythril {
 				mipHeight = nextLevelHeight;
 			}
 		}
+		// transition it back to original
+		this->transitionLayout(cmd, originalImageLayout, VkImageSubresourceRange{imageAspectFlags, 0, 1, 0, _numLayers});
 	}
 
 }

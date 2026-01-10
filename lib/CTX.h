@@ -153,21 +153,19 @@ namespace mythril {
 	};
 	struct TextureSpec {
 		VkExtent2D dimension = {};
-
-		uint32_t numMipLevels = 1;
-		uint32_t numLayers = 1;
+		TextureType type = TextureType::Type_2D;
+		VkFormat format = VK_FORMAT_UNDEFINED;
 		SampleCount samples = SampleCount::X1;
-
 		uint8_t usage = {};
 		StorageType storage = StorageType::Device;
 
-		TextureType type = TextureType::Type_2D;
-		VkFormat format = VK_FORMAT_UNDEFINED;
+		uint32_t numMipLevels = 1;
+		uint32_t numLayers = 1;
 		ComponentMapping components = {};
 
 		const void* initialData = nullptr;
-		uint32_t dataNumMipLevels = 1; // how many mip-levels we want to upload
-		bool generateMipmaps = false; // works only if initialData is not null
+		uint32_t dataNumMipLevels = 1; // how many mip-levels we want to create & fill in when uploading data
+		bool generateMipmaps = false; // works only if initialData is not nulll
 		const char* debugName = "Unnamed Texture";
 	};
 
@@ -177,12 +175,12 @@ namespace mythril {
 		uint32_t mipLevel = 0;
 		uint32_t numMipLevels = 1;
 		ComponentMapping components = {};
+		const char* debugName = "Unnamed Texture View";
 	};
 	struct ShaderSpec {
 		std::filesystem::path filePath;
 		const char* debugName = "Unnamed Shader";
 	};
-
 
 
 	struct LayoutBuildResult {
@@ -204,8 +202,10 @@ namespace mythril {
 	public:
 		void cleanSwapchain();
 		bool isSwapchainDirty();
+		const InternalTextureHandle& getCurrentSwapchainTexture() const { return _swapchain->getCurrentSwapchainTextureHandle(); }
+
 		Window& getWindow() { return _window; };
-		inline const InternalTextureHandle& getNullTexture() { return this->_dummyTextureHandle; };
+		const InternalTextureHandle& getNullTexture() const { return this->_dummyTextureHandle; }
 
 		CommandBuffer& openCommand(CommandBuffer::Type type);
 		SubmitHandle submitCommand(CommandBuffer& cmd);
@@ -230,7 +230,6 @@ namespace mythril {
 			ASSERT_MSG(ptr, "Invalid texture handle!");
 			return *ptr;
 		}
-
 		const AllocatedBuffer& viewBuffer(InternalBufferHandle handle) const {
 			auto* ptr = _bufferPool.get(handle);
 			ASSERT_MSG(ptr, "Invalid buffer handle!");
@@ -246,6 +245,17 @@ namespace mythril {
 			ASSERT_MSG(ptr, "Invalid shader handle!");
 			return *ptr;
 		}
+		const AllocatedGraphicsPipeline& viewGraphicsPipeline(InternalGraphicsPipelineHandle handle) const {
+			auto* ptr = _graphicsPipelinePool.get(handle);
+			ASSERT_MSG(ptr, "Invalid graphics pipeline handle!");
+			return *ptr;
+		}
+		const AllocatedComputePipeline& viewComputePipeline(InternalComputePipelineHandle handle) const {
+			auto* ptr = _computePipelinePool.get(handle);
+			ASSERT_MSG(ptr, "Invalid compute pipeline handle!");
+			return *ptr;
+		}
+
 
 		// wrappers around VulkanObjects
 		// advanced functions that user will rarely need to call
@@ -311,6 +321,7 @@ namespace mythril {
 				ASSERT(obj);
 				return obj->_common;
 			}
+			assert(false);
 		}
 
 		LayoutBuildResult buildDescriptorResultFromSignature(const PipelineLayoutSignature &pipelineSignature);

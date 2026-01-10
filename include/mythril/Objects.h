@@ -15,19 +15,14 @@ namespace mythril {
 	class ObjectHolder {
 	public:
 		ObjectHolder() = default;
-		ObjectHolder(CTX* ctx, InternalHandle handle) : _pCtx(ctx), _handle(handle) {}
+		ObjectHolder(CTX* ctx, InternalHandle handle) : _handle(handle), _pCtx(ctx) {}
 		~ObjectHolder() {
 			_pCtx->destroy(_handle);
 		}
 		ObjectHolder(const ObjectHolder&) = delete;
-		ObjectHolder(ObjectHolder&& other) noexcept : _pCtx(other._pCtx), _handle(other._handle) {
+		ObjectHolder(ObjectHolder&& other) noexcept : _handle(other._handle), _pCtx(other._pCtx) {
 			other._pCtx = nullptr;
 			other._handle = InternalHandle{};
-		}
-		ObjectHolder& operator=(ObjectHolder&& other) noexcept {
-			std::swap(_pCtx, other.ctx_);
-			std::swap(_handle, other.handle_);
-			return *this;
 		}
 		ObjectHolder& operator=(std::nullptr_t) {
 			this->reset();
@@ -35,7 +30,7 @@ namespace mythril {
 		}
 	public:
 		// i dont want this to be explicit yeah
-		inline operator InternalHandle() const {
+		operator InternalHandle() const {
 			return _handle;
 		}
 
@@ -71,15 +66,50 @@ namespace mythril {
 		void* handleAsVoid() const {
 			return _handle.handleAsVoid();
 		}
-	private:
+	protected:
 		InternalHandle _handle = {};
 		CTX* _pCtx = nullptr;
 	};
 
-	using Buffer = ObjectHolder<InternalBufferHandle>;
-	using Texture = ObjectHolder<InternalTextureHandle>;
-	using Sampler = ObjectHolder<InternalSamplerHandle>;
-	using Shader = ObjectHolder<InternalShaderHandle>;
-	using GraphicsPipeline = ObjectHolder<InternalGraphicsPipelineHandle>;
-	using ComputePipeline = ObjectHolder<InternalComputePipelineHandle>;
+
+	class Sampler : ObjectHolder<InternalSamplerHandle> {
+	public:
+		[[nodiscard]] std::string_view getDebugName() const { return _pCtx->viewSampler(_handle).getDebugName(); }
+	};
+
+	class Texture : public ObjectHolder<InternalTextureHandle> {
+	public:
+		[[nodiscard]] InternalTextureHandle mip(uint8_t level) const { return mips[level]; }
+		[[nodiscard]] uint64_t index() const { return _handle.index(); }
+
+		[[nodiscard]] Dimensions getDimensions() const { return _pCtx->viewTexture(_handle).getDimensions(); }
+		[[nodiscard]] VkFormat getFormat() const { return _pCtx->viewTexture(_handle).getFormat(); }
+		[[nodiscard]] VkImageType getType() const { return _pCtx->viewTexture(_handle).getType(); }
+		[[nodiscard]] bool hasMipmaps() const { return _pCtx->viewTexture(_handle).hasMipmaps(); }
+		[[nodiscard]] std::string_view getDebugName() const { return _pCtx->viewTexture(_handle).getDebugName(); }
+	private:
+		std::vector<InternalTextureHandle> mips;
+	};
+
+	class Buffer : ObjectHolder<InternalBufferHandle> {
+	public:
+		[[nodiscard]] bool isMapped() const { return _pCtx->viewBuffer(_handle).isMapped(); }
+		[[nodiscard]] std::string_view getDebugName() const { return _pCtx->viewBuffer(_handle).getDebugName(); }
+	};
+
+	// todo: remove shader being its own object, its redundant and can be merged into the pipeline object
+	class Shader : ObjectHolder<InternalShaderHandle> {
+	public:
+		[[nodiscard]] std::string_view getDebugName() const { return _pCtx->viewShader(_handle).getDebugName(); }
+	};
+
+	class GraphicsPipeline : ObjectHolder<InternalGraphicsPipelineHandle> {
+	public:
+		[[nodiscard]] std::string_view getDebugName() const { return _pCtx->viewGraphicsPipeline(_handle).getDebugName(); }
+	};
+	class ComputePipeline : ObjectHolder<InternalComputePipelineHandle> {
+	public:
+		[[nodiscard]] std::string_view getDebugName() const { return _pCtx->viewComputePipeline(_handle).getDebugName(); }
+	};
+
 }

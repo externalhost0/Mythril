@@ -11,6 +11,8 @@
 #include "Pipelines.h"
 
 #include <volk.h>
+
+#include "vkstring.h"
 #ifdef MYTH_ENABLED_IMGUI
 #include <imgui.h>
 #include <imgui_impl_vulkan.h>
@@ -189,13 +191,16 @@ namespace mythril {
 		tex->generateMipmap(_wrapper->_cmdBuf);
 	}
 
+	// unnecessary to have a DRY_RETURN here
 	void CommandBuffer::cmdTransitionLayout(InternalTextureHandle source, VkImageLayout newLayout) {
+		cmdTransitionLayout(source, newLayout, VkImageSubresourceRange{vkutil::AspectMaskFromFormat(_ctx->viewTexture(source).getFormat()), 0, 1, 0, 1});
+	}
+	void CommandBuffer::cmdTransitionLayout(InternalTextureHandle source, VkImageLayout newLayout, VkImageSubresourceRange range) {
 		DRY_RETURN()
-
-		cmdTransitionLayoutImpl(source, _ctx->viewTexture(source)._vkCurrentImageLayout, newLayout);
+		cmdTransitionLayoutImpl(source, _ctx->_texturePool.get(source)->_vkCurrentImageLayout, newLayout, range);
 	}
 
-	static constexpr bool TextureCopyInstead(const AllocatedTexture& source, const AllocatedTexture& destination) {
+	static constexpr bool CheckTextureCopyInstead(const AllocatedTexture& source, const AllocatedTexture& destination) {
 		if (source.getFormat() != destination.getFormat()) {
 			return false;
 		}
@@ -210,50 +215,64 @@ namespace mythril {
 		}
 		return true;
 	}
+	void CommandBuffer::CheckTextureRenderingUsage(const AllocatedTexture& source, const AllocatedTexture& destination, const char* operation) {
+		if (_isRendering) {
+			VkImageView source_vkImageView = source._vkImageView;
+			VkImageView dest_vkImageView = destination._vkImageView;
+			for (const auto& color_attachment : this->_activePass.colorAttachments) {
+				ASSERT_MSG(
+						color_attachment.imageView != source_vkImageView &&
+						color_attachment.imageView != dest_vkImageView,
+						"You cannot {} an image currently being used by a RenderPass!", operation);
+			}
+			if (this->_activePass.depthAttachment.has_value()) {
+				const auto& depth_attachment = this->_activePass.depthAttachment.value();
+				ASSERT_MSG(
+						depth_attachment.imageView != source_vkImageView &&
+						depth_attachment.imageView != dest_vkImageView,
+						"You cannot {} an image currently being used by a RenderPass!", operation);
+			}
+		}
+	}
+	void CommandBuffer::CheckImageLayoutAuto(InternalTextureHandle sourceHandle, InternalTextureHandle destinationHandle, const char* operation) {
+		auto& sourceObject = _ctx->viewTexture(sourceHandle);
+		auto& destinationObject = _ctx->viewTexture(destinationHandle);
+		if (sourceObject._vkCurrentImageLayout != VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) {
+			// LOG_SYSTEM(LogType::Info, "Automatically resolved texture ({}) to be in correct layout (VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) before {}.", sourceObject._debugName, operation);
+			this->cmdTransitionLayout(sourceHandle, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+		}
+		if (destinationObject._vkCurrentImageLayout != VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
+			// LOG_SYSTEM(LogType::Info, "Automatically resolved texture ({}) to be in correct layout (VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) before {}.", destinationObject._debugName, operation);
+			this->cmdTransitionLayout(destinationHandle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+		}
+	}
 	void CommandBuffer::cmdBlitImage(InternalTextureHandle source, InternalTextureHandle destination) {
 		DRY_RETURN()
 		ASSERT_MSG(source.valid() && destination.valid(), "Textures must be valid handles!");
 
+		auto &sourceTex = _ctx->viewTexture(source);
+		auto &destinationTex = _ctx->viewTexture(destination);
 #ifdef DEBUG
-		// check if textures are being used elsewhere
-		auto& sourceTexture = _ctx->viewTexture(source);
-		auto& destinationTexture = _ctx->viewTexture(destination);
-
-		VkImageView source_vkImageView = sourceTexture._vkImageView;
-		VkImageView dest_vkImageView = destinationTexture._vkImageView;
-		for (const auto& color_attachment : this->_activePass.colorAttachments) {
-			ASSERT_MSG(
-					color_attachment.imageView != source_vkImageView &&
-					color_attachment.imageView != dest_vkImageView,
-					"You cannot blit an image currently being used by a RenderPass!");
-		}
-		if (this->_activePass.depthAttachment.has_value()) {
-			const auto& depth_attachment = this->_activePass.depthAttachment.value();
-			ASSERT_MSG(
-					depth_attachment.imageView != source_vkImageView &&
-					depth_attachment.imageView != dest_vkImageView,
-					"You cannot blit an image currently being used by a RenderPass!");
-		}
+		// check if textures are being rendered to
+		CheckTextureRenderingUsage(sourceTex, destinationTex, "blit");
 		// check if copy could have been used instead
-		if (TextureCopyInstead(sourceTexture, destinationTexture)) {
+		if (CheckTextureCopyInstead(sourceTex, destinationTex)) {
 			LOG_SYSTEM(LogType::Suggestion, "Usage of cmdBlitImage can be replaced by cmdCopyImage");
 		}
 #endif
-		auto& sourceTex = _ctx->viewTexture(source);
-		auto& destinationTex = _ctx->viewTexture(destination);
-		if (sourceTex._vkCurrentImageLayout != VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) {
-			LOG_SYSTEM(LogType::Warning, "Automatically resolved texture ({}) to be in correct layout (VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) before blitting.", sourceTex._debugName);
-			this->cmdTransitionLayout(source, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
-		}
-		if (destinationTex._vkCurrentImageLayout != VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
-			LOG_SYSTEM(LogType::Warning, "Automatically resolved texture ({}) to be in correct layout (VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) before blitting.", destinationTex._debugName);
-			this->cmdTransitionLayout(destination, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-		}
+		CheckImageLayoutAuto(source, destination, "blitting");
 		cmdBlitImageImpl(source, destination, sourceTex.getExtentAs2D(), destinationTex.getExtentAs2D());
 	}
 	void CommandBuffer::cmdCopyImage(InternalTextureHandle source, InternalTextureHandle destination) {
 		DRY_RETURN()
+		ASSERT_MSG(source.valid() && destination.valid(), "Textures must be valid handles!");
 
+		auto &sourceTex = _ctx->viewTexture(source);
+		auto &destinationTex = _ctx->viewTexture(destination);
+#ifdef DEBUG
+		CheckTextureRenderingUsage(sourceTex, destinationTex, "copy");
+#endif
+		CheckImageLayoutAuto(source, destination, "copying");
 		// needs to be same so doesnt matter if we take source or destination size
 		cmdCopyImageImpl(source, destination, _ctx->viewTexture(source).getExtentAs2D());
 	}
@@ -457,7 +476,7 @@ namespace mythril {
 																		   attachmentInfo.storeOp);
 		}
 		// Step 2: Put it together in a renderingInfo struct
-		VkExtent2D renderExtent = _activePass.extent2D;
+		const VkExtent2D renderExtent = _activePass.extent2D;
 		VkRenderingInfo info = {
 				.sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
 				.pNext = nullptr,
@@ -488,13 +507,6 @@ namespace mythril {
 	void CommandBuffer::cmdEndRenderingImpl() {
 		vkCmdEndRendering(_wrapper->_cmdBuf);
 		_isRendering = false;
-	}
-
-	void CommandBuffer::cmdPrepareToSwapchainImpl(InternalTextureHandle source) {
-		cmdTransitionLayout(source, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
-		cmdTransitionSwapchainLayoutImpl(VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-		cmdBlitToSwapchainImpl(source);
-		cmdTransitionSwapchainLayoutImpl(VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
 	}
 	void CommandBuffer::bufferBarrierImpl(InternalBufferHandle bufhandle, VkPipelineStageFlags2 srcStage, VkPipelineStageFlags2 dstStage) {
 		auto& buf = _ctx->viewBuffer(bufhandle);
@@ -534,60 +546,15 @@ namespace mythril {
 		};
 		vkCmdPipelineBarrier2(_wrapper->_cmdBuf, &depInfo);
 	}
-	// TODO: have this not repeat the logic already specified in cmdBlitImage, all you need is swapchains current texturehandle
-	void CommandBuffer::cmdBlitToSwapchainImpl(InternalTextureHandle source) {
-		VkImageBlit2 blitRegion = { .sType = VK_STRUCTURE_TYPE_IMAGE_BLIT_2, .pNext = nullptr };
-
-		blitRegion.srcOffsets[1].x = static_cast<int32_t>(_ctx->viewTexture(source)._vkExtent.width);
-		blitRegion.srcOffsets[1].y = static_cast<int32_t>(_ctx->viewTexture(source)._vkExtent.height);
-		blitRegion.srcOffsets[1].z = 1;
-
-		blitRegion.dstOffsets[1].x = static_cast<int32_t>(_ctx->_swapchain->getSwapchainExtent().width);
-		blitRegion.dstOffsets[1].y = static_cast<int32_t>(_ctx->_swapchain->getSwapchainExtent().height);
-		blitRegion.dstOffsets[1].z = 1;
-
-		blitRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		blitRegion.srcSubresource.baseArrayLayer = 0;
-		blitRegion.srcSubresource.layerCount = 1;
-		blitRegion.srcSubresource.mipLevel = 0;
-
-		blitRegion.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		blitRegion.dstSubresource.baseArrayLayer = 0;
-		blitRegion.dstSubresource.layerCount = 1;
-		blitRegion.dstSubresource.mipLevel = 0;
-
-		VkBlitImageInfo2 blitInfo { .sType = VK_STRUCTURE_TYPE_BLIT_IMAGE_INFO_2, .pNext = nullptr };
-		blitInfo.srcImage = _ctx->viewTexture(source)._vkImage;
-		blitInfo.srcImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-		blitInfo.dstImage = _ctx->_swapchain->getCurrentSwapchainTexture()._vkImage;
-		blitInfo.dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-		blitInfo.filter = VK_FILTER_LINEAR;
-		blitInfo.regionCount = 1;
-		blitInfo.pRegions = &blitRegion;
-
-		vkCmdBlitImage2KHR(_wrapper->_cmdBuf, &blitInfo);
-	}
-	void CommandBuffer::cmdTransitionSwapchainLayoutImpl(VkImageLayout newLayout) {
-		VkImageMemoryBarrier2 barrier = { .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2, .pNext = nullptr };
-		barrier.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-		barrier.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT;
-		barrier.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-		barrier.dstAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT | VK_ACCESS_2_MEMORY_READ_BIT;
-		barrier.oldLayout = _ctx->_swapchain->getCurrentSwapchainTexture()._vkCurrentImageLayout;
-		barrier.newLayout = newLayout;
-		barrier.subresourceRange = VkImageSubresourceRange{vkutil::AspectMaskFromAttachmentLayout(newLayout), 0, 1, 0, 1};
-		barrier.image = _ctx->_swapchain->getCurrentSwapchainTexture()._vkImage;
-		VkDependencyInfo info = { .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO, .pNext = nullptr };
-		info.imageMemoryBarrierCount = 1;
-		info.pImageMemoryBarriers = &barrier;
-		vkCmdPipelineBarrier2(_wrapper->_cmdBuf, &info);
-
-		_ctx->_swapchain->_vkCurrentImageLayout = newLayout;
-	}
 	void CommandBuffer::cmdCopyImageImpl(InternalTextureHandle source, InternalTextureHandle destination, VkExtent2D size) {
 		auto& sourceTex = _ctx->viewTexture(source);
 		auto& destinationTex = _ctx->viewTexture(destination);
-		ASSERT_MSG(sourceTex._vkFormat == destinationTex._vkFormat, "The images being copied must be of the same VkFormat, (format)!");
+		ASSERT_MSG((sourceTex._vkUsageFlags & VK_IMAGE_USAGE_TRANSFER_SRC_BIT) > 0, "Source image must have VK_IMAGE_USAGE_TRANSFER_SRC_BIT!");
+		ASSERT_MSG((destinationTex._vkUsageFlags & VK_IMAGE_USAGE_TRANSFER_DST_BIT) > 0, "Destination image must have VK_IMAGE_USAGE_TRANSFER_DST_BIT!");
+		ASSERT_MSG(sourceTex._numLayers == destinationTex._numLayers, "The images being copied must have the same number of layers!");
+		ASSERT_MSG(sourceTex._vkFormat == destinationTex._vkFormat, "The images being copied must be of the same VkFormat (source is '{}' while destination is '{}')!",
+			vkstring::VulkanFormatToString(sourceTex.getFormat()),
+			vkstring::VulkanFormatToString(destinationTex.getFormat()));
 		ASSERT_MSG(sourceTex._vkExtent.width == destinationTex._vkExtent.width, "The images being copied must be of the same width!");
 		ASSERT_MSG(sourceTex._vkExtent.height == destinationTex._vkExtent.height, "The images being copied must be of the same height!");
 
@@ -649,15 +616,24 @@ namespace mythril {
 
 		vkCmdBlitImage2KHR(_wrapper->_cmdBuf, &blitInfo);
 	}
-	void CommandBuffer::cmdTransitionLayoutImpl(InternalTextureHandle source, VkImageLayout currentLayout, VkImageLayout newLayout) {
+	void CommandBuffer::cmdTransitionLayoutImpl(InternalTextureHandle source, VkImageLayout currentLayout, VkImageLayout newLayout, VkImageSubresourceRange range) {
 		auto& sourceTex = _ctx->viewTexture(source);
 		if (sourceTex._vkCurrentImageLayout == newLayout) {
-			LOG_SYSTEM(LogType::Warning, "Image ({}) is already in the requested layout.", sourceTex._debugName);
+			LOG_SYSTEM(LogType::Info, "Image ({}) is already in the requested layout.", sourceTex._debugName);
 		}
 
 		vkutil::StageAccess srcStage = vkutil::getPipelineStageAccess(currentLayout);
 		vkutil::StageAccess dstStage = vkutil::getPipelineStageAccess(newLayout);
-
+		if (sourceTex.isSwapchainImage()) {
+			srcStage = {
+				.stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+				.access = VK_ACCESS_2_MEMORY_WRITE_BIT
+			};
+			dstStage = {
+				.stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+				.access = VK_ACCESS_2_MEMORY_WRITE_BIT | VK_ACCESS_2_MEMORY_READ_BIT
+			};
+		}
 		if (sourceTex._isResolveAttachment && vkutil::IsFormatDepthOrStencil(sourceTex._vkFormat)) {
 			// https://registry.khronos.org/vulkan/specs/latest/html/vkspec.html#renderpass-resolve-operations
 			srcStage.stage |= VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
@@ -666,31 +642,7 @@ namespace mythril {
 			dstStage.access |= VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
 		}
 
-		VkImageMemoryBarrier2 barrier = {
-				.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-				.pNext = nullptr,
-				.srcStageMask = srcStage.stage,
-				.srcAccessMask = srcStage.access,
-
-				.dstStageMask = dstStage.stage,
-				.dstAccessMask = dstStage.access,
-
-				.oldLayout = currentLayout,
-				.newLayout = newLayout,
-
-				.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-				.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-
-				.image = sourceTex._vkImage,
-				.subresourceRange = VkImageSubresourceRange{vkutil::AspectMaskFromFormat(sourceTex._vkFormat), 0, 1, 0, 1}
-		};
-		VkDependencyInfo dependency_i = {
-				.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-				.pNext = nullptr,
-				.imageMemoryBarrierCount = 1,
-				.pImageMemoryBarriers = &barrier
-		};
-		vkCmdPipelineBarrier2(_wrapper->_cmdBuf, &dependency_i);
+		vkutil::ImageMemoryBarrier2(_wrapper->_cmdBuf, sourceTex._vkImage, srcStage, dstStage, currentLayout, newLayout, range);
 		// set the texture to its new image layout
 		_ctx->_texturePool.get(source)->_vkCurrentImageLayout = newLayout;
 	}

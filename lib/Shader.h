@@ -129,7 +129,7 @@ namespace mythril {
 		const std::vector<DescriptorSetInfo>& viewDescriptorSets() const { return _descriptorSets; };
 		const std::vector<PushConstantInfo>& viewPushConstants() const { return _pushConstants; }
 		const PipelineLayoutSignature& getPipelineLayoutSignature() const { return _pipelineSignature; }
-		std::string_view getnamefordebugpurpose() const { return _debugName; }
+		std::string_view getDebugName() const { return _debugName; }
 	private:
 		// a shader defines not only the module obviously, but a pipelineLayout
 		VkShaderModule vkShaderModule;

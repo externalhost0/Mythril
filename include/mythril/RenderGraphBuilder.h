@@ -97,14 +97,15 @@ namespace mythril {
 		// these three members are sent straight over to PassCompiled
 		std::string name;
 		Type type;
-		std::function<void(CommandBuffer&)> executeCallback;
+		std::function<void(CommandBuffer&)> executeCallback{};
 
-		std::vector<WriteSpec> writeOperations; // empty for compute
-		std::vector<ReadSpec> readOperations;
+		std::vector<WriteSpec> writeOperations{}; // empty for compute
+		std::vector<ReadSpec> readOperations{};
 	};
 	struct CompiledBarrier {
 		VkImageMemoryBarrier2 barrier{};
 		InternalTextureHandle textureHandle;
+		bool isRead = false;
 	};
 
 	// hidden information that transforms the PassSource into usable info
@@ -161,28 +162,6 @@ namespace mythril {
 		friend class RenderGraph;
 	};
 
-//	class RenderPassBuilder {
-//	public:
-//		RenderPassBuilder() = delete;
-//		RenderPassBuilder(RenderGraph& graphRef, std::string name, PassSource::Type type)
-//		: _graphRef(graph) {
-//			this->_passSource.name = std::move(name);
-//			this->_passSource.type = type;
-//		}
-//
-//		// currently we only accept textures, should take buffers later and handle them differently
-//		RenderPassBuilder& write(WriteSpec spec);
-//		RenderPassBuilder& read(ReadSpec spec);
-//
-//		// always the last command, must be called for RenderPassBuilder
-//		void setExecuteCallback(const std::function<void(CommandBuffer& cmd)>& callback);
-//	private:
-//		PassSource _passSource;
-//
-//		RenderGraph& _graphRef;
-//		friend class RenderGraph;
-//	};
-
 	class CTX;
 
 	class RenderGraph {
@@ -199,9 +178,7 @@ namespace mythril {
 		void compile(CTX& ctx);
 		void execute(CommandBuffer& cmd);
 	private:
-		// for automatic handling of blitting to swapchian
-		InternalTextureHandle _lastColorTexture;
-
+		std::unordered_map<InternalTextureHandle, VkImageLayout> _initialLayoutsPerFrame{};
 		std::vector<PassSource> _sourcePasses;
 		std::vector<PassCompiled> _compiledPasses;
 
