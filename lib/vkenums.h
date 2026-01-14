@@ -52,14 +52,17 @@ namespace mythril {
 	};
 	enum class SamplerWrap : uint8_t {
 		Repeat,
-		Clamp,
-		MirrorRepeat
+		MirrorRepeat,
+		ClampEdge,
+		ClampBorder,
+		MirrorClampEdge
 	};
 	enum class CompareOp : uint8_t {
 		Never,
 		Less,
 		LessEqual,
 		Equal,
+		NotEqual,
 		Greater,
 		GreaterEqual,
 		Always
@@ -81,34 +84,10 @@ namespace mythril {
 		MAX,
 		SAMPLE_ZERO
 	};
-	enum class CompareOperation : uint8_t {
-		CompareOp_Never = 0,
-		CompareOp_Less,
-		CompareOp_Equal,
-		CompareOp_LessEqual,
-		CompareOp_Greater,
-		CompareOp_NotEqual,
-		CompareOp_GreaterEqual,
-		CompareOp_AlwaysPass
-	};
 
 
 	// FUNCTIONS //
 	// our own to vulkan helpers
-
-
-	constexpr VkCompareOp toVulkan(CompareOperation op) {
-		switch (op) {
-			case CompareOperation::CompareOp_Never: return VK_COMPARE_OP_NEVER;
-			case CompareOperation::CompareOp_Less: return VK_COMPARE_OP_LESS;
-			case CompareOperation::CompareOp_Equal: return VK_COMPARE_OP_EQUAL;
-			case CompareOperation::CompareOp_LessEqual: return VK_COMPARE_OP_LESS_OR_EQUAL;
-			case CompareOperation::CompareOp_Greater: return VK_COMPARE_OP_GREATER;
-			case CompareOperation::CompareOp_NotEqual: return VK_COMPARE_OP_NOT_EQUAL;
-			case CompareOperation::CompareOp_GreaterEqual: return VK_COMPARE_OP_GREATER_OR_EQUAL;
-			case CompareOperation::CompareOp_AlwaysPass: return VK_COMPARE_OP_ALWAYS;
-		}
-	}
 
 
 	// FIXME change how we handle multisampled images
@@ -172,8 +151,10 @@ namespace mythril {
 	constexpr VkSamplerAddressMode toVulkan(SamplerWrap wrap) {
 		switch (wrap) {
 			case SamplerWrap::Repeat: return VK_SAMPLER_ADDRESS_MODE_REPEAT;
-			case SamplerWrap::Clamp: return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
 			case SamplerWrap::MirrorRepeat: return VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT;
+			case SamplerWrap::ClampEdge: return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+			case SamplerWrap::ClampBorder: return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+			case SamplerWrap::MirrorClampEdge: return VK_SAMPLER_ADDRESS_MODE_MIRROR_CLAMP_TO_EDGE;
 		}
 	}
 	constexpr VkSamplerMipmapMode toVulkan(SamplerMipMap mip) {
@@ -192,6 +173,7 @@ namespace mythril {
 			case CompareOp::Greater: return VK_COMPARE_OP_GREATER;
 			case CompareOp::GreaterEqual: return VK_COMPARE_OP_GREATER_OR_EQUAL;
 			case CompareOp::Always: return VK_COMPARE_OP_ALWAYS;
+			case CompareOp::NotEqual: return VK_COMPARE_OP_NOT_EQUAL;
 		}
 	}
 

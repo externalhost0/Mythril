@@ -7,7 +7,7 @@
 #include <glm/glm.hpp>
 
 namespace GPU {
-	struct Vertex {
+	struct GeneralVertex {
 		glm::vec3 position;
 		float uv_x;
 		glm::vec3 normal;
@@ -47,6 +47,8 @@ namespace GPU {
 	struct FrameData {
 		CameraData camera;
 		LightingData lighting;
+		float time;
+		float deltaTime;
 		int one;
 	};
 

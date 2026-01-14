@@ -13,45 +13,24 @@
 
 #include <span>
 
+#include "Pipelines.h"
+
 namespace mythril {
 	// forward declarations
 	class CTX;
-	struct PipelineCommon;
-	struct AllocatedTexture;
+	class AllocatedTexture;
+	struct PipelineCoreData;
 
 	// we only use it for the cmdBeginRendering command anyways
 	struct Dependencies {
 		enum { kMaxSubmitDependencies = 4 };
-		InternalTextureHandle textures[kMaxSubmitDependencies] = {};
-		InternalBufferHandle buffers[kMaxSubmitDependencies] = {};
+		TextureHandle textures[kMaxSubmitDependencies] = {};
+		BufferHandle buffers[kMaxSubmitDependencies] = {};
 	};
 
 	struct DepthState {
-		CompareOperation compareOp = CompareOperation::CompareOp_AlwaysPass;
+		CompareOp compareOp = CompareOp::Always;
 		bool isDepthWriteEnabled = false;
-	};
-
-	// https://github.com/corporateshark/lightweightvk/blob/f5598737c2179e329e519e1fe094ade1cafbc97c/lvk/LVK.h#L315
-	struct Dimensions {
-		uint32_t width = 1;
-		uint32_t height = 1;
-		uint32_t depth = 1;
-
-		consteval Dimensions divide1D(const uint32_t v) const {
-			return {.width = width / v, .height = height, .depth = depth};
-		}
-		consteval Dimensions divide2D(const uint32_t v) const {
-			return {.width = width / v, .height = height / v, .depth = depth};
-		}
-		consteval Dimensions divide3D(const uint32_t v) const {
-			return {.width = width / v, .height = height / v, .depth = depth / v};
-		}
-		constexpr bool operator==(const Dimensions& other) const {
-			return width == other.width && height == other.height && depth == other.depth;
-		}
-		constexpr bool operator!=(const Dimensions& other) const {
-			return !(*this==other);
-		}
 	};
 
 	// lets RAII this guy
@@ -74,8 +53,11 @@ namespace mythril {
 		// most commands will include: if (_isDryRun) return;
 
 		// ALL BELOW COMMANDS HAVE SPECIAL BEHAVIOR ON DRYRUN //
-		void cmdBindComputePipeline(InternalComputePipelineHandle handle);
-		void cmdBindGraphicsPipeline(InternalGraphicsPipelineHandle handle);
+
+		void cmdBindComputePipeline(const ComputePipeline& computePipeline) { cmdBindComputePipeline(computePipeline.handle()); }
+		void cmdBindGraphicsPipeline(const GraphicsPipeline& graphicsPipeline) { cmdBindGraphicsPipeline(graphicsPipeline.handle()); }
+		void cmdBindComputePipeline(ComputePipelineHandle handle);
+		void cmdBindGraphicsPipeline(GraphicsPipelineHandle handle);
 		// ALL BELOW COMMANDS SHOULD RETURN ON DRYRUN //
 		void cmdBindDepthState(const DepthState& state);
 		void cmdSetDepthBiasEnable(bool enable);
@@ -84,7 +66,11 @@ namespace mythril {
 		void cmdBeginRendering();
 		void cmdEndRendering();
 
-		void cmdBindIndexBuffer(InternalBufferHandle buffer);
+		void cmdDispatchThreadGroup(const Dimensions& threadGroupCount);
+
+
+		void cmdBindIndexBuffer(const Buffer& buffer) { cmdBindIndexBuffer(buffer.handle()); }
+		void cmdBindIndexBuffer(BufferHandle buffer);
 		// we can pass in structs of any type for push constants!!
 		// make sure it is mirrored on the shader code
 		void cmdPushConstants(const void* data, uint32_t size, uint32_t offset);
@@ -92,24 +78,51 @@ namespace mythril {
 		void cmdPushConstants(const Struct& type, uint32_t offset = 0) {
 			cmdPushConstants(&type, (uint32_t)sizeof(Struct), offset);
 		}
-		void cmdUpdateBuffer(InternalBufferHandle handle, size_t offset, size_t size, const void* data);
+
+		template<typename T>
+		void cmdUpdateBuffer(const Buffer& buffer, const std::vector<T>& data, size_t bufferOffset = 0) {
+			static_assert(std::is_trivially_copyable_v<T>, "Vector element type must be trivially copyable.");
+			cmdUpdateBuffer(buffer, bufferOffset, data.size() * sizeof(T), data.data());
+		}
+
+		void cmdUpdateBuffer(const Buffer& buffer, size_t offset, size_t size, const void* data) {
+			cmdUpdateBuffer(buffer.handle(), offset, size, data);
+		}
 		template<typename Struct>
-		void cmdUpdateBuffer(InternalBufferHandle handle, const Struct& data, size_t bufferOffset = 0) {
+		void cmdUpdateBuffer(const Buffer& buffer, const Struct& data, size_t bufferOffset = 0) {
+			static_assert(sizeof(Struct) <= 65536);
+			static_assert(std::is_trivially_copyable_v<Struct>, "cmdUpdateBuffer template only accepts trivially copyable structs.");
+			cmdUpdateBuffer(buffer, bufferOffset, sizeof(Struct), &data);
+		}
+		// void these two
+		void cmdUpdateBuffer(BufferHandle handle, size_t offset, size_t size, const void* data);
+		template<typename Struct>
+		void cmdUpdateBuffer(BufferHandle handle, const Struct& data, size_t bufferOffset = 0) {
 			cmdUpdateBuffer(handle, bufferOffset, sizeof(Struct), &data);
 		}
+
 		void cmdDraw(uint32_t vertexCount, uint32_t instanceCount = 1, uint32_t firstVertex = 0, uint32_t firstInstance = 0);
 		void cmdDrawIndexed(uint32_t indexCount, uint32_t instanceCount = 1, uint32_t firstIndex = 0, int32_t vertexOffset = 0, uint32_t baseInstance = 0);
 
-		void cmdDispatchThreadGroup(const Dimensions& threadGroupCount);
-		void cmdGenerateMipmap(InternalTextureHandle handle);
 
+		void cmdGenerateMipmap(TextureHandle handle);
+		void cmdGenerateMipmap(const Texture& texture) { cmdGenerateMipmap(texture.handle()); }
 
-		void cmdTransitionLayout(InternalTextureHandle source, VkImageLayout newLayout, VkImageSubresourceRange range);
-		void cmdTransitionLayout(InternalTextureHandle source, VkImageLayout newLayout);
-		void cmdCopyImage(InternalTextureHandle source, InternalTextureHandle destination);
+		void cmdTransitionLayout(const Texture &source, VkImageLayout newLayout) { cmdTransitionLayout(source.handle(), newLayout);}
+		void cmdCopyImage(const Texture& source, const Texture& destination) { cmdCopyImage(source.handle(), destination.handle()); }
+		void cmdBlitImage(const Texture& source, const Texture& destination) { cmdBlitImage(source.handle(), destination.handle()); }
+		void cmdCopyImageToBuffer(const Texture& source, const Buffer& destination, const VkBufferImageCopy& region) {
+			cmdCopyImageToBuffer(source.handle(), destination.handle(), region);
+		}
 
-		void cmdBlitImage(InternalTextureHandle source, InternalTextureHandle destination);
-		void cmdCopyImageToBuffer(InternalTextureHandle source, InternalBufferHandle destination, const VkBufferImageCopy& region);
+		void cmdTransitionLayout(TextureHandle source, VkImageLayout newLayout, VkImageSubresourceRange range);
+		void cmdTransitionLayout(TextureHandle source, VkImageLayout newLayout);
+		void cmdCopyImage(TextureHandle source, TextureHandle destination);
+		void cmdBlitImage(TextureHandle source, TextureHandle destination);
+		void cmdCopyImageToBuffer(TextureHandle source, BufferHandle destination, const VkBufferImageCopy& region);
+
+		void cmdClearColorImage(TextureHandle texture, const ClearColor& value);
+		void cmdClearDepthStencilImage(TextureHandle texture, const ClearDepthStencil& value);
 
 		// plugins
 #ifdef MYTH_ENABLED_IMGUI
@@ -117,26 +130,26 @@ namespace mythril {
 #endif
 	private:
 		// just repeated logic
-		void cmdBindPipelineImpl(const PipelineCommon* common, VkPipelineBindPoint bindPoint);
+		void cmdBindPipelineImpl(const PipelineCoreData* common, VkPipelineBindPoint bindPoint);
 
 		// all functions that still have equivalent Vulkan commands but should be abstracted away from user
 		void cmdBeginRenderingImpl();
 		void cmdEndRenderingImpl();
 
-		void cmdTransitionLayoutImpl(InternalTextureHandle source, VkImageLayout currentLayout, VkImageLayout newLayout, VkImageSubresourceRange range);
+		void cmdTransitionLayoutImpl(TextureHandle source, VkImageLayout currentLayout, VkImageLayout newLayout, VkImageSubresourceRange range);
 
-		void cmdCopyImageImpl(InternalTextureHandle source, InternalTextureHandle destination, VkExtent2D size);
-		void cmdBlitImageImpl(InternalTextureHandle source, InternalTextureHandle destination, VkExtent2D srcSize, VkExtent2D dstSize);
+		void cmdCopyImageImpl(TextureHandle source, TextureHandle destination, VkExtent2D size);
+		void cmdBlitImageImpl(TextureHandle source, TextureHandle destination, VkExtent2D srcSize, VkExtent2D dstSize);
 
 		void cmdSetViewportImpl(VkExtent2D extent2D);
 		void cmdSetScissorImpl(VkExtent2D extent2D);
 
-		void bufferBarrierImpl(InternalBufferHandle bufhandle, VkPipelineStageFlags2 srcStage, VkPipelineStageFlags2 dstStage);
+		void bufferBarrierImpl(BufferHandle bufhandle, VkPipelineStageFlags2 srcStage, VkPipelineStageFlags2 dstStage);
 
 		// helpers
 		PassSource::Type getCurrentPassType();
 		void CheckTextureRenderingUsage(const AllocatedTexture& source, const AllocatedTexture& destination, const char* operation);
-		void CheckImageLayoutAuto(InternalTextureHandle sourceHandle, InternalTextureHandle destinationHandle, const char* operation);
+		void CheckImageLayoutAuto(TextureHandle sourceHandle, TextureHandle destinationHandle, const char* operation);
 	private:
 		// pretty important members for communication to the rest of the renderer
 		CTX* _ctx = nullptr;
@@ -146,8 +159,8 @@ namespace mythril {
 		VkPipeline _lastBoundvkPipeline = VK_NULL_HANDLE;
 
 		// avoid lookup and store the common data
-		PipelineCommon* _currentPipelineCommon = nullptr;
-		std::variant<InternalGraphicsPipelineHandle, InternalComputePipelineHandle> _currentPipelineHandle;
+		SharedPipelineInfo* _currentPipelineInfo = nullptr;
+		std::variant<GraphicsPipelineHandle, ComputePipelineHandle> _currentPipelineHandle;
 		PassCompiled _activePass;
 
 		bool _isRendering = false; // cmdBeginRendering

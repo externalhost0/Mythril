@@ -7,7 +7,7 @@
 #include "CTX.h"
 
 namespace mythril {
-	static void CheckUpdateBindingCall(const PipelineCommon* pipeline, InternalBufferHandle bufHandle, const char* debugName) {
+	static void CheckUpdateBindingCall(const PipelineCoreData* pipeline, BufferHandle bufHandle, const char* debugName) {
 		ASSERT_MSG(pipeline, "You must call updateBinding within opening and submitting a DescriptorSetWriter!");
 		ASSERT_MSG(pipeline->_vkPipeline != VK_NULL_HANDLE, "Pipeline '{}' has not yet been resolved, pipeline was probably not included when compiling RenderGraph!", debugName);
 		ASSERT_MSG(bufHandle.valid(), "Handle must be for a valid buffer object!");
@@ -16,8 +16,8 @@ namespace mythril {
 	// less performant than just calling it by set and bind index but just way better for ease of use
 	// + lookup in unordered_map
 	// + repeated memory access for common data
-	void DescriptorSetWriter::updateBinding(mythril::InternalBufferHandle bufHandle, const char* name) {
-		const PipelineCommon* common = this->currentPipelineCommon;
+	void DescriptorSetWriter::updateBinding(mythril::BufferHandle bufHandle, const char* name) {
+		const PipelineCoreData* common = this->currentPipelineCommon;
 		CheckUpdateBindingCall(common, bufHandle, this->currentPipelineDebugName);
 
 		for (size_t i = 0; i < common->signature.setSignatures.size(); i++) {
@@ -31,8 +31,8 @@ namespace mythril {
 		ASSERT_MSG(false, "Variable name '{}' could not be found in pipeline '{}'!", name, this->currentPipelineDebugName);
 	}
 
-	void DescriptorSetWriter::updateBinding(InternalBufferHandle bufHandle, int set, int binding) {
-		const PipelineCommon* common = this->currentPipelineCommon;
+	void DescriptorSetWriter::updateBinding(BufferHandle bufHandle, int set, int binding) {
+		const PipelineCoreData* common = this->currentPipelineCommon;
 		CheckUpdateBindingCall(common, bufHandle, this->currentPipelineDebugName);
 
 		AllocatedBuffer* buf = _ctx->_bufferPool.get(bufHandle);

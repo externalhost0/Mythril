@@ -58,7 +58,7 @@ namespace mythril {
 		}
 		colorBlending.attachmentCount = blendAttachments.size();
 		colorBlending.pAttachments = blendAttachments.data();
-		std::fill(std::begin(colorBlending.blendConstants), std::end(colorBlending.blendConstants), 0.f);
+		std::ranges::fill(colorBlending.blendConstants, 0.f);
 		graphics_pipeline_ci.pColorBlendState = &colorBlending;
 
 		// ----- dynamic states ----- //

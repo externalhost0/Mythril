@@ -99,6 +99,7 @@ namespace mythril {
 		features13.subgroupSizeControl = true;
 		features13.computeFullSubgroups = true;
 		features13.maintenance4 = true;
+		features13.robustImageAccess = true;
 		//vulkan 1.2 features
 		VkPhysicalDeviceVulkan12Features features12 = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES };
 		features12.shaderInt8 = true;
@@ -145,17 +146,6 @@ namespace mythril {
 		vkb::Result<vkb::PhysicalDevice> physicalDeviceResult = physicalDeviceSelector
 				.set_minimum_version(1, 3)
 				.set_surface(inputs.vkSurface)
-				.add_required_extension(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME)
-				.add_required_extension(VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME)
-				.add_required_extension(VK_KHR_COPY_COMMANDS_2_EXTENSION_NAME)
-
-				.add_required_extension(VK_EXT_EXTENDED_DYNAMIC_STATE_EXTENSION_NAME)
-				.add_required_extension(VK_EXT_EXTENDED_DYNAMIC_STATE_2_EXTENSION_NAME)
-				.add_required_extension(VK_KHR_SHADER_NON_SEMANTIC_INFO_EXTENSION_NAME)
-				.add_required_extension(VK_EXT_IMAGE_ROBUSTNESS_EXTENSION_NAME)
-				.add_required_extension(VK_EXT_INLINE_UNIFORM_BLOCK_EXTENSION_NAME)
-				.add_required_extension(VK_EXT_SUBGROUP_SIZE_CONTROL_EXTENSION_NAME)
-				.add_required_extension(VK_EXT_TEXEL_BUFFER_ALIGNMENT_EXTENSION_NAME)
 
 				.add_required_extensions(additional_extensions)
 
@@ -171,22 +161,19 @@ namespace mythril {
 	static vkb::Device CreateVulkanLogicalDevice(const vkb::PhysicalDevice& vkbPhysicalDevice) {
 		ASSERT(vkbPhysicalDevice.physical_device != VK_NULL_HANDLE);
 
-		VkPhysicalDeviceExtendedDynamicStateFeaturesEXT dynamic_state_feature = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_FEATURES_EXT };
-		dynamic_state_feature.pNext = nullptr;
-		dynamic_state_feature.extendedDynamicState = VK_TRUE;
-
-		VkPhysicalDeviceExtendedDynamicState2FeaturesEXT dynamic_state_feature_2 = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_2_FEATURES_EXT };
-		dynamic_state_feature_2.pNext = nullptr;
-		dynamic_state_feature_2.extendedDynamicState2 = VK_TRUE;
+		VkPhysicalDeviceComputeShaderDerivativesFeaturesKHR compute_shader_derivatives = {
+			.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COMPUTE_SHADER_DERIVATIVES_FEATURES_KHR,
+			.computeDerivativeGroupQuads = VK_TRUE
+		};
 #ifdef VK_ENABLE_BETA_EXTENSIONS
-		VkPhysicalDevicePortabilitySubsetFeaturesKHR portability_subset_features = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PORTABILITY_SUBSET_FEATURES_KHR };
-		portability_subset_features.pNext = nullptr;
-		portability_subset_features.imageViewFormatSwizzle = VK_TRUE;
+		VkPhysicalDevicePortabilitySubsetFeaturesKHR portability_subset_features = {
+			.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PORTABILITY_SUBSET_FEATURES_KHR,
+			.imageViewFormatSwizzle = VK_TRUE
+		};
 #endif
 		vkb::DeviceBuilder logicalDeviceBuilder{vkbPhysicalDevice};
 		vkb::Result<vkb::Device> logicalDeviceResult = logicalDeviceBuilder
-				.add_pNext(&dynamic_state_feature)
-				.add_pNext(&dynamic_state_feature_2)
+				.add_pNext(&compute_shader_derivatives)
 #ifdef VK_ENABLE_BETA_EXTENSIONS
 				.add_pNext(&portability_subset_features)
 #endif
@@ -195,17 +182,6 @@ namespace mythril {
 		ASSERT_MSG(logicalDeviceResult.has_value(), "Failed to create Vulkan Logical Device. Error: {}", logicalDeviceResult.error().message());
 		vkb::Device vkb_device = logicalDeviceResult.value();
 		volkLoadDevice(logicalDeviceResult->device);
-		// alias KHR and EXT functions
-#if defined(__APPLE__)
-		vkCmdBeginRendering = vkCmdBeginRenderingKHR;
-		vkCmdEndRendering = vkCmdEndRenderingKHR;
-		vkCmdSetDepthWriteEnable = vkCmdSetDepthWriteEnableEXT;
-		vkCmdSetDepthTestEnable = vkCmdSetDepthTestEnableEXT;
-		vkCmdSetDepthCompareOp = vkCmdSetDepthCompareOpEXT;
-		vkCmdSetDepthBiasEnable = vkCmdSetDepthBiasEnableEXT;
-		vkCmdPipelineBarrier2 = vkCmdPipelineBarrier2KHR;
-		vkQueueSubmit2 = vkQueueSubmit2KHR;
-#endif
 		return vkb_device;
 	}
 	struct VulkanMemoryAllocatorInputs {
@@ -231,12 +207,14 @@ namespace mythril {
 		return vma_allocator;
 	}
 
-	struct VulkanQueueOutputs {
+	struct VulkanQueueOutputs
+	{
 		VkQueue vkGraphicsQueue = VK_NULL_HANDLE;
 		uint32_t graphicsQueueFamilyIndex = -1;
 		VkQueue vkPresentQueue = VK_NULL_HANDLE;
 		uint32_t presentQueueFamilyIndex = -1;
 	};
+
 	static VulkanQueueOutputs CreateVulkanQueues(const vkb::Device& vkb_device) {
 		// result
 		VulkanQueueOutputs output{};
@@ -304,7 +282,8 @@ namespace mythril {
 		VulkanQueueOutputs queue_output = CreateVulkanQueues(vkb_device);
 
 		// most of the setup we need to worry about is done in the constructor
-		auto ctx = std::make_unique<CTX>();
+		// the same thing as make_unique
+		auto ctx = std::unique_ptr<CTX>(new CTX());
 		// manually transfer the values to ctx
 		ctx->_vkInstance = vkb_instance.instance;
 		ctx->_vkDebugMessenger = vkb_instance.debug_messenger;

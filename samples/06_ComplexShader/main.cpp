@@ -82,7 +82,7 @@ const std::vector<uint32_t> cubeIndices = {
 		22, 23, 20
 };
 
-static glm::mat4 calculateViewMatrix(Camera camera) {
+static glm::mat4 calculateViewMatrix(const Camera &camera) {
 	return glm::lookAt(camera.position, camera.position + glm::vec3(0, 0, -1), glm::vec3(0, 1, 0));
 }
 static glm::mat4 calculateProjectionMatrix(Camera camera) {
@@ -395,35 +395,36 @@ int main() {
 	.with_ImGui()
 	.build();
 
-	VkExtent2D extent2D = ctx->getWindow().getFramebufferSize();
-	mythril::InternalTextureHandle colorTarget = ctx->createTexture({
-		.dimension = extent2D,
+	const VkExtent2D extent2D = ctx->getWindow().getFramebufferSize();
+	const mythril::Dimensions dims = {extent2D.width, extent2D.height, 1};
+	mythril::Texture colorTarget = ctx->createTexture({
+		.dimension = dims,
+		.format = VK_FORMAT_R8G8B8A8_UNORM,
 		.usage = mythril::TextureUsageBits::TextureUsageBits_Attachment | mythril::TextureUsageBits_Sampled,
 		.storage = mythril::StorageType::Device,
-		.format = VK_FORMAT_R8G8B8A8_UNORM,
 		.debugName = "Color Texture"
 	});
-	mythril::InternalTextureHandle finalColorTarget = ctx->createTexture({
-		.dimension = extent2D,
+	mythril::Texture finalColorTarget = ctx->createTexture({
+		.dimension = dims,
+		.format = VK_FORMAT_R8G8B8A8_UNORM,
 		.usage = mythril::TextureUsageBits::TextureUsageBits_Attachment,
 		.storage = mythril::StorageType::Device,
-		.format = VK_FORMAT_R8G8B8A8_UNORM,
 		.debugName = "Final Color Texture"
 	});
-	mythril::InternalTextureHandle depthTarget = ctx->createTexture({
-		.dimension = extent2D,
+	mythril::Texture depthTarget = ctx->createTexture({
+		.dimension = dims,
+		.format = VK_FORMAT_D32_SFLOAT_S8_UINT,
 		.samples = mythril::SampleCount::X1,
 		.usage = mythril::TextureUsageBits::TextureUsageBits_Attachment,
-		.format = VK_FORMAT_D32_SFLOAT_S8_UINT,
 		.debugName = "Depth Texture"
 	});
 
-	mythril::InternalShaderHandle standardShader = ctx->createShader({
+	mythril::Shader standardShader = ctx->createShader({
 		.filePath = "Marble.slang",
 		.debugName = "Example Shader"
 	});
 
-	mythril::InternalGraphicsPipelineHandle mainPipeline = ctx->createGraphicsPipeline({
+	mythril::GraphicsPipeline mainPipeline = ctx->createGraphicsPipeline({
 		.vertexShader = {standardShader},
 		.fragmentShader = {standardShader},
 		.topology = mythril::TopologyMode::TRIANGLE,
@@ -434,34 +435,34 @@ int main() {
 		.debugName = "Geometry Pipeline"
 	});
 
-	mythril::InternalBufferHandle cubeVertexBuffer = ctx->createBuffer({
+	mythril::Buffer cubeVertexBuffer = ctx->createBuffer({
 		.size = sizeof(GPU::Vertex) * cubeVertices.size(),
 		.usage = mythril::BufferUsageBits::BufferUsageBits_Storage,
 		.storage = mythril::StorageType::Device,
 		.initialData = cubeVertices.data(),
 		.debugName = "Cube Vertex Buffer"
 	});
-	mythril::InternalBufferHandle cubeIndexBuffer = ctx->createBuffer({
+	mythril::Buffer cubeIndexBuffer = ctx->createBuffer({
 		.size = sizeof(uint32_t) * cubeIndices.size(),
 		.usage = mythril::BufferUsageBits::BufferUsageBits_Index,
 		.storage = mythril::StorageType::Device,
 		.initialData = cubeIndices.data(),
 		.debugName = "Cube Index Buffer"
 	});
-	mythril::InternalBufferHandle perFrameDataBuffer = ctx->createBuffer({
+	mythril::Buffer perFrameDataBuffer = ctx->createBuffer({
 		.size = sizeof(GPU::GlobalData),
 		.usage = mythril::BufferUsageBits::BufferUsageBits_Uniform,
 		.storage = mythril::StorageType::Device,
 		.debugName = "PerFrameData Uniform Buffer"
 	});
-	mythril::InternalBufferHandle perMaterialDataBuffer = ctx->createBuffer({
+	mythril::Buffer perMaterialDataBuffer = ctx->createBuffer({
 		.size = sizeof(GPU::MaterialData),
 		.usage = mythril::BufferUsageBits::BufferUsageBits_Uniform,
 		.storage = mythril::StorageType::Device,
 		.debugName = "PerMaterialData Uniform Buffer"
 	});
 	constexpr unsigned int kNumObjects = 50;
-	mythril::InternalBufferHandle objectDataHandle = ctx->createBuffer({
+	mythril::Buffer objectDataBuf = ctx->createBuffer({
 		.size = sizeof(GPU::ObjectData) * kNumObjects,
 		.usage = mythril::BufferUsageBits::BufferUsageBits_Storage,
 		.storage = mythril::StorageType::Device,
@@ -472,13 +473,13 @@ int main() {
 	mythril::RenderGraph graph;
 	graph.addGraphicsPass("geometry")
 	.write({
-		.texture = colorTarget,
+		.texture = colorTarget.handle(),
 		.clearValue = {0.2f, 0.2f, 0.2f, 1.f},
 		.loadOp = mythril::LoadOperation::CLEAR,
 		.storeOp = mythril::StoreOperation::STORE
 	})
 	.write({
-		.texture = depthTarget,
+		.texture = depthTarget.handle(),
 		.clearValue = {1.f, 0},
 		.loadOp = mythril::LoadOperation::CLEAR
 	})
@@ -486,8 +487,8 @@ int main() {
 		cmd.cmdBeginRendering();
 		cmd.cmdBindGraphicsPipeline(mainPipeline);
 
-		auto currentTime = std::chrono::high_resolution_clock::now();
-		float time = std::chrono::duration<float>(currentTime - startTime).count();
+		const auto currentTime = std::chrono::high_resolution_clock::now();
+		const float time = std::chrono::duration<float>(currentTime - startTime).count();
 		// rotating cube!
 		glm::mat4 modelmatrix = glm::rotate(glm::mat4(1.0f), time, glm::vec3(0.0f, 1.0f, 0.0f));
 		modelmatrix = glm::rotate(modelmatrix, time * 0.5f, glm::vec3(1.0f, 0.0f, 0.0f));
@@ -503,7 +504,7 @@ int main() {
 
 		GPU::GeometryPushConstant push {
 			.model =  modelmatrix,
-			.vertexBufferAddress = ctx->gpuAddress(cubeVertexBuffer)
+			.vertexBufferAddress = cubeVertexBuffer.gpuAddress()
 		};
 		cmd.cmdPushConstants(push);
 		cmd.cmdBindIndexBuffer(cubeIndexBuffer);
@@ -513,7 +514,7 @@ int main() {
 
 	graph.addGraphicsPass("gui")
 	.write({
-		.texture = colorTarget,
+		.texture = colorTarget.handle(),
 		.loadOp = mythril::LoadOperation::LOAD,
 		.storeOp = mythril::StoreOperation::STORE
 	})
@@ -521,6 +522,9 @@ int main() {
 		cmd.cmdBeginRendering();
 		cmd.cmdDrawImGui();
 		cmd.cmdEndRendering();
+
+		cmd.cmdBlitImage(colorTarget.handle(), ctx->getCurrentSwapchainTexture());
+		cmd.cmdTransitionLayout(ctx->getCurrentSwapchainTexture(), VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
 	});
 
 	graph.compile(*ctx);
@@ -555,9 +559,10 @@ int main() {
 			const mythril::Window& window = ctx->getWindow();
 			// get framebuffer size for correct resolution, not windowsize which might not scale to your monitor dpi correctly
 			VkExtent2D new_extent_2d = window.getFramebufferSize();
-			ctx->resizeTexture(colorTarget, new_extent_2d);
-			ctx->resizeTexture(depthTarget, new_extent_2d);
-			ctx->resizeTexture(finalColorTarget, new_extent_2d);
+			mythril::Dimensions applied_dimensions = { new_extent_2d.width, new_extent_2d.height, 1};
+			colorTarget.resize(applied_dimensions);
+			depthTarget.resize(applied_dimensions);
+			finalColorTarget.resize(applied_dimensions);
 			// you must recompile your framegraph in order for it to recieve texture changes
 			graph.compile(*ctx);
 		}
@@ -565,7 +570,7 @@ int main() {
 		ImGui_ImplVulkan_NewFrame();
 		ImGui_ImplSDL3_NewFrame();
 		ImGui::NewFrame();
-		DrawShaderInfo(ctx->viewShader(standardShader));
+		DrawShaderInfo(standardShader.view());
 
 		ImGui::Begin("Cube Uniforms");
 		ImGui::Text("Original Shader design by 'nasana'.");
@@ -626,7 +631,7 @@ int main() {
 		// once again, getFramebufferSize is the actual resolution we render out
 		const VkExtent2D renderSize = ctx->getWindow().getFramebufferSize();
 		const GPU::GlobalData frameData {
-			.objects = ctx->gpuAddress(objectDataHandle),
+			.objects = objectDataBuf.gpuAddress(),
 			.camera = cameraData,
 			.renderResolution = { renderSize.width, renderSize.height },
 			.time = time
@@ -636,7 +641,7 @@ int main() {
 		mythril::CommandBuffer& cmd = ctx->openCommand(mythril::CommandBuffer::Type::Graphics);
 		
 		// buffer updating must be done before rendering
-		cmd.cmdUpdateBuffer(objectDataHandle, objects);
+		cmd.cmdUpdateBuffer(objectDataBuf, objects);
 		cmd.cmdUpdateBuffer(perFrameDataBuffer, frameData);
 		cmd.cmdUpdateBuffer(perMaterialDataBuffer, matData);
 

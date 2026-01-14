@@ -162,7 +162,7 @@ namespace mythril {
 				.signalSemaphoreInfoCount = numSignalSemaphores,
 				.pSignalSemaphoreInfos = signalSemaphores,
 		};
-		VK_CHECK(vkQueueSubmit2KHR(_vkQueue, 1u, &si, wrapper._fence));
+		VK_CHECK(vkQueueSubmit2(_vkQueue, 1u, &si, wrapper._fence));
 
 		_lastSubmitSemaphore.semaphore = wrapper._semaphore;
 		_lastSubmitHandle = wrapper._handle;

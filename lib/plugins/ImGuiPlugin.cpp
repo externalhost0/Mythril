@@ -78,7 +78,7 @@ namespace mythril {
 		// to pull in ctx to use in aliased functions
 		auto* data = new MyUserData {
 			.ctx = &ctx,
-			.sampler = _ctx->_samplerPool.get(_ctx->_dummyLinearSamplerHandle)->getSampler(),
+			.sampler = _ctx->_samplerPool.get(_ctx->_dummyLinearSampler.handle())->getSampler(),
 			.handleMap = {}
 		};
 		ImGui::GetIO().UserData = data;

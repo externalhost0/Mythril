@@ -160,12 +160,40 @@ struct CameraData
     float3 position;
     float far;
     float near;
+
+    float3 getRight() {
+        // Row 0 of view matrix
+        return normalize(float3(
+            view._11,
+            view._12,
+            view._13
+        ));
+    }
+
+    float3 getUp() {
+        // Row 1 of view matrix
+        return normalize(float3(
+            view._21,
+            view._22,
+            view._23
+        ));
+    }
+
+    float3 getForward() {
+        // Camera looks down -Z
+        return normalize(-float3(
+            view._31,
+            view._32,
+            view._33
+        ));
+    }
 };
 
 struct FrameData
 {
     CameraData camera;
     LightingData lighting;
+    float time;
     int one;
 };
 

@@ -15,7 +15,7 @@
 namespace mythril {
 	class CTX;
 
-	struct AllocatedSampler {
+	class AllocatedSampler {
 	public:
 		[[nodiscard]] inline VkSampler getSampler() const { return _vkSampler; }
 
@@ -27,11 +27,8 @@ namespace mythril {
 		friend class CTX;
 	};
 
-	struct AllocatedTexture {
+	class AllocatedTexture {
 	public:
-		void generateMipmap(VkCommandBuffer cmd);
-		void transitionLayout(VkCommandBuffer cmd, VkImageLayout newImageLayout, const VkImageSubresourceRange &subresourceRange);
-
 		[[nodiscard]] bool isSampledImage() const { return (_vkUsageFlags & VK_IMAGE_USAGE_SAMPLED_BIT) > 0; }
 		[[nodiscard]] bool isStorageImage() const { return (_vkUsageFlags & VK_IMAGE_USAGE_STORAGE_BIT) > 0; }
 		[[nodiscard]] bool isColorAttachment() const { return (_vkUsageFlags & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) > 0; }
@@ -44,7 +41,6 @@ namespace mythril {
 		[[nodiscard]] VkSampleCountFlagBits getSampleCount() const { return _vkSampleCountFlagBits; }
 		[[nodiscard]] VkImageType getType() const { return _vkImageType; }
 		[[nodiscard]] VkImageLayout getImageLayout() const { return _vkCurrentImageLayout; }
-		[[nodiscard]] VkExtent2D getExtentAs2D() const { return {_vkExtent.width, _vkExtent.height}; }
 		[[nodiscard]] Dimensions getDimensions() const { return {_vkExtent.width, _vkExtent.height, _vkExtent.depth}; }
 		[[nodiscard]] VkImageAspectFlags getImageAspectFlags() const { return vkutil::AspectMaskFromFormat(_vkFormat); }
 
@@ -54,6 +50,21 @@ namespace mythril {
 		[[nodiscard]] VkFormat getFormat() const { return _vkFormat; }
 
 		[[nodiscard]] std::string_view getDebugName() const { return _debugName; }
+	private:
+		// general helper
+		VkExtent2D getExtentAs2D() const { return {_vkExtent.width, _vkExtent.height}; }
+		VkImageView createTextureView(
+			VkDevice vk_device,
+			VkImageViewType type,
+			VkFormat format,
+			uint32_t baseLevel,
+			uint32_t numLevels,
+			uint32_t baseLayer,
+			uint32_t numLayers,
+			VkComponentMapping componentMapping);
+
+		void generateMipmap(VkCommandBuffer cmd);
+		void transitionLayout(VkCommandBuffer cmd, VkImageLayout newImageLayout, const VkImageSubresourceRange &subresourceRange);
 	private:
 		VkImage _vkImage = VK_NULL_HANDLE;
 		VkImageView _vkImageView = VK_NULL_HANDLE;
@@ -88,12 +99,8 @@ namespace mythril {
 		friend class RenderGraph;
 	};
 
-	struct AllocatedBuffer {
+	class AllocatedBuffer {
 	public:
-		void bufferSubData(const CTX &ctx, size_t offset, size_t size, const void *data);
-		void getBufferSubData(const CTX &ctx, size_t offset, size_t size, void *data);
-		void flushMappedMemory(const CTX &ctx, VkDeviceSize offset, VkDeviceSize size) const;
-		void invalidateMappedMemory(const CTX &ctx, VkDeviceSize offset, VkDeviceSize size) const;
 
 		[[nodiscard]] bool isMapped() const { return _mappedPtr != nullptr; }
 		[[nodiscard]] uint8_t* getMappedPtr() const { return static_cast<uint8_t* >(_mappedPtr); }
@@ -102,6 +109,11 @@ namespace mythril {
 
 		[[nodiscard]] std::string_view getDebugName() const { return _debugName; }
 	private:
+		void bufferSubData(const CTX &ctx, size_t offset, size_t size, const void *data);
+		void getBufferSubData(const CTX &ctx, size_t offset, size_t size, void *data);
+		void flushMappedMemory(const CTX &ctx, VkDeviceSize offset, VkDeviceSize size) const;
+		void invalidateMappedMemory(const CTX &ctx, VkDeviceSize offset, VkDeviceSize size) const;
+
 		VkBuffer _vkBuffer = VK_NULL_HANDLE;
 		VkDeviceMemory _vkMemory = VK_NULL_HANDLE;
 		VmaAllocation _vmaAllocation = VK_NULL_HANDLE;
@@ -119,5 +131,6 @@ namespace mythril {
 		friend class CommandBuffer;
 		friend class StagingDevice;
 		friend class DescriptorSetWriter;
+		friend class Buffer;
 	};
 }

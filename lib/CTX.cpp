@@ -10,6 +10,7 @@
 #include "Pipelines.h"
 #include "mythril/CTXBuilder.h"
 #include "Plugins.h"
+#include "mythril/Objects.h"
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
@@ -85,31 +86,31 @@ namespace mythril {
 		return true;
 	}
 
-	DescriptorSetWriter CTX::openUpdateImpl(PipelineCommon* common, const char* debugName) {
+	DescriptorSetWriter CTX::openUpdateImpl(PipelineCoreData* common, std::string_view debugName) {
 		ASSERT_MSG(common, "Handle is invalid/empty!");
 		DescriptorSetWriter updater(*this);
 		ASSERT_MSG(!common->_managedDescriptorSets.empty(),
 				   "Pipeline '{}' has no managed desriptor sets, therefore attempts to open a DescriptorSetWriter are disallowed!\n\t This error might also occur because you don't use the pipeline during rendering!",
 				   debugName);
 		updater.currentPipelineCommon = common;
-		updater.currentPipelineDebugName = debugName;
+		updater.currentPipelineDebugName = debugName.data();
 		return updater;
 	}
-	DescriptorSetWriter CTX::openDescriptorUpdate(InternalGraphicsPipelineHandle handle) {
+	DescriptorSetWriter CTX::openDescriptorUpdate(GraphicsPipelineHandle handle) {
 		AllocatedGraphicsPipeline* pipeline = _graphicsPipelinePool.get(handle);
-		if (!pipeline->_common._vkPipelineLayout) {
-			LOG_SYSTEM(LogType::Error, "Pipeline '{}' has not been resolved, will do it now.", pipeline->_debugName);
+		if (!pipeline->_shared.core._vkPipelineLayout) {
+			LOG_SYSTEM(LogType::Error, "Pipeline '{}' has not been resolved, will do it now.", pipeline->getDebugName());
 			this->resolveGraphicsPipelineImpl(*pipeline);
 		}
-		return openUpdateImpl(&pipeline->_common, pipeline->_debugName);
+		return openUpdateImpl(&pipeline->_shared.core, pipeline->getDebugName());
 	}
-	DescriptorSetWriter CTX::openDescriptorUpdate(InternalComputePipelineHandle handle) {
+	DescriptorSetWriter CTX::openDescriptorUpdate(ComputePipelineHandle handle) {
 		AllocatedComputePipeline* pipeline = _computePipelinePool.get(handle);
-		if (!pipeline->_common._vkPipelineLayout) {
-			LOG_SYSTEM(LogType::Error, "Pipeline '{}' has not been resolved, will do it now.", pipeline->_debugName);
+		if (!pipeline->_shared.core._vkPipelineLayout) {
+			LOG_SYSTEM(LogType::Error, "Pipeline '{}' has not been resolved, will do it now.", pipeline->getDebugName());
 			this->resolveComputePipelineImpl(*pipeline);
 		}
-		return openUpdateImpl(&pipeline->_common, pipeline->_debugName);
+		return openUpdateImpl(&pipeline->_shared.core, pipeline->getDebugName());
 	}
 	void CTX::submitDescriptorUpdate(DescriptorSetWriter &updater) {
 		updater.writer.updateSets(_vkDevice);
@@ -138,33 +139,32 @@ namespace mythril {
 				}
 			}
 			// now take the pattern and create the first texture, the default and fallback texture for missing textures
-			this->_dummyTextureHandle = this->createTexture({
+			this->_dummyTexture = this->createTexture({
 				.dimension = {texWidth, texHeight},
-				.usage = TextureUsageBits::TextureUsageBits_Sampled | TextureUsageBits::TextureUsageBits_Storage,
 				.format = VK_FORMAT_R8G8B8A8_UNORM,
+				.usage = TextureUsageBits::TextureUsageBits_Sampled | TextureUsageBits::TextureUsageBits_Storage,
 				.initialData = pixels.data(),
 				.debugName = "Dummy Texture"
 			});
-			this->_dummyLinearSamplerHandle = this->createSampler({
+			this->_dummyLinearSampler = this->createSampler({
 				.magFilter = SamplerFilter::Linear,
 				.minFilter = SamplerFilter::Linear,
-				.wrapU = SamplerWrap::Clamp,
-				.wrapV = SamplerWrap::Clamp,
-				.wrapW = SamplerWrap::Clamp,
+				.wrapU = SamplerWrap::ClampEdge,
+				.wrapV = SamplerWrap::ClampEdge,
+				.wrapW = SamplerWrap::ClampEdge,
 				.debugName = "Linear Sampler"
 			});
 
 			// swapchain must be built after default texture has been made
 			// or else the fallback texture is the swapchain's texture
-			VkExtent2D framebufferSize = this->getWindow().getFramebufferSize();
+			const VkExtent2D framebufferSize = this->getWindow().getFramebufferSize();
 			SwapchainArgs swapchain_args = args;
 			swapchain_args.width = framebufferSize.width;
 			swapchain_args.height = framebufferSize.height;
 
 			this->_swapchain = std::make_unique<Swapchain>(*this, swapchain_args);
 			// timeline semaphore is closely kept to vulkan swapchain
-			this->_timelineSemaphore = vkutil::CreateTimelineSemaphore(this->_vkDevice,
-																	   this->_swapchain->getNumOfSwapchainImages() - 1);
+			this->_timelineSemaphore = vkutil::CreateTimelineSemaphore(this->_vkDevice, this->_swapchain->getNumOfSwapchainImages() - 1);
 			this->growBindlessDescriptorPoolImpl(this->_currentMaxTextureCount, this->_currentMaxSamplerCount);
 
 			// i think these are reasonable defaults
@@ -192,8 +192,8 @@ namespace mythril {
 		this->_staging.reset(nullptr);
 		this->_swapchain.reset(nullptr);
 		vkDestroySemaphore(_vkDevice, _timelineSemaphore, nullptr);
-		destroy(this->_dummyTextureHandle);
-		destroy(this->_dummyLinearSamplerHandle);
+		this->_dummyTexture.release();
+		this->_dummyLinearSampler.release();
 
 		// TODO::fixing the allocation not being proerly freed for VMA
 		if (_shaderPool.numObjects()) {
@@ -488,7 +488,7 @@ namespace mythril {
 //				VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kUniformBuffer, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, newMaxTextureCount, stage_flags, nullptr),
 //				VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kStorageBuffer, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, newMaxTextureCount, stage_flags, nullptr),
 		};
-		const uint32_t dsbinding_flags =
+		constexpr uint32_t dsbinding_flags =
 				VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT |
 				VK_DESCRIPTOR_BINDING_UPDATE_UNUSED_WHILE_PENDING_BIT |
 				VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT;
@@ -538,7 +538,8 @@ namespace mythril {
 		VK_CHECK(vkAllocateDescriptorSets(_vkDevice, &ds_ai, &_vkBindlessDSet));
 		_awaitingNewImmutableSamplers = false;
 	}
-	VkDeviceAddress CTX::gpuAddress(InternalBufferHandle handle, size_t offset) {
+
+	VkDeviceAddress CTX::gpuAddress(BufferHandle handle, size_t offset) {
 		const AllocatedBuffer* buf = _bufferPool.get(handle);
 		ASSERT_MSG(buf && buf->_vkDeviceAddress, "Buffer doesnt have a valid device address!");
 		return buf->_vkDeviceAddress + offset;
@@ -735,13 +736,13 @@ namespace mythril {
 		return bundle;
 	}
 
-	PipelineCommon CTX::buildPipelineCommonDataExceptVkPipelineImpl(const PipelineLayoutSignature& signature) {
+	PipelineCoreData CTX::buildPipelineCommonDataExceptVkPipelineImpl(const PipelineLayoutSignature& signature) {
 		const LayoutBuildResult result = this->buildDescriptorResultFromSignature(signature);
 		VkPipelineLayout vk_pipeline_layout = BuildPipelineLayout(this->_vkDevice, result.allLayouts, signature.pushes);
 		const std::vector<VkDescriptorSet> vk_descriptor_sets = this->allocateDescriptorSets(result.allocatableLayouts);
 
 		// return value
-		PipelineCommon common;
+		PipelineCoreData common;
 		common._vkPipelineLayout = vk_pipeline_layout;
 		common.signature = signature;
 
@@ -808,9 +809,9 @@ namespace mythril {
 
 		// resolvement &
 		// assignment
-		PipelineCommon common = this->buildPipelineCommonDataExceptVkPipelineImpl(shader->_pipelineSignature);
-		pipeline._common = common;
-		pipeline._common._vkPipeline = this->buildComputePipelineImpl(common._vkPipelineLayout, spec);
+		PipelineCoreData common = this->buildPipelineCommonDataExceptVkPipelineImpl(shader->_pipelineSignature);
+		pipeline._shared.core = common;
+		pipeline._shared.core._vkPipeline = this->buildComputePipelineImpl(common._vkPipelineLayout, spec);
 		// good to go, maybe later you could return it
 	}
 
@@ -901,13 +902,13 @@ namespace mythril {
 
 		const PipelineLayoutSignature merged_pl_signature = MergeSignatures(pipeline_layout_signatures);
 
-		PipelineCommon common = buildPipelineCommonDataExceptVkPipelineImpl(merged_pl_signature);
-		pipeline._common = common;
-		pipeline._common._vkPipeline = builder.build(_vkDevice, common._vkPipelineLayout);
+		PipelineCoreData common = buildPipelineCommonDataExceptVkPipelineImpl(merged_pl_signature);
+		pipeline._shared.core = common;
+		pipeline._shared.core._vkPipeline = builder.build(_vkDevice, common._vkPipelineLayout);
 		// good to go, maybe later you could return it
 	}
 
-	InternalSamplerHandle CTX::createSampler(SamplerSpec spec) {
+	Sampler CTX::createSampler(SamplerSpec spec) {
 		// creating sampler requires little work so we dont need an _Impl function for it
 		VkSamplerCreateInfo info = {
 				.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
@@ -950,13 +951,12 @@ namespace mythril {
 
 		AllocatedSampler obj = {};
 		vkCreateSampler(_vkDevice, &info, nullptr, &obj._vkSampler);
-		snprintf(obj._debugName, sizeof(obj._debugName) - 1, "%s", spec.debugName);
-		obj._debugName[sizeof(obj._debugName) - 1] = '\0';
-		InternalSamplerHandle handle = _samplerPool.create(std::move(obj));
+		snprintf(obj._debugName, sizeof(obj._debugName), "%s", spec.debugName);
+		SamplerHandle handle = _samplerPool.create(std::move(obj));
 		_awaitingCreation = true;
-		return {handle};
+		return {this, handle};
 	}
-	InternalBufferHandle CTX::createBuffer(BufferSpec spec) {
+	Buffer CTX::createBuffer(BufferSpec spec) {
 		VkBufferUsageFlags usage_flags = (spec.storage == StorageType::Device) ? VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT : 0;
 
 		if (spec.usage & BufferUsageBits::BufferUsageBits_Index)
@@ -972,15 +972,14 @@ namespace mythril {
 		const VkMemoryPropertyFlags mem_flags = StorageTypeToVkMemoryPropertyFlags(spec.storage);
 
 		AllocatedBuffer obj = this->createBufferImpl(spec.size, usage_flags, mem_flags);
-		snprintf(obj._debugName, sizeof(obj._debugName) - 1, "%s", spec.debugName);
-		obj._debugName[sizeof(obj._debugName) - 1] = '\0';
+		snprintf(obj._debugName, sizeof(obj._debugName), "%s", spec.debugName);
 		vmaSetAllocationName(_vmaAllocator, obj._vmaAllocation, obj._debugName);
-		InternalBufferHandle handle = _bufferPool.create(std::move(obj));
+		BufferHandle handle = _bufferPool.create(std::move(obj));
 		if (spec.initialData) {
 			upload(handle, spec.initialData, spec.size);
 		}
 		_awaitingCreation = true;
-		return {handle};
+		return {this, handle};
 	}
 	AllocatedBuffer CTX::createBufferImpl(VkDeviceSize bufferSize, VkBufferUsageFlags usageFlags, VkMemoryPropertyFlags memFlags) {
 		ASSERT_MSG(bufferSize > 0, "Buffer size needs to be greater than 0!");
@@ -1043,7 +1042,7 @@ namespace mythril {
 		return buf;
 	}
 
-	void CTX::resizeTexture(InternalTextureHandle handle, VkExtent2D newExtent) {
+	void CTX::resizeTexture(TextureHandle handle, Dimensions newDimensions) {
 		AllocatedTexture* image = _texturePool.get(handle);
 		if (!image) {
 			LOG_SYSTEM(LogType::Warning, "'resizeTexture' ");
@@ -1075,7 +1074,7 @@ namespace mythril {
 			createFlags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
 		}
 
-		VkExtent3D extent3D = { newExtent.width, newExtent.height, 1 };
+		VkExtent3D extent3D = { newDimensions.width, newDimensions.height, newDimensions.depth };
 
 		AllocatedTexture newImage = this->createTextureImpl(
 				image->_vkUsageFlags,
@@ -1105,7 +1104,7 @@ namespace mythril {
 		image->_mappedPtr = newImage._mappedPtr;
 	}
 
-	InternalTextureHandle CTX::createTexture(TextureSpec spec) {
+	Texture CTX::createTexture(TextureSpec spec) {
 		ASSERT_MSG(spec.usage, "You must set the usage field on a TextureSpec!");
 		ASSERT_MSG(!(spec.generateMipmaps && spec.initialData == nullptr), "'generateMipMaps' can only be true when 'initialData' is non-null!");
 		// resolve usage flags
@@ -1142,7 +1141,7 @@ namespace mythril {
 		// resolve memory flags
 		const VkMemoryPropertyFlags mem_flags = StorageTypeToVkMemoryPropertyFlags(spec.storage);
 		// resolve extent3D
-		VkExtent3D extent3D = { spec.dimension.width, spec.dimension.height, 1};
+		VkExtent3D extent3D = { spec.dimension.width, spec.dimension.height, spec.dimension.depth };
 
 		// resolve actions based on texture type
 		uint32_t _numLayers = spec.numLayers;
@@ -1171,9 +1170,9 @@ namespace mythril {
 		// members that are only needed for recreation
 		obj._vkMemoryPropertyFlags = mem_flags;
 		obj._vkImageViewType = _imageviewtype;
-		snprintf(obj._debugName, sizeof(obj._debugName) - 1, "%s", spec.debugName);
+		snprintf(obj._debugName, sizeof(obj._debugName), "%s", spec.debugName);
 		vmaSetAllocationName(_vmaAllocator, obj._vmaAllocation, obj._debugName);
-		InternalTextureHandle handle = _texturePool.create(std::move(obj));
+		TextureHandle handle = _texturePool.create(std::move(obj));
 		// if we have some data we want to upload, do that
 		_awaitingCreation = true;
 		if (spec.initialData) {
@@ -1190,17 +1189,22 @@ namespace mythril {
 				this->generateMipmaps(handle);
 			}
 		}
-		return {handle};
+		return {this, handle};
 	}
 	// todo: review this, as it seems alot of the data can simply be read straight from the copy instead of being resolved again
 	// https://github.com/corporateshark/lightweightvk/blob/master/lvk/vulkan/VulkanClasses.cpp#L4351
-	InternalTextureHandle CTX::createTextureView(InternalTextureHandle handle, TextureViewSpec spec) {
+	TextureHandle CTX::createTextureView(TextureHandle handle, TextureViewSpec spec) {
 		if (!handle.valid()) {
 			LOG_SYSTEM(LogType::Warning, "Texture handle is empty!");
 			return {};
 		}
 		// make a copy of the allocated texture object
 		AllocatedTexture copied_obj = *this->_texturePool.get(handle);
+		ASSERT_MSG(copied_obj._numLevels > spec.mipLevel, "baseMipLevel must be less then mipLevels of the original texture!");
+		if (spec.numMipLevels != VK_REMAINING_MIP_LEVELS) {
+			ASSERT_MSG(copied_obj._numLevels >= (spec.mipLevel + spec.numMipLevels),
+			           "Requested mipLevel+numMipLevels exceeds the number of mipLevels of the original texture!");
+		}
 		// very important!
 		copied_obj._isOwning = false;
 		const VkImageAspectFlags texture_aspect_flags = copied_obj.getImageAspectFlags();
@@ -1233,8 +1237,8 @@ namespace mythril {
 			}
 		}
 
-		snprintf(copied_obj._debugName, sizeof(copied_obj._debugName) - 1, "%s", spec.debugName);
-		InternalTextureHandle new_handle = this->_texturePool.create(std::move(copied_obj));
+		snprintf(copied_obj._debugName, sizeof(copied_obj._debugName), "%s", spec.debugName);
+		TextureHandle new_handle = this->_texturePool.create(std::move(copied_obj));
 		this->_awaitingCreation = true;
 		return {new_handle};
 	}
@@ -1341,36 +1345,36 @@ namespace mythril {
 		return obj;
 	}
 
-	InternalGraphicsPipelineHandle CTX::createGraphicsPipeline(GraphicsPipelineSpec spec) {
+	GraphicsPipeline CTX::createGraphicsPipeline(const GraphicsPipelineSpec& spec) {
 		// all creating a pipeline does is assign the spec to it
 		// actual construction was done upon first use (lazily)
 		// now its done when compile is called && has been by a dryRun,
 		// if that fails then we do compile on first actual use
 		AllocatedGraphicsPipeline obj = {};
 		obj._spec = spec;
-		snprintf(obj._debugName, sizeof(obj._debugName) - 1, "%s", spec.debugName);
-		InternalGraphicsPipelineHandle handle = _graphicsPipelinePool.create(std::move(obj));
-		return handle;
+		snprintf(obj._shared.debugName, sizeof(obj._shared.debugName), "%s", spec.debugName);
+		GraphicsPipelineHandle handle = _graphicsPipelinePool.create(std::move(obj));
+		return {this, handle};
 	}
-	InternalComputePipelineHandle CTX::createComputePipeline(ComputePipelineSpec spec) {
+	ComputePipeline CTX::createComputePipeline(const ComputePipelineSpec& spec) {
 		AllocatedComputePipeline obj = {};
 		obj._spec = spec;
-		snprintf(obj._debugName, sizeof(obj._debugName) - 1, "%s", spec.debugName);
-		InternalComputePipelineHandle handle = _computePipelinePool.create(std::move(obj));
-		return handle;
+		snprintf(obj._shared.debugName, sizeof(obj._shared.debugName), "%s", spec.debugName);
+		ComputePipelineHandle handle = _computePipelinePool.create(std::move(obj));
+		return {this, handle};
 	}
 
-	InternalShaderHandle CTX::createShader(ShaderSpec spec) {
-		ASSERT_MSG(exists(spec.filePath), "Shader filepath '{}' does not exist.", spec.filePath.string());
+	Shader CTX::createShader(const ShaderSpec& spec) {
+		ASSERT_MSG(std::filesystem::exists(spec.filePath), "Shader filepath '{}' does not exist.", spec.filePath.string());
 		// lazily create slang session & slang global session
 		if (!_slangCompiler.sessionExists()) {
 			_slangCompiler.create();
 		}
 		// TODO: this is some of the worst code i have ever written in my life, i am so sorry future me who will come back here and have to clean it
 		// thank you past me you were right but now it should be alot better
-		AllocatedShader obj;
+		AllocatedShader obj{};
 		// _debugName
-		snprintf(obj._debugName, sizeof(obj._debugName) - 1, "%s", spec.debugName);
+		snprintf(obj._debugName, sizeof(obj._debugName), "%s", spec.debugName);
 
 		CompileResult compile_result = _slangCompiler.compileFile(spec.filePath);
 		ReflectionResult reflection_result = ReflectSPIRV(compile_result.getSpirvCode(), compile_result.getSpirvSize());
@@ -1390,11 +1394,13 @@ namespace mythril {
 		VK_CHECK(vkCreateShaderModule(_vkDevice, &create_info, nullptr, &shaderModule));
 		obj.vkShaderModule = shaderModule;
 
-		return _shaderPool.create(std::move(obj));
+		ShaderHandle handle = _shaderPool.create(std::move(obj));
+
+		return {this, handle};
 	}
 
 	// functions that wrap around existing functions for AllocatedObjects
-	void CTX::transitionLayout(InternalTextureHandle handle, VkImageLayout newLayout, VkImageSubresourceRange range) {
+	void CTX::transitionLayout(TextureHandle handle, VkImageLayout newLayout, VkImageSubresourceRange range) {
 		if (handle.empty()) {
 			LOG_SYSTEM(LogType::Warning, "Transition layout with empty handle!");
 			return;
@@ -1404,7 +1410,7 @@ namespace mythril {
 		image->transitionLayout(wrapper._cmdBuf, newLayout, range);
 		_imm->submit(wrapper);
 	}
-	void CTX::generateMipmaps(InternalTextureHandle handle) {
+	void CTX::generateMipmaps(TextureHandle handle) {
 		if (handle.empty()) {
 			LOG_SYSTEM(LogType::Warning, "Generate mipmap with empty handle!");
 			return;
@@ -1419,7 +1425,7 @@ namespace mythril {
 		image->generateMipmap(wrapper._cmdBuf);
 		_imm->submit(wrapper);
 	}
-	void CTX::upload(InternalBufferHandle handle, const void* data, size_t size, size_t offset) {
+	void CTX::upload(BufferHandle handle, const void* data, size_t size, size_t offset) {
 		if (!data) {
 			LOG_SYSTEM(LogType::Warning, "Attempting to upload data which is null!");
 			return;
@@ -1434,7 +1440,7 @@ namespace mythril {
 		}
 		_staging->bufferSubData(*buffer, offset, size, data);
 	}
-	void CTX::download(InternalBufferHandle handle, void* data, size_t size, size_t offset) {
+	void CTX::download(BufferHandle handle, void* data, size_t size, size_t offset) {
 		if (!data) {
 			LOG_SYSTEM(LogType::Warning, "Data is null");
 			return;
@@ -1451,7 +1457,7 @@ namespace mythril {
 		}
 		buffer->getBufferSubData(*this, offset, size, data);
 	}
-	void CTX::upload(InternalTextureHandle handle, const void* data, const TexRange& range) {
+	void CTX::upload(TextureHandle handle, const void* data, const TexRange& range) {
 		if (!data) {
 			LOG_SYSTEM(LogType::Warning, "Attempting to upload data which is null!");
 			return;
@@ -1477,7 +1483,7 @@ namespace mythril {
 			_staging->imageData2D(*image, image_region, range.mipLevel, range.numMipLevels, range.layer, range.numLayers, image->_vkFormat, data);
 		}
 	}
-	void CTX::download(InternalTextureHandle handle, void* data, const TexRange &range) {
+	void CTX::download(TextureHandle handle, void* data, const TexRange &range) {
 		if (!data) {
 			LOG_SYSTEM(LogType::Warning, "Data is null.");
 			return;
@@ -1535,7 +1541,7 @@ namespace mythril {
 		return handle;
 	}
 
-	void CTX::destroy(InternalBufferHandle handle) {
+	void CTX::destroy(BufferHandle handle) {
 		AllocatedBuffer* buf = _bufferPool.get(handle);
 		if (!buf) {
 			return;
@@ -1548,7 +1554,7 @@ namespace mythril {
 		}));
 		_bufferPool.destroy(handle);
 	}
-	void CTX::destroy(InternalTextureHandle handle) {
+	void CTX::destroy(TextureHandle handle) {
 		AllocatedTexture* image = _texturePool.get(handle);
 		if (!image) {
 			return;
@@ -1573,14 +1579,14 @@ namespace mythril {
 		_texturePool.destroy(handle);
 		_awaitingCreation = true;
 	}
-	void CTX::destroy(InternalSamplerHandle handle) {
+	void CTX::destroy(SamplerHandle handle) {
 		AllocatedSampler* sampler = _samplerPool.get(handle);
 		deferTask(std::packaged_task<void()>([device = _vkDevice, sampler = sampler->_vkSampler]() {
 			vkDestroySampler(device, sampler, nullptr);
 		}));
 		_samplerPool.destroy(handle);
 	}
-	void CTX::destroy(InternalShaderHandle handle) {
+	void CTX::destroy(ShaderHandle handle) {
 		AllocatedShader* shader = _shaderPool.get(handle);
 		deferTask(std::packaged_task<void()>([device = _vkDevice, module = shader->vkShaderModule]() {
 			vkDestroyShaderModule(device, module, nullptr);
@@ -1588,38 +1594,38 @@ namespace mythril {
 		_shaderPool.destroy(handle);
 	}
 
-	void CTX::destroy(InternalGraphicsPipelineHandle handle) {
+	void CTX::destroy(GraphicsPipelineHandle handle) {
 		AllocatedGraphicsPipeline* graphics_pipeline = _graphicsPipelinePool.get(handle);
 		if (!graphics_pipeline) return;
-		PipelineCommon& common = graphics_pipeline->_common;
+		PipelineCoreData& core = graphics_pipeline->_shared.core;
 		// we only destroy managed descriptor sets because other descriptor sets,
 		// namely the bindless one is something that is still in use by other pipelines
-		deferTask(std::packaged_task<void()>([device = _vkDevice, managedlayouts = common._managedDescriptorSets]() {
+		deferTask(std::packaged_task<void()>([device = _vkDevice, managedlayouts = core._managedDescriptorSets]() {
 			for (const auto& managedlayout : managedlayouts) {
 				vkDestroyDescriptorSetLayout(device, managedlayout.vkDescriptorSetLayout, nullptr);
 			}
 		}));
-		deferTask(std::packaged_task<void()>([device = _vkDevice, pipeline = common._vkPipeline]() {
+		deferTask(std::packaged_task<void()>([device = _vkDevice, pipeline = core._vkPipeline]() {
 			vkDestroyPipeline(device, pipeline, nullptr);
 		}));
-		deferTask(std::packaged_task<void()>([device = _vkDevice, layout = common._vkPipelineLayout]() {
+		deferTask(std::packaged_task<void()>([device = _vkDevice, layout = core._vkPipelineLayout]() {
 			vkDestroyPipelineLayout(device, layout, nullptr);
 		}));
 		_graphicsPipelinePool.destroy(handle);
 	}
-	void CTX::destroy(InternalComputePipelineHandle handle) {
+	void CTX::destroy(ComputePipelineHandle handle) {
 		AllocatedComputePipeline* compute_pipeline = _computePipelinePool.get(handle);
 		if (!compute_pipeline) return;
-		PipelineCommon& common = compute_pipeline->_common;
-		deferTask(std::packaged_task<void()>([device = _vkDevice, managedlayouts = common._managedDescriptorSets]() {
+		PipelineCoreData& core = compute_pipeline->_shared.core;
+		deferTask(std::packaged_task<void()>([device = _vkDevice, managedlayouts = core._managedDescriptorSets]() {
 			for (const auto& managedlayout : managedlayouts) {
 				vkDestroyDescriptorSetLayout(device, managedlayout.vkDescriptorSetLayout, nullptr);
 			}
 		}));
-		deferTask(std::packaged_task<void()>([device = _vkDevice, pipeline = common._vkPipeline]() {
+		deferTask(std::packaged_task<void()>([device = _vkDevice, pipeline = core._vkPipeline]() {
 			vkDestroyPipeline(device, pipeline, nullptr);
 		}));
-		deferTask(std::packaged_task<void()>([device = _vkDevice, layout = common._vkPipelineLayout]() {
+		deferTask(std::packaged_task<void()>([device = _vkDevice, layout = core._vkPipelineLayout]() {
 			vkDestroyPipelineLayout(device, layout, nullptr);
 		}));
 		_computePipelinePool.destroy(handle);
@@ -1627,17 +1633,17 @@ namespace mythril {
 }
 #ifdef MYTH_ENABLED_IMGUI
 namespace ImGui {
-	void Image(mythril::InternalTextureHandle texHandle, uint32_t mipLevel, const ImVec2& image_size, const ImVec2& uv0, const ImVec2& uv1) {
+	void Image(mythril::TextureHandle texHandle, const ImVec2& image_size, const ImVec2& uv0, const ImVec2& uv1) {
 		ASSERT_MSG(texHandle.valid(), "Texture handle is invalid!");
 		auto mydata = reinterpret_cast<mythril::MyUserData*>(ImGui::GetIO().UserData);
 		ImVec2 size;
 		if (image_size.x <= 0 && image_size.y <= 0) {
-			const VkExtent2D extent2D = mydata->ctx->viewTexture(texHandle).getExtentAs2D();
-			size = { static_cast<float>(extent2D.width), static_cast<float>(extent2D.height) };
+			const mythril::Dimensions dims = mydata->ctx->view(texHandle).getDimensions();
+			size = { static_cast<float>(dims.width), static_cast<float>(dims.height) };
 		} else {
 			size = image_size;
 		}
-		const mythril::AllocatedTexture& texture = mydata->ctx->viewTexture(texHandle);
+		const mythril::AllocatedTexture& texture = mydata->ctx->view(texHandle);
 
 		// will always be set
 		VkDescriptorSet im_image_ds;
@@ -1651,8 +1657,11 @@ namespace ImGui {
 		}
 		ImGui::Image(reinterpret_cast<ImTextureID>(im_image_ds), size, uv0, uv1);
 	}
-	void Image(mythril::InternalTextureHandle texHandle, const ImVec2& image_size, const ImVec2& uv0, const ImVec2& uv1) {
-		Image(texHandle, 0, image_size, uv0, uv1);
+	void Image(const mythril::Texture& texture, const mythril::TextureView& view, const ImVec2& image_size, const ImVec2& uv0, const ImVec2& uv1) {
+		Image(texture.getHandle(view), image_size, uv0, uv1);
+	}
+	void Image(const mythril::Texture& texture, const ImVec2& image_size, const ImVec2& uv0, const ImVec2& uv1) {
+		Image(texture.handle(), image_size, uv0, uv1);
 	}
 
 }

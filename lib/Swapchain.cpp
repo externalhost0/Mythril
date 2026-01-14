@@ -81,8 +81,10 @@ namespace mythril {
 		}
 		// SECONDARY DATA CREATION //
 		VkSemaphoreCreateInfo semaphoreInfo = vkinfo::CreateSemaphoreInfo();
+		VkFenceCreateInfo fenceInfo = vkinfo::CreateFenceInfo(VK_FENCE_CREATE_SIGNALED_BIT);
 		for (int i = 0; i < _numSwapchainImages; i++) {
 			VK_CHECK(vkCreateSemaphore(_ctx._vkDevice, &semaphoreInfo, nullptr, &_vkAcquireSemaphores[i]));
+			VK_CHECK(vkCreateFence(_ctx._vkDevice, &fenceInfo, nullptr, &_vkAcquireFences[i]));
 		}
 	}
 
@@ -94,8 +96,11 @@ namespace mythril {
 		// images are destroyed alongside swapchain destruction
 		vkDestroySwapchainKHR(_ctx._vkDevice, _vkSwapchain, nullptr);
 		// DESTROY SECONDARY DATA //
-		for (VkSemaphore semaphore : _vkAcquireSemaphores) {
-			vkDestroySemaphore(_ctx._vkDevice, semaphore, nullptr);
+		for (int i = 0; i < _numSwapchainImages; i++) {
+			vkDestroySemaphore(_ctx._vkDevice, _vkAcquireSemaphores[i], nullptr);
+			if (_vkAcquireFences[i] != VK_NULL_HANDLE) {
+				vkDestroyFence(_ctx._vkDevice, _vkAcquireFences[i], nullptr);
+			}
 		}
 	}
 
@@ -114,8 +119,13 @@ namespace mythril {
 			};
 			ASSERT_MSG(_currentImageIndex < (sizeof(_timelineWaitValues)/sizeof(_timelineWaitValues[0])), "Image index out of range");
 			VK_CHECK(vkWaitSemaphores(_ctx._vkDevice, &waitInfo, UINT64_MAX));
+			VK_CHECK(vkWaitForFences(_ctx._vkDevice, 1, &_vkAcquireFences[_currentImageIndex], VK_TRUE, UINT64_MAX));
+			VK_CHECK(vkResetFences(_ctx._vkDevice, 1, &_vkAcquireFences[_currentImageIndex]));
+
+			// aliases
+			VkFence acquireFence = _vkAcquireFences[_currentImageIndex];
 			VkSemaphore acquireSemaphore = _vkAcquireSemaphores[_currentImageIndex];
-			const VkResult result = vkAcquireNextImageKHR(_ctx._vkDevice, _vkSwapchain, UINT64_MAX, acquireSemaphore, nullptr, &_currentImageIndex);
+			const VkResult result = vkAcquireNextImageKHR(_ctx._vkDevice, _vkSwapchain, UINT64_MAX, acquireSemaphore, acquireFence, &_currentImageIndex);
 			if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR && result != VK_ERROR_OUT_OF_DATE_KHR) {
 				ASSERT(result);
 			}
@@ -126,10 +136,9 @@ namespace mythril {
 
 	void Swapchain::present() {
 		ASSERT_MSG(getCurrentSwapchainTextureObject().getImageLayout() == VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-			"Swapchain image layout is not in VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, currently in {}!",
+			"Swapchain image layout is in '{}' but should be in VK_IMAGE_LAYOUT_PRESENT_SRC_KHR before presentation!",
 			vkstring::VulkanImageLayoutToString(getCurrentSwapchainTextureObject().getImageLayout()));
 		VkSemaphore semaphore = _ctx._imm->acquireLastSubmitSemaphore();
-
 		const VkPresentInfoKHR present_info = {
 				.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
 				.pNext = nullptr,

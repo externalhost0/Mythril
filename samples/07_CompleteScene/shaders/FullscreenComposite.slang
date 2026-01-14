@@ -19,7 +19,6 @@ struct FullscreenPushConstant {
     DescriptorHandle<SamplerState> sampler;
     float exposure;
     float bloomStrength;
-
     int toneMapMode;
     // implementation dependant
 
@@ -208,6 +207,6 @@ FSOutput fs_main(v2f input) {
         color = agxLook(push.exposure * color, push.slope, push.offset, push.power, push.saturation);
     }
 
-    output.FragColor = float4(color + (push.bloomStrength * bloom), 1);
+    output.FragColor = float4(lerp(color, bloom, push.bloomStrength), 1);
     return output;
 }

@@ -29,13 +29,16 @@ namespace mythril {
 
 	class DescriptorSetWriter {
 	public:
-		void updateBinding(InternalBufferHandle bufHandle, const char* name);
-		void updateBinding(InternalBufferHandle bufHandle, int set, int binding);
+		void updateBinding(const Buffer& buffer, const char* name) { updateBinding(buffer.handle(), name); }
+		void updateBinding(const Buffer& buffer, int set, int binding) { updateBinding(buffer.handle(), set, binding); }
+
 	private:
+		void updateBinding(BufferHandle bufHandle, const char *name);
+		void updateBinding(BufferHandle bufHandle, int set, int binding);
 		explicit DescriptorSetWriter(CTX& ctx) : _ctx(&ctx) {};
 
 		DWriter writer = {};
-		PipelineCommon* currentPipelineCommon = nullptr;
+		PipelineCoreData* currentPipelineCommon = nullptr;
 		const char* currentPipelineDebugName = nullptr;
 		CTX* _ctx = nullptr;
 

@@ -31,10 +31,9 @@ int main() {
 	.build();
 
 	VkExtent2D extent2D = {1280, 720};
-	mythril::InternalTextureHandle colorTarget = ctx->createTexture({
+	mythril::Texture colorTarget = ctx->createTexture({
 		.dimension = extent2D,
 		.usage = mythril::TextureUsageBits::TextureUsageBits_Attachment,
-		.storage = mythril::StorageType::Device,
 		.format = VK_FORMAT_R8G8B8A8_UNORM,
 		.debugName = "Color Texture"
 	});

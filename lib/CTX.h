@@ -8,16 +8,20 @@
 #include "Swapchain.h"
 #include "ImmediateCommands.h"
 #include "StagingDevice.h"
-#include "CommandBuffer.h"
-#include "VulkanObjects.h"
 #include "ObjectHandles.h"
-#include "Shader.h"
-#include "Pipelines.h"
 #include "Window.h"
-#include "SlangCompiler.h"
+
+#include "VulkanObjects.h"
+#include "Pipelines.h"
+#include "Shader.h"
+
 #include "Plugins.h"
+#include "SlangCompiler.h"
 #include "DescriptorWriter.h"
 #include "DescriptorAllocatorGrowable.h"
+#include "CommandBuffer.h"
+#include "Specs.h"
+#include "../include/mythril/Objects.h"
 
 #include <future>
 #include <deque>
@@ -28,22 +32,22 @@
 #include <slang/slang.h>
 #include <slang/slang-com-ptr.h>
 
+
 #ifdef MYTH_ENABLED_IMGUI
 #include <imgui.h>
 #include <imgui_impl_vulkan.h>
 #endif
 
-
 namespace mythril {
 	class CTXBuilder;
+	class CommandBuffer;
 
-	template<typename T>
-	struct is_internal_object_handle : std::false_type {};
-	template<typename Tag>
-	struct is_internal_object_handle<InternalObjectHandle<Tag>> : std::true_type {};
-	template<typename T>
-	concept typenameInternalHandle = is_internal_object_handle<T>::value;
-
+	// class Sampler;
+	// class Buffer;
+	// class Texture;
+	// class Shader;
+	// class GraphicsPipeline;
+	// class ComputePipeline;
 
 	struct DeferredTask {
 		DeferredTask(std::packaged_task<void()>&& task, SubmitHandle handle) : _task(std::move(task)), _handle(handle) {}
@@ -51,147 +55,30 @@ namespace mythril {
 		SubmitHandle _handle;
 	};
 
-	// bits need to be uint8_t underlying type
-	enum BufferUsageBits : uint8_t {
-		BufferUsageBits_Index = 1 << 0,
-		BufferUsageBits_Uniform = 1 << 1,
-		BufferUsageBits_Storage = 1 << 2,
-		BufferUsageBits_Indirect = 1 << 3
-	};
-	enum TextureUsageBits : uint8_t {
-		TextureUsageBits_Sampled = 1 << 0,
-		TextureUsageBits_Storage = 1 << 1,
-		TextureUsageBits_Attachment = 1 << 2,
-	};
-
-	// strict enums can be whatever
-	enum class StorageType : uint8_t {
-		Device,
-		HostVisible,
-		Memoryless
-	};
-
-	enum class TextureType : uint8_t {
-		Type_2D,
-		Type_3D,
-		Type_Cube
-	};
-	enum Swizzle : uint8_t {
-		Swizzle_Default = 0,
-		Swizzle_0,
-		Swizzle_1,
-		Swizzle_R,
-		Swizzle_G,
-		Swizzle_B,
-		Swizzle_A,
-	};
-
-	struct TexRange
-	{
-		VkOffset3D offset = {};
-		VkExtent3D dimensions = {1, 1, 1};
-
-		uint32_t layer = 0;
-		uint32_t numLayers = 1;
-		uint32_t mipLevel = 0;
-		uint32_t numMipLevels = 1;
-	};
-	struct ComponentMapping
-	{
-		Swizzle r = Swizzle_Default;
-		Swizzle g = Swizzle_Default;
-		Swizzle b = Swizzle_Default;
-		Swizzle a = Swizzle_Default;
-		bool identity() const {
-			return r == Swizzle_Default && g == Swizzle_Default && b == Swizzle_Default && a == Swizzle_Default;
-		}
-		VkComponentMapping toVkComponentMapping() const {
-			return {
-				.r = static_cast<VkComponentSwizzle>(r),
-				.g = static_cast<VkComponentSwizzle>(g),
-				.b = static_cast<VkComponentSwizzle>(b),
-				.a = static_cast<VkComponentSwizzle>(a)
-			};
-		}
-	};
-	static_assert(mythril::Swizzle::Swizzle_Default == (uint32_t)VK_COMPONENT_SWIZZLE_IDENTITY);
-	static_assert(mythril::Swizzle::Swizzle_0 == (uint32_t)VK_COMPONENT_SWIZZLE_ZERO);
-	static_assert(mythril::Swizzle::Swizzle_1 == (uint32_t)VK_COMPONENT_SWIZZLE_ONE);
-	static_assert(mythril::Swizzle::Swizzle_R == (uint32_t)VK_COMPONENT_SWIZZLE_R);
-	static_assert(mythril::Swizzle::Swizzle_G == (uint32_t)VK_COMPONENT_SWIZZLE_G);
-	static_assert(mythril::Swizzle::Swizzle_B == (uint32_t)VK_COMPONENT_SWIZZLE_B);
-	static_assert(mythril::Swizzle::Swizzle_A == (uint32_t)VK_COMPONENT_SWIZZLE_A);
-
-
-
-	// Specs should be low level but still a thin wrapper around the info creation processes need
-	// User arguements will be even more abstract as they will not need to implement it via code
-	struct SamplerSpec {
-		SamplerFilter magFilter = SamplerFilter::Linear;
-		SamplerFilter minFilter = SamplerFilter::Linear;
-		SamplerMipMap mipMap = SamplerMipMap::Disabled;
-		SamplerWrap wrapU = SamplerWrap::Repeat;
-		SamplerWrap wrapV = SamplerWrap::Repeat;
-		SamplerWrap wrapW = SamplerWrap::Repeat;
-
-		bool depthCompareEnabled = false;
-		CompareOp depthCompareOp = CompareOp::LessEqual;
-
-		uint8_t mipLodMin = 0;
-		uint8_t mipLodMax = 15;
-
-		bool anistrophic = false;
-		uint8_t maxAnisotropic = 1;
-		const char* debugName = "Unnamed Sampler";
-	};
-	struct BufferSpec {
-		size_t size = 0;
-		uint8_t usage = {};
-		StorageType storage = StorageType::HostVisible;
-		const void* initialData = nullptr;
-		const char* debugName = "Unnamed Buffer";
-	};
-	struct TextureSpec {
-		VkExtent2D dimension = {};
-		TextureType type = TextureType::Type_2D;
-		VkFormat format = VK_FORMAT_UNDEFINED;
-		SampleCount samples = SampleCount::X1;
-		uint8_t usage = {};
-		StorageType storage = StorageType::Device;
-
-		uint32_t numMipLevels = 1;
-		uint32_t numLayers = 1;
-		ComponentMapping components = {};
-
-		const void* initialData = nullptr;
-		uint32_t dataNumMipLevels = 1; // how many mip-levels we want to create & fill in when uploading data
-		bool generateMipmaps = false; // works only if initialData is not nulll
-		const char* debugName = "Unnamed Texture";
-	};
-
-	struct TextureViewSpec {
-		uint32_t layer = 0;
-		uint32_t numLayers = 1;
-		uint32_t mipLevel = 0;
-		uint32_t numMipLevels = 1;
-		ComponentMapping components = {};
-		const char* debugName = "Unnamed Texture View";
-	};
-	struct ShaderSpec {
-		std::filesystem::path filePath;
-		const char* debugName = "Unnamed Shader";
-	};
-
-
 	struct LayoutBuildResult {
 		std::vector<VkDescriptorSetLayout> allLayouts; // includes specials ie bindless set
 		std::vector<VkDescriptorSetLayout> allocatableLayouts; // excludes specials
 	};
 
+	//helpers
+	template<typename Pool, typename Handle>
+	const auto& viewImpl(const Pool& pool, Handle handle) {
+		auto* ptr = pool.get(handle);
+		ASSERT_MSG(ptr, "Invalid handle!");
+		return *ptr;
+	}
+	template<typename Pool, typename Handle>
+	static auto& accessImpl(Pool& pool, Handle handle) {
+		auto* ptr = pool.get(handle);
+		ASSERT_MSG(ptr, "Invalid handle!");
+		return *ptr;
+	}
+
 	class CTX final {
 		void construct(SwapchainArgs args);
+		// hide the default constructor to avoid user from instantiating a useless CTX
+		CTX() = default;
 	public:
-		 CTX() = default;
 		~CTX();
 
 		CTX(const CTX &) = delete;
@@ -202,90 +89,76 @@ namespace mythril {
 	public:
 		void cleanSwapchain();
 		bool isSwapchainDirty();
-		const InternalTextureHandle& getCurrentSwapchainTexture() const { return _swapchain->getCurrentSwapchainTextureHandle(); }
+		const TextureHandle& getCurrentSwapchainTexture() const { return _swapchain->getCurrentSwapchainTextureHandle(); }
 
-		Window& getWindow() { return _window; };
-		const InternalTextureHandle& getNullTexture() const { return this->_dummyTextureHandle; }
+		Window& getWindow() { return _window; }
+		const Texture& getNullTexture() const { return this->_dummyTexture; }
 
 		CommandBuffer& openCommand(CommandBuffer::Type type);
 		SubmitHandle submitCommand(CommandBuffer& cmd);
 
-		DescriptorSetWriter openDescriptorUpdate(InternalGraphicsPipelineHandle handle);
-		DescriptorSetWriter openDescriptorUpdate(InternalComputePipelineHandle handle);
+		DescriptorSetWriter openDescriptorUpdate(const GraphicsPipeline& pipeline) { return openDescriptorUpdate(pipeline.handle()); }
+		DescriptorSetWriter openDescriptorUpdate(const ComputePipeline& pipeline) { return openDescriptorUpdate(pipeline.handle()); }
+
 		void submitDescriptorUpdate(DescriptorSetWriter& updater);
 
-		InternalBufferHandle createBuffer(BufferSpec spec);
-		InternalTextureHandle createTexture(TextureSpec spec);
-		InternalTextureHandle createTextureView(InternalTextureHandle handle, TextureViewSpec spec);
-		void resizeTexture(InternalTextureHandle handle, VkExtent2D newExtent);
-		InternalSamplerHandle createSampler(SamplerSpec spec);
-		InternalGraphicsPipelineHandle createGraphicsPipeline(GraphicsPipelineSpec spec);
-		InternalComputePipelineHandle createComputePipeline(ComputePipelineSpec spec);
-		InternalShaderHandle createShader(ShaderSpec spec);
+		Buffer createBuffer(BufferSpec spec);
+		Texture createTexture(TextureSpec spec);
+		TextureHandle createTextureView(TextureHandle handle, TextureViewSpec spec);
+		void resizeTexture(TextureHandle handle, Dimensions newDimensions);
+		Sampler createSampler(SamplerSpec spec);
+		GraphicsPipeline createGraphicsPipeline(const GraphicsPipelineSpec &spec);
+		ComputePipeline createComputePipeline(const ComputePipelineSpec &spec);
+		Shader createShader(const ShaderSpec &spec);
 
-		VkDeviceAddress gpuAddress(InternalBufferHandle handle, size_t offset = 0);
-
-		const AllocatedTexture& viewTexture(InternalTextureHandle handle) const {
-			auto* ptr = _texturePool.get(handle);
-			ASSERT_MSG(ptr, "Invalid texture handle!");
-			return *ptr;
-		}
-		const AllocatedBuffer& viewBuffer(InternalBufferHandle handle) const {
-			auto* ptr = _bufferPool.get(handle);
-			ASSERT_MSG(ptr, "Invalid buffer handle!");
-			return *ptr;
-		}
-		const AllocatedSampler& viewSampler(InternalSamplerHandle handle) const {
-			auto* ptr = _samplerPool.get(handle);
-			ASSERT_MSG(ptr, "Invalid sampler handle!");
-			return *ptr;
-		}
-		const AllocatedShader& viewShader(InternalShaderHandle handle) const {
-			auto* ptr = _shaderPool.get(handle);
-			ASSERT_MSG(ptr, "Invalid shader handle!");
-			return *ptr;
-		}
-		const AllocatedGraphicsPipeline& viewGraphicsPipeline(InternalGraphicsPipelineHandle handle) const {
-			auto* ptr = _graphicsPipelinePool.get(handle);
-			ASSERT_MSG(ptr, "Invalid graphics pipeline handle!");
-			return *ptr;
-		}
-		const AllocatedComputePipeline& viewComputePipeline(InternalComputePipelineHandle handle) const {
-			auto* ptr = _computePipelinePool.get(handle);
-			ASSERT_MSG(ptr, "Invalid compute pipeline handle!");
-			return *ptr;
-		}
-
+		VkDeviceAddress gpuAddress(BufferHandle handle, size_t offset = 0);
 
 		// wrappers around VulkanObjects
 		// advanced functions that user will rarely need to call
-		void transitionLayout(InternalTextureHandle handle, VkImageLayout newLayout, VkImageSubresourceRange range);
-		void generateMipmaps(InternalTextureHandle handle);
+		void transitionLayout(TextureHandle handle, VkImageLayout newLayout, VkImageSubresourceRange range);
+		void generateMipmaps(TextureHandle handle);
 		// for buffers
-		void upload(InternalBufferHandle handle, const void* data, size_t size, size_t offset = 0);
-		void download(InternalBufferHandle handle, void* data, size_t size, size_t offset);
+		void upload(BufferHandle handle, const void* data, size_t size, size_t offset = 0);
+		void download(BufferHandle handle, void* data, size_t size, size_t offset);
 		// for textures
-		void upload(InternalTextureHandle handle, const void* data, const TexRange& range);
-		void download(InternalTextureHandle handle, void* data, const TexRange& range);
-	private:
-		// for automatic cleanup of resources
-		void destroy(InternalBufferHandle handle);
-		void destroy(InternalTextureHandle handle);
-		void destroy(InternalSamplerHandle handle);
-		void destroy(InternalShaderHandle handle);
-		void destroy(InternalGraphicsPipelineHandle handle);
-		void destroy(InternalComputePipelineHandle handle);
+		void upload(TextureHandle handle, const void* data, const TexRange& range);
+		void download(TextureHandle handle, void* data, const TexRange& range);
+	public:
 
-		DescriptorSetWriter openUpdateImpl(PipelineCommon* common, const char* debugName);
+		const AllocatedTexture& view(TextureHandle h) const { return viewImpl(_texturePool, h); }
+		const AllocatedBuffer& view(BufferHandle h) const { return viewImpl(_bufferPool, h); }
+		const AllocatedSampler& view(SamplerHandle h) const { return viewImpl(_samplerPool, h); }
+		const AllocatedShader& view(ShaderHandle h) const { return viewImpl(_shaderPool, h); }
+		const AllocatedGraphicsPipeline& view(GraphicsPipelineHandle h) const { return viewImpl(_graphicsPipelinePool, h); }
+		const AllocatedComputePipeline& view(ComputePipelineHandle h) const { return viewImpl(_computePipelinePool, h); }
+
+		AllocatedTexture& access(TextureHandle h) { return accessImpl(_texturePool, h); }
+		AllocatedBuffer& access(BufferHandle h) { return accessImpl(_bufferPool, h); }
+		AllocatedSampler& access(SamplerHandle h) { return accessImpl(_samplerPool, h); }
+		AllocatedShader& access(ShaderHandle h) { return accessImpl(_shaderPool, h); }
+		AllocatedGraphicsPipeline& access(GraphicsPipelineHandle h) { return accessImpl(_graphicsPipelinePool, h); }
+		AllocatedComputePipeline& access(ComputePipelineHandle h) { return accessImpl(_computePipelinePool, h); }
+
+		// for automatic cleanup of resources
+		void destroy(BufferHandle handle);
+		void destroy(TextureHandle handle);
+		void destroy(SamplerHandle handle);
+		void destroy(ShaderHandle handle);
+		void destroy(GraphicsPipelineHandle handle);
+		void destroy(ComputePipelineHandle handle);
+	private:
+		DescriptorSetWriter openDescriptorUpdate(GraphicsPipelineHandle handle);
+		DescriptorSetWriter openDescriptorUpdate(ComputePipelineHandle handle);
+		DescriptorSetWriter openUpdateImpl(PipelineCoreData* common, std::string_view debugName);
 
 		// all things related to our pipeline constructions
-		PipelineCommon buildPipelineCommonDataExceptVkPipelineImpl(const PipelineLayoutSignature& signature);
+		PipelineCoreData buildPipelineCommonDataExceptVkPipelineImpl(const PipelineLayoutSignature& signature);
 
 		// return values from resolvings are ignored for now
 		void resolveGraphicsPipelineImpl(AllocatedGraphicsPipeline& pipeline);
 		void resolveComputePipelineImpl(AllocatedComputePipeline& pipeline);
 
-		VkPipeline buildGraphicsPipelineImpl(VkPipelineLayout layout, GraphicsPipelineSpec spec);
+		// VkPipeline buildGraphicsPipelineImpl(VkPipelineLayout layout, GraphicsPipelineSpec spec);
 		VkPipeline buildComputePipelineImpl(VkPipelineLayout layout, ComputePipelineSpec spec);
 
 
@@ -308,15 +181,15 @@ namespace mythril {
 
 
 		template<typename T>
-		constexpr PipelineCommon& getPipelienCommonData(T handle) {
+		constexpr PipelineCoreData& getPipelienCommonData(T handle) {
 			static_assert(
-					std::is_same_v<T, InternalGraphicsPipelineHandle> ||
-					std::is_same_v<T, InternalComputePipelineHandle>);
-			if constexpr (std::is_same_v<T, InternalGraphicsPipelineHandle>) {
+					std::is_same_v<T, GraphicsPipelineHandle> ||
+					std::is_same_v<T, ComputePipelineHandle>);
+			if constexpr (std::is_same_v<T, GraphicsPipelineHandle>) {
 				auto* obj =_graphicsPipelinePool.get(handle);
 				ASSERT(obj);
 				return obj->_common;
-			} else if constexpr (std::is_same_v<T, InternalComputePipelineHandle>) {
+			} else if constexpr (std::is_same_v<T, ComputePipelineHandle>) {
 				auto* obj = _computePipelinePool.get(handle);
 				ASSERT(obj);
 				return obj->_common;
@@ -352,8 +225,8 @@ namespace mythril {
 		VkQueue _vkPresentQueue = VK_NULL_HANDLE;
 		uint32_t _presentQueueFamilyIndex = -1;
 	private: // not really my stuff //
-		InternalTextureHandle _dummyTextureHandle;
-		InternalSamplerHandle _dummyLinearSamplerHandle;
+		Texture _dummyTexture;
+		Sampler _dummyLinearSampler;
 
 		mutable std::vector<DeferredTask> _deferredTasks;
 
@@ -375,12 +248,12 @@ namespace mythril {
 		std::unique_ptr<Swapchain> _swapchain = nullptr;
 		std::unique_ptr<StagingDevice> _staging = nullptr;
 
-		HandlePool<InternalBufferHandle, AllocatedBuffer> _bufferPool;
-		HandlePool<InternalTextureHandle, AllocatedTexture> _texturePool;
-		HandlePool<InternalSamplerHandle, AllocatedSampler> _samplerPool;
-		HandlePool<InternalShaderHandle, AllocatedShader> _shaderPool;
-		HandlePool<InternalGraphicsPipelineHandle, AllocatedGraphicsPipeline> _graphicsPipelinePool;
-		HandlePool<InternalComputePipelineHandle, AllocatedComputePipeline> _computePipelinePool;
+		HandlePool<BufferHandle, AllocatedBuffer> _bufferPool;
+		HandlePool<TextureHandle, AllocatedTexture> _texturePool;
+		HandlePool<SamplerHandle, AllocatedSampler> _samplerPool;
+		HandlePool<ShaderHandle, AllocatedShader> _shaderPool;
+		HandlePool<GraphicsPipelineHandle, AllocatedGraphicsPipeline> _graphicsPipelinePool;
+		HandlePool<ComputePipelineHandle, AllocatedComputePipeline> _computePipelinePool;
 
 		// some rare stuff
 #ifdef MYTH_ENABLED_IMGUI
@@ -395,14 +268,16 @@ namespace mythril {
 		friend class StagingDevice;
 		friend class Swapchain;
 		friend class CTXBuilder;
-		friend struct AllocatedBuffer;
-		friend struct AllocatedTexture;
+		friend class AllocatedBuffer;
+		friend class AllocatedTexture;
 		friend class ImGuiPlugin;
 
 		// basically a lvk Holder
-		template<typenameInternalHandle T>
+		template<typename T>
 		friend class ObjectHolder;
+
 	};
+
 
 
 #ifdef MYTH_ENABLED_IMGUI
@@ -410,14 +285,15 @@ namespace mythril {
 	struct MyUserData {
 		CTX* ctx;
 		VkSampler sampler;
-		std::unordered_map<InternalTextureHandle, VkDescriptorSet> handleMap;
+		std::unordered_map<TextureHandle, VkDescriptorSet> handleMap;
 	};
 #endif
 }
 #ifdef MYTH_ENABLED_IMGUI
 namespace ImGui {
-	void Image(mythril::InternalTextureHandle texHandle, uint32_t mipLevel, const ImVec2 &image_size = {0, 0}, const ImVec2 &uv0 = {0, 0}, const ImVec2 &uv1 = {1, 1});
-	void Image(mythril::InternalTextureHandle texHandle, const ImVec2 &image_size = {0, 0}, const ImVec2 &uv0 = {0, 0}, const ImVec2 &uv1 = {1, 1});
+	void Image(const mythril::Texture& texture, const ImVec2 &image_size = {0, 0}, const ImVec2 &uv0 = {0, 0}, const ImVec2 &uv1 = {1, 1});
+	void Image(mythril::TextureHandle texHandle, const ImVec2 &image_size = {0, 0}, const ImVec2 &uv0 = {0, 0}, const ImVec2 &uv1 = {1, 1});
+	void Image(const mythril::Texture& texture, const mythril::TextureView& view, const ImVec2& image_size = {0, 0}, const ImVec2& uv0={0, 0}, const ImVec2& uv1={1, 1});
 }
 #endif
 

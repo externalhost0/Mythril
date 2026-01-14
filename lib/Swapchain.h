@@ -10,7 +10,7 @@
 
 namespace mythril {
 	class CTX;
-	struct AllocatedTexture;
+	class AllocatedTexture;
 
 	struct SwapchainArgs {
 		uint16_t width = 0;
@@ -31,7 +31,7 @@ namespace mythril {
 	public:
 		inline uint32_t getNumOfSwapchainImages() const { return _numSwapchainImages; }
 		inline bool isDirty() const { return _isDirty; }
-		const InternalTextureHandle& getCurrentSwapchainTextureHandle() const { return _swapchainTextures[_currentImageIndex]; }
+		const TextureHandle& getCurrentSwapchainTextureHandle() const { return _swapchainTextures[_currentImageIndex]; }
 		const AllocatedTexture& getCurrentSwapchainTextureObject() const;
 		inline VkExtent2D getSwapchainExtent() const { return _vkExtent2D; };
 	private:
@@ -43,9 +43,11 @@ namespace mythril {
 		VkColorSpaceKHR _vkColorSpace;
 		VkPresentModeKHR _vkPresentMode;
 
-		InternalTextureHandle _swapchainTextures[kMAX_SWAPCHAIN_IMAGES] = {};
+		TextureHandle _swapchainTextures[kMAX_SWAPCHAIN_IMAGES] = {};
 		uint64_t _timelineWaitValues[kMAX_SWAPCHAIN_IMAGES] = {}; // this HERE NEEDS FIXING
 		VkSemaphore _vkAcquireSemaphores[kMAX_SWAPCHAIN_IMAGES] = {};
+
+		VkFence _vkAcquireFences[kMAX_SWAPCHAIN_IMAGES] = {};
 
 		uint32_t _currentImageIndex = 0;
 		uint32_t _currentFrameNum = 0;

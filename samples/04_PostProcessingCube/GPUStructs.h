@@ -20,6 +20,7 @@ struct FullscreenPushConstant {
 	DescriptorHandle<Texture2D> colorTexture;
 	DescriptorHandle<SamplerState> linearSampler;
 	float time;
+	float pad;
 };
 
 NAMESPACE_END()

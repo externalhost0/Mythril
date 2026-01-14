@@ -28,18 +28,19 @@ int main() {
 	.build();
 
 	VkExtent2D extent2D = ctx->getWindow().getFramebufferSize();
-	mythril::InternalTextureHandle colorTarget = ctx->createTexture({
-		.dimension = extent2D,
+	const mythril::Dimensions dims = {extent2D.width, extent2D.height, 1};
+	mythril::Texture colorTarget = ctx->createTexture({
+		.dimension = dims,
+		.format = VK_FORMAT_R8G8B8A8_UNORM,
 		.usage = mythril::TextureUsageBits::TextureUsageBits_Attachment,
 		.storage = mythril::StorageType::Device,
-		.format = VK_FORMAT_R8G8B8A8_UNORM,
 		.debugName = "Color Texture"
 	});
 
 	mythril::RenderGraph graph;
 	graph.addGraphicsPass("main")
 	.write({
-		.texture = colorTarget,
+		.texture = colorTarget.handle(),
 		.clearValue = {1, 0, 0, 1},
 		.loadOp = mythril::LoadOperation::CLEAR,
 		.storeOp = mythril::StoreOperation::STORE
@@ -48,6 +49,9 @@ int main() {
 		cmd.cmdBeginRendering();
 		cmd.cmdDrawImGui();
 		cmd.cmdEndRendering();
+		cmd.cmdBlitImage(colorTarget.handle(), ctx->getCurrentSwapchainTexture());
+		cmd.cmdTransitionLayout(ctx->getCurrentSwapchainTexture(), VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+
 	});
 	graph.compile(*ctx);
 
@@ -66,7 +70,7 @@ int main() {
 			ctx->cleanSwapchain();
 
 			extent2D = window.getFramebufferSize();
-			ctx->resizeTexture(colorTarget, extent2D);
+			colorTarget.resize({extent2D.width, extent2D.height});
 			graph.compile(*ctx);
 		}
 
@@ -86,14 +90,15 @@ int main() {
 		}
 		ImGui::End();
 
+
 		ImGui::Begin("Debug");
 		VkExtent2D framebufferSize = window.getFramebufferSize();
 		VkExtent2D windowsize = window.getWindowSize();
 		ImGui::Text("Framebuffer: %u, %u", framebufferSize.width, framebufferSize.height);
 		ImGui::Text("Windowsize: %u, %u", windowsize.width, windowsize.height);
 
-		VkExtent2D colorTargetExtent = ctx->viewTexture(colorTarget).getExtentAs2D();
-		ImGui::Text("Color Texture Size: %.1u x %.1u", colorTargetExtent.width, colorTargetExtent.height);
+		const mythril::Dimensions colorTargetDims = colorTarget->getDimensions();
+		ImGui::Text("Color Texture Size: %.1u x %.1u", colorTargetDims.width, colorTargetDims.height);
 
 		ImGuiIO& io = ImGui::GetIO();
 		ImGui::Text("[ImGui] Display Size: %.1f x %.1f", io.DisplaySize.x, io.DisplaySize.y);

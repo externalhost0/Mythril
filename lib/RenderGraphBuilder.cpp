@@ -12,8 +12,21 @@
 #include "vkstring.h"
 
 namespace mythril {
-	GraphicsPassBuilder& GraphicsPassBuilder::write(const WriteSpec &spec) {
+	GraphicsPassBuilder& GraphicsPassBuilder::write(const WriteSpec& spec) {
 		this->_passSource.writeOperations.push_back(spec);
+		return *this;
+	}
+	GraphicsPassBuilder& GraphicsPassBuilder::write(const WriteSpec2& spec) {
+		WriteSpec new_spec = {
+			.texture = spec.texture.handle(),
+			.clearValue = spec.clearValue,
+			.loadOp = spec.loadOp,
+			.storeOp = spec.storeOp,
+		};
+		if (spec.resolveTexture.handle.valid()) {
+			new_spec.resolveTexture = spec.resolveTexture.handle;
+		}
+		this->_passSource.writeOperations.push_back(new_spec);
 		return *this;
 	}
 
@@ -21,6 +34,20 @@ namespace mythril {
 		this->_passSource.readOperations.push_back(spec);
 		return *this;
 	}
+	// for contigous arrays of Textures
+	GraphicsPassBuilder& GraphicsPassBuilder::read(const Texture* front, unsigned int count, VkImageLayout requestedLayout) {
+		for (int i = 0; i < count; i++) {
+			this->_passSource.readOperations.emplace_back(front[i], requestedLayout);
+		}
+		return *this;
+	}
+	ComputePassBuilder& ComputePassBuilder::read(const Texture* front, unsigned int count, VkImageLayout requestedLayout) {
+		for (int i = 0; i < count; i++) {
+			this->_passSource.readOperations.emplace_back(front[i], requestedLayout);
+		}
+		return *this;
+	}
+
 
 	void GraphicsPassBuilder::setExecuteCallback(const std::function<void(CommandBuffer &)> &callback) {
 		this->_passSource.executeCallback = callback;
@@ -44,24 +71,24 @@ namespace mythril {
 		const std::vector<WriteSpec>& writeOperations = source.writeOperations;
 		for (size_t i = 0; i < writeOperations.size(); ++i) {
 			const WriteSpec &writeOp = writeOperations[i];
-			const AllocatedTexture &texture = ctx.viewTexture(writeOp.texture);
-			const VkExtent2D extent = texture.getExtentAs2D();
+			const AllocatedTexture &texture = ctx.view(writeOp.texture);
+			const Dimensions dims = texture.getDimensions();
 
-			ASSERT_MSG(extent.width == referenceExtent2D.width && extent.height == referenceExtent2D.height,
+			ASSERT_MSG(dims.width == referenceExtent2D.width && dims.height == referenceExtent2D.height,
 					   "Pass '{}': Write attachment {} ('{}') has mismatched dimensions {}x{}, expected {}x{} (reference: '{}')",
 					   source.name, i, texture.getDebugName(),
-					   extent.width, extent.height, referenceExtent2D.width, referenceExtent2D.height,
-					   ctx.viewTexture(source.writeOperations.front().texture).getDebugName());
+					   dims.width, dims.height, referenceExtent2D.width, referenceExtent2D.height,
+					   ctx.view(source.writeOperations.front().texture).getDebugName());
 
 			if (writeOp.resolveTexture.has_value()) {
-				const AllocatedTexture &resolveTexture = ctx.viewTexture(writeOp.resolveTexture.value());
-				const VkExtent2D resolveExtent = resolveTexture.getExtentAs2D();
+				const AllocatedTexture &resolveTexture = ctx.view(writeOp.resolveTexture.value());
+				const Dimensions resolve_dims = resolveTexture.getDimensions();
 
-				ASSERT_MSG(resolveExtent.width == referenceExtent2D.width &&
-						   resolveExtent.height == referenceExtent2D.height,
+				ASSERT_MSG(resolve_dims.width == referenceExtent2D.width &&
+						   resolve_dims.height == referenceExtent2D.height,
 						   "Pass '{}': Resolve attachment for '{}' has mismatched dimensions {}x{}, expected {}x{}",
 						   source.name, texture.getDebugName(),
-						   resolveExtent.width, resolveExtent.height,
+						   resolve_dims.width, resolve_dims.height,
 						   referenceExtent2D.width, referenceExtent2D.height);
 			}
 		}
@@ -70,7 +97,7 @@ namespace mythril {
 	// Compile a read operation into a barrier
 	// Note: oldLayout is set to UNDEFINED - it will be updated during execute() based on actual runtime state
 	CompiledBarrier CompileReadOperation(CTX& ctx, const ReadSpec& readSpec) {
-		const AllocatedTexture& currentTexture = ctx.viewTexture(readSpec.texture);
+		const AllocatedTexture& currentTexture = ctx.view(readSpec.texture);
 		ASSERT_MSG(currentTexture.getImage() != VK_NULL_HANDLE,
 				   "Texture read operation could not be compiled for '{}'!",
 				   currentTexture.getDebugName());
@@ -87,7 +114,7 @@ namespace mythril {
 	// Compile a write operation into a barrier
 	// Note: oldLayout is set to UNDEFINED - it will be updated during execute() based on actual runtime state
 	CompiledBarrier CompileWriteOperation(CTX& ctx, const WriteSpec& writeSpec, VkImageLayout newLayout) {
-		const AllocatedTexture& currentTexture = ctx.viewTexture(writeSpec.texture);
+		const AllocatedTexture& currentTexture = ctx.view(writeSpec.texture);
 		ASSERT_MSG(currentTexture.getImage() != VK_NULL_HANDLE,
 				   "Texture write operation could not be compiled for '{}'!",
 				   currentTexture.getDebugName());
@@ -123,7 +150,7 @@ namespace mythril {
 						   "Graphics Pass '{}' has no write operations, which is not allowed.",
 						   source.name);
 
-				VkExtent2D referenceExtent2D = ctx.viewTexture(source.writeOperations.front().texture).getExtentAs2D();
+				VkExtent2D referenceExtent2D = ctx.view(source.writeOperations.front().texture).getExtentAs2D();
 				compiled.extent2D = referenceExtent2D;
 
 #ifdef DEBUG
@@ -132,11 +159,13 @@ namespace mythril {
 
 				bool hasDepthAttachment = false;
 				for (const WriteSpec& writeOperation: source.writeOperations) {
-					const AllocatedTexture& currentTexture = ctx.viewTexture(writeOperation.texture);
+					// get .texture associated with write()
+					const AllocatedTexture& currentTexture = ctx.view(writeOperation.texture);
 					ASSERT_MSG(currentTexture._vkImage != VK_NULL_HANDLE,
 							   "Pass '{}': Texture write operation references invalid vkImage for '{}'",
 							   source.name, currentTexture.getDebugName());
 
+					// first check of writes is if its depth
 					if (currentTexture.isDepthAttachment()) {
 						ASSERT_MSG(!hasDepthAttachment,
 								   "Pass '{}': Multiple depth attachments not allowed (found '{}')",
@@ -144,13 +173,17 @@ namespace mythril {
 						hasDepthAttachment = true;
 
 						// Depth attachment info
-						compiled.depthAttachment = DepthAttachmentInfo{
-								.imageView = currentTexture._vkImageView,
-								.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-								.imageFormat = currentTexture._vkFormat,
-								.loadOp = toVulkan(writeOperation.loadOp),
-								.storeOp = toVulkan(writeOperation.storeOp),
-								.clearDepthStencil = writeOperation.clearValue.clearDepthStencil.getAsVkClearDepthStencilValue()
+						DepthAttachmentInfo depthInfo = {
+							.imageView = currentTexture._vkImageView,
+							.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+							.imageFormat = currentTexture._vkFormat,
+							// if resolve target is included, fill in the following steps
+							.resolveImageView = VK_NULL_HANDLE,
+							.resolveImageLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+
+							.loadOp = toVulkan(writeOperation.loadOp),
+							.storeOp = toVulkan(writeOperation.storeOp),
+							.clearDepthStencil = writeOperation.clearValue.clearDepthStencil.getAsVkClearDepthStencilValue()
 						};
 
 						// create barrier for depth attachment
@@ -158,6 +191,33 @@ namespace mythril {
 						compiled.preBarriers.push_back(
 							CompileWriteOperation(ctx, writeOperation, newLayout)
 						);
+						// Handle MSAA Depth resolve
+						if (writeOperation.resolveTexture.has_value()) {
+							const AllocatedTexture& resolveTexture = ctx.view(writeOperation.resolveTexture.value());
+							ASSERT_MSG(resolveTexture._vkImage != VK_NULL_HANDLE,
+									   "Pass '{}': Resolve target '{}' for '{}' has invalid vkImage!",
+									   source.name, resolveTexture.getDebugName(), currentTexture.getDebugName());
+							ASSERT_MSG(currentTexture.getSampleCount() > VK_SAMPLE_COUNT_1_BIT,
+									   "Pass '{}': Resolve operation on non-multisampled texture '{}'!",
+									   source.name, currentTexture.getDebugName());
+							ASSERT_MSG(resolveTexture.getSampleCount() == VK_SAMPLE_COUNT_1_BIT,
+									   "Pass '{}': Resolve target '{}' is multisampled!",
+									   source.name, resolveTexture.getDebugName());
+
+							depthInfo.resolveImageView = resolveTexture._vkImageView;
+							depthInfo.resolveImageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+							// create barrier for resolve target
+							VkImageMemoryBarrier2 resolveBarrier = vkinfo::CreateImageMemoryBarrier2(
+									resolveTexture._vkImage,
+									resolveTexture._vkFormat,
+									VK_IMAGE_LAYOUT_UNDEFINED,  // PLACEHOLDER
+									VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+									true);
+							compiled.preBarriers.push_back({resolveBarrier, writeOperation.resolveTexture.value()});
+						}
+						// set it
+						compiled.depthAttachment = depthInfo;
 					} else {
 						// Color attachment info
 						ColorAttachmentInfo colorInfo = {
@@ -177,9 +237,9 @@ namespace mythril {
 							CompileWriteOperation(ctx, writeOperation, newLayout)
 						);
 
-						// Handle MSAA resolve
+						// Handle MSAA Color resolve
 						if (writeOperation.resolveTexture.has_value()) {
-							const AllocatedTexture& resolveTexture = ctx.viewTexture(writeOperation.resolveTexture.value());
+							const AllocatedTexture& resolveTexture = ctx.view(writeOperation.resolveTexture.value());
 
 							ASSERT_MSG(resolveTexture._vkImage != VK_NULL_HANDLE,
 									   "Pass '{}': Resolve target '{}' for '{}' has invalid vkImage!",
@@ -235,11 +295,11 @@ namespace mythril {
 		for (const PassSource& pass : passes) {
 			for (const ReadSpec& read : pass.readOperations) {
 				ASSERT(read.texture.valid());
-				const VkImageLayout currentImageLayout = ctx.viewTexture(read.texture).getImageLayout();
+				const VkImageLayout currentImageLayout = ctx.view(read.texture).getImageLayout();
 				ASSERT_MSG(read.expectedLayout == currentImageLayout,
 						   "Pass '{}': Texture '{}' does not have expected layout '{}' instead is in '{}'!",
 						   pass.name,
-						   ctx.viewTexture(read.texture).getDebugName(),
+						   ctx.view(read.texture).getDebugName(),
 						   vkstring::VulkanImageLayoutToString(read.expectedLayout),
 						   vkstring::VulkanImageLayoutToString(currentImageLayout));
 			}
@@ -266,7 +326,7 @@ namespace mythril {
 
 				for (const CompiledBarrier& compiled_bi : pass.preBarriers) {
 					VkImageMemoryBarrier2 barrier = compiled_bi.barrier;
-					const AllocatedTexture& tex = cmd._ctx->viewTexture(compiled_bi.textureHandle);
+					const AllocatedTexture& tex = cmd._ctx->view(compiled_bi.textureHandle);
 					// give old layout current layout at runtime
 					barrier.oldLayout = tex.getImageLayout();
 					// skip if already in target layout

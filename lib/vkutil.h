@@ -18,12 +18,33 @@ namespace mythril::vkutil {
 	uint32_t GetNumImagePlanes(VkFormat format);
 	VkExtent2D GetImagePlaneExtent(VkExtent2D plane0, VkFormat format, uint32_t plane);
 
+
 	constexpr uint32_t GetAlignedSize(uint32_t value, uint32_t alignment) {
 		return (value + alignment - 1) & ~(alignment - 1);
 	}
+	constexpr VkImageAspectFlags AspectMaskFromAttachmentLayout(VkImageLayout layout) {
+		switch (layout) {
+			case VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL: return VK_IMAGE_ASPECT_DEPTH_BIT;
+			case VK_IMAGE_LAYOUT_STENCIL_ATTACHMENT_OPTIMAL: return VK_IMAGE_ASPECT_STENCIL_BIT;
+			case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL: return VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
 
-	VkImageAspectFlags AspectMaskFromAttachmentLayout(VkImageLayout layout);
-	VkImageAspectFlags AspectMaskFromFormat(VkFormat format);
+			default: return VK_IMAGE_ASPECT_COLOR_BIT;
+		}
+	}
+	constexpr VkImageAspectFlags AspectMaskFromFormat(VkFormat format) {
+		switch (format) {
+			case VK_FORMAT_D16_UNORM:
+			case VK_FORMAT_D32_SFLOAT:
+			case VK_FORMAT_X8_D24_UNORM_PACK32:
+				return VK_IMAGE_ASPECT_DEPTH_BIT;
+			case VK_FORMAT_D16_UNORM_S8_UINT:
+			case VK_FORMAT_D24_UNORM_S8_UINT:
+			case VK_FORMAT_D32_SFLOAT_S8_UINT:
+				return VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
+			default:
+				return VK_IMAGE_ASPECT_COLOR_BIT;
+		}
+	}
 
 	constexpr bool IsFormatDepth(VkFormat format) {
 		switch (format) {
@@ -59,7 +80,7 @@ namespace mythril::vkutil {
 	StageAccess getPipelineStageAccess(VkImageLayout layout);
 	void ImageMemoryBarrier2(VkCommandBuffer cmd, VkImage image, StageAccess src, StageAccess dst, VkImageLayout oldLayout, VkImageLayout newLayout, VkImageSubresourceRange range);
 
-	uint32_t FindMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFilter, VkMemoryPropertyFlags properties);
+	// uint32_t FindMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFilter, VkMemoryPropertyFlags properties);
 
 	VkSemaphore CreateTimelineSemaphore(VkDevice device, unsigned int numImages);
 
@@ -70,10 +91,9 @@ namespace mythril::vkutil {
 		return levels;
 	}
 	constexpr bool IsComponentMappingAnIdentity(VkComponentMapping componentMapping) {
-		return (
-				componentMapping.r == VK_COMPONENT_SWIZZLE_IDENTITY &&
-				componentMapping.g == VK_COMPONENT_SWIZZLE_IDENTITY &&
-				componentMapping.b == VK_COMPONENT_SWIZZLE_IDENTITY &&
-				componentMapping.a == VK_COMPONENT_SWIZZLE_IDENTITY);
+		return componentMapping.r == VK_COMPONENT_SWIZZLE_IDENTITY &&
+		       componentMapping.g == VK_COMPONENT_SWIZZLE_IDENTITY &&
+		       componentMapping.b == VK_COMPONENT_SWIZZLE_IDENTITY &&
+		       componentMapping.a == VK_COMPONENT_SWIZZLE_IDENTITY;
 	}
 }

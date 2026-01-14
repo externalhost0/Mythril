@@ -79,7 +79,7 @@ const std::vector<uint32_t> cubeIndices = {
 		22, 23, 20
 };
 
-glm::mat4 calculateViewMatrix(Camera camera) {
+glm::mat4 calculateViewMatrix(const Camera &camera) {
 	return glm::lookAt(camera.position, camera.position + glm::vec3(0, 0, -1), glm::vec3(0, 1, 0));
 }
 
@@ -106,34 +106,35 @@ int main() {
 	})
 	.build();
 
-	VkExtent2D extent2D = ctx->getWindow().getFramebufferSize();
-	mythril::InternalTextureHandle colorTarget = ctx->createTexture({
-		.dimension = extent2D,
+	const VkExtent2D extent2D = ctx->getWindow().getFramebufferSize();
+	const mythril::Dimensions dims = {extent2D.width, extent2D.height, 1};
+	mythril::Texture colorTarget = ctx->createTexture({
+		.dimension = dims,
+		.format = VK_FORMAT_R8G8B8A8_UNORM,
 		.samples = mythril::SampleCount::X4,
 		.usage = mythril::TextureUsageBits::TextureUsageBits_Attachment,
-		.format = VK_FORMAT_R8G8B8A8_UNORM,
 		.debugName = "Color Texture",
 	});
-	mythril::InternalTextureHandle resolveColorTarget = ctx->createTexture({
-		.dimension = extent2D,
+	mythril::Texture resolveColorTarget = ctx->createTexture({
+		.dimension = dims,
+		.format = VK_FORMAT_R8G8B8A8_UNORM,
 		.samples = mythril::SampleCount::X1,
 		.usage = mythril::TextureUsageBits::TextureUsageBits_Attachment,
-		.format = VK_FORMAT_R8G8B8A8_UNORM,
 		.debugName = "Color Resolve Texture",
 	});
-	mythril::InternalTextureHandle depthTarget = ctx->createTexture({
-		.dimension = extent2D,
+	mythril::Texture depthTarget = ctx->createTexture({
+		.dimension = dims,
+		.format = VK_FORMAT_D32_SFLOAT_S8_UINT,
 		.samples = mythril::SampleCount::X4,
 		.usage = mythril::TextureUsageBits::TextureUsageBits_Attachment,
-		.format = VK_FORMAT_D32_SFLOAT_S8_UINT,
 		.debugName = "Depth Texture"
 	});
 
-	mythril::InternalShaderHandle standardShader = ctx->createShader({
+	mythril::Shader standardShader = ctx->createShader({
 		.filePath = "BasicRed.slang",
 		.debugName = "Example Shader"
 	});
-	mythril::InternalGraphicsPipelineHandle mainPipeline = ctx->createGraphicsPipeline({
+	mythril::GraphicsPipeline mainPipeline = ctx->createGraphicsPipeline({
 		.vertexShader = {standardShader},
 		.fragmentShader = {standardShader},
 		.topology = mythril::TopologyMode::TRIANGLE,
@@ -144,14 +145,14 @@ int main() {
 		.debugName = "Main Pipeline"
 	});
 
-	mythril::InternalBufferHandle cubeVertexBuffer = ctx->createBuffer({
+	mythril::Buffer cubeVertexBuffer = ctx->createBuffer({
 		.size = sizeof(Vertex) * cubeVertices.size(),
 		.usage = mythril::BufferUsageBits::BufferUsageBits_Storage,
 		.storage = mythril::StorageType::Device,
 		.initialData = cubeVertices.data(),
 		.debugName = "Cube Vertex Buffer"
 	});
-	mythril::InternalBufferHandle cubeIndexBuffer = ctx->createBuffer({
+	mythril::Buffer cubeIndexBuffer = ctx->createBuffer({
 		.size = sizeof(uint32_t) * cubeIndices.size(),
 		.usage = mythril::BufferUsageBits::BufferUsageBits_Index,
 		.storage = mythril::StorageType::Device,
@@ -165,14 +166,14 @@ int main() {
 	mythril::RenderGraph graph;
 	graph.addGraphicsPass("main")
 	.write({
-		.texture = colorTarget,
+		.texture = colorTarget.handle(),
 		.clearValue = {0.2f, 0.2f, 0.2f, 1.f},
 		.loadOp = mythril::LoadOperation::CLEAR,
 		.storeOp = mythril::StoreOperation::NO_CARE,
-		.resolveTexture = resolveColorTarget
+		.resolveTexture = resolveColorTarget.handle()
 	})
 	.write({
-		.texture = depthTarget,
+		.texture = depthTarget.handle(),
 		.clearValue = {1.f, 0},
 		.loadOp = mythril::LoadOperation::CLEAR
 	})
@@ -196,12 +197,15 @@ int main() {
 		model = glm::rotate(model, time * 0.5f, glm::vec3(1.0f, 0.0f, 0.0f));
 		GPU::PushConstant constants = {
 				.mvp = calculateProjectionMatrix(camera) * calculateViewMatrix(camera) * model,
-				.vertexBufferAddress = ctx->gpuAddress(cubeVertexBuffer)
+				.vertexBufferAddress = cubeVertexBuffer.gpuAddress()
 		};
 		cmd.cmdPushConstants(constants);
 		cmd.cmdBindIndexBuffer(cubeIndexBuffer);
 		cmd.cmdDrawIndexed(cubeIndices.size());
 		cmd.cmdEndRendering();
+
+		cmd.cmdBlitImage(resolveColorTarget.handle(), ctx->getCurrentSwapchainTexture());
+		cmd.cmdTransitionLayout(ctx->getCurrentSwapchainTexture(), VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
 	});
 	graph.compile(*ctx);
 

@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include "Objects.h"
 #include "../../lib/ObjectHandles.h"
 #include "../../lib/vkenums.h"
 
@@ -13,6 +14,7 @@
 #include <optional>
 #include <functional>
 #include <utility>
+#include <span>
 
 #include <volk.h>
 
@@ -62,6 +64,9 @@ namespace mythril {
 		VkImageView imageView;
 		VkImageLayout imageLayout;
 		VkFormat imageFormat;
+		// optional resolve target
+		VkImageView resolveImageView;
+		VkImageLayout resolveImageLayout;
 
 		VkAttachmentLoadOp loadOp;
 		VkAttachmentStoreOp storeOp;
@@ -73,17 +78,49 @@ namespace mythril {
 	// this is what the user interacts with
 	// intermediate struct, PassSource -> PassCompiled
 	// totally personal preference if you think working operations should be the default, ie ::CLEAR & ::STORE
+	struct TexHandleTransform {
+		TexHandleTransform() = default;
+		TexHandleTransform(const Texture& texture) : handle(texture.handle()) {}
+		TextureHandle handle;
+	};
 	struct WriteSpec {
-		InternalTextureHandle texture;
+		TextureHandle texture;
 		ClearValue clearValue;
 		LoadOperation loadOp = LoadOperation::NO_CARE;
 		StoreOperation storeOp = StoreOperation::NO_CARE;
-		std::optional<InternalTextureHandle> resolveTexture = std::nullopt;
+		std::optional<TextureHandle> resolveTexture = std::nullopt;
 	};
+	struct WriteSpec2 {
+		const Texture& texture;
+		ClearValue clearValue;
+		LoadOperation loadOp = LoadOperation::NO_CARE;
+		StoreOperation storeOp = StoreOperation::NO_CARE;
+		TexHandleTransform resolveTexture;
+	};
+
+
 	struct ReadSpec {
-		InternalTextureHandle texture;
+		ReadSpec(const Texture& texture, VkImageLayout requestedLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+		: texture(texture.handle()), expectedLayout(requestedLayout) {}
+
+		TextureHandle texture;
 		// expectedLayout is always SHADER_READ_ONLY
 		// im leaving this exposed for end-user but im not really sure what other layouts they want, maybe GENERAL
+		VkImageLayout expectedLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	};
+	struct MultiReadSpec {
+
+		MultiReadSpec(std::span<const Texture> itextures, VkImageLayout requestedLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+		: expectedLayout(requestedLayout) {
+			textures.reserve(itextures.size());
+			std::ranges::transform(
+				itextures,
+				std::back_inserter(textures),
+				[](const Texture& t) { return t.handle(); }
+				);
+		}
+
+		std::vector<TextureHandle> textures;
 		VkImageLayout expectedLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 	};
 
@@ -104,7 +141,7 @@ namespace mythril {
 	};
 	struct CompiledBarrier {
 		VkImageMemoryBarrier2 barrier{};
-		InternalTextureHandle textureHandle;
+		TextureHandle textureHandle;
 		bool isRead = false;
 	};
 
@@ -147,7 +184,12 @@ namespace mythril {
 		GraphicsPassBuilder(RenderGraph& graphRef, const char* name) : IPassBuilder(graphRef, name, PassSource::Type::Graphics) {}
 
 		GraphicsPassBuilder& write(const WriteSpec& spec);
+		// will eventually replace WriteSpec
+		GraphicsPassBuilder& write(const WriteSpec2& spec);
+
 		GraphicsPassBuilder& read(const ReadSpec& spec);
+		// GraphicsPassBuilder& read(const MultiReadSpec& spec);
+		GraphicsPassBuilder& read(const Texture* front, unsigned int count, VkImageLayout requestedLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 		void setExecuteCallback(const std::function<void (CommandBuffer &)>& callback) override;
 
 		friend class RenderGraph;
@@ -157,6 +199,7 @@ namespace mythril {
 		ComputePassBuilder(RenderGraph& graphRef, const char* name) : IPassBuilder(graphRef, name, PassSource::Type::Compute) {};
 		// compute passes dont write to textures like renderpasses so we dont offer a write operation
 		ComputePassBuilder& read(const ReadSpec& spec);
+		ComputePassBuilder& read(const Texture* front, unsigned int count, VkImageLayout requestedLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 		void setExecuteCallback(const std::function<void (CommandBuffer &)>& callback) override;
 
 		friend class RenderGraph;
@@ -178,7 +221,7 @@ namespace mythril {
 		void compile(CTX& ctx);
 		void execute(CommandBuffer& cmd);
 	private:
-		std::unordered_map<InternalTextureHandle, VkImageLayout> _initialLayoutsPerFrame{};
+		std::unordered_map<TextureHandle, VkImageLayout> _initialLayoutsPerFrame{};
 		std::vector<PassSource> _sourcePasses;
 		std::vector<PassCompiled> _compiledPasses;
 

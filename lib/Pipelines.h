@@ -6,6 +6,7 @@
 
 #include "vkenums.h"
 #include "Shader.h"
+#include "../include/mythril/Objects.h"
 
 #include <volk.h>
 #include <slang/slang.h>
@@ -33,12 +34,13 @@ namespace mythril {
 	}
 
 	struct ShaderStage {
-		InternalShaderHandle handle {};
+		ShaderHandle handle {};
 		const char* entryPoint = nullptr;
 
 		ShaderStage() = default;
-		ShaderStage(InternalShaderHandle handle) : handle(handle) {}
-		ShaderStage(InternalShaderHandle handle, const char* entryPoint) : handle(handle), entryPoint(entryPoint) {}
+		ShaderStage(const Shader& shader) : handle(shader.handle()) {}
+		ShaderStage(ShaderHandle handle) : handle(handle) {}
+		ShaderStage(ShaderHandle handle, const char* entryPoint) : handle(handle), entryPoint(entryPoint) {}
 
 		bool valid() const noexcept {
 			return handle.valid();
@@ -75,20 +77,21 @@ namespace mythril {
 		SpecializationConstantEntry specConstants[16];
 		const char* debugName = "Unnamed Graphics Pipeline";
 	};
+
 	struct ComputePipelineSpec {
-		InternalShaderHandle shader;
+		ShaderHandle shader;
 		SpecializationConstantEntry specConstants[16];
 		const char* debugName = "Unnamed Compute Pipeline";
 	};
 	struct RayTracingPipelineSpec {
-		InternalShaderHandle shader;
+		ShaderHandle shader;
 		SpecializationConstantEntry specConstants[16];
 		const char* debugName = "Unnamed RayTracing Pipeline";
 	};
 
 
 	// information that any type of pipeline also has
-	struct PipelineCommon {
+	struct PipelineCoreData {
 		// information all pipelines have anyways
 		VkPipeline _vkPipeline = VK_NULL_HANDLE;
 		VkPipelineLayout _vkPipelineLayout = VK_NULL_HANDLE;
@@ -110,14 +113,18 @@ namespace mythril {
 
 	enum class PipelineType { Graphics, Compute, RayTracing };
 
+	struct SharedPipelineInfo {
+		PipelineCoreData core;
+		char debugName[128] = {0};
+	};
+
 	class AllocatedRayTracingPipeline {
 	public:
-		[[nodiscard]] std::string_view getDebugName() const { return _debugName; }
+		[[nodiscard]] std::string_view getDebugName() const { return _shared.debugName; }
 	private:
 		RayTracingPipelineSpec _spec;
-		PipelineCommon _common;
+		SharedPipelineInfo _shared;
 
-		char _debugName[128] = {0};
 
 		friend class CTX;
 		friend class CommandBuffer;
@@ -125,12 +132,11 @@ namespace mythril {
 
 	class AllocatedGraphicsPipeline {
 	public:
-		[[nodiscard]] std::string_view getDebugName() const { return _debugName; }
+		[[nodiscard]] std::string_view getDebugName() const { return _shared.debugName; }
 	private:
 		GraphicsPipelineSpec _spec;
-		PipelineCommon _common;
+		SharedPipelineInfo _shared;
 
-		char _debugName[128] = {0};
 
 		friend class CTX;
 		friend class CommandBuffer;
@@ -139,12 +145,11 @@ namespace mythril {
 
 	class AllocatedComputePipeline {
 	public:
-		[[nodiscard]] std::string_view getDebugName() const { return _debugName; }
+		[[nodiscard]] std::string_view getDebugName() const { return _shared.debugName; }
 	private:
 		ComputePipelineSpec _spec;
-		PipelineCommon _common;
+		SharedPipelineInfo _shared;
 
-		char _debugName[128] = {0};
 
 		friend class CTX;
 		friend class CommandBuffer;

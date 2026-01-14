@@ -2,6 +2,7 @@
 // Created by Hayden Rivas on 10/4/25.
 //
 #include "mythril/CTXBuilder.h"
+#include "mythril/Objects.h"
 #include "mythril/RenderGraphBuilder.h"
 
 #include "SDL3/SDL.h"
@@ -21,19 +22,20 @@ int main() {
 	})
 	.build();
 
-	VkExtent2D extent2D = ctx->getWindow().getFramebufferSize();
-	mythril::InternalTextureHandle colorTarget = ctx->createTexture({
-		.dimension = extent2D,
+	const VkExtent2D extent2D = ctx->getWindow().getFramebufferSize();
+	const mythril::Dimensions dims = {extent2D.width, extent2D.height, 1};
+	mythril::Texture colorTarget = ctx->createTexture({
+		.dimension = dims,
+		.format = VK_FORMAT_R8G8B8A8_UNORM,
 		.usage = mythril::TextureUsageBits::TextureUsageBits_Attachment,
 		.storage = mythril::StorageType::Device,
-		.format = VK_FORMAT_R8G8B8A8_UNORM,
 		.debugName = "Color Texture"
 	});
 
 	mythril::RenderGraph graph;
 	graph.addGraphicsPass("main")
 	.write({
-		.texture = colorTarget,
+		.texture = colorTarget.handle(),
 		.clearValue = {1, 0, 0, 1},
 		.loadOp = mythril::LoadOperation::CLEAR,
 		.storeOp = mythril::StoreOperation::STORE
@@ -42,9 +44,10 @@ int main() {
 		// do absolutely nothing, just begin and end a pass
 		cmd.cmdBeginRendering();
 		cmd.cmdEndRendering();
+		cmd.cmdBlitImage(colorTarget.handle(), ctx->getCurrentSwapchainTexture());
+		cmd.cmdTransitionLayout(ctx->getCurrentSwapchainTexture(), VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
 	});
 	graph.compile(*ctx);
-
 
 	bool quit = false;
 	while(!quit) {

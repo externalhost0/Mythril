@@ -14,7 +14,6 @@ namespace mythril {
 	class InternalObjectHandle final {
 	public:
 		InternalObjectHandle() = default;
-
 		InternalObjectHandle(uint32_t index, uint32_t gen) : _index(index), _generation(gen) {};
 
 		uint32_t index() const {
@@ -43,13 +42,12 @@ namespace mythril {
 	};
 
 
-	using InternalBufferHandle = InternalObjectHandle<struct BufferTag>;
-	using InternalTextureHandle = InternalObjectHandle<struct TextureTag>;
-	using InternalSamplerHandle = InternalObjectHandle<struct SamplerTag>;
-	using InternalShaderHandle = InternalObjectHandle<struct ShaderTag>;
-	using InternalGraphicsPipelineHandle = InternalObjectHandle<struct GraphicsPipelineTag>;
-	using InternalComputePipelineHandle = InternalObjectHandle<struct ComputePipelineTag>;
-
+	using BufferHandle = InternalObjectHandle<struct BufferTag>;
+	using TextureHandle = InternalObjectHandle<struct TextureTag>;
+	using SamplerHandle = InternalObjectHandle<struct SamplerTag>;
+	using ShaderHandle = InternalObjectHandle<struct ShaderTag>;
+	using GraphicsPipelineHandle = InternalObjectHandle<struct GraphicsPipelineTag>;
+	using ComputePipelineHandle = InternalObjectHandle<struct ComputePipelineTag>;
 
 
 // https://github.com/corporateshark/lightweightvk/blob/87d12061688d6f69b8b2c2d9799f00143cb0ee01/lvk/Pool.h#L13
@@ -148,13 +146,12 @@ namespace mythril {
 		uint32_t numObjects() const { return _numObjects; }
 	};
 }
-namespace std {
-	template<typename Type>
-	struct hash<mythril::InternalObjectHandle < Type>> {
-		size_t operator()(const mythril::InternalObjectHandle <Type> &handle) const noexcept {
-			// Simple combination of index and generation
-			uint64_t combined = (static_cast<uint64_t>(handle.index()) << 32) | handle.gen();
-			return std::hash<uint64_t>()(combined);
-		}
-	};
-}
+
+template<typename Type>
+struct std::hash<mythril::InternalObjectHandle < Type>> {
+	size_t operator()(const mythril::InternalObjectHandle <Type> &handle) const noexcept {
+		// Simple combination of index and generation
+		const uint64_t combined = (static_cast<uint64_t>(handle.index()) << 32) | handle.gen();
+		return std::hash<uint64_t>()(combined);
+	}
+};

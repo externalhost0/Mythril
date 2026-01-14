@@ -259,6 +259,7 @@ set(MYTHRIL_SOURCES
         lib/SlangCompiler.cpp
         lib/DescriptorWriter.cpp
         lib/DescriptorAllocatorGrowable.cpp
+        lib/Objects.cpp
 )
 
 if(MYTH_ENABLE_IMGUI_STANDARD OR MYTH_ENABLE_IMGUI_DOCKING)

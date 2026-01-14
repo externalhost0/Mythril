@@ -15,8 +15,8 @@
 
 namespace mythril {
 	class CTX;
-	struct AllocatedBuffer;
-	struct AllocatedTexture;
+	class AllocatedBuffer;
+	class AllocatedTexture;
 
 	constexpr uint8_t kMaxMipLevels = 16;
 
@@ -27,7 +27,7 @@ namespace mythril {
 
 		StagingDevice(const StagingDevice&) = delete;
 		StagingDevice& operator=(const StagingDevice&) = delete;
-		InternalBufferHandle _stagingBuffer;
+		BufferHandle _stagingBuffer;
 	public:
 		void bufferSubData(AllocatedBuffer& buffer, size_t dstOffset, size_t size, const void* data);
 		void imageData2D(AllocatedTexture& image,

@@ -154,7 +154,39 @@ namespace mythril {
 			}
 		}
 		// transition it back to original
-		this->transitionLayout(cmd, originalImageLayout, VkImageSubresourceRange{imageAspectFlags, 0, 1, 0, _numLayers});
+		vkutil::ImageMemoryBarrier2(cmd,
+			_vkImage,
+			vkutil::StageAccess{.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = VK_ACCESS_2_TRANSFER_READ_BIT},
+			vkutil::StageAccess{.stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, .access = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT},
+			VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+			originalImageLayout,
+			VkImageSubresourceRange{imageAspectFlags, 0, _numLevels, 0, _numLayers}
+			);
+		_vkCurrentImageLayout = originalImageLayout;
 	}
 
+	VkImageView AllocatedTexture::createTextureView(
+		VkDevice vk_device,
+		VkImageViewType type,
+		VkFormat format,
+		uint32_t baseLevel,
+		uint32_t numLevels,
+		uint32_t baseLayer,
+		uint32_t numLayers,
+		const VkComponentMapping componentMapping) {
+		const VkImageViewCreateInfo ci = {
+			.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+			.pNext = nullptr,
+			.flags = 0,
+			.image = this->_vkImage,
+			.viewType = type,
+			.format = format,
+			.components = componentMapping,
+			.subresourceRange = VkImageSubresourceRange{vkutil::AspectMaskFromFormat(format), baseLevel, numLevels, baseLayer, numLayers},
+		};
+		VkImageView image_view = VK_NULL_HANDLE;
+		VK_CHECK(vkCreateImageView(vk_device, &ci, nullptr, &image_view));
+		ASSERT(image_view != VK_NULL_HANDLE);
+		return image_view;
+	}
 }
