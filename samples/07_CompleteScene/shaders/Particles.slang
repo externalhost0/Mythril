@@ -12,7 +12,6 @@ struct v2f {
     float3 Normal : NORMAL;
     float2 UV : TEXCOORD0;
     float3 WorldPosition : POSITION;
-
     float3 color;
 };
 
@@ -26,7 +25,6 @@ struct ParticleData {
 }
 struct QuadVertex {
     float2 pos;
-    float3 normal;
     float2 uv;
 }
 struct PushConstant {
@@ -59,7 +57,6 @@ v2f vs_main(VSInput input) {
 
     output.WorldPosition = worldPos;
 
-    output.Normal = vertex.normal;
     output.UV = vertex.uv;
 
     // my needs

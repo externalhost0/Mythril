@@ -13,7 +13,7 @@
 
 int main() {
 	auto ctx = mythril::CTXBuilder{}
-	.set_info_spec({
+	.set_vulkan_cfg({
 		.app_name = "Cool App Name",
 		.engine_name = "Cool Engine Name"
 	})
@@ -24,6 +24,7 @@ int main() {
 		.height = 720,
 		.resizeable = true
 	})
+	.with_default_swapchain()
 	.with_ImGui()
 	.build();
 
@@ -67,7 +68,7 @@ int main() {
 		mythril::Window& window = ctx->getWindow();
 		// mandatory for resizeability
 		if (ctx->isSwapchainDirty()) {
-			ctx->cleanSwapchain();
+			ctx->recreateSwapchain();
 
 			extent2D = window.getFramebufferSize();
 			colorTarget.resize({extent2D.width, extent2D.height});

@@ -9,7 +9,8 @@
 #include <array>
 #include <fstream>
 #include <filesystem>
-#include <include/spirv/unified1/spirv.h>
+
+#include "CTX.h"
 
 namespace mythril {
 	void SlangCompiler::create() {
@@ -47,9 +48,19 @@ namespace mythril {
 			slang::CompilerOptionEntry{ .name = slang::CompilerOptionName::Capability,
 				.value = { .kind = slang::CompilerOptionValueKind::String, .stringValue0 = "SPV_KHR_vulkan_memory_model" }
 			},
+			slang::CompilerOptionEntry{
+				.value = { .kind = slang::CompilerOptionValueKind::String, .stringValue0 = "spvDerivativeControl" }
+			},
 			// slang::CompilerOptionEntry{ .name = slang::CompilerOptionName::Capability,
 			// 	.value = { .kind = slang::CompilerOptionValueKind::String, .stringValue0 = "SPV_KHR_compute_shader_derivatives" }
 			// },
+			slang::CompilerOptionEntry{
+				.name = slang::CompilerOptionName::BindlessSpaceIndex,
+				.value = {
+					.kind = slang::CompilerOptionValueKind::Int,
+					.intValue0 = 0
+				}
+			},
 
 			slang::CompilerOptionEntry{
 				.name = slang::CompilerOptionName::VulkanUseEntryPointName,
@@ -116,7 +127,8 @@ namespace mythril {
 		return diagnostics_blob ? static_cast<const char*>(diagnostics_blob->getBufferPointer()) : "(no diagnostics available)";
 	}
 
-	CompileResult SlangCompiler::compileFile(const std::filesystem::path& filepath) {
+	CompileResult SlangCompiler::compileSlangFile(const std::filesystem::path& filepath) {
+		MYTH_PROFILER_FUNCTION();
 		ASSERT(exists(filepath));
 		// 1. load module
 		Slang::ComPtr<slang::IModule> slang_module;
@@ -180,5 +192,4 @@ namespace mythril {
 		result.success = true;
 		return result;
 	}
-
 }

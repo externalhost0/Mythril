@@ -51,7 +51,8 @@ namespace mythril {
 
 		[[nodiscard]] std::string_view getDebugName() const { return _debugName; }
 	private:
-		// general helper
+		// general helper functions
+
 		VkExtent2D getExtentAs2D() const { return {_vkExtent.width, _vkExtent.height}; }
 		VkImageView createTextureView(
 			VkDevice vk_device,
@@ -106,6 +107,8 @@ namespace mythril {
 		[[nodiscard]] uint8_t* getMappedPtr() const { return static_cast<uint8_t* >(_mappedPtr); }
 		[[nodiscard]] bool isStorageBuffer() const { return (_vkUsageFlags & VK_BUFFER_USAGE_STORAGE_BUFFER_BIT) > 0; }
 		[[nodiscard]] bool isUniformBuffer() const { return (_vkUsageFlags & VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT) > 0; }
+		[[nodiscard]] bool isIndirectBuffer() const { return (_vkUsageFlags & VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT) > 0;}
+		[[nodiscard]] bool isIndexBuffer() const { return (_vkUsageFlags & VK_BUFFER_USAGE_INDEX_BUFFER_BIT) > 0; }
 
 		[[nodiscard]] std::string_view getDebugName() const { return _debugName; }
 	private:

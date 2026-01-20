@@ -31,26 +31,52 @@ namespace mythril {
 			fmt::color::cadet_blue
 	};
 	constexpr const char* GetLogLevelAsString(LogType level) {
-		return level_strings[(int) level];
+		return level_strings[(int)level];
 	}
 	constexpr fmt::color GetLogLevelAsColor(LogType level) {
 		return level_colors[(int)level];
 	}
 
+// way to get namespaces and class prefixes without other stuff
+#if defined(__clang__) || defined(__GNUC__)
+	constexpr std::string_view StripPrettyFunction(std::string_view pretty) {
+		const auto lparen = pretty.find('(');
+		if (lparen == std::string_view::npos)
+			return pretty;
+		auto start = pretty.rfind(' ', lparen);
+		start = (start == std::string_view::npos) ? 0 : start + 1;
+		return pretty.substr(start, lparen - start);
+	}
+	#define EXPANDED_FUNCTION StripPrettyFunction(__PRETTY_FUNCTION__)
+#elif defined(_MSC_VER)
+	constexpr std::string_view StripFuncSig(std::string_view sig) {
+		const auto lparen = sig.find('(');
+		if (lparen == std::string_view::npos)
+			return sig;
+		auto start = sig.rfind(' ', lparen);
+		start = (start == std::string_view::npos) ? 0 : start + 1;
+		return sig.substr(start, lparen - start);
+	}
+	#define EXPANDED_FUNCTION StripFuncSig(__FUNCSIG__)
+#else
+	#define EXPANDED_FUNCTION __FUNCTION__
+#endif
+
+
 #ifdef DEBUG
-#define LOG_DEBUG(message, ...) fmt::print(fg(fmt::color::medium_spring_green), "[DEBUG] Source: {} | {}\n", __FUNCTION__, fmt::format(message __VA_OPT__(, __VA_ARGS__)))
+#define LOG_DEBUG(message, ...) fmt::print(fg(fmt::color::medium_spring_green), "[DEBUG] Source: {} | {}\n", EXPANDED_FUNCTION, fmt::format(message __VA_OPT__(, __VA_ARGS__)))
 #else
 #define LOG_DEBUG(message, ...) ((void)0)
 #endif
 
 #ifdef DEBUG
-#define LOG_CUSTOM(message, ...) fmt::print(fg(fmt::color::orange), "[CUSTOM] Source: {} | {}\n", __FUNCTION__, fmt::format(message __VA_OPT__(, __VA_ARGS__)))
+#define LOG_CUSTOM(message, ...) fmt::print(fg(fmt::color::orange), "[CUSTOM] Source: {} | {}\n", EXPANDED_FUNCTION, fmt::format(message __VA_OPT__(, __VA_ARGS__)))
 #else
 #define LOG_CUSTOM(message, ...) ((void)0)
 #endif
 
 #ifdef DEBUG
-#define LOG_SYSTEM(level, message, ...) fmt::print(fg(GetLogLevelAsColor(level)), "[{}] Source: {} | {}\n", GetLogLevelAsString(level), __FUNCTION__, fmt::format(message __VA_OPT__(, __VA_ARGS__)))
+#define LOG_SYSTEM(level, message, ...) fmt::print(fg(GetLogLevelAsColor(level)), "[{}] Source: {} | {}\n", GetLogLevelAsString(level), EXPANDED_FUNCTION, fmt::format(message __VA_OPT__(, __VA_ARGS__)))
 #else
 #define LOG_SYSTEM(level, message, ...) (void(0))
 #endif

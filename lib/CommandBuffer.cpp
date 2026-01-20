@@ -136,9 +136,9 @@ namespace mythril {
 	}
 
 	// ALL PUBLIC COMMANDS AVAILBLE TO USER //
-	void CommandBuffer::cmdBeginRendering() {
+	void CommandBuffer::cmdBeginRendering(uint32_t layers) {
 		DRY_RETURN();
-		this->cmdBeginRenderingImpl();
+		this->cmdBeginRenderingImpl(layers);
 	}
 
 	void CommandBuffer::cmdEndRendering() {
@@ -159,6 +159,24 @@ namespace mythril {
 		CHECK_PASS_OPERATION_MISMATCH(PassSource::Type::Graphics);
 
 		vkCmdDrawIndexed(_wrapper->_cmdBuf, indexCount, instanceCount, firstIndex, vertexOffset, baseInstance);
+	}
+
+	void CommandBuffer::cmdDrawIndirect(const Buffer &indirectBuffer, VkDeviceSize offset, uint32_t drawCount, uint32_t stride) {
+		DRY_RETURN();
+		CHECK_SHOULD_BE_RENDERING();
+		CHECK_PASS_OPERATION_MISMATCH(PassSource::Type::Graphics);
+		ASSERT_MSG(indirectBuffer->isIndirectBuffer(), "Buffer '{}' is not an indirect buffer, please have its usage include 'BufferUsageBits_Indirect'!", indirectBuffer->getDebugName());
+
+		vkCmdDrawIndirect(_wrapper->_cmdBuf, indirectBuffer->_vkBuffer, offset, drawCount, stride ? stride : sizeof(VkDrawIndirectCommand));
+	}
+
+	void CommandBuffer::cmdDrawIndexedIndirect(const Buffer& indirectBuffer, VkDeviceSize offset, uint32_t drawCount, uint32_t stride) {
+		DRY_RETURN();
+		CHECK_SHOULD_BE_RENDERING();
+		CHECK_PASS_OPERATION_MISMATCH(PassSource::Type::Graphics);
+		ASSERT_MSG(indirectBuffer->isIndirectBuffer(), "Buffer '{}' is not an indirect buffer, please have its usage include 'BufferUsageBits_Indirect'!", indirectBuffer->getDebugName());
+
+		vkCmdDrawIndexedIndirect(_wrapper->_cmdBuf, indirectBuffer->_vkBuffer, offset, drawCount, stride ? stride : sizeof(VkDrawIndexedIndirectCommand));
 	}
 
 	void CommandBuffer::cmdBindIndexBuffer(BufferHandle handle) {
@@ -192,8 +210,8 @@ namespace mythril {
 		tex->generateMipmap(_wrapper->_cmdBuf);
 	}
 
-	// unnecessary to have a DRY_RETURN here
 	void CommandBuffer::cmdTransitionLayout(TextureHandle source, VkImageLayout newLayout) {
+		DRY_RETURN();
 		cmdTransitionLayout(source, newLayout, VkImageSubresourceRange{vkutil::AspectMaskFromFormat(_ctx->view(source).getFormat()), 0, 1, 0, 1});
 	}
 	void CommandBuffer::cmdTransitionLayout(TextureHandle source, VkImageLayout newLayout, VkImageSubresourceRange range) {
@@ -249,6 +267,7 @@ namespace mythril {
 	}
 	void CommandBuffer::cmdBlitImage(TextureHandle source, TextureHandle destination) {
 		DRY_RETURN()
+		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_COMMAND);
 		ASSERT_MSG(source.valid() && destination.valid(), "Textures must be valid handles!");
 
 		auto &sourceTex = _ctx->view(source);
@@ -267,6 +286,7 @@ namespace mythril {
 	}
 	void CommandBuffer::cmdCopyImage(TextureHandle source, TextureHandle destination) {
 		DRY_RETURN()
+		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_COMMAND);
 		ASSERT_MSG(source.valid() && destination.valid(), "Textures must be valid handles!");
 
 		auto &sourceTex = _ctx->view(source);
@@ -281,13 +301,14 @@ namespace mythril {
 
 	void CommandBuffer::cmdPushConstants(const void* data, uint32_t size, uint32_t offset) {
 		DRY_RETURN()
+		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_COMMAND);
 		if (!_currentPipelineInfo) {
 			LOG_SYSTEM(LogType::Warning, "No pipeline currently bound, will not perform push constants!");
 			return;
 		}
 
 		ASSERT_MSG(size % 4 == 0, "Push constant size needs to be a multiple of 4. Is size {}", size);
-		const VkPhysicalDeviceLimits& limits = _ctx->_vkPhysDeviceProperties.limits;
+		const VkPhysicalDeviceLimits& limits = _ctx->getPhysicalDeviceProperties10().limits;
 		if (size + offset > limits.maxPushConstantsSize) {
 			LOG_SYSTEM(LogType::Error, "Push constants size exceeded %u (max %u bytes)", size + offset, limits.maxPushConstantsSize);
 		}
@@ -342,8 +363,11 @@ namespace mythril {
 			_ctx->resolveGraphicsPipelineImpl(*pipeline);
 			return;
 		}
+		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_COMMAND);
 		this->_currentPipelineHandle = handle;
 		this->_currentPipelineInfo = &pipeline->_shared;
+
+		// alias it
 		const SharedPipelineInfo* info = this->_currentPipelineInfo;
 		CHECK_PIPELINE_REBIND(&info->core, _lastBoundvkPipeline, info->debugName);
 		this->cmdBindPipelineImpl(&info->core, VK_PIPELINE_BIND_POINT_GRAPHICS);
@@ -366,6 +390,7 @@ namespace mythril {
 			_ctx->resolveComputePipelineImpl(*pipeline);
 			return;
 		}
+		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_COMMAND);
 		this->_currentPipelineHandle = handle;
 		this->_currentPipelineInfo = &pipeline->_shared;
 		const SharedPipelineInfo* info = this->_currentPipelineInfo;
@@ -376,6 +401,7 @@ namespace mythril {
 	// current issues with host buffer
 	void CommandBuffer::cmdUpdateBuffer(BufferHandle handle, size_t offset, size_t size, const void* data) {
 		DRY_RETURN()
+		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_COMMAND);
 
 		ASSERT_MSG(!_isRendering, "You cannot update a buffer while rendering! Please move this command either before or after rendering.");
 		ASSERT(handle.valid());
@@ -400,6 +426,7 @@ namespace mythril {
 	}
 	void CommandBuffer::cmdCopyImageToBuffer(TextureHandle source, BufferHandle destination, const VkBufferImageCopy& region) {
 		DRY_RETURN()
+		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_COMMAND);
 
 		auto& sourceTex = _ctx->view(source);
 		VkImageLayout currentLayout = sourceTex._vkCurrentImageLayout;
@@ -445,6 +472,7 @@ namespace mythril {
 #ifdef MYTH_ENABLED_IMGUI
 	void CommandBuffer::cmdDrawImGui() {
 		DRY_RETURN()
+		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_COMMAND);
 		CHECK_SHOULD_BE_RENDERING();
 #ifdef DEBUG
 		for (const auto& color_attachment : this->_activePass.colorAttachments) {
@@ -458,7 +486,7 @@ namespace mythril {
 #endif
 
 // ALL INTERNALLY CALLED COMMAND BUFFER FUNCTIONS
-	void CommandBuffer::cmdBeginRenderingImpl() {
+	void CommandBuffer::cmdBeginRenderingImpl(uint32_t layers) {
 		ASSERT_MSG(!_isRendering, "Command Buffer is already rendering!");
 
 		// Step 1: Get all colorAttachmentInfos and a depthAttachmentInfo
@@ -470,16 +498,16 @@ namespace mythril {
 			// for now its just using floats
 			if (attachmentInfo.resolveImageView != VK_NULL_HANDLE) {
 				colorAttachmentsInfo.push_back(vkinfo::CreateColorAttachmentInfo(attachmentInfo.imageView,
-																				 isClearing ? &attachmentInfo.clearColor : nullptr,
-																				 attachmentInfo.loadOp,
-																				 attachmentInfo.storeOp,
-																				 attachmentInfo.resolveImageView,
-																				 toVulkan(ResolveMode::AVERAGE)));
+				isClearing ? &attachmentInfo.clearColor : nullptr,
+				attachmentInfo.loadOp,
+				attachmentInfo.storeOp,
+				attachmentInfo.resolveImageView,
+				toVulkan(ResolveMode::AVERAGE)));
 			} else {
 				colorAttachmentsInfo.push_back(vkinfo::CreateColorAttachmentInfo(attachmentInfo.imageView,
-																				 isClearing ? &attachmentInfo.clearColor : nullptr,
-																				 attachmentInfo.loadOp,
-																				 attachmentInfo.storeOp));
+				isClearing ? &attachmentInfo.clearColor : nullptr,
+				attachmentInfo.loadOp,
+				attachmentInfo.storeOp));
 			}
 		}
 		const bool hasDepth = _activePass.depthAttachment.has_value();
@@ -487,27 +515,36 @@ namespace mythril {
 		if (hasDepth) {
 			const DepthAttachmentInfo& attachmentInfo = _activePass.depthAttachment.value();
 			const bool isClearing = attachmentInfo.loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR;
-			depthAttachmentInfo = vkinfo::CreateDepthStencilAttachmentInfo(attachmentInfo.imageView,
-																		   isClearing ? &attachmentInfo.clearDepthStencil : nullptr,
-																		   attachmentInfo.loadOp,
-																		   attachmentInfo.storeOp);
+			if (attachmentInfo.resolveImageView != VK_NULL_HANDLE) {
+				depthAttachmentInfo = vkinfo::CreateDepthStencilAttachmentInfo(attachmentInfo.imageView,
+					isClearing ? &attachmentInfo.clearDepthStencil : nullptr,
+					attachmentInfo.loadOp,
+					attachmentInfo.storeOp,
+					attachmentInfo.resolveImageView,
+					toVulkan(ResolveMode::SAMPLE_ZERO));
+			} else {
+				depthAttachmentInfo = vkinfo::CreateDepthStencilAttachmentInfo(attachmentInfo.imageView,
+				isClearing ? &attachmentInfo.clearDepthStencil : nullptr,
+				attachmentInfo.loadOp,
+				attachmentInfo.storeOp);
+			}
 		}
 		// Step 2: Put it together in a renderingInfo struct
 		const VkExtent2D renderExtent = _activePass.extent2D;
 		VkRenderingInfo info = {
-				.sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
-				.pNext = nullptr,
-				.flags = 0,
-				.renderArea = {
-						.offset = { 0, 0 },
-						.extent = renderExtent
-				},
-				.layerCount = 1,
-				.viewMask = 0,
-				.colorAttachmentCount = static_cast<uint32_t>(colorAttachmentsInfo.size()),
-				.pColorAttachments = colorAttachmentsInfo.data(),
-				.pDepthAttachment = hasDepth ? &depthAttachmentInfo : nullptr,
-				.pStencilAttachment = nullptr
+			.sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
+			.pNext = nullptr,
+			.flags = 0,
+			.renderArea = {
+				.offset = { 0, 0 },
+				.extent = renderExtent
+			},
+			.layerCount = layers,
+			.viewMask = 0,
+			.colorAttachmentCount = static_cast<uint32_t>(colorAttachmentsInfo.size()),
+			.pColorAttachments = colorAttachmentsInfo.data(),
+			.pDepthAttachment = hasDepth ? &depthAttachmentInfo : nullptr,
+			.pStencilAttachment = nullptr
 		};
 		cmdSetViewportImpl(renderExtent);
 		cmdSetScissorImpl(renderExtent);
@@ -635,6 +672,7 @@ namespace mythril {
 		vkCmdBlitImage2(_wrapper->_cmdBuf, &blitInfo);
 	}
 	void CommandBuffer::cmdTransitionLayoutImpl(TextureHandle source, VkImageLayout currentLayout, VkImageLayout newLayout, VkImageSubresourceRange range) {
+		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_COMMAND);
 		auto& sourceTex = _ctx->view(source);
 		// if (sourceTex._vkCurrentImageLayout == newLayout) {
 		// 	LOG_SYSTEM(LogType::Info, "Image ({}) is already in the requested layout.", sourceTex._debugName);

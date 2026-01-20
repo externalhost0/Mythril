@@ -1,7 +1,10 @@
 import GPUStructs;
 
+// note that we use SV_VulkanVertexID instead of the typical SV_VertexID
+// this is just because SV_VertexID doesnt include the first vertex
+// https://docs.shader-slang.org/en/latest/external/slang/docs/user-guide/a2-01-spirv-target-specific.html#using-sv-instanceid-and-sv-vertexid-with-spir-v-target
 struct VSInput {
-    uint VertexID : SV_VertexID;
+    uint VertexID : SV_VulkanVertexID;
 };
 struct v2f {
     float4 ClipPos : SV_Position;

@@ -90,8 +90,12 @@ glm::mat4 calculateProjectionMatrix(Camera camera) {
 }
 
 int main() {
+	std::vector slang_searchpaths = {
+		"../../include/",
+		"../include/"
+	};
 	auto ctx = mythril::CTXBuilder{}
-	.set_info_spec({
+	.set_vulkan_cfg({
 		.app_name = "Cool App Name",
 		.engine_name = "Cool Engine Name"
 	})
@@ -102,9 +106,9 @@ int main() {
 		.height = 720,
 		.resizeable = false
 	})
-	.set_shader_search_paths({
-		"../../include/",
-		"../include/"
+	.with_default_swapchain()
+	.set_slang_cfg({
+		.searchpaths = slang_searchpaths
 	})
 	.build();
 

@@ -34,11 +34,11 @@ static const float kGaussWeights[kFilterSize] = float[](
 );
 
 [SpecializationConstant]
-const bool kIsHorizontal;
+const bool scIsHorizontal;
 
 [shader("compute")]
 [numthreads(16, 16)]
-void cs_main(uint3 threadId: SV_DispatchThreadID) {
+void cs_main(uint3 threadId : SV_DispatchThreadID) {
     int2 size;
     push.inTex.GetDimensions(size.x, size.y);
     const int2 xy = threadId.xy;
@@ -47,13 +47,13 @@ void cs_main(uint3 threadId: SV_DispatchThreadID) {
         return;
 
     const float2 texCoord = (threadId.xy + float2(0.5)) / size;
-    const float texScaler = 1.0 * frame.one  / (kIsHorizontal ? size.x : size.y);
+    const float texScaler = 1.0 * frame.one / (scIsHorizontal ? size.x : size.y);
 
     float3 c = float3(0.0);
 
     for (int i = 0; i != kFilterSize; i++) {
         float offset = float(i - kFilterSize / 2);
-        float2 uv = texCoord + texScaler * (kIsHorizontal ? float2(offset, 0) : float2(0, offset));
+        float2 uv = texCoord + texScaler * (scIsHorizontal ? float2(offset, 0) : float2(0, offset));
         c += push.inTex.SampleLevel(push.sampler, uv, 0).rgb * kGaussWeights[i];
     }
 

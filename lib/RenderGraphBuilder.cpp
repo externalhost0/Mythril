@@ -34,6 +34,11 @@ namespace mythril {
 		this->_passSource.readOperations.push_back(spec);
 		return *this;
 	}
+	GraphicsPassBuilder& GraphicsPassBuilder::read(const Texture& texture, VkImageLayout requestedLayout) {
+		this->_passSource.readOperations.emplace_back(texture, requestedLayout);
+		return *this;
+	}
+
 	// for contigous arrays of Textures
 	GraphicsPassBuilder& GraphicsPassBuilder::read(const Texture* front, unsigned int count, VkImageLayout requestedLayout) {
 		for (int i = 0; i < count; i++) {
@@ -59,6 +64,12 @@ namespace mythril {
 		this->_passSource.readOperations.push_back(spec);
 		return *this;
 	}
+
+	ComputePassBuilder& ComputePassBuilder::read(const Texture &texture, VkImageLayout requestedLayout) {
+		this->_passSource.readOperations.emplace_back(texture, requestedLayout);
+		return *this;
+	}
+
 
 	void ComputePassBuilder::setExecuteCallback(const std::function<void(CommandBuffer &)> &callback) {
 		this->_passSource.executeCallback = callback;
@@ -101,6 +112,7 @@ namespace mythril {
 		ASSERT_MSG(currentTexture.getImage() != VK_NULL_HANDLE,
 				   "Texture read operation could not be compiled for '{}'!",
 				   currentTexture.getDebugName());
+		ASSERT_MSG(currentTexture.getSampleCount() == VK_SAMPLE_COUNT_1_BIT, "Texture read operation cannot be compiled for multisampled images, '{}'", currentTexture.getDebugName());
 
 		VkImageMemoryBarrier2 barrier = vkinfo::CreateImageMemoryBarrier2(
 				currentTexture.getImage(),
@@ -130,6 +142,7 @@ namespace mythril {
 	}
 
 	void RenderGraph::compile(CTX& ctx) {
+		MYTH_PROFILER_ZONE("RenderGraph::Compile", MYTH_PROFILER_COLOR_RENDERGRAPH);
 		this->_compiledPasses.clear();
 
 		// BUILD PASS DESCRIPTIONS -> PIPELINE BARRIERS //
@@ -214,7 +227,7 @@ namespace mythril {
 									VK_IMAGE_LAYOUT_UNDEFINED,  // PLACEHOLDER
 									VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
 									true);
-							compiled.preBarriers.push_back({resolveBarrier, writeOperation.resolveTexture.value()});
+							compiled.preBarriers.push_back({resolveBarrier, writeOperation.resolveTexture.value(), false, true});
 						}
 						// set it
 						compiled.depthAttachment = depthInfo;
@@ -261,7 +274,7 @@ namespace mythril {
 									VK_IMAGE_LAYOUT_UNDEFINED,  // PLACEHOLDER
 									VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
 									true);
-							compiled.preBarriers.push_back({resolveBarrier, writeOperation.resolveTexture.value()});
+							compiled.preBarriers.push_back({resolveBarrier, writeOperation.resolveTexture.value(), false, true});
 						}
 
 						compiled.colorAttachments.push_back(colorInfo);
@@ -288,6 +301,7 @@ namespace mythril {
 		ctx._currentCommandBuffer = {};
 
 		_hasCompiled = true;
+		MYTH_PROFILER_ZONE_END();
 	}
 
 	// currently not used/broken
@@ -306,53 +320,78 @@ namespace mythril {
 		}
 	}
 
+	void RenderGraph::PerformTransitions(CommandBuffer& cmd, const PassCompiled& currentPass) {
+		std::vector<VkImageMemoryBarrier2> barriers;
+		barriers.reserve(currentPass.preBarriers.size());
+		CTX& ctx = *cmd._ctx;
+
+		for (const CompiledBarrier& compiled_bi : currentPass.preBarriers) {
+			VkImageMemoryBarrier2 barrier = compiled_bi.barrier;
+			const AllocatedTexture& tex = ctx.view(compiled_bi.textureHandle);
+			barrier.oldLayout = tex.getImageLayout();
+
+			if (barrier.oldLayout == barrier.newLayout) {
+				continue;
+			}
+			// LOG_SYSTEM(LogType::Info, "For Pass '{}': Barrier for '{}': {} -> {}",
+			// 	currentPass.name,
+			//   tex.getDebugName(),
+			//   vkstring::VulkanImageLayoutToString(barrier.oldLayout),
+			//   vkstring::VulkanImageLayoutToString(barrier.newLayout));
+
+			barriers.push_back(barrier);
+		}
+
+		if (!barriers.empty()) {
+			ASSERT(cmd._wrapper->_cmdBuf);
+			VkDependencyInfo dependencyInfo = {
+				.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+				.pNext = nullptr,
+				.imageMemoryBarrierCount = static_cast<uint32_t>(barriers.size()),
+				.pImageMemoryBarriers = barriers.data()
+			};
+			vkCmdPipelineBarrier2(cmd._wrapper->_cmdBuf, &dependencyInfo);
+
+			// Update tracked layouts - use the barriers we actually submitted!
+			for (const VkImageMemoryBarrier2& barrier : barriers) {
+				// Find the texture handle that corresponds to this barrier's image
+				for (const CompiledBarrier& cb : currentPass.preBarriers) {
+					const AllocatedTexture& tex = ctx.view(cb.textureHandle);
+					if (tex.getImage() == barrier.image) {
+						ctx._texturePool.get(cb.textureHandle)->_vkCurrentImageLayout = barrier.newLayout;
+						break;
+					}
+				}
+			}
+		}
+	}
+
 	void RenderGraph::execute(CommandBuffer& cmd) {
+		MYTH_PROFILER_ZONE("RenderGraph::execute", MYTH_PROFILER_COLOR_RENDERGRAPH);
 		ASSERT_MSG(!cmd.isDrying(), "You cannot call RenderGraph::execute inside an execution callback!");
 		ASSERT_MSG(this->_hasCompiled, "RenderGraph must be compiled before it can be executed!");
 		if (this->_compiledPasses.empty()) {
 			LOG_SYSTEM(LogType::Warning, "RenderGraph has no passes, execute will do nothing!");
 			return;
 		}
-// #ifdef DEBUG
-// 		ValidateReadImageLayouts(*cmd._ctx, _sourcePasses);
-// #endif
 		// execute each pass in order of added
 		for (const PassCompiled& pass : _compiledPasses) {
+			// reset current states
+			cmd._currentPipelineInfo = nullptr;
+			cmd._currentPipelineHandle = {};
 			cmd._activePass = pass;
 			// if barriers are required
-			if (!pass.preBarriers.empty()) {
-				std::vector<VkImageMemoryBarrier2> barriers;
-				barriers.reserve(pass.preBarriers.size());
-
-				for (const CompiledBarrier& compiled_bi : pass.preBarriers) {
-					VkImageMemoryBarrier2 barrier = compiled_bi.barrier;
-					const AllocatedTexture& tex = cmd._ctx->view(compiled_bi.textureHandle);
-					// give old layout current layout at runtime
-					barrier.oldLayout = tex.getImageLayout();
-					// skip if already in target layout
-					if (barrier.oldLayout == barrier.newLayout) {
-						continue;
-					}
-					barriers.push_back(barrier);
-				}
-				// submit barriers if needed
-				if (!barriers.empty()) {
-					ASSERT(cmd._wrapper->_cmdBuf);
-					VkDependencyInfo dependencyInfo = {
-							.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-							.pNext = nullptr,
-							.imageMemoryBarrierCount = static_cast<uint32_t>(barriers.size()),
-							.pImageMemoryBarriers = barriers.data()
-					};
-					vkCmdPipelineBarrier2(cmd._wrapper->_cmdBuf, &dependencyInfo);
-					// update tracked layouts after barriers execute
-					for (const CompiledBarrier& cb : pass.preBarriers) {
-						cmd._ctx->_texturePool.get(cb.textureHandle)->_vkCurrentImageLayout = cb.barrier.newLayout;
-					}
-				}
-			}
+			MYTH_PROFILER_ZONE("Transitions", MYTH_PROFILER_COLOR_RENDERGRAPH);
+			PerformTransitions(cmd, pass);
+			MYTH_PROFILER_ZONE_END();
+// #ifdef DEBUG
+// 			ValidateReadImageLayouts(*cmd._ctx, this->_sourcePasses);
+// #endif
 			// execute the pass callback
+			MYTH_PROFILER_ZONE(pass.name.c_str(), MYTH_PROFILER_COLOR_RENDERPASS);
 			pass.executeCallback(cmd);
+			MYTH_PROFILER_ZONE_END();
 		}
+		MYTH_PROFILER_ZONE_END();
 	}
 }

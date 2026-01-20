@@ -166,5 +166,6 @@ namespace mythril {
 		std::vector<AllocatedShader::PushConstantInfo> retrivedPushConstants;
 	};
 
+	void PatchSpecConstants(uint32_t*& code, size_t& size);
 	ReflectionResult ReflectSPIRV(const uint32_t* code, size_t size);
 }

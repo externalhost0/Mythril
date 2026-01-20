@@ -376,8 +376,12 @@ void DrawShaderInfo(const mythril::AllocatedShader& shader) {
 
 
 int main() {
+	std::vector slang_searchpaths = {
+		"../../include/",
+		"../include/"
+	};
 	auto ctx = mythril::CTXBuilder{}
-	.set_info_spec({
+	.set_vulkan_cfg({
 		.app_name = "Cool App Name",
 		.engine_name = "Cool Engine Name"
 	})
@@ -388,9 +392,8 @@ int main() {
 		.height = 720,
 		.resizeable = true
 	})
-	.set_shader_search_paths({
-		"../../include/",
-		"../include/"
+	.set_slang_cfg({
+		.searchpaths = slang_searchpaths
 	})
 	.with_ImGui()
 	.build();
@@ -492,16 +495,6 @@ int main() {
 		// rotating cube!
 		glm::mat4 modelmatrix = glm::rotate(glm::mat4(1.0f), time, glm::vec3(0.0f, 1.0f, 0.0f));
 		modelmatrix = glm::rotate(modelmatrix, time * 0.5f, glm::vec3(1.0f, 0.0f, 0.0f));
-		// std430
-		const VkExtent2D windowSize = ctx->getWindow().getWindowSize();
-		const Camera camera = {
-				.position = {0.f, 0.f, 5.f},
-				.aspectRatio = (float) windowSize.width / (float) windowSize.height,
-				.fov = 80.f,
-				.nearPlane = 0.1f,
-				.farPlane = 100.f
-		};
-
 		GPU::GeometryPushConstant push {
 			.model =  modelmatrix,
 			.vertexBufferAddress = cubeVertexBuffer.gpuAddress()
@@ -537,7 +530,7 @@ int main() {
 	writer.updateBinding(perMaterialDataBuffer, "perMaterial"); // set 1, binding 0
 	ctx->submitDescriptorUpdate(writer);
 
-	std::srand(std::time(0));
+	std::srand(std::time(nullptr));
 	bool quit = false;
 	while(!quit) {
 		SDL_Event e;
@@ -554,7 +547,7 @@ int main() {
 		// mandatory for resizeability
 		// or else your presentation will break
 		if (ctx->isSwapchainDirty()) {
-			ctx->cleanSwapchain();
+			ctx->recreateSwapchain();
 
 			const mythril::Window& window = ctx->getWindow();
 			// get framebuffer size for correct resolution, not windowsize which might not scale to your monitor dpi correctly
@@ -639,7 +632,7 @@ int main() {
 
 
 		mythril::CommandBuffer& cmd = ctx->openCommand(mythril::CommandBuffer::Type::Graphics);
-		
+
 		// buffer updating must be done before rendering
 		cmd.cmdUpdateBuffer(objectDataBuf, objects);
 		cmd.cmdUpdateBuffer(perFrameDataBuffer, frameData);
@@ -648,6 +641,5 @@ int main() {
 		graph.execute(cmd);
 		ctx->submitCommand(cmd);
 	}
-
 	return 0;
 }

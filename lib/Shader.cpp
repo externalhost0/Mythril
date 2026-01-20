@@ -270,6 +270,30 @@ namespace mythril {
 //		}
 //	}
 
+	void PatchSpecConstants(uint32_t*& code, size_t& size) {
+		SpvReflectShaderModule spirv_module = {};
+		SpvReflectResult spv_result = spvReflectCreateShaderModule(size, code, &spirv_module);
+		ASSERT_MSG(spv_result == SPV_REFLECT_RESULT_SUCCESS, "spvReflectCreateShaderModule failed for patching!");
+
+		// we want to get the first descriptor set and ensure that its set index is 0
+		// if not then we shift all descriptor sets over by its set index until its at 0
+		if (spirv_module.descriptor_set_count < 1) return;
+		// we might want to check just the first SpvReflectDescriptorSet, however idk if they are ordered
+		uint32_t lowest_set_index = std::numeric_limits<uint32_t>::max();
+		for (int i = 0; i < spirv_module.descriptor_set_count; i++) {
+			const SpvReflectDescriptorSet& set = spirv_module.descriptor_sets[i];
+			if (lowest_set_index > set.set) lowest_set_index = set.set;
+		}
+		if (lowest_set_index == 0) return;
+		// now we know we have to apply the patch
+		// we loop through every descriptor set and shift their set index down by lowest set
+		for (int i = 0; i < spirv_module.descriptor_set_count; i++) {
+			SpvReflectDescriptorSet& set = spirv_module.descriptor_sets[i];
+			spvReflectChangeDescriptorSetNumber(&spirv_module, &set, set.set-lowest_set_index);
+		}
+		size = spvReflectGetCodeSize(&spirv_module);
+		memcpy(code, spvReflectGetCode(&spirv_module), size);
+	}
 
 	ReflectionResult ReflectSPIRV(const uint32_t* code, size_t size) {
 		SpvReflectShaderModule spirv_module = {};

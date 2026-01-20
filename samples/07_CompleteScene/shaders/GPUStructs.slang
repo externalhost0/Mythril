@@ -156,8 +156,11 @@ struct LightingData
 struct CameraData
 {
     float4x4 proj;
+    float4x4 invProj;
     float4x4 view;
     float3 position;
+    float2 g_f2UVToViewA;
+    float2 g_f2UVToViewB;
     float far;
     float near;
 

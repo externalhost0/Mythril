@@ -35,3 +35,4 @@
 # and obviously the build directory
 cmake-build-*
 .idea
+.cache/

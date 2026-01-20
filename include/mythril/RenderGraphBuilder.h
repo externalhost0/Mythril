@@ -96,6 +96,7 @@ namespace mythril {
 		LoadOperation loadOp = LoadOperation::NO_CARE;
 		StoreOperation storeOp = StoreOperation::NO_CARE;
 		TexHandleTransform resolveTexture;
+		TexRange range;
 	};
 
 
@@ -109,7 +110,6 @@ namespace mythril {
 		VkImageLayout expectedLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 	};
 	struct MultiReadSpec {
-
 		MultiReadSpec(std::span<const Texture> itextures, VkImageLayout requestedLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
 		: expectedLayout(requestedLayout) {
 			textures.reserve(itextures.size());
@@ -143,6 +143,7 @@ namespace mythril {
 		VkImageMemoryBarrier2 barrier{};
 		TextureHandle textureHandle;
 		bool isRead = false;
+		bool isResolve = false;
 	};
 
 	// hidden information that transforms the PassSource into usable info
@@ -188,6 +189,7 @@ namespace mythril {
 		GraphicsPassBuilder& write(const WriteSpec2& spec);
 
 		GraphicsPassBuilder& read(const ReadSpec& spec);
+		GraphicsPassBuilder& read(const Texture& texture, VkImageLayout requestedLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 		// GraphicsPassBuilder& read(const MultiReadSpec& spec);
 		GraphicsPassBuilder& read(const Texture* front, unsigned int count, VkImageLayout requestedLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 		void setExecuteCallback(const std::function<void (CommandBuffer &)>& callback) override;
@@ -199,6 +201,7 @@ namespace mythril {
 		ComputePassBuilder(RenderGraph& graphRef, const char* name) : IPassBuilder(graphRef, name, PassSource::Type::Compute) {};
 		// compute passes dont write to textures like renderpasses so we dont offer a write operation
 		ComputePassBuilder& read(const ReadSpec& spec);
+		ComputePassBuilder& read(const Texture& texture, VkImageLayout requestedLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 		ComputePassBuilder& read(const Texture* front, unsigned int count, VkImageLayout requestedLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 		void setExecuteCallback(const std::function<void (CommandBuffer &)>& callback) override;
 
@@ -215,6 +218,7 @@ namespace mythril {
 		GraphicsPassBuilder addGraphicsPass(const char* name) {
 			return GraphicsPassBuilder{*this, name};
 		}
+
 		// 2 step,
 		// 1. transform passes
 		// 2. build pipelines
@@ -224,6 +228,8 @@ namespace mythril {
 		std::unordered_map<TextureHandle, VkImageLayout> _initialLayoutsPerFrame{};
 		std::vector<PassSource> _sourcePasses;
 		std::vector<PassCompiled> _compiledPasses;
+
+		void PerformTransitions(CommandBuffer& cmd, const PassCompiled& currentPass);
 
 		bool _hasCompiled = false;
 

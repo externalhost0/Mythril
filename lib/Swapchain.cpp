@@ -14,8 +14,9 @@
 #include "VulkanObjects.h"
 
 namespace mythril {
-	Swapchain::Swapchain(CTX& ctx, SwapchainArgs args)
+	Swapchain::Swapchain(CTX& ctx, SwapchainSpec args)
 	: _ctx(ctx) {
+		ASSERT_MSG(args.width > 0 && args.height > 0, "Swapchain width & height must both be greater than 0!");
 		// PRIMARY SWAPCHAIN DATA CREATION //
 		uint16_t width = args.width, height = args.height;
 		vkb::SwapchainBuilder swapchainBuilder{_ctx._vkPhysicalDevice, _ctx._vkDevice, _ctx._vkSurfaceKHR};
@@ -54,11 +55,11 @@ namespace mythril {
 			VkSurfaceCapabilitiesKHR caps = {};
 			VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(_ctx._vkPhysicalDevice, _ctx._vkSurfaceKHR, &caps));
 
-			VkFormatProperties props = {};
-			vkGetPhysicalDeviceFormatProperties(_ctx._vkPhysicalDevice, _vkImageFormat, &props);
+			VkFormatProperties2 format_props2 = { .sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2 };
+			vkGetPhysicalDeviceFormatProperties2(_ctx._vkPhysicalDevice, _vkImageFormat, &format_props2);
 
 			const bool isStorageSupported = (caps.supportedUsageFlags & VK_IMAGE_USAGE_STORAGE_BIT) > 0;
-			const bool isTilingOptimalSupported = (props.optimalTilingFeatures & VK_IMAGE_USAGE_STORAGE_BIT) > 0;
+			const bool isTilingOptimalSupported = (format_props2.formatProperties.optimalTilingFeatures & VK_IMAGE_USAGE_STORAGE_BIT) > 0;
 
 			if (isStorageSupported && isTilingOptimalSupported) {
 				usage_flags |= VK_IMAGE_USAGE_STORAGE_BIT;

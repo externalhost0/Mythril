@@ -12,9 +12,10 @@ namespace mythril {
 	class CTX;
 	class AllocatedTexture;
 
-	struct SwapchainArgs {
-		uint16_t width = 0;
-		uint16_t height = 0;
+	struct SwapchainSpec
+	{
+		uint32_t width = 0;
+		uint32_t height = 0;
 		VkFormat format = VK_FORMAT_B8G8R8A8_UNORM;
 		VkColorSpaceKHR colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
 		VkPresentModeKHR presentMode = VK_PRESENT_MODE_FIFO_KHR;
@@ -23,7 +24,7 @@ namespace mythril {
 	class Swapchain final {
 		enum { kMAX_SWAPCHAIN_IMAGES = 16 };
 	public:
-		explicit Swapchain(CTX& ctx, SwapchainArgs args);
+		explicit Swapchain(CTX& ctx, SwapchainSpec args);
 		~Swapchain();
 	public: // actually used in the loop
 		void acquire();

@@ -153,6 +153,7 @@ namespace mythril {
 	};
 
 	struct TextureViewSpec {
+		VkImageViewType type = VK_IMAGE_VIEW_TYPE_MAX_ENUM;
 		uint32_t layer = 0;
 		uint32_t numLayers = 1;
 		uint32_t mipLevel = 0;

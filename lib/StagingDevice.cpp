@@ -10,7 +10,7 @@
 namespace mythril {
 	StagingDevice::StagingDevice(CTX& ctx) : _ctx(ctx) {
 
-		const VkPhysicalDeviceLimits& limits = _ctx._vkPhysDeviceProperties.limits;
+		const VkPhysicalDeviceLimits& limits = _ctx.getPhysicalDeviceProperties10().limits;
 		// use default value of 128Mb clamped to the max limits
 		_maxBufferSize = std::min(limits.maxStorageBufferRange, 128u * 1024u * 1024u);
 		ASSERT_MSG(_minBufferSize <= _maxBufferSize, "Min buffer size MUST BE smaller than or equal to max buffer size!");

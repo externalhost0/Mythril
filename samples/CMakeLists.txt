@@ -9,7 +9,7 @@ macro(ADD_SAMPLE sample_name)
     set(oneValueArgs)
     set(multiValueArgs LIBS OPTIONS)
     cmake_parse_arguments(SAMPLE "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
-
+    message(STATUS "${sample_name} OPTIONS = ${SAMPLE_OPTIONS}")
     set(sample_file "${sample_name}/main.cpp")
 
     # Handle ImGui cache override
@@ -39,7 +39,7 @@ macro(ADD_SAMPLE sample_name)
             COMMAND ${CMAKE_COMMAND} -E copy_directory
             "${CMAKE_CURRENT_SOURCE_DIR}/${sample_name}/"
             "$<TARGET_FILE_DIR:${sample_name}>/"
-            DEPENDS ${SAMPLE_ASSET_FILES}
+#            DEPENDS ${SAMPLE_ASSET_FILES}
             COMMENT "Copying ${sample_name} assets to output directory"
     )
 
@@ -64,6 +64,7 @@ CPMAddPackage(
         GITHUB_REPOSITORY "g-truc/glm"
         GIT_TAG 1.0.1
 )
+# for vulkan depth, as it doesnt do opengls [-1, 1], and instead [0, 1]
 add_compile_definitions(GLM_FORCE_DEPTH_ZERO_TO_ONE)
 add_compile_definitions(GLM_ENABLE_EXPERIMENTAL)
 
@@ -108,5 +109,16 @@ ADD_SAMPLE("02_Cube" LIBS glm)
 ADD_SAMPLE("03_CubeMSAA" LIBS glm)
 ADD_SAMPLE("04_PostProcessingCube" LIBS glm)
 ADD_SAMPLE("05_ImGui" OPTIONS MYTH_ENABLE_IMGUI_STANDARD=ON)
-ADD_SAMPLE("06_ComplexShader" LIBS glm OPTIONS MYTH_ENABLE_IMGUI_STANDARD=ON)
-ADD_SAMPLE("07_CompleteScene" LIBS glm fastgltf stb_image imguizmo OPTIONS MYTH_ENABLED_IMGUI_STANDARD=ON)
+ADD_SAMPLE("06_ComplexShader" LIBS glm
+        OPTIONS
+        MYTH_ENABLE_IMGUI_STANDARD=ON
+)
+ADD_SAMPLE("07_CompleteScene" LIBS glm fastgltf stb_image imguizmo
+        OPTIONS
+            MYTH_ENABLE_IMGUI_STANDARD=ON
+            MYTH_ENABLE_TRACY=ON
+)
+
+
+
+

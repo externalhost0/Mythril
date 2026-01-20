@@ -11,7 +11,6 @@ struct PushConstants {
 [vk::push_constant]
 PushConstants push;
 
-
 [shader("compute")]
 [numthreads(8, 8, 1)]
 void cs_main(uint3 threadId : SV_DispatchThreadID) {
@@ -37,7 +36,7 @@ void cs_main(uint3 threadId : SV_DispatchThreadID) {
     // a - b - c
     // d - e - f
     // g - h - i
-    
+
     float3 a = push.inTexture.SampleLevel(push.sampler, uv + float2(-x, y), 0).rgb;
     float3 b = push.inTexture.SampleLevel(push.sampler, uv + float2(0, y), 0).rgb;
     float3 c = push.inTexture.SampleLevel(push.sampler, uv + float2(x, y), 0).rgb;

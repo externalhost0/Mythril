@@ -9,7 +9,7 @@
 
 int main() {
 	auto ctx = mythril::CTXBuilder{}
-	.set_info_spec({
+	.set_vulkan_cfg({
 		.app_name = "Cool App Name",
 		.engine_name = "Cool Engine Name"
 	})
@@ -20,6 +20,7 @@ int main() {
 		.height = 480,
 		.resizeable = false,
 	})
+	.with_default_swapchain()
 	.build();
 
 	const VkExtent2D extent2D = ctx->getWindow().getFramebufferSize();

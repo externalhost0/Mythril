@@ -3,6 +3,9 @@
 //
 
 #include "CTX.h"
+
+#include <iostream>
+
 #include "vkutil.h"
 #include "vkstring.h"
 #include "Logger.h"
@@ -118,7 +121,10 @@ namespace mythril {
 		updater.currentPipelineCommon = nullptr;
 	}
 
-	void CTX::construct(SwapchainArgs args) {
+	bool CTX::isExtensionEnabled(std::string_view extension_name) const {
+		return _enabledDeviceExtensionNames.contains(std::string(extension_name));
+	}
+	void CTX::construct() {
 		ASSERT(this->_vkInstance != VK_NULL_HANDLE);
 		ASSERT(this->_vkPhysicalDevice != VK_NULL_HANDLE);
 		ASSERT(this->_vkDevice != VK_NULL_HANDLE);
@@ -155,16 +161,6 @@ namespace mythril {
 				.debugName = "Linear Sampler"
 			});
 
-			// swapchain must be built after default texture has been made
-			// or else the fallback texture is the swapchain's texture
-			const VkExtent2D framebufferSize = this->getWindow().getFramebufferSize();
-			SwapchainArgs swapchain_args = args;
-			swapchain_args.width = framebufferSize.width;
-			swapchain_args.height = framebufferSize.height;
-
-			this->_swapchain = std::make_unique<Swapchain>(*this, swapchain_args);
-			// timeline semaphore is closely kept to vulkan swapchain
-			this->_timelineSemaphore = vkutil::CreateTimelineSemaphore(this->_vkDevice, this->_swapchain->getNumOfSwapchainImages() - 1);
 			this->growBindlessDescriptorPoolImpl(this->_currentMaxTextureCount, this->_currentMaxSamplerCount);
 
 			// i think these are reasonable defaults
@@ -187,11 +183,15 @@ namespace mythril {
 			this->_imguiPlugin.onDestroy();
 		}
 #endif
+#ifdef MYTH_ENABLED_TRACY_GPU
+		if (this->_tracyPlugin.isEnabled()) {
+			this->_tracyPlugin.onDestroy();
+		}
+#endif
 
 		destroy(this->_staging->_stagingBuffer);
 		this->_staging.reset(nullptr);
-		this->_swapchain.reset(nullptr);
-		vkDestroySemaphore(_vkDevice, _timelineSemaphore, nullptr);
+		this->destroySwapchain();
 		this->_dummyTexture.release();
 		this->_dummyLinearSampler.release();
 
@@ -265,29 +265,49 @@ namespace mythril {
 		this->_window.destroy();
 		SDL_Quit();
 	}
-	bool CTX::isSwapchainDirty() {
-		return this->_swapchain->isDirty();
-	}
-	void CTX::cleanSwapchain() {
-		if (this->_swapchain->isDirty()) {
-			VkExtent2D res = this->_window.getFramebufferSize();
-			LOG_DEBUG("New Swapchain Extent: {} x {}", res.width, res.height);
 
-			VK_CHECK(vkDeviceWaitIdle(this->_vkDevice));
-			SwapchainArgs args;
-			args.format = this->_swapchain->_vkImageFormat;
-			args.colorSpace = this->_swapchain->_vkColorSpace;
-			args.presentMode = this->_swapchain->_vkPresentMode;
-			_swapchain.reset(nullptr);
-			vkDestroySemaphore(_vkDevice, _timelineSemaphore, nullptr);
-			args.width = res.width;
-			args.height = res.height;
-			this->_swapchain = std::make_unique<Swapchain>(*this, args);
-			this->_timelineSemaphore = vkutil::CreateTimelineSemaphore(_vkDevice, this->_swapchain->getNumOfSwapchainImages()-1);
-		} else {
-			LOG_SYSTEM(LogType::Warning, "Cleaning (resizing) of Swapchain called when Swapchain is not dirty, ignoring.");
+	void CTX::destroySwapchain() {
+		if (!_swapchain) {
+			LOG_SYSTEM(LogType::Warning, "CTX::destroySwapchain called when no existing swapchain exists!");
+			return;
 		}
+		VK_CHECK(vkDeviceWaitIdle(this->_vkDevice));
+		this->_swapchain.reset(nullptr);
+		vkDestroySemaphore(_vkDevice, this->_timelineSemaphore, nullptr);
 	}
+
+	template<typename T>
+	static void AssignIfDifferentNonZero(T& dst, const T& src) {
+		if (src != T{} && dst != src)
+			dst = src;
+	}
+	void CTX::createSwapchain(const SwapchainSpec& spec) {
+		// does some checks for the user that the default constructor doesnt do
+		if (_swapchain) {
+			LOG_SYSTEM(LogType::Warning, "CTX::createSwapchain called when an already existing swapchain exists!");
+			return;
+		}
+		SwapchainSpec new_swapchain_spec{};
+		if (_swapchain) {
+			new_swapchain_spec = {
+				.width = _swapchain->_vkExtent2D.width,
+				.height = _swapchain->_vkExtent2D.height,
+				.format = _swapchain->_vkImageFormat,
+				.colorSpace = _swapchain->_vkColorSpace,
+				.presentMode = _swapchain->_vkPresentMode,
+			};
+		}
+		AssignIfDifferentNonZero(new_swapchain_spec.width, spec.width);
+		AssignIfDifferentNonZero(new_swapchain_spec.height, spec.height);
+		AssignIfDifferentNonZero(new_swapchain_spec.format, spec.format);
+		AssignIfDifferentNonZero(new_swapchain_spec.colorSpace, spec.colorSpace);
+		AssignIfDifferentNonZero(new_swapchain_spec.presentMode, spec.presentMode);
+
+		VK_CHECK(vkDeviceWaitIdle(this->_vkDevice));
+		this->_swapchain = std::make_unique<Swapchain>(*this, new_swapchain_spec);
+		this->_timelineSemaphore = vkutil::CreateTimelineSemaphore(_vkDevice, this->_swapchain->getNumOfSwapchainImages()-1);
+	}
+
 	void CTX::deferTask(std::packaged_task<void()>&& task, SubmitHandle handle) const {
 		if (handle.empty()) {
 			handle = _imm->getNextSubmitHandle();
@@ -310,6 +330,7 @@ namespace mythril {
 	}
 
 	void CTX::checkAndUpdateBindlessDescriptorSetImpl() {
+		MYTH_PROFILER_FUNCTION();
 		if (!_awaitingCreation) {
 			return;
 		}
@@ -452,13 +473,14 @@ namespace mythril {
 	}
 
 	void CTX::growBindlessDescriptorPoolImpl(uint32_t newMaxSamplerCount, uint32_t newMaxTextureCount) {
+		MYTH_PROFILER_FUNCTION();
 		_currentMaxSamplerCount = newMaxSamplerCount;
 		_currentMaxTextureCount = newMaxTextureCount;
 
-		const uint32_t MAX_TEXTURE_LIMIT = _vkPhysDeviceVulkan12Properties.maxDescriptorSetUpdateAfterBindSampledImages;
+		const uint32_t MAX_TEXTURE_LIMIT = getPhysicalDeviceProperties12().maxDescriptorSetUpdateAfterBindSampledImages;
 		ASSERT_MSG(newMaxTextureCount <= MAX_TEXTURE_LIMIT, "Max sampled textures exceeded: {}, but maximum of {} is allowed!", newMaxTextureCount, MAX_TEXTURE_LIMIT);
 
-		const uint32_t MAX_SAMPLER_LIMIT = _vkPhysDeviceVulkan12Properties.maxDescriptorSetUpdateAfterBindSamplers;
+		const uint32_t MAX_SAMPLER_LIMIT = getPhysicalDeviceProperties12().maxDescriptorSetUpdateAfterBindSamplers;
 		ASSERT_MSG(newMaxSamplerCount <= MAX_SAMPLER_LIMIT, "Max samplers exceeded: {}, but maximum of {} is allowed!", newMaxSamplerCount, MAX_SAMPLER_LIMIT);
 
 		if (_vkBindlessDSL != VK_NULL_HANDLE) {
@@ -803,6 +825,7 @@ namespace mythril {
 	}
 
 	void CTX::resolveComputePipelineImpl(AllocatedComputePipeline& pipeline) {
+		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_CREATE);
 		// aliases
 		ComputePipelineSpec& spec = pipeline._spec;
 		AllocatedShader* shader = _shaderPool.get(spec.shader);
@@ -816,6 +839,7 @@ namespace mythril {
 	}
 
 	void CTX::resolveGraphicsPipelineImpl(AllocatedGraphicsPipeline& pipeline) {
+		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_CREATE);
 		// updating descriptor layout //
 //		if (graphics_pipeline->_vkLastDescriptorSetLayout != _vkBindlessDSL) {
 //			deferTask(std::packaged_task<void()>([device = _vkDevice, pipeline = graphics_pipeline->_vkPipeline]() {
@@ -886,19 +910,19 @@ namespace mythril {
 			builder.add_shader_module(shader->vkShaderModule, VK_SHADER_STAGE_FRAGMENT_BIT, fragStage.entryPoint, &fragSpecConstantsBundle->vkInfo);
 			pipeline_layout_signatures.push_back(shader->_pipelineSignature);
 		}
-		ShaderStage& geometryStage = spec.geometryShader;
-		std::unique_ptr<SpecializationInfoBundle> geomSpecConstantsBundle;
-		if (geometryStage.valid()) {
-			if (!geometryStage.entryPoint) {
-				geometryStage.entryPoint = "gs_main";
-			}
-			AllocatedShader* shader = _shaderPool.get(geometryStage.handle);
-			if (shader->_specializationInfo.specializationConstants.size() > sc_count)
-				LOG_SYSTEM(LogType::Warning, "You have specialization constants used in the geometry shader '{}' that are not defined in the pipeline creation for '{}'!", shader->_debugName, spec.debugName);
-			geomSpecConstantsBundle = BuildSpecializationInfoBundle(spec.specConstants, sc_count, shader->_specializationInfo.nameToID);
-			builder.add_shader_module(shader->vkShaderModule, VK_SHADER_STAGE_GEOMETRY_BIT, geometryStage.entryPoint, &geomSpecConstantsBundle->vkInfo);
-			pipeline_layout_signatures.push_back(shader->_pipelineSignature);
-		}
+		// ShaderStage& geometryStage = spec.geometryShader;
+		// std::unique_ptr<SpecializationInfoBundle> geomSpecConstantsBundle;
+		// if (geometryStage.valid()) {
+		// 	if (!geometryStage.entryPoint) {
+		// 		geometryStage.entryPoint = "gs_main";
+		// 	}
+		// 	AllocatedShader* shader = _shaderPool.get(geometryStage.handle);
+		// 	if (shader->_specializationInfo.specializationConstants.size() > sc_count)
+		// 		LOG_SYSTEM(LogType::Warning, "You have specialization constants used in the geometry shader '{}' that are not defined in the pipeline creation for '{}'!", shader->_debugName, spec.debugName);
+		// 	geomSpecConstantsBundle = BuildSpecializationInfoBundle(spec.specConstants, sc_count, shader->_specializationInfo.nameToID);
+		// 	builder.add_shader_module(shader->vkShaderModule, VK_SHADER_STAGE_GEOMETRY_BIT, geometryStage.entryPoint, &geomSpecConstantsBundle->vkInfo);
+		// 	pipeline_layout_signatures.push_back(shader->_pipelineSignature);
+		// }
 
 		const PipelineLayoutSignature merged_pl_signature = MergeSignatures(pipeline_layout_signatures);
 
@@ -909,6 +933,7 @@ namespace mythril {
 	}
 
 	Sampler CTX::createSampler(SamplerSpec spec) {
+		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_CREATE);
 		// creating sampler requires little work so we dont need an _Impl function for it
 		VkSamplerCreateInfo info = {
 				.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
@@ -936,7 +961,7 @@ namespace mythril {
 				.unnormalizedCoordinates = VK_FALSE,
 		};
 		if (spec.maxAnisotropic > 1) {
-			const float maxSamplerAnisotropy = this->_vkPhysDeviceProperties.limits.maxSamplerAnisotropy;
+			const float maxSamplerAnisotropy = this->getPhysicalDeviceProperties10().limits.maxSamplerAnisotropy;
 			const bool isAnisotropicFilteringSupported = maxSamplerAnisotropy > 1;
 			ASSERT_MSG(isAnisotropicFilteringSupported, "Anisotropic filtering is not supported by the device.");
 			info.anisotropyEnable = spec.anistrophic ? VK_TRUE : VK_FALSE;
@@ -957,6 +982,7 @@ namespace mythril {
 		return {this, handle};
 	}
 	Buffer CTX::createBuffer(BufferSpec spec) {
+		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_CREATE);
 		VkBufferUsageFlags usage_flags = (spec.storage == StorageType::Device) ? VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT : 0;
 
 		if (spec.usage & BufferUsageBits::BufferUsageBits_Index)
@@ -1043,6 +1069,7 @@ namespace mythril {
 	}
 
 	void CTX::resizeTexture(TextureHandle handle, Dimensions newDimensions) {
+		MYTH_PROFILER_FUNCTION();
 		AllocatedTexture* image = _texturePool.get(handle);
 		if (!image) {
 			LOG_SYSTEM(LogType::Warning, "'resizeTexture' ");
@@ -1105,6 +1132,7 @@ namespace mythril {
 	}
 
 	Texture CTX::createTexture(TextureSpec spec) {
+		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_CREATE);
 		ASSERT_MSG(spec.usage, "You must set the usage field on a TextureSpec!");
 		ASSERT_MSG(!(spec.generateMipmaps && spec.initialData == nullptr), "'generateMipMaps' can only be true when 'initialData' is non-null!");
 		// resolve usage flags
@@ -1214,11 +1242,13 @@ namespace mythril {
 		const VkComponentMapping component_mappings = spec.components.toVkComponentMapping();
 		ASSERT_MSG(vkutil::GetNumImagePlanes(copied_obj._vkFormat) == 1, "Unsupported multiplanar image.");
 
+		if (spec.type == VK_IMAGE_VIEW_TYPE_MAX_ENUM) spec.type = copied_obj._vkImageViewType;
+
 		VkImageViewCreateInfo image_view_ci = {
 				.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
 				.pNext = nullptr,
 				.image = copied_obj._vkImage,
-				.viewType = copied_obj._vkImageViewType,
+				.viewType = spec.type,
 				.format = copied_obj._vkFormat,
 				.components = component_mappings,
 				.subresourceRange = {
@@ -1293,11 +1323,12 @@ namespace mythril {
 		obj._vkFormat = format;
 		obj._numLevels = numLevels;
 		obj._numLayers = numLayers;
-		vkGetPhysicalDeviceFormatProperties(_vkPhysicalDevice, obj._vkFormat, &obj._vkFormatProperties);
+		VkFormatProperties2 format_props2 = {.sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2};
+		vkGetPhysicalDeviceFormatProperties2(_vkPhysicalDevice, obj._vkFormat, &format_props2);
+		obj._vkFormatProperties = format_props2.formatProperties;
 
 		const VkPhysicalDeviceImageFormatInfo2 info = {
 			.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_FORMAT_INFO_2,
-			.pNext = nullptr,
 			.format = obj.getFormat(),
 			.type = obj.getType(),
 			.usage = obj._vkUsageFlags,
@@ -1305,7 +1336,6 @@ namespace mythril {
 		};
 		VkImageFormatProperties2 props = {
 			.sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2,
-			.pNext = nullptr
 		};
 		VK_CHECK(vkGetPhysicalDeviceImageFormatProperties2(_vkPhysicalDevice, &info, &props));
 		ASSERT_MSG(props.imageFormatProperties.maxMipLevels >= obj._numLevels,
@@ -1321,7 +1351,6 @@ namespace mythril {
 		const VkImageAspectFlags aspectMask = vkutil::AspectMaskFromFormat(obj._vkFormat);
 		VkImageViewCreateInfo image_view_ci = {
 				.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-				.pNext = nullptr,
 				.flags = 0,
 				.image = obj._vkImage,
 				.viewType = obj._vkImageViewType,
@@ -1346,6 +1375,7 @@ namespace mythril {
 	}
 
 	GraphicsPipeline CTX::createGraphicsPipeline(const GraphicsPipelineSpec& spec) {
+		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_CREATE);
 		// all creating a pipeline does is assign the spec to it
 		// actual construction was done upon first use (lazily)
 		// now its done when compile is called && has been by a dryRun,
@@ -1357,6 +1387,7 @@ namespace mythril {
 		return {this, handle};
 	}
 	ComputePipeline CTX::createComputePipeline(const ComputePipelineSpec& spec) {
+		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_CREATE);
 		AllocatedComputePipeline obj = {};
 		obj._spec = spec;
 		snprintf(obj._shared.debugName, sizeof(obj._shared.debugName), "%s", spec.debugName);
@@ -1365,6 +1396,7 @@ namespace mythril {
 	}
 
 	Shader CTX::createShader(const ShaderSpec& spec) {
+		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_CREATE);
 		ASSERT_MSG(std::filesystem::exists(spec.filePath), "Shader filepath '{}' does not exist.", spec.filePath.string());
 		// lazily create slang session & slang global session
 		if (!_slangCompiler.sessionExists()) {
@@ -1376,8 +1408,16 @@ namespace mythril {
 		// _debugName
 		snprintf(obj._debugName, sizeof(obj._debugName), "%s", spec.debugName);
 
-		CompileResult compile_result = _slangCompiler.compileFile(spec.filePath);
-		ReflectionResult reflection_result = ReflectSPIRV(compile_result.getSpirvCode(), compile_result.getSpirvSize());
+		CompileResult compile_result = _slangCompiler.compileSlangFile(spec.filePath);
+
+		auto* code = const_cast<uint32_t *>(compile_result.getSpirvCode());
+		size_t size = compile_result.getSpirvSize();
+		// we have to do this cause bmillsNV likes to have unpredictability in his codebase
+		// https://github.com/shader-slang/slang/issues/9338
+		PatchSpecConstants(code, size);
+
+		// always reflect spirv AFTER we make changes to it
+		ReflectionResult reflection_result = ReflectSPIRV(code, size);
 		obj._pipelineSignature = reflection_result.pipelineLayoutSignature;
 		obj._descriptorSets = std::move(reflection_result.retrievedDescriptorSets);
 		obj._pushConstants = std::move(reflection_result.retrivedPushConstants);
@@ -1387,15 +1427,14 @@ namespace mythril {
 		// _vkShaderModule
 		VkShaderModuleCreateInfo create_info = { .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO, .pNext = nullptr };
 		create_info.flags = 0;
-		create_info.pCode = compile_result.getSpirvCode();
-		create_info.codeSize = compile_result.getSpirvSize();
+		create_info.pCode = code;
+		create_info.codeSize = size;
 		VkShaderModule shaderModule = VK_NULL_HANDLE;
 		// after vkCreateShaderModule we no longer need CompileResult btw
 		VK_CHECK(vkCreateShaderModule(_vkDevice, &create_info, nullptr, &shaderModule));
 		obj.vkShaderModule = shaderModule;
 
 		ShaderHandle handle = _shaderPool.create(std::move(obj));
-
 		return {this, handle};
 	}
 
@@ -1522,6 +1561,10 @@ namespace mythril {
 	SubmitHandle CTX::submitCommand(CommandBuffer& cmd) {
 		ASSERT(cmd._ctx);
 		ASSERT(cmd._wrapper);
+#ifdef MYTH_ENABLED_TRACY_GPU
+		if (_tracyPlugin.isEnabled())
+			TracyVkCollect(_tracyPlugin.getTracyVkCtx(), cmd._wrapper->_cmdBuf);
+#endif
 		const bool isPresenting = cmd._cmdType == CommandBuffer::Type::Graphics;
 		if (isPresenting) {
 			const uint64_t signalValue = _swapchain->_currentFrameNum + _swapchain->getNumOfSwapchainImages();
@@ -1531,7 +1574,9 @@ namespace mythril {
 
 		cmd._lastSubmitHandle = _imm->submit(*cmd._wrapper);
 		if (isPresenting) {
+			MYTH_PROFILER_ZONE("Swapchain Presentation", MYTH_PROFILER_COLOR_PRESENT);
 			_swapchain->present();
+			MYTH_PROFILER_ZONE_END();
 		}
 		processDeferredTasks();
 		SubmitHandle handle = cmd._lastSubmitHandle;
@@ -1633,7 +1678,7 @@ namespace mythril {
 }
 #ifdef MYTH_ENABLED_IMGUI
 namespace ImGui {
-	void Image(mythril::TextureHandle texHandle, const ImVec2& image_size, const ImVec2& uv0, const ImVec2& uv1) {
+	void Image(mythril::TextureHandle texHandle, mythril::SamplerHandle samplerHandle, const ImVec2& image_size, const ImVec2& uv0, const ImVec2& uv1) {
 		ASSERT_MSG(texHandle.valid(), "Texture handle is invalid!");
 		auto mydata = reinterpret_cast<mythril::MyUserData*>(ImGui::GetIO().UserData);
 		ImVec2 size;
@@ -1651,17 +1696,21 @@ namespace ImGui {
 			im_image_ds = iterator->second;
 		} else {
 			ASSERT_MSG(texture.isSampledImage(), "Texture '{}' must have sampled flag!", texture.getDebugName());
-			VkDescriptorSet ds = ImGui_ImplVulkan_AddTexture(mydata->sampler, texture.getImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+			VkDescriptorSet ds = ImGui_ImplVulkan_AddTexture(samplerHandle.valid() ? mydata->ctx->view(samplerHandle).getSampler() : mydata->sampler, texture.getImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 			mydata->handleMap.insert({texHandle, ds});
 			im_image_ds = ds;
 		}
 		ImGui::Image(reinterpret_cast<ImTextureID>(im_image_ds), size, uv0, uv1);
 	}
 	void Image(const mythril::Texture& texture, const mythril::TextureView& view, const ImVec2& image_size, const ImVec2& uv0, const ImVec2& uv1) {
-		Image(texture.getHandle(view), image_size, uv0, uv1);
+		Image(texture.getHandle(view), mythril::SamplerHandle{}, image_size, uv0, uv1);
 	}
 	void Image(const mythril::Texture& texture, const ImVec2& image_size, const ImVec2& uv0, const ImVec2& uv1) {
-		Image(texture.handle(), image_size, uv0, uv1);
+		Image(texture.handle(), mythril::SamplerHandle{}, image_size, uv0, uv1);
+	}
+	void Image(const mythril::Texture& texture, const mythril::Sampler& sampler, const ImVec2& image_size, const ImVec2& uv0, const ImVec2& uv1) {
+		Image(texture.handle(), sampler.handle(), image_size, uv0, uv1);
+
 	}
 
 }

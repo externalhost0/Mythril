@@ -185,6 +185,7 @@ float3 agxLook(float3 color, float3 slope, float3 offset, float3 power, float sa
 [shader("pixel")]
 FSOutput fs_main(v2f input) {
     FSOutput output;
+
     float3 color = push.colorTexture.Sample(push.sampler, input.UV).rgb;
     float3 bloom = push.bloomTexture.Sample(push.sampler, input.UV).rgb;
     float avgLuminance = push.avgLumTexture.Sample(push.sampler, float2(0.5)).r;

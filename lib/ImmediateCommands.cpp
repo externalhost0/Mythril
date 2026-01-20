@@ -2,6 +2,8 @@
 // Created by Hayden Rivas on 10/6/25.
 //
 #include "ImmediateCommands.h"
+
+#include "CTX.h"
 #include "Logger.h"
 #include "vkinfo.h"
 
@@ -55,6 +57,7 @@ namespace mythril {
 	}
 
 	void ImmediateCommands::wait(SubmitHandle handle) {
+		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_WAIT);
 		if (handle.empty()) {
 			vkDeviceWaitIdle(_vkDevice);
 			return;
@@ -70,6 +73,7 @@ namespace mythril {
 		_purge();
 	}
 	void ImmediateCommands::waitAll() {
+		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_WAIT);
 		VkFence fences[kMaxCommandBuffers];
 		uint32_t numFences = 0;
 		for (const CommandBufferWrapper& buf : _buffers) {
@@ -126,6 +130,7 @@ namespace mythril {
 		return vkWaitForFences(_vkDevice, 1, &buf._fence, VK_TRUE, 0) == VK_SUCCESS;
 	}
 	SubmitHandle ImmediateCommands::submit(const CommandBufferWrapper& wrapper) {
+		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_SUBMIT);
 		ASSERT_MSG(wrapper._isEncoding, "Command buffer must be encoding!");
 		VK_CHECK(vkEndCommandBuffer(wrapper._cmdBuf));
 
@@ -195,6 +200,7 @@ namespace mythril {
 		return _buffers[handle.bufferIndex_]._fence;
 	}
 	const ImmediateCommands::CommandBufferWrapper& ImmediateCommands::acquire() {
+		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_ACQUIRE);
 		if (!_numAvailableCommandBuffers) {
 			_purge();
 		}

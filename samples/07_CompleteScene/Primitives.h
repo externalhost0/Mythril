@@ -63,20 +63,34 @@ namespace Primitives {
 		22, 23, 20
 };
 
-	struct QuadVertex {
+	struct Vertex2D {
 		glm::vec2 position;
-		glm::vec3 normal;
 		glm::vec2 uv;
 	};
-	const std::vector<QuadVertex> kQuadVertices = {
-		{{-1.0f,  1.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}}, // top left
-		{{-1.0f, -1.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f}}, // bottom left
-		{{ 1.0f, -1.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f}}, // bottom right
-		{{ 1.0f,  1.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}}  // top right
+	const std::vector<Vertex2D> kQuadVertices = {
+		{{-1.0f,  1.0f},  {0.0f, 1.0f}}, // top left
+		{{-1.0f, -1.0f}, {0.0f, 0.0f}}, // bottom left
+		{{ 1.0f, -1.0f}, {1.0f, 0.0f}}, // bottom right
+		{{ 1.0f,  1.0f}, {1.0f, 1.0f}}  // top right
 	};
 	const std::vector<uint32_t> kQuadIndices = {
 		0, 1, 3,
 		1, 2, 3
 	};
+	const std::vector<Vertex2D> kHexVertices = {
+		{{ 1.0f,  0.0f}, {1.0f, 0.5f}},
+		{{ 0.5f,  0.8660254f}, {0.75f, 1.0f}},
+		{{-0.5f,  0.8660254f}, {0.25f, 1.0f}},
+		{{-1.0f,  0.0f}, {0.0f, 0.5f}},
+		{{-0.5f, -0.8660254f}, {0.25f, 0.0f}},
+		{{ 0.5f, -0.8660254f}, {0.75f, 0.0f}},
+	};
+	const std::vector<uint32_t> kHexIndices = {
+		0, 1, 2,
+		0, 2, 3,
+		0, 3, 4,
+		0, 4, 5
+	};
+
 
 }

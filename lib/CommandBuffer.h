@@ -63,7 +63,7 @@ namespace mythril {
 		void cmdSetDepthBiasEnable(bool enable);
 		void cmdSetDepthBias(float constantFactor, float slopeFactor, float clamp);
 
-		void cmdBeginRendering();
+		void cmdBeginRendering(uint32_t layers = 1);
 		void cmdEndRendering();
 
 		void cmdDispatchThreadGroup(const Dimensions& threadGroupCount);
@@ -103,7 +103,8 @@ namespace mythril {
 
 		void cmdDraw(uint32_t vertexCount, uint32_t instanceCount = 1, uint32_t firstVertex = 0, uint32_t firstInstance = 0);
 		void cmdDrawIndexed(uint32_t indexCount, uint32_t instanceCount = 1, uint32_t firstIndex = 0, int32_t vertexOffset = 0, uint32_t baseInstance = 0);
-
+		void cmdDrawIndirect(const Buffer& indirectBuffer, VkDeviceSize offset, uint32_t drawCount, uint32_t stride = 0);
+		void cmdDrawIndexedIndirect(const Buffer& indirectBuffer, VkDeviceSize offset, uint32_t drawCount, uint32_t stride = 0);
 
 		void cmdGenerateMipmap(TextureHandle handle);
 		void cmdGenerateMipmap(const Texture& texture) { cmdGenerateMipmap(texture.handle()); }
@@ -133,7 +134,7 @@ namespace mythril {
 		void cmdBindPipelineImpl(const PipelineCoreData* common, VkPipelineBindPoint bindPoint);
 
 		// all functions that still have equivalent Vulkan commands but should be abstracted away from user
-		void cmdBeginRenderingImpl();
+		void cmdBeginRenderingImpl(uint32_t layers);
 		void cmdEndRenderingImpl();
 
 		void cmdTransitionLayoutImpl(TextureHandle source, VkImageLayout currentLayout, VkImageLayout newLayout, VkImageSubresourceRange range);

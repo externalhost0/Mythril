@@ -38,6 +38,61 @@
 #include <imgui_impl_vulkan.h>
 #endif
 
+#if defined(MYTH_ENABLED_TRACY)
+#include <tracy/Tracy.hpp>
+
+// colors
+// command buffer colors
+#define MYTH_PROFILER_COLOR_WAIT  0x8a89a1 // blue gray
+#define MYTH_PROFILER_COLOR_ACQUIRE 0x3128de // rich blue
+#define MYTH_PROFILER_COLOR_SUBMIT 0x6b28de // dark purple
+#define MYTH_PROFILER_COLOR_PRESENT 0xbf1bb7 // magenta
+#define MYTH_PROFILER_COLOR_BARRIER 0xbdd1ff // baby blue
+#define MYTH_PROFILER_COLOR_COMMAND 0x1a1b2e // light saturated blue
+
+// function colors
+#define MYTH_PROFILER_COLOR_CREATE 0x22bf4f // dark green
+#define MYTH_PROFILER_COLOR_DESTROY 0xc41212 // dark red
+
+
+// rendering colors
+#define MYTH_PROFILER_COLOR_RENDERGRAPH 0xf0784d // light orange
+#define MYTH_PROFILER_COLOR_RENDERPASS 0xff591c // orange
+
+// macro functions
+#if defined(_MSC_VER)
+    #define MYTH_PROFILER_FUNCTION() ZoneScopedN(__FUNCSIG__)
+	#define MYTH_PROFILER_FUNCTION_COLOR(color) ZoneScopedNC(__FUNCSIG__, color)
+#else
+    #define MYTH_PROFILER_FUNCTION() ZoneScopedN(__PRETTY_FUNCTION__)
+	#define MYTH_PROFILER_FUNCTION_COLOR(color) ZoneScopedNC(__PRETTY_FUNCTION__, color)
+#endif
+
+#define MYTH_PROFILER_ZONE(name, color) { \
+	ZoneScopedC(color); \
+	ZoneName(name, strlen(name))
+#define MYTH_PROFILER_ZONE_END() }
+
+#define MYTH_PROFILER_THREAD(name) tracy::SetThreadName(name)
+#define MYTH_PROFILER_FRAME(name) FrameMarkNamed(name)
+
+#else
+ #define MYTH_PROFILER_FUNCTION()
+ #define MYTH_PROFILER_FUNCTION_COLOR(color)
+ #define MYTH_PROFILER_ZONE(name, color) {
+ #define MYTH_PROFILER_ZONE_END() }
+ #define MYTH_PROFILER_THREAD(name)
+ #define MYTH_PROFILER_FRAME(name)
+#endif // MYTH_ENABLED_TRACY
+
+#if defined(MYTH_ENABLED_TRACY_GPU)
+	#include <tracy/TracyVulkan.hpp>
+	#define MYTH_PROFILER_GPU_ZONE(name, ctx, cmdBuffer, color) TracyVkZoneC(ctx->pimpl_->tracyVkCtx_, cmdBuffer, name, color);
+#else
+	#define MYTH_PROFILER_GPU_ZONE(name, ctx, cmdBuffer, color)
+#endif // MYTH_ENABLED_TRACY_GPU
+
+
 namespace mythril {
 	class CTXBuilder;
 	class CommandBuffer;
@@ -74,8 +129,23 @@ namespace mythril {
 		return *ptr;
 	}
 
+
+	struct VulkanFeatures {
+		VkPhysicalDeviceFeatures features10;
+		VkPhysicalDeviceVulkan11Features features11;
+		VkPhysicalDeviceVulkan12Features features12;
+		VkPhysicalDeviceVulkan13Features features13;
+	};
+	struct VulkanProperties {
+		VkPhysicalDeviceProperties props10;
+		VkPhysicalDeviceVulkan11Properties props11;
+		VkPhysicalDeviceVulkan12Properties props12;
+		VkPhysicalDeviceVulkan13Properties props13;
+	};
+
+
 	class CTX final {
-		void construct(SwapchainArgs args);
+		void construct();
 		// hide the default constructor to avoid user from instantiating a useless CTX
 		CTX() = default;
 	public:
@@ -87,9 +157,24 @@ namespace mythril {
 		CTX(CTX &&) noexcept = default;
 		CTX &operator=(CTX &&) noexcept = default;
 	public:
-		void cleanSwapchain();
-		bool isSwapchainDirty();
-		const TextureHandle& getCurrentSwapchainTexture() const { return _swapchain->getCurrentSwapchainTextureHandle(); }
+
+		// arguements are optional as when not given we recreate with the same settings as the last swapchain
+		void createSwapchain(const SwapchainSpec& spec = {});
+		void destroySwapchain();
+		// wraps create & destroy Swapchain functions
+		void recreateSwapchain() {
+			destroySwapchain();
+			createSwapchain();
+		}
+
+		bool isSwapchainDirty() const {
+			ASSERT_MSG(_swapchain, "Swapchain has not been created!");
+			return _swapchain->isDirty();
+		}
+		const TextureHandle& getCurrentSwapchainTexture() const {
+			ASSERT_MSG(_swapchain, "Swapchain has not been created!");
+			return _swapchain->getCurrentSwapchainTextureHandle();
+		}
 
 		Window& getWindow() { return _window; }
 		const Texture& getNullTexture() const { return this->_dummyTexture; }
@@ -146,6 +231,19 @@ namespace mythril {
 		void destroy(ShaderHandle handle);
 		void destroy(GraphicsPipelineHandle handle);
 		void destroy(ComputePipelineHandle handle);
+
+		// helpers to query the capabilities of the Vulkan runtime
+		bool isExtensionEnabled(std::string_view extension_name) const;
+
+		VkPhysicalDeviceFeatures getPhysicalDeviceFeatures10() const { return _featuresVulkan.features10; }
+		VkPhysicalDeviceVulkan11Features getPhysicalDeviceFeatures11() const { return _featuresVulkan.features11; }
+		VkPhysicalDeviceVulkan12Features getPhysicalDeviceFeatures12() const { return _featuresVulkan.features12; }
+		VkPhysicalDeviceVulkan13Features getPhysicalDeviceFeatures13() const { return _featuresVulkan.features13; }
+
+		VkPhysicalDeviceProperties getPhysicalDeviceProperties10() const { return _propertiesVulkan.props10; }
+		VkPhysicalDeviceVulkan11Properties getPhysicalDeviceProperties11() const { return _propertiesVulkan.props11; }
+		VkPhysicalDeviceVulkan12Properties getPhysicalDeviceProperties12() const { return _propertiesVulkan.props12; }
+		VkPhysicalDeviceVulkan13Properties getPhysicalDeviceProperties13() const { return _propertiesVulkan.props13; }
 	private:
 		DescriptorSetWriter openDescriptorUpdate(GraphicsPipelineHandle handle);
 		DescriptorSetWriter openDescriptorUpdate(ComputePipelineHandle handle);
@@ -178,7 +276,6 @@ namespace mythril {
 
 		void checkAndUpdateBindlessDescriptorSetImpl();
 		void growBindlessDescriptorPoolImpl(uint32_t newMaxSamplerCount, uint32_t newMaxTextureCount);
-
 
 		template<typename T>
 		constexpr PipelineCoreData& getPipelienCommonData(T handle) {
@@ -213,17 +310,20 @@ namespace mythril {
 		// VMA
 		VmaAllocator _vmaAllocator = VK_NULL_HANDLE;
 
-		// vulkan properties
-		VkPhysicalDeviceProperties _vkPhysDeviceProperties = {};
-		VkPhysicalDeviceVulkan13Properties _vkPhysDeviceVulkan13Properties = {};
-		VkPhysicalDeviceVulkan12Properties _vkPhysDeviceVulkan12Properties = {};
-		VkPhysicalDeviceVulkan11Properties _vkPhysDeviceVulkan11Properties = {};
+		// vulkan properties, features, and extensions we query
+		VulkanFeatures _featuresVulkan;
+		VulkanProperties _propertiesVulkan;
+		std::vector<std::string> _enabledInstanceExtensionNames;
+		std::unordered_set<std::string> _enabledDeviceExtensionNames;
 
 		// vulkan queues
 		VkQueue _vkGraphicsQueue = VK_NULL_HANDLE;
 		uint32_t _graphicsQueueFamilyIndex = -1;
+		// optional queues
 		VkQueue _vkPresentQueue = VK_NULL_HANDLE;
 		uint32_t _presentQueueFamilyIndex = -1;
+		VkQueue _vkComputeQueue = VK_NULL_HANDLE;
+		uint32_t _computeQueueFamilyIndex = -1;
 	private: // not really my stuff //
 		Texture _dummyTexture;
 		Sampler _dummyLinearSampler;
@@ -259,6 +359,9 @@ namespace mythril {
 #ifdef MYTH_ENABLED_IMGUI
 		ImGuiPlugin _imguiPlugin;
 #endif
+#ifdef MYTH_ENABLED_TRACY_GPU
+		TracyPlugin _tracyPlugin;
+#endif
 		SlangCompiler _slangCompiler;
 		Window _window;
 
@@ -270,7 +373,9 @@ namespace mythril {
 		friend class CTXBuilder;
 		friend class AllocatedBuffer;
 		friend class AllocatedTexture;
+		// plugins are usually friends
 		friend class ImGuiPlugin;
+		friend class TracyPlugin;
 
 		// basically a lvk Holder
 		template<typename T>

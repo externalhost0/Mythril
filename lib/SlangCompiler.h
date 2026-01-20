@@ -40,7 +40,7 @@ namespace mythril {
 		void addSearchPath(const std::filesystem::path& searchPath);
 		void clearSearchPaths();
 
-		CompileResult compileFile(const std::filesystem::path& filepath);
+		CompileResult compileSlangFile(const std::filesystem::path& filepath);
 
 		bool sessionExists() const { return _sessionExists; }
 	private:

@@ -64,7 +64,7 @@ namespace mythril {
 	struct GraphicsPipelineSpec {
 		ShaderStage vertexShader;
 		ShaderStage fragmentShader;
-		ShaderStage geometryShader;
+		// ShaderStage geometryShader;
 
 		TopologyMode topology = TopologyMode::TRIANGLE;
 		PolygonMode polygon = PolygonMode::FILL;
@@ -72,7 +72,6 @@ namespace mythril {
 		CullMode cull = CullMode::OFF;
 		// todo: easily make multisample resolveable during compile and remove this field
 		SampleCount multisample = SampleCount::X1;
-
 		// max spec constants of 16
 		SpecializationConstantEntry specConstants[16];
 		const char* debugName = "Unnamed Graphics Pipeline";

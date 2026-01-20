@@ -7,10 +7,12 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
 
 # ==================== User Options ====================
-option(MYTH_ENABLE_IMGUI_STANDARD "Enable ImGui Plugin Main Branch" OFF)
-option(MYTH_ENABLE_IMGUI_DOCKING "Enable ImGui Plugin Docking Branch" OFF)
 option(MYTH_ENABLE_TEST_CASES "Enable Test Cases (NOT DONE YET)" OFF)
 option(MYTH_RUN_SAMPLES "Enable sample apps" ON)
+option(MYTH_ENABLE_IMGUI_STANDARD "Enable ImGui Plugin Main Branch" OFF)
+option(MYTH_ENABLE_IMGUI_DOCKING "Enable ImGui Plugin Docking Branch" OFF)
+option(MYTH_ENABLE_TRACY "Enables Tracy Profiling for user & Mythril use" OFF)
+option(MYTH_ENABLE_TRACY_GPU "Enables Tracy Profiling for Mythril's internal Vulkan calls" OFF)
 
 # ==================== C++ Standard ====================
 set(CMAKE_CXX_STANDARD 20)
@@ -27,6 +29,8 @@ elseif(CMAKE_BUILD_TYPE STREQUAL "Debug")
 endif()
 
 # ==================== CPM Package Manager ====================
+set(CPM_SOURCE_CACHE "${CMAKE_CURRENT_SOURCE_DIR}/.cache/cpm" CACHE STRING "CPM cache path")
+set(CPM_USE_NAMED_CACHE_DIRECTORIES ON)
 include(cmake/CPM.cmake)
 
 # ==================== Vulkan SDK ====================
@@ -136,7 +140,7 @@ endif()
 CPMAddPackage(
         NAME SPIRV-Reflect
         GITHUB_REPOSITORY "KhronosGroup/SPIRV-Reflect"
-        GIT_TAG vulkan-sdk-1.4.328
+        GIT_TAG vulkan-sdk-1.4.335.0
         OPTIONS "SPIRV_REFLECT_STATIC_LIB ON"
 )
 
@@ -240,6 +244,19 @@ if(MYTH_ENABLE_IMGUI_STANDARD OR MYTH_ENABLE_IMGUI_DOCKING)
     target_link_libraries(imgui PRIVATE volk SDL3::SDL3)
 endif()
 
+if(MYTH_ENABLE_TRACY_GPU AND NOT MYTH_ENABLE_TRACY)
+    message(FATAL_ERROR "If MYTH_ENABLE_TRACY_GPU is enabled then MYTH_ENABLE_TRACY must also be enabled!")
+endif()
+if (MYTH_ENABLE_TRACY)
+    CPMAddPackage(
+            NAME tracy
+            GITHUB_REPOSITORY "wolfpld/tracy"
+            GIT_TAG "v0.13.1"
+            OPTIONS
+            "TRACY_ENABLE=ON"
+    )
+endif()
+
 # ==================== My Library ====================
 set(MYTHRIL_SOURCES
         lib/vkinfo.cpp
@@ -264,6 +281,9 @@ set(MYTHRIL_SOURCES
 
 if(MYTH_ENABLE_IMGUI_STANDARD OR MYTH_ENABLE_IMGUI_DOCKING)
     list(APPEND MYTHRIL_SOURCES lib/plugins/ImGuiPlugin.cpp)
+endif()
+if(MYTH_ENABLE_TRACY_GPU)
+    list(APPEND MYTHRIL_SOURCES lib/plugins/TracyPlugin.cpp)
 endif()
 
 add_library(mythril STATIC ${MYTHRIL_SOURCES})
@@ -321,6 +341,21 @@ elseif(MYTH_ENABLE_IMGUI_DOCKING)
             MYTH_ENABLED_IMGUI_DOCKING
     )
     target_link_libraries(mythril PUBLIC imgui)
+endif()
+# Tracy integration
+if (MYTH_ENABLE_TRACY)
+    target_compile_definitions(mythril PUBLIC MYTH_ENABLED_TRACY)
+    target_link_libraries(mythril PUBLIC TracyClient)
+
+    if (MYTH_ENABLE_TRACY_GPU)
+        if (APPLE)
+            message(FATAL_ERROR "MYTH_ENABLE_TRACY_GPU is not supported on APPLE platforms currently! Please switch the option 'OFF'")
+        endif()
+        target_compile_definitions(mythril PUBLIC
+                MYTH_ENABLED_TRACY_GPU
+                TRACY_VK_USE_SYMBOL_TABLE
+        )
+    endif()
 endif()
 
 # ==================== Subdirectories ====================
