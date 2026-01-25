@@ -19,11 +19,11 @@
 #endif
 
 #ifdef DEBUG
-#define CHECK_PASS_OPERATION_MISMATCH(goalType)               \
-if (this->getCurrentPassType() != goalType)                        \
-LOG_SYSTEM_NOSOURCE(LogType::Warning,                              \
-"Calling '{}' inside a pass not of type '{}' is not reccomended!", \
-__func__,                                                          \
+#define CHECK_PASS_OPERATION_MISMATCH(goalType) \
+if (this->getCurrentPassType() != goalType) \
+LOG_SYSTEM_NOSOURCE(LogType::Warning, \
+"Calling '{}' inside a pass not of type '{}' will result in errors!", \
+__func__, \
 PassSourceTypeToString(goalType));
 #else
 #define CHECK_PASS_OPERATION_MISMATCH(goalType) (void(0))
@@ -68,16 +68,16 @@ PassSourceTypeToString(goalType));
 
 
 namespace mythril {
-	static const char* PassSourceTypeToString(PassSource::Type type) {
+	static const char* PassSourceTypeToString(PassDesc::Type type) {
 		switch (type) {
-			case PassSource::Type::Graphics: return "Graphics";
-			case PassSource::Type::Compute: return "Compute";
+			case PassDesc::Type::Graphics: return "Graphics";
+			case PassDesc::Type::Compute: return "Compute";
 		}
 	}
 
-	PassSource::Type CommandBuffer::getCurrentPassType() {
-		if (std::holds_alternative<GraphicsPipelineHandle>(_currentPipelineHandle)) return PassSource::Type::Graphics;
-		if (std::holds_alternative<ComputePipelineHandle>(_currentPipelineHandle)) return PassSource::Type::Compute;
+	PassDesc::Type CommandBuffer::getCurrentPassType() {
+		if (std::holds_alternative<GraphicsPipelineHandle>(_currentPipelineHandle)) return PassDesc::Type::Graphics;
+		if (std::holds_alternative<ComputePipelineHandle>(_currentPipelineHandle)) return PassDesc::Type::Compute;
 		assert(false);
 	}
 
@@ -138,25 +138,27 @@ namespace mythril {
 	// ALL PUBLIC COMMANDS AVAILBLE TO USER //
 	void CommandBuffer::cmdBeginRendering(uint32_t layers) {
 		DRY_RETURN();
+		CHECK_PASS_OPERATION_MISMATCH(PassDesc::Type::Graphics);
 		this->cmdBeginRenderingImpl(layers);
 	}
 
 	void CommandBuffer::cmdEndRendering() {
 		DRY_RETURN();
+		CHECK_PASS_OPERATION_MISMATCH(PassDesc::Type::Graphics);
 		this->cmdEndRenderingImpl();
 	}
 
 	void CommandBuffer::cmdDraw(uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstInstance) {
 		DRY_RETURN();
 		CHECK_SHOULD_BE_RENDERING();
-		CHECK_PASS_OPERATION_MISMATCH(PassSource::Type::Graphics);
+		CHECK_PASS_OPERATION_MISMATCH(PassDesc::Type::Graphics);
 
 		vkCmdDraw(_wrapper->_cmdBuf, vertexCount, instanceCount, firstVertex, firstInstance);
 	}
 	void CommandBuffer::cmdDrawIndexed(uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex, int32_t vertexOffset, uint32_t baseInstance) {
 		DRY_RETURN();
 		CHECK_SHOULD_BE_RENDERING();
-		CHECK_PASS_OPERATION_MISMATCH(PassSource::Type::Graphics);
+		CHECK_PASS_OPERATION_MISMATCH(PassDesc::Type::Graphics);
 
 		vkCmdDrawIndexed(_wrapper->_cmdBuf, indexCount, instanceCount, firstIndex, vertexOffset, baseInstance);
 	}
@@ -164,7 +166,7 @@ namespace mythril {
 	void CommandBuffer::cmdDrawIndirect(const Buffer &indirectBuffer, VkDeviceSize offset, uint32_t drawCount, uint32_t stride) {
 		DRY_RETURN();
 		CHECK_SHOULD_BE_RENDERING();
-		CHECK_PASS_OPERATION_MISMATCH(PassSource::Type::Graphics);
+		CHECK_PASS_OPERATION_MISMATCH(PassDesc::Type::Graphics);
 		ASSERT_MSG(indirectBuffer->isIndirectBuffer(), "Buffer '{}' is not an indirect buffer, please have its usage include 'BufferUsageBits_Indirect'!", indirectBuffer->getDebugName());
 
 		vkCmdDrawIndirect(_wrapper->_cmdBuf, indirectBuffer->_vkBuffer, offset, drawCount, stride ? stride : sizeof(VkDrawIndirectCommand));
@@ -173,7 +175,7 @@ namespace mythril {
 	void CommandBuffer::cmdDrawIndexedIndirect(const Buffer& indirectBuffer, VkDeviceSize offset, uint32_t drawCount, uint32_t stride) {
 		DRY_RETURN();
 		CHECK_SHOULD_BE_RENDERING();
-		CHECK_PASS_OPERATION_MISMATCH(PassSource::Type::Graphics);
+		CHECK_PASS_OPERATION_MISMATCH(PassDesc::Type::Graphics);
 		ASSERT_MSG(indirectBuffer->isIndirectBuffer(), "Buffer '{}' is not an indirect buffer, please have its usage include 'BufferUsageBits_Indirect'!", indirectBuffer->getDebugName());
 
 		vkCmdDrawIndexedIndirect(_wrapper->_cmdBuf, indirectBuffer->_vkBuffer, offset, drawCount, stride ? stride : sizeof(VkDrawIndexedIndirectCommand));
@@ -182,7 +184,7 @@ namespace mythril {
 	void CommandBuffer::cmdBindIndexBuffer(BufferHandle handle) {
 		DRY_RETURN();
 		CHECK_SHOULD_BE_RENDERING();
-		CHECK_PASS_OPERATION_MISMATCH(PassSource::Type::Graphics);
+		CHECK_PASS_OPERATION_MISMATCH(PassDesc::Type::Graphics);
 
 		const AllocatedBuffer& buffer = _ctx->view(handle);
 		vkCmdBindIndexBuffer(_wrapper->_cmdBuf, buffer._vkBuffer, 0, VK_INDEX_TYPE_UINT32);
@@ -190,7 +192,7 @@ namespace mythril {
 
 	void CommandBuffer::cmdDispatchThreadGroup(const Dimensions& threadGroupCount) {
 		DRY_RETURN()
-		CHECK_PASS_OPERATION_MISMATCH(PassSource::Type::Compute);
+		CHECK_PASS_OPERATION_MISMATCH(PassDesc::Type::Compute);
 
 		vkCmdDispatch(_wrapper->_cmdBuf, threadGroupCount.width, threadGroupCount.height, threadGroupCount.depth);
 	}
@@ -253,18 +255,6 @@ namespace mythril {
 			}
 		}
 	}
-	void CommandBuffer::CheckImageLayoutAuto(TextureHandle sourceHandle, TextureHandle destinationHandle, const char* operation) {
-		auto& sourceObject = _ctx->view(sourceHandle);
-		auto& destinationObject = _ctx->view(destinationHandle);
-		if (sourceObject._vkCurrentImageLayout != VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) {
-			// LOG_SYSTEM(LogType::Info, "Automatically resolved texture ({}) to be in correct layout (VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) before {}.", sourceObject._debugName, operation);
-			this->cmdTransitionLayout(sourceHandle, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
-		}
-		if (destinationObject._vkCurrentImageLayout != VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
-			// LOG_SYSTEM(LogType::Info, "Automatically resolved texture ({}) to be in correct layout (VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) before {}.", destinationObject._debugName, operation);
-			this->cmdTransitionLayout(destinationHandle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-		}
-	}
 	void CommandBuffer::cmdBlitImage(TextureHandle source, TextureHandle destination) {
 		DRY_RETURN()
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_COMMAND);
@@ -281,7 +271,7 @@ namespace mythril {
 		}
 #endif
 		ASSERT_MSG(sourceTex.getSampleCount() == VK_SAMPLE_COUNT_1_BIT, "You cannot blit a image with more than 1 samples.");
-		CheckImageLayoutAuto(source, destination, "blitting");
+		// CheckImageLayoutAuto(source, destination, "blitting");
 		cmdBlitImageImpl(source, destination, sourceTex.getExtentAs2D(), destinationTex.getExtentAs2D());
 	}
 	void CommandBuffer::cmdCopyImage(TextureHandle source, TextureHandle destination) {
@@ -294,7 +284,7 @@ namespace mythril {
 #ifdef DEBUG
 		CheckTextureRenderingUsage(sourceTex, destinationTex, "copy");
 #endif
-		CheckImageLayoutAuto(source, destination, "copying");
+		// CheckImageLayoutAuto(source, destination, "copying");
 		// needs to be same so doesnt matter if we take source or destination size
 		cmdCopyImageImpl(source, destination, _ctx->view(source).getExtentAs2D());
 	}
@@ -314,13 +304,13 @@ namespace mythril {
 		}
 
 		// we just use the enum for PassSource::Type even though it makes no sense cause thats not what we are testing for
-		const PassSource::Type type = getCurrentPassType();
+		const PassDesc::Type type = getCurrentPassType();
 		VkShaderStageFlags stages = 0;
 		switch (type) {
-			case PassSource::Type::Compute: {
+			case PassDesc::Type::Compute: {
 				stages = VK_SHADER_STAGE_COMPUTE_BIT;
 			} break;
-			case PassSource::Type::Graphics: {
+			case PassDesc::Type::Graphics: {
 				stages = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
 			}
 		}
@@ -488,66 +478,31 @@ namespace mythril {
 // ALL INTERNALLY CALLED COMMAND BUFFER FUNCTIONS
 	void CommandBuffer::cmdBeginRenderingImpl(uint32_t layers) {
 		ASSERT_MSG(!_isRendering, "Command Buffer is already rendering!");
-
-		// Step 1: Get all colorAttachmentInfos and a depthAttachmentInfo
-		std::vector<VkRenderingAttachmentInfo> colorAttachmentsInfo = {};
-		colorAttachmentsInfo.reserve(kMaxColorAttachments);
-		for (const ColorAttachmentInfo& attachmentInfo : _activePass.colorAttachments) {
-			const bool isClearing = attachmentInfo.loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR;
-			// TODO: clear color value should use the right type in its union depending on the texture's format
-			// for now its just using floats
-			if (attachmentInfo.resolveImageView != VK_NULL_HANDLE) {
-				colorAttachmentsInfo.push_back(vkinfo::CreateColorAttachmentInfo(attachmentInfo.imageView,
-				isClearing ? &attachmentInfo.clearColor : nullptr,
-				attachmentInfo.loadOp,
-				attachmentInfo.storeOp,
-				attachmentInfo.resolveImageView,
-				toVulkan(ResolveMode::AVERAGE)));
-			} else {
-				colorAttachmentsInfo.push_back(vkinfo::CreateColorAttachmentInfo(attachmentInfo.imageView,
-				isClearing ? &attachmentInfo.clearColor : nullptr,
-				attachmentInfo.loadOp,
-				attachmentInfo.storeOp));
-			}
-		}
 		const bool hasDepth = _activePass.depthAttachment.has_value();
-		VkRenderingAttachmentInfo depthAttachmentInfo = {};
-		if (hasDepth) {
-			const DepthAttachmentInfo& attachmentInfo = _activePass.depthAttachment.value();
-			const bool isClearing = attachmentInfo.loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR;
-			if (attachmentInfo.resolveImageView != VK_NULL_HANDLE) {
-				depthAttachmentInfo = vkinfo::CreateDepthStencilAttachmentInfo(attachmentInfo.imageView,
-					isClearing ? &attachmentInfo.clearDepthStencil : nullptr,
-					attachmentInfo.loadOp,
-					attachmentInfo.storeOp,
-					attachmentInfo.resolveImageView,
-					toVulkan(ResolveMode::SAMPLE_ZERO));
-			} else {
-				depthAttachmentInfo = vkinfo::CreateDepthStencilAttachmentInfo(attachmentInfo.imageView,
-				isClearing ? &attachmentInfo.clearDepthStencil : nullptr,
-				attachmentInfo.loadOp,
-				attachmentInfo.storeOp);
-			}
+		const VkRect2D renderArea = _activePass.renderArea;
+		std::vector<VkRenderingAttachmentInfo> vk_color_attachment_infos{};
+		vk_color_attachment_infos.reserve(_activePass.colorAttachments.size());
+		for (const auto& attachment_info : _activePass.colorAttachments) {
+			vk_color_attachment_infos.push_back(attachment_info.getAsVkRenderingAttachmentInfo());
 		}
-		// Step 2: Put it together in a renderingInfo struct
-		const VkExtent2D renderExtent = _activePass.extent2D;
+		VkRenderingAttachmentInfo vk_depth_attachment_info{};
+		if (hasDepth) {
+			vk_depth_attachment_info = _activePass.depthAttachment->getAsVkRenderingAttachmentInfo();
+		}
 		VkRenderingInfo info = {
 			.sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
 			.pNext = nullptr,
 			.flags = 0,
-			.renderArea = {
-				.offset = { 0, 0 },
-				.extent = renderExtent
-			},
+			.renderArea = renderArea,
 			.layerCount = layers,
 			.viewMask = 0,
-			.colorAttachmentCount = static_cast<uint32_t>(colorAttachmentsInfo.size()),
-			.pColorAttachments = colorAttachmentsInfo.data(),
-			.pDepthAttachment = hasDepth ? &depthAttachmentInfo : nullptr,
+			.colorAttachmentCount = static_cast<uint32_t>(_activePass.colorAttachments.size()),
+			.pColorAttachments = vk_color_attachment_infos.data(),
+			.pDepthAttachment = hasDepth ? &vk_depth_attachment_info : nullptr,
 			.pStencilAttachment = nullptr
 		};
-		cmdSetViewportImpl(renderExtent);
-		cmdSetScissorImpl(renderExtent);
+		cmdSetViewportImpl(renderArea.extent);
+		cmdSetScissorImpl(renderArea.extent);
 		cmdBindDepthState({});
 
 		_ctx->checkAndUpdateBindlessDescriptorSetImpl();
@@ -678,8 +633,8 @@ namespace mythril {
 		// 	LOG_SYSTEM(LogType::Info, "Image ({}) is already in the requested layout.", sourceTex._debugName);
 		// }
 
-		vkutil::StageAccess srcStage = vkutil::getPipelineStageAccess(currentLayout);
-		vkutil::StageAccess dstStage = vkutil::getPipelineStageAccess(newLayout);
+		vkutil::StageAccess srcStage = vkutil::GetPipelineStageAccess(currentLayout);
+		vkutil::StageAccess dstStage = vkutil::GetPipelineStageAccess(newLayout);
 		if (sourceTex.isSwapchainImage()) {
 			srcStage = {
 				.stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,

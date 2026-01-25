@@ -14,7 +14,6 @@ namespace mythril {
 	class InternalObjectHandle final {
 	public:
 		InternalObjectHandle() = default;
-		InternalObjectHandle(uint32_t index, uint32_t gen) : _index(index), _generation(gen) {};
 
 		uint32_t index() const {
 			return _index;
@@ -37,6 +36,11 @@ namespace mythril {
 		}
 
 	private:
+		InternalObjectHandle(uint32_t index, uint32_t gen) : _index(index), _generation(gen) {};
+
+		template<typename HandleType, typename ActualObject>
+		friend class HandlePool;
+
 		uint32_t _index = 0;
 		uint32_t _generation = 0;
 	};

@@ -864,10 +864,10 @@ namespace mythril {
 
 		// things we gather in the middle of the renderpass (attachment formats)
 		// looks at the current pass and reflects those formats in use
-		const PassCompiled& current_pass_info = _currentCommandBuffer._activePass;
+		const CompiledPass& current_pass_info = _currentCommandBuffer._activePass;
 		std::vector<VkFormat> colorFormats;
 		colorFormats.reserve(current_pass_info.colorAttachments.size());
-		for (const auto& colorAttachment : current_pass_info.colorAttachments) {
+		for (const AttachmentInfo& colorAttachment : current_pass_info.colorAttachments) {
 			colorFormats.push_back(colorAttachment.imageFormat);
 		}
 		builder.set_color_formats(colorFormats);

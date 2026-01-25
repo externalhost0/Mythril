@@ -171,7 +171,7 @@ namespace mythril {
 			ASSERT_MSG(_swapchain, "Swapchain has not been created!");
 			return _swapchain->isDirty();
 		}
-		const TextureHandle& getCurrentSwapchainTexture() const {
+		const TextureHandle& getCurrentSwapchainTex() const {
 			ASSERT_MSG(_swapchain, "Swapchain has not been created!");
 			return _swapchain->getCurrentSwapchainTextureHandle();
 		}

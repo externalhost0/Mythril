@@ -246,8 +246,8 @@ int main() {
 		cmd.cmdDraw(3);
 		cmd.cmdEndRendering();
 		
-		cmd.cmdBlitImage(postColorTarget.handle(), ctx->getCurrentSwapchainTexture());
-		cmd.cmdTransitionLayout(ctx->getCurrentSwapchainTexture(), VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+		cmd.cmdBlitImage(postColorTarget.handle(), ctx->getCurrentSwapchainTex());
+		cmd.cmdTransitionLayout(ctx->getCurrentSwapchainTex(), VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
 
 	});
 	graph.compile(*ctx);

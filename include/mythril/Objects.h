@@ -60,12 +60,13 @@ namespace mythril {
 			return *this;
 		}
 	public:
-		// i dont want this to be explicit yeah
+		inline operator InternalHandle() const { return _handle; }
 		InternalHandle handle() const { return _handle; }
+
 
 		AllocatedType* operator->();
 		const AllocatedType* operator->() const;
-
+		// explicit versions
 		AllocatedType& access();
 		const AllocatedType& view() const;
 

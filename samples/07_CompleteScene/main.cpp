@@ -744,8 +744,7 @@ int main() {
 	// alot of the data here we can throw away once we make our objects
 	mythril::Buffer opaqueSponzaVertexBuf;
 	mythril::Buffer opaqueSponzaIndexBuf;
-	mythril::Buffer opaqueSponzaIndirectBuf_directionalLight;
-	mythril::Buffer opaqueSponzaIndirectBuf_pointLight;
+	mythril::Buffer opaqueSponzaIndirectBuf;
 	uint32_t opaqueDrawCount;
 	{
 		const std::vector<MeshData>& sponzaOpaqueOnlyData = sponzaData.getOpaqueMeshData();
@@ -808,31 +807,12 @@ int main() {
 			drawId++;
 		}
 		// make the indirect buffer object
-		opaqueSponzaIndirectBuf_directionalLight = ctx->createBuffer({
+		opaqueSponzaIndirectBuf = ctx->createBuffer({
 			.size = sizeof(VkDrawIndexedIndirectCommand) * indirectCmdsDirectionalLight.size(),
 			.usage = mythril::BufferUsageBits::BufferUsageBits_Indirect,
 			.storage = mythril::StorageType::Device,
 			.initialData = indirectCmdsDirectionalLight.data(),
-			.debugName = "Sponza 1 Indirect Buf"
-		});
-		drawId = 0;
-		std::vector<VkDrawIndexedIndirectCommand> indirectCmdsPointLight;
-		for (const IndirectMeshData& mesh : indirect_mesh_data) {
-			indirectCmdsPointLight.push_back({
-				.indexCount = mesh.indexCount,
-				.instanceCount = 6,
-				.firstIndex = mesh.firstIndex,
-				.vertexOffset = mesh.vertexOffset,
-				.firstInstance = drawId
-			});
-			drawId++;
-		}
-		opaqueSponzaIndirectBuf_pointLight = ctx->createBuffer({
-			.size = sizeof(VkDrawIndexedIndirectCommand) * indirectCmdsPointLight.size(),
-			.usage = mythril::BufferUsageBits::BufferUsageBits_Indirect,
-			.storage = mythril::StorageType::Device,
-			.initialData = indirectCmdsPointLight.data(),
-			.debugName = "Sponza 6 Indirect Buf"
+			.debugName = "Sponza Indirect Buf"
 		});
 	}
 
@@ -859,9 +839,9 @@ int main() {
 
 	// depth prepass for shadows from directional light
 	graph.addGraphicsPass("shadow_map")
-	.write({
-		.texture = shadowMap,
-		.clearValue = { 1.f, 0 },
+	.attachment({
+		.texDesc = {shadowMap},
+		.clearValue = {1.f, 0},
 		.loadOp = mythril::LoadOperation::CLEAR,
 		.storeOp = mythril::StoreOperation::STORE
 	})
@@ -904,7 +884,7 @@ int main() {
 		};
 		cmd.cmdPushConstants(push);
 		cmd.cmdBindIndexBuffer(opaqueSponzaIndexBuf);
-		cmd.cmdDrawIndexedIndirect(opaqueSponzaIndirectBuf_directionalLight, 0, opaqueDrawCount);
+		cmd.cmdDrawIndexedIndirect(opaqueSponzaIndirectBuf, 0, opaqueDrawCount);
 		cmd.cmdEndRendering();
 	});
 
@@ -983,14 +963,16 @@ int main() {
 	for (int i = 0; i < kNumPointLights; i++) {
 		for (int j = 0; j < 6; j++) {
 			graph.addGraphicsPass(fmt::format("pointlight_shadow_{}_face_{}", i, j).c_str())
-			.write({
-				.texture = pointLightShadowTex[i],
-				.clearValue = {1.f, 0},
+			.attachment({
+				.texDesc = {
+					.handle = pointLightShadowTex[i],
+					.baseLayer = j
+				},
+				.clearValue = {1.f, 0 },
 				.loadOp = mythril::LoadOperation::CLEAR,
 				.storeOp = mythril::StoreOperation::STORE,
 			})
 			.setExecuteCallback([&, i, j](mythril::CommandBuffer& cmd) {
-				printf("i: %d j: %d\n", i, j);
 				cmd.cmdBeginRendering();
 				cmd.cmdBindGraphicsPipeline(pointShadowGraphicsPipeline);
 				cmd.cmdBindDepthState({mythril::CompareOp::LessEqual, true});
@@ -1005,7 +987,7 @@ int main() {
 				};
 				cmd.cmdPushConstants(push);
 				cmd.cmdBindIndexBuffer(opaqueSponzaIndexBuf);
-				cmd.cmdDrawIndexedIndirect(opaqueSponzaIndirectBuf_directionalLight, 0, opaqueDrawCount);
+				cmd.cmdDrawIndexedIndirect(opaqueSponzaIndirectBuf, 0, opaqueDrawCount);
 				cmd.cmdEndRendering();
 			});
 		}
@@ -1024,20 +1006,20 @@ int main() {
 		.debugName = "Opaque Graphics Pipeline"
 	});
 	graph.addGraphicsPass("geometry_opaque")
-	.write({
-		.texture = msaaColorTarget,
+	.attachment({
+		.texDesc = {msaaColorTarget},
 		.clearValue = {0.349f, 0.635f, 0.82f, 1.f},
 		.loadOp = mythril::LoadOperation::CLEAR,
 		.storeOp = mythril::StoreOperation::STORE,
 	})
-	.write({
-		.texture = msaaDepthTarget,
+	.attachment({
+		.texDesc = {msaaDepthTarget},
 		// clear to 0, we do reverse depth buffering
 		.clearValue = {0.f, 0},
 		.loadOp = mythril::LoadOperation::CLEAR,
 		.storeOp = mythril::StoreOperation::STORE,
 	})
-	.read(shadowMap)
+	.dependency({shadowMap}, mythril::Layout::READ)
 	.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
 		cmd.cmdBeginRendering();
 		cmd.cmdBindGraphicsPipeline(opaquePipeline);
@@ -1084,17 +1066,17 @@ int main() {
 	});
 
 	graph.addGraphicsPass("geometry_transparent")
-	.write({
-		.texture = msaaColorTarget,
+	.attachment({
+		.texDesc = {msaaColorTarget},
 		.loadOp = mythril::LoadOperation::LOAD,
 		.storeOp = mythril::StoreOperation::STORE,
 	})
-	.write({
-		.texture = msaaDepthTarget,
+	.attachment({
+		.texDesc = {msaaDepthTarget},
 		.loadOp = mythril::LoadOperation::LOAD,
 		.storeOp = mythril::StoreOperation::STORE,
 	})
-	.read(shadowMap)
+	.dependency({shadowMap}, mythril::Layout::READ)
 	.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
 		cmd.cmdBeginRendering();
 		cmd.cmdBindGraphicsPipeline(transparentPipeline);
@@ -1181,17 +1163,17 @@ int main() {
 	float particle_emission = 0.7f;
 	float particle_speed = 4.f;
 	graph.addGraphicsPass("Ambient Particles")
-	.write({
-		.texture = msaaColorTarget,
+	.attachment({
+		.texDesc = {msaaColorTarget},
 		.loadOp = mythril::LoadOperation::LOAD,
 		.storeOp = mythril::StoreOperation::NO_CARE,
-		.resolveTexture = offscreenColorTarget
+		.resolveTexDesc = {offscreenColorTarget}
 	})
-	.write({
-		.texture = msaaDepthTarget,
+	.attachment({
+		.texDesc = {msaaDepthTarget},
 		.loadOp = mythril::LoadOperation::LOAD,
 		.storeOp = mythril::StoreOperation::NONE,
-		.resolveTexture = depthTarget
+		.resolveTexDesc = {depthTarget}
 	})
 	.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
 		cmd.cmdBeginRendering();
@@ -1237,7 +1219,7 @@ int main() {
 		.debugName = "Downsample Compute Pipeline"
 	});
 	graph.addComputePass("Downsampling")
-	.read(&offscreenColorTexs[0], kNumColorMips)
+	.dependency(&offscreenColorTexs[0], kNumColorMips, mythril::Layout::GENERAL)
 	.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
 		cmd.cmdBindComputePipeline(downsampleComputePipeline);
 		cmd.cmdCopyImage(offscreenColorTarget, offscreenColorTexs[0]);
@@ -1502,8 +1484,8 @@ int main() {
 		cmd.cmdBeginRendering();
 		cmd.cmdDrawImGui();
 		cmd.cmdEndRendering();
-		cmd.cmdCopyImage(finalColorTarget.handle(), ctx->getCurrentSwapchainTexture());
-		cmd.cmdTransitionLayout(ctx->getCurrentSwapchainTexture(), VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+		cmd.cmdCopyImage(finalColorTarget.handle(), ctx->getCurrentSwapchainTex());
+		cmd.cmdTransitionLayout(ctx->getCurrentSwapchainTex(), VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
 	});
 	graph.compile(*ctx);
 

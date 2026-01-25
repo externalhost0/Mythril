@@ -18,7 +18,6 @@ namespace mythril {
 	class AllocatedSampler {
 	public:
 		[[nodiscard]] inline VkSampler getSampler() const { return _vkSampler; }
-
 		[[nodiscard]] std::string_view getDebugName() const { return _debugName; }
 	private:
 		VkSampler _vkSampler = VK_NULL_HANDLE;
@@ -32,11 +31,13 @@ namespace mythril {
 		[[nodiscard]] bool isSampledImage() const { return (_vkUsageFlags & VK_IMAGE_USAGE_SAMPLED_BIT) > 0; }
 		[[nodiscard]] bool isStorageImage() const { return (_vkUsageFlags & VK_IMAGE_USAGE_STORAGE_BIT) > 0; }
 		[[nodiscard]] bool isColorAttachment() const { return (_vkUsageFlags & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) > 0; }
-		[[nodiscard]] bool isDepthAttachment() const { return (_vkUsageFlags & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) > 0; }
 		[[nodiscard]] bool isAttachment() const { return (_vkUsageFlags & (VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)) > 0; }
+		[[nodiscard]] bool isDepthAttachment() const { return (_vkUsageFlags & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) > 0; }
 		[[nodiscard]] bool isSwapchainImage() const { return _isSwapchainImage; }
 
 		[[nodiscard]] bool hasMipmaps() const { return _numLevels > 1; }
+		[[nodiscard]] uint32_t getNumMips() const { return _numLevels; }
+		[[nodiscard]] uint32_t getNumLayers() const { return _numLayers; }
 
 		[[nodiscard]] VkSampleCountFlagBits getSampleCount() const { return _vkSampleCountFlagBits; }
 		[[nodiscard]] VkImageType getType() const { return _vkImageType; }
@@ -102,7 +103,6 @@ namespace mythril {
 
 	class AllocatedBuffer {
 	public:
-
 		[[nodiscard]] bool isMapped() const { return _mappedPtr != nullptr; }
 		[[nodiscard]] uint8_t* getMappedPtr() const { return static_cast<uint8_t* >(_mappedPtr); }
 		[[nodiscard]] bool isStorageBuffer() const { return (_vkUsageFlags & VK_BUFFER_USAGE_STORAGE_BUFFER_BIT) > 0; }

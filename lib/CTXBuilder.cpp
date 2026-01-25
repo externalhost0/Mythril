@@ -298,11 +298,11 @@ namespace mythril {
 
 		// do some things to the physical device before creation
 		// we dont have to pass anything like this into vkDevice creation because its all stored in vkb::PhysicalDevice
-		for (size_t i = 0; i < optional_device_extensions.size(); i++) {
-			if (vkb_physical_device.enable_extension_if_present(optional_device_extensions[i]))
-				LOG_SYSTEM(LogType::Info, "Successfully enabled requested extension: '{}'", optional_device_extensions[i]);
+		for (const auto& optional_device_extension : optional_device_extensions) {
+			if (vkb_physical_device.enable_extension_if_present(optional_device_extension))
+				LOG_SYSTEM(LogType::Info, "Successfully enabled requested extension: '{}'", optional_device_extension);
 			else
-				LOG_SYSTEM(LogType::Warning, "Unsupported extension requested: '{}'", optional_device_extensions[i]);
+				LOG_SYSTEM(LogType::Warning, "Unsupported extension requested: '{}'", optional_device_extension);
 		}
 
 		VulkanFeatures features{};
@@ -332,7 +332,7 @@ namespace mythril {
 		ctx->_featuresVulkan = features;
 		ctx->_propertiesVulkan = properties;
 
-		auto exts = vkb_physical_device.get_extensions();
+		const auto exts = vkb_physical_device.get_extensions();
 		ctx->_enabledDeviceExtensionNames.clear();
 		for (const auto& ext : exts) {
 			ctx->_enabledDeviceExtensionNames.insert(ext);

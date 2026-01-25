@@ -58,8 +58,8 @@ namespace mythril {
 		if (newImageLayout == VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL) {
 			newImageLayout = isDepthAttachment() ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 		}
-		vkutil::StageAccess src = vkutil::getPipelineStageAccess(oldImageLayout);
-		vkutil::StageAccess dst = vkutil::getPipelineStageAccess(newImageLayout);
+		vkutil::StageAccess src = vkutil::GetPipelineStageAccess(oldImageLayout);
+		vkutil::StageAccess dst = vkutil::GetPipelineStageAccess(newImageLayout);
 
 		if (isDepthAttachment() && _isResolveAttachment) {
 			// https://registry.khronos.org/vulkan/specs/latest/html/vkspec.html#renderpass-resolve-operations

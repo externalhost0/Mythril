@@ -45,8 +45,8 @@ int main() {
 		// do absolutely nothing, just begin and end a pass
 		cmd.cmdBeginRendering();
 		cmd.cmdEndRendering();
-		cmd.cmdBlitImage(colorTarget.handle(), ctx->getCurrentSwapchainTexture());
-		cmd.cmdTransitionLayout(ctx->getCurrentSwapchainTexture(), VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+		cmd.cmdBlitImage(colorTarget.handle(), ctx->getCurrentSwapchainTex());
+		cmd.cmdTransitionLayout(ctx->getCurrentSwapchainTex(), VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
 	});
 	graph.compile(*ctx);
 

@@ -339,8 +339,8 @@ namespace mythril::vkinfo {
 		info.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 		info.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 
-		vkutil::StageAccess srcStage = vkutil::getPipelineStageAccess(currentLayout);
-		vkutil::StageAccess dstStage = vkutil::getPipelineStageAccess(newLayout);
+		vkutil::StageAccess srcStage = vkutil::GetPipelineStageAccess(currentLayout);
+		vkutil::StageAccess dstStage = vkutil::GetPipelineStageAccess(newLayout);
 		if (isResolveAttachment && vkutil::IsFormatDepthOrStencil(format)) {
 			// https://registry.khronos.org/vulkan/specs/latest/html/vkspec.html#renderpass-resolve-operations
 			srcStage.stage |= VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;

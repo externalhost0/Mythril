@@ -15,7 +15,10 @@
 #include <SDL3/SDL.h>
 
 // for shader structs
+#include <fmt/color.h>
+
 #include "GPUStructs.h"
+#include "../../lib/vkstring.h"
 
 struct Camera {
 	glm::vec3 position;
@@ -374,7 +377,6 @@ void DrawShaderInfo(const mythril::AllocatedShader& shader) {
 	ImGui::End();
 }
 
-
 int main() {
 	std::vector slang_searchpaths = {
 		"../../include/",
@@ -395,6 +397,7 @@ int main() {
 	.set_slang_cfg({
 		.searchpaths = slang_searchpaths
 	})
+	.with_default_swapchain()
 	.with_ImGui()
 	.build();
 
@@ -475,14 +478,14 @@ int main() {
 	auto startTime = std::chrono::high_resolution_clock::now();
 	mythril::RenderGraph graph;
 	graph.addGraphicsPass("geometry")
-	.write({
-		.texture = colorTarget.handle(),
+	.attachment({
+		.texDesc = {colorTarget},
 		.clearValue = {0.2f, 0.2f, 0.2f, 1.f},
 		.loadOp = mythril::LoadOperation::CLEAR,
 		.storeOp = mythril::StoreOperation::STORE
 	})
-	.write({
-		.texture = depthTarget.handle(),
+	.attachment({
+		.texDesc = {depthTarget},
 		.clearValue = {1.f, 0},
 		.loadOp = mythril::LoadOperation::CLEAR
 	})
@@ -506,8 +509,8 @@ int main() {
 	});
 
 	graph.addGraphicsPass("gui")
-	.write({
-		.texture = colorTarget.handle(),
+	.attachment({
+		.texDesc = {colorTarget},
 		.loadOp = mythril::LoadOperation::LOAD,
 		.storeOp = mythril::StoreOperation::STORE
 	})
@@ -516,8 +519,10 @@ int main() {
 		cmd.cmdDrawImGui();
 		cmd.cmdEndRendering();
 
-		cmd.cmdBlitImage(colorTarget.handle(), ctx->getCurrentSwapchainTexture());
-		cmd.cmdTransitionLayout(ctx->getCurrentSwapchainTexture(), VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+		cmd.cmdTransitionLayout(colorTarget, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+		cmd.cmdTransitionLayout(ctx->getCurrentSwapchainTex(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+		cmd.cmdBlitImage(colorTarget, ctx->getCurrentSwapchainTex());
+		cmd.cmdTransitionLayout(ctx->getCurrentSwapchainTex(), VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
 	});
 
 	graph.compile(*ctx);
@@ -630,10 +635,10 @@ int main() {
 			.time = time
 		};
 
-
 		mythril::CommandBuffer& cmd = ctx->openCommand(mythril::CommandBuffer::Type::Graphics);
 
 		// buffer updating must be done before rendering
+		// todo: make this part of the rendergraph
 		cmd.cmdUpdateBuffer(objectDataBuf, objects);
 		cmd.cmdUpdateBuffer(perFrameDataBuffer, frameData);
 		cmd.cmdUpdateBuffer(perMaterialDataBuffer, matData);

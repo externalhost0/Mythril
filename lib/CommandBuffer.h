@@ -106,6 +106,11 @@ namespace mythril {
 		void cmdDrawIndirect(const Buffer& indirectBuffer, VkDeviceSize offset, uint32_t drawCount, uint32_t stride = 0);
 		void cmdDrawIndexedIndirect(const Buffer& indirectBuffer, VkDeviceSize offset, uint32_t drawCount, uint32_t stride = 0);
 
+		// plugins
+#ifdef MYTH_ENABLED_IMGUI
+		void cmdDrawImGui();
+#endif
+		// TODO: safegaurd these commands
 		void cmdGenerateMipmap(TextureHandle handle);
 		void cmdGenerateMipmap(const Texture& texture) { cmdGenerateMipmap(texture.handle()); }
 
@@ -125,10 +130,6 @@ namespace mythril {
 		void cmdClearColorImage(TextureHandle texture, const ClearColor& value);
 		void cmdClearDepthStencilImage(TextureHandle texture, const ClearDepthStencil& value);
 
-		// plugins
-#ifdef MYTH_ENABLED_IMGUI
-		void cmdDrawImGui();
-#endif
 	private:
 		// just repeated logic
 		void cmdBindPipelineImpl(const PipelineCoreData* common, VkPipelineBindPoint bindPoint);
@@ -148,9 +149,8 @@ namespace mythril {
 		void bufferBarrierImpl(BufferHandle bufhandle, VkPipelineStageFlags2 srcStage, VkPipelineStageFlags2 dstStage);
 
 		// helpers
-		PassSource::Type getCurrentPassType();
+		PassDesc::Type getCurrentPassType();
 		void CheckTextureRenderingUsage(const AllocatedTexture& source, const AllocatedTexture& destination, const char* operation);
-		void CheckImageLayoutAuto(TextureHandle sourceHandle, TextureHandle destinationHandle, const char* operation);
 	private:
 		// pretty important members for communication to the rest of the renderer
 		CTX* _ctx = nullptr;
@@ -162,7 +162,7 @@ namespace mythril {
 		// avoid lookup and store the common data
 		SharedPipelineInfo* _currentPipelineInfo = nullptr;
 		std::variant<GraphicsPipelineHandle, ComputePipelineHandle> _currentPipelineHandle;
-		PassCompiled _activePass;
+		CompiledPass _activePass;
 
 		bool _isRendering = false; // cmdBeginRendering
 

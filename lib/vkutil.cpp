@@ -198,8 +198,9 @@ namespace mythril::vkutil {
 		};
 		vkCmdPipelineBarrier2(cmd, &di);
 	}
-	StageAccess getPipelineStageAccess(VkImageLayout layout) {
+	StageAccess GetPipelineStageAccess(VkImageLayout layout) {
 		switch (layout) {
+			// todo: https://docs.vulkan.org/guide/latest/extensions/VK_KHR_synchronization2.html
 			case VK_IMAGE_LAYOUT_UNDEFINED:
 				return {
 						.stage = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT,

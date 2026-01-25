@@ -7,6 +7,8 @@
 #include "Objects.h"
 #include "../../lib/ObjectHandles.h"
 #include "../../lib/vkenums.h"
+#include "../../lib/RenderGraphDescriptions.h"
+#include "../../lib/vkutil.h"
 
 
 #include <unordered_set>
@@ -18,223 +20,305 @@
 
 #include <volk.h>
 
+
 namespace mythril {
-	class CommandBuffer;
+    struct DependencyDesc;
+    struct AttachmentDesc;
+    class CommandBuffer;
+    class RenderGraph;
 
-	struct ClearColor {
-		float r, g, b, a;
-		ClearColor(float r, float g, float b, float a) : r(r), g(g), b(b), a(a) {};
-		VkClearColorValue getAsVkClearColorValue() const {
-			return { {r, g, b, a} };
-		}
-	};
-	struct ClearDepthStencil {
-		float depth;
-		uint32_t stencil;
-		ClearDepthStencil(float depth, uint32_t stencil) : depth(depth), stencil(stencil) {};
-		VkClearDepthStencilValue getAsVkClearDepthStencilValue() const {
-			return { depth, stencil };
-		}
-	};
-	union ClearValue {
-		ClearColor clearColor;
-		ClearDepthStencil clearDepthStencil;
+    struct AttachmentInfo {
+        VkFormat imageFormat; // the only field that RenderingAttachmentInfo doesnt need
+        VkImageView imageView;
+        VkImageLayout imageLayout;
+        // optional resolve target
+        VkImageView resolveImageView;
+        VkImageLayout resolveImageLayout;
 
-		// if the user sets no clear (have no intention of clearing) then do nothing ig
-		ClearValue() {};
-		ClearValue(float r, float g, float b, float a) : clearColor{r, g, b, a} {};
-		ClearValue(float depth, uint32_t stencil) : clearDepthStencil{depth, stencil} {};
-	};
+        VkAttachmentLoadOp loadOp;
+        VkAttachmentStoreOp storeOp;
 
-	// user never interacts with these
-	struct ColorAttachmentInfo {
-		VkImageView imageView;
-		VkImageLayout imageLayout;
-		VkFormat imageFormat;
-		// optional resolve target
-		VkImageView resolveImageView;
-		VkImageLayout resolveImageLayout;
+        VkClearValue clearValue;
 
-		VkAttachmentLoadOp loadOp;
-		VkAttachmentStoreOp storeOp;
+        // for dynamic textures, ie swapchain
+        std::function<VkImageView()> imageViewCallback;
+        std::function<VkImageView()> resolveImageViewCallback;
+        bool isDynamic = false;
 
-		VkClearColorValue clearColor;
-	};
-	struct DepthAttachmentInfo {
-		VkImageView imageView;
-		VkImageLayout imageLayout;
-		VkFormat imageFormat;
-		// optional resolve target
-		VkImageView resolveImageView;
-		VkImageLayout resolveImageLayout;
-
-		VkAttachmentLoadOp loadOp;
-		VkAttachmentStoreOp storeOp;
-
-		VkClearDepthStencilValue clearDepthStencil;
-	};
+        VkRenderingAttachmentInfo getAsVkRenderingAttachmentInfo() const {
+            const bool isResolving = resolveImageView != VK_NULL_HANDLE;
+            return {
+                .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+                .pNext = nullptr,
+                .imageView = imageView,
+                .imageLayout = imageLayout,
+                .resolveMode = isResolving ? (vkutil::IsIntegerFormat(imageFormat) ? VK_RESOLVE_MODE_SAMPLE_ZERO_BIT : VK_RESOLVE_MODE_AVERAGE_BIT) : VK_RESOLVE_MODE_NONE,
+                .resolveImageView = resolveImageView,
+                .resolveImageLayout = resolveImageLayout,
+                .loadOp = loadOp,
+                .storeOp = storeOp,
+                .clearValue = clearValue
+            };
+        }
+    };
 
 
-	// this is what the user interacts with
-	// intermediate struct, PassSource -> PassCompiled
-	// totally personal preference if you think working operations should be the default, ie ::CLEAR & ::STORE
-	struct TexHandleTransform {
-		TexHandleTransform() = default;
-		TexHandleTransform(const Texture& texture) : handle(texture.handle()) {}
-		TextureHandle handle;
-	};
-	struct WriteSpec {
-		TextureHandle texture;
-		ClearValue clearValue;
-		LoadOperation loadOp = LoadOperation::NO_CARE;
-		StoreOperation storeOp = StoreOperation::NO_CARE;
-		std::optional<TextureHandle> resolveTexture = std::nullopt;
-	};
-	struct WriteSpec2 {
-		const Texture& texture;
-		ClearValue clearValue;
-		LoadOperation loadOp = LoadOperation::NO_CARE;
-		StoreOperation storeOp = StoreOperation::NO_CARE;
-		TexHandleTransform resolveTexture;
-		TexRange range;
-	};
+    struct SubresourceState {
+        VkImageLayout layout; // uint32_t
+        vkutil::StageAccess mask; // uint64_t
 
+        bool operator==(const SubresourceState& o) const {
+            return layout == o.layout && mask.access == o.mask.access && mask.stage == o.mask.stage;
+        }
+        bool operator!=(const SubresourceState& o) const {
+            return !(*this == o);
+        }
+    };
 
-	struct ReadSpec {
-		ReadSpec(const Texture& texture, VkImageLayout requestedLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
-		: texture(texture.handle()), expectedLayout(requestedLayout) {}
+    // i mean we could decrease memory by 2x if we want to limit the user
+    struct SubresourceRange {
+        uint32_t baseMip;
+        uint32_t numMips;
+        uint32_t baseLayer;
+        uint32_t numLayers;
 
-		TextureHandle texture;
-		// expectedLayout is always SHADER_READ_ONLY
-		// im leaving this exposed for end-user but im not really sure what other layouts they want, maybe GENERAL
-		VkImageLayout expectedLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-	};
-	struct MultiReadSpec {
-		MultiReadSpec(std::span<const Texture> itextures, VkImageLayout requestedLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
-		: expectedLayout(requestedLayout) {
-			textures.reserve(itextures.size());
-			std::ranges::transform(
-				itextures,
-				std::back_inserter(textures),
-				[](const Texture& t) { return t.handle(); }
-				);
-		}
+        // check if this range completely contains another range
+        bool contains(const SubresourceRange& o) const {
+            const uint32_t mipEnd = baseMip + numMips;
+            const uint32_t otherMipEnd = o.baseMip + o.numMips;
+            const uint32_t layerEnd = baseLayer + numLayers;
+            const uint32_t otherLayerEnd = o.baseLayer + o.numLayers;
 
-		std::vector<TextureHandle> textures;
-		VkImageLayout expectedLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-	};
+            return baseMip <= o.baseMip && mipEnd >= otherMipEnd &&
+                   baseLayer <= o.baseLayer && layerEnd >= otherLayerEnd;
+        }
+        // check if ranges overlap in any way
+        bool overlaps(const SubresourceRange& o) const {
+            const uint32_t mipEnd = baseMip + numMips;
+            const uint32_t otherMipEnd = o.baseMip + o.numMips;
+            const uint32_t layerEnd = baseLayer + numLayers;
+            const uint32_t otherLayerEnd = o.baseLayer + o.numLayers;
 
-	// user defined information from addPass and RenderPassBuilder
-	struct PassSource {
-		enum class Type { Graphics, Compute };
+            const bool mipOverlap = !(mipEnd <= o.baseMip || baseMip >= otherMipEnd);
+            const bool layerOverlap = !(layerEnd <= o.baseLayer || baseLayer >= otherLayerEnd);
 
-		PassSource(const char* name, Type type)
-		: name(name), type(type) {}
+            return mipOverlap && layerOverlap;
+        }
 
-		// these three members are sent straight over to PassCompiled
-		std::string name;
-		Type type;
-		std::function<void(CommandBuffer&)> executeCallback{};
+        bool operator==(const SubresourceRange& o) const {
+            return baseMip == o.baseMip && numMips == o.numMips && baseLayer == o.baseLayer && numLayers == o.numLayers;
+        }
+        bool operator!=(const SubresourceRange& o) const {
+            return !(*this == o);
+        }
+    };
 
-		std::vector<WriteSpec> writeOperations{}; // empty for compute
-		std::vector<ReadSpec> readOperations{};
-	};
-	struct CompiledBarrier {
-		VkImageMemoryBarrier2 barrier{};
-		TextureHandle textureHandle;
-		bool isRead = false;
-		bool isResolve = false;
-	};
+    class TextureStateTracker {
+    public:
+        TextureStateTracker(uint32_t mips, uint32_t layers)
+            : totalMips(mips), totalLayers(layers) {
+            wholeResourceState = SubresourceState();
+            isWholeResource = true;
+        }
+        SubresourceState getState(const SubresourceRange& range) const {
+            if (isWholeResource) {
+                return wholeResourceState;
+            }
+            // chcek for exact or containing range
+            for (auto& entry: subresourceStates) {
+                if (entry.range == range || entry.range.contains(range)) {
+                    return entry.state;
+                }
+            }
+            // not found then return undefined state
+            return {};
+        }
+        void setState(const SubresourceRange& range, const SubresourceState& state) {
+            // fast path: updating entire resource
+            if (const SubresourceRange wholeRange = {0, totalMips, 0, totalLayers}; range == wholeRange) {
+                wholeResourceState = state;
+                isWholeResource = true;
+                subresourceStates.clear();
+                return;
+            }
+            // needs subresource tracking
+            if (isWholeResource) {
+                isWholeResource = false;
+                subresourceStates.clear();
+            }
+            // attempt to find exisiting entry
+            for (auto& entry: subresourceStates) {
+                if (entry.range == range) {
+                    entry.state = state;
+                    return;
+                }
+            }
+            subresourceStates.emplace_back(range, state);
+        }
+        uint32_t getTotalMips() const { return totalMips; }
+        uint32_t getTotalLayers() const { return totalLayers; }
 
-	// hidden information that transforms the PassSource into usable info
-	struct PassCompiled {
-		// transferred info from source
-		std::string name;
-		PassSource::Type type;
-		VkExtent2D extent2D;
-		std::function<void(CommandBuffer&)> executeCallback;
+    private:
+        uint32_t totalMips;
+        uint32_t totalLayers;
 
-		// new info transformed from source on compile()
-		std::vector<ColorAttachmentInfo> colorAttachments;
-		std::optional<DepthAttachmentInfo> depthAttachment;
+        // fast path: single state for entire resource, which is most common
+        SubresourceState wholeResourceState{};
+        bool isWholeResource;
 
-		// for automatic image layout transitions
-		std::vector<CompiledBarrier> preBarriers;
-	};
+        // slow path: per subresource tracking
+        struct SubresourceEntry {
+            SubresourceRange range;
+            SubresourceState state;
+        };
 
-	// forward declare just for RenderPassBuilder
-	class RenderGraph;
+        std::vector<SubresourceEntry> subresourceStates;
+    };
 
-	class IPassBuilder {
-	public:
-		IPassBuilder() = delete;
-		virtual ~IPassBuilder() = default;
-		IPassBuilder(RenderGraph& graphRef, const char* name, const PassSource::Type type)
-		: _graphRef(graphRef), _passSource(name, type) {
-			assert(!_passSource.name.empty());
-			assert(_passSource.type == type);
-		};
-		virtual void setExecuteCallback(const std::function<void(CommandBuffer& cmd)>& callback) = 0;
-	protected:
-		RenderGraph& _graphRef;
-		PassSource _passSource;
-	};
+    struct CompiledImageBarrier {
+        // we dont want to only rely on a vkImage as when the texture updates we need to be able to fetch its new version
+        TextureHandle textureHandle;
+        VkImageMemoryBarrier2 barrier{};
+    };
 
-	class GraphicsPassBuilder : public IPassBuilder {
-	public:
-		GraphicsPassBuilder(RenderGraph& graphRef, const char* name) : IPassBuilder(graphRef, name, PassSource::Type::Graphics) {}
+    // hidden information that transforms the PassSource into usable info
+    struct CompiledPass {
+        // transferred info from source
+        std::string name;
+        uint32_t passIndex;
+        PassDesc::Type type;
 
-		GraphicsPassBuilder& write(const WriteSpec& spec);
-		// will eventually replace WriteSpec
-		GraphicsPassBuilder& write(const WriteSpec2& spec);
+        std::vector<CompiledImageBarrier> imageBarriers;
+        std::function<void(CommandBuffer&)> executeCallback;
 
-		GraphicsPassBuilder& read(const ReadSpec& spec);
-		GraphicsPassBuilder& read(const Texture& texture, VkImageLayout requestedLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-		// GraphicsPassBuilder& read(const MultiReadSpec& spec);
-		GraphicsPassBuilder& read(const Texture* front, unsigned int count, VkImageLayout requestedLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-		void setExecuteCallback(const std::function<void (CommandBuffer &)>& callback) override;
+        // new info transformed from source on compile()
+        std::vector<AttachmentInfo> colorAttachments;
+        std::optional<AttachmentInfo> depthAttachment;
+        VkRect2D renderArea;
+    };
 
-		friend class RenderGraph;
-	};
-	class ComputePassBuilder : public IPassBuilder {
-	public:
-		ComputePassBuilder(RenderGraph& graphRef, const char* name) : IPassBuilder(graphRef, name, PassSource::Type::Compute) {};
-		// compute passes dont write to textures like renderpasses so we dont offer a write operation
-		ComputePassBuilder& read(const ReadSpec& spec);
-		ComputePassBuilder& read(const Texture& texture, VkImageLayout requestedLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-		ComputePassBuilder& read(const Texture* front, unsigned int count, VkImageLayout requestedLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-		void setExecuteCallback(const std::function<void (CommandBuffer &)>& callback) override;
+    // builders are how the user interacts with a capability
+    // BasePassBuilder is a blueprint for other PassBuilders only
+    struct BasePassBuilder {
+        BasePassBuilder() = delete;
+        BasePassBuilder(RenderGraph& rGraph, const char* pName, const PassDesc::Type type)
+            : _rGraph(rGraph), _passSource(pName, type) {
+            ASSERT(!_passSource.name.empty());
+        }
+        void setExecuteCallback(const std::function<void(CommandBuffer& cmd)>& callback);
+    protected:
+        RenderGraph& _rGraph;
+    private:
+        PassDesc _passSource;
+        template<typename Derived>
+        friend class WithDependencies;
+        template<typename Derived>
+        friend class WithAttachments;
+    };
 
-		friend class RenderGraph;
-	};
+    template<typename Derived>
+    class WithDependencies {
+    public:
+        Derived& dependency(const TextureDesc& texDesc, const Layout layout = Layout::GENERAL) {
+            ASSERT_MSG(texDesc.handle.valid(), "Texture added as dependency is invalid!");
+            self()._passSource.dependencyOperations.emplace_back(texDesc, layout);
+            return self();
+        }
+        Derived& dependency(const Texture* tex, int count, const Layout layout = Layout::GENERAL) {
+            ASSERT(tex);
+            for (int i = 0; i < count; i++)
+                dependency(tex[i], layout);
+            return self();
+        }
+    private:
+        Derived& self() { return static_cast<Derived &>(*this); }
+    };
 
-	class CTX;
+    template<typename Derived>
+    class WithAttachments {
+    public:
+        Derived& attachment(const AttachmentDesc& desc) {
+            ASSERT_MSG(desc.texDesc.handle.valid(), "Texture added as attachment is invalid!");
+            self()._passSource.attachmentOperations.push_back(desc);
+            return self();
+        }
+    private:
+        Derived& self() { return static_cast<Derived &>(*this); }
+    };
 
-	class RenderGraph {
-	public:
-		ComputePassBuilder addComputePass(const char* name) {
-			return ComputePassBuilder{*this, name};
-		}
-		GraphicsPassBuilder addGraphicsPass(const char* name) {
-			return GraphicsPassBuilder{*this, name};
-		}
+    template<typename Derived>
+    class WithSwapchain {
+    public:
+        Derived& sendToSwapchain(TextureHandle& handle) {
+            ASSERT_MSG(handle.valid(), "Texture used in 'sendToSwapchain' is invalid!");
+            return self();
+        }
+    private:
+        Derived& self() { return static_cast<Derived &>(*this); }
+    };
 
-		// 2 step,
-		// 1. transform passes
-		// 2. build pipelines
-		void compile(CTX& ctx);
-		void execute(CommandBuffer& cmd);
-	private:
-		std::unordered_map<TextureHandle, VkImageLayout> _initialLayoutsPerFrame{};
-		std::vector<PassSource> _sourcePasses;
-		std::vector<PassCompiled> _compiledPasses;
+    class GraphicsPassBuilder
+        : public BasePassBuilder
+        , public WithAttachments<GraphicsPassBuilder>
+        , public WithDependencies<GraphicsPassBuilder> {
+    public:
+        GraphicsPassBuilder() = delete;
+        GraphicsPassBuilder(RenderGraph& rGraph, const char* pName)
+            : BasePassBuilder(rGraph, pName, PassDesc::Type::Graphics) {
+        }
+    };
 
-		void PerformTransitions(CommandBuffer& cmd, const PassCompiled& currentPass);
+    class ComputePassBuilder
+        : public BasePassBuilder
+        , public WithDependencies<ComputePassBuilder> {
+    public:
+        ComputePassBuilder() = delete;
+        ComputePassBuilder(RenderGraph& rGraph, const char* pName)
+            : BasePassBuilder(rGraph, pName, PassDesc::Type::Compute) {
+        }
+    };
 
-		bool _hasCompiled = false;
+    class PresentationPassBuilder {
+    public:
 
-		friend class RenderPassBuilder;
-		friend class GraphicsPassBuilder;
-		friend class ComputePassBuilder;
-	};
+        void transferToSwapchain();
+
+    };
+
+    class RenderGraph {
+    public:
+        // setup steps are designed with minimal overhead
+        // hence why we simply take directly the data the user gives and stores it, nothing else
+        [[nodiscard]] GraphicsPassBuilder addGraphicsPass(const char* pName) {
+            return GraphicsPassBuilder{*this, pName};
+        }
+        [[nodiscard]] ComputePassBuilder addComputePass(const char* pName) {
+            return ComputePassBuilder{*this, pName};
+        }
+        // compile is where ALL of the overhead should be, all data stored during setup is now translated into pieces that are easier to direct with
+        // called sparingly, perhaps once
+        void compile(CTX& rCtx);
+        // called every frame
+        void execute(CommandBuffer& cmd);
+
+    private:
+        static void PerformImageBarrierTransitions(CommandBuffer& cmd, const CompiledPass& compiledPass);
+        void processResourceAccess(const CTX& rCtx, const TextureDesc& texDesc, VkImageLayout desiredLayout, CompiledPass& outPass);
+        void processPassResources(CTX& rCtx, const PassDesc& passDesc, CompiledPass& outPass);
+        void processAttachments(CTX& rCtx, const PassDesc& pass_desc, CompiledPass& outPass);
+        void performDryRun(CTX& rCtx);
+        // every texture used in the framegraph needs proper tracking to ensure its layout is correct...
+        // at every pass, even more necessary for textures that request individual mips/layers
+        std::unordered_map<TextureHandle, TextureStateTracker> resourceTrackers;
+        // data used during compilation
+        std::vector<PassDesc> _passDescriptions;
+        // data fetched during execution
+        std::vector<CompiledPass> _compiledPasses;
+
+        bool _hasCompiled = false;
+
+        friend struct BasePassBuilder;
+        friend class GraphicsPassBuilder;
+        friend class ComputePassBuilder;
+    };
 }
