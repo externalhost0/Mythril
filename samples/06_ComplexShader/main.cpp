@@ -479,13 +479,13 @@ int main() {
 	mythril::RenderGraph graph;
 	graph.addGraphicsPass("geometry")
 	.attachment({
-		.texDesc = {colorTarget},
+		.texDesc = colorTarget,
 		.clearValue = {0.2f, 0.2f, 0.2f, 1.f},
 		.loadOp = mythril::LoadOperation::CLEAR,
 		.storeOp = mythril::StoreOperation::STORE
 	})
 	.attachment({
-		.texDesc = {depthTarget},
+		.texDesc = depthTarget,
 		.clearValue = {1.f, 0},
 		.loadOp = mythril::LoadOperation::CLEAR
 	})
@@ -518,12 +518,11 @@ int main() {
 		cmd.cmdBeginRendering();
 		cmd.cmdDrawImGui();
 		cmd.cmdEndRendering();
-
-		cmd.cmdTransitionLayout(colorTarget, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
-		cmd.cmdTransitionLayout(ctx->getCurrentSwapchainTex(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-		cmd.cmdBlitImage(colorTarget, ctx->getCurrentSwapchainTex());
-		cmd.cmdTransitionLayout(ctx->getCurrentSwapchainTex(), VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
 	});
+
+	graph.addIntermediate("presentation")
+	.blit(colorTarget, ctx->getBackBufferTexture())
+	.finish();
 
 	graph.compile(*ctx);
 

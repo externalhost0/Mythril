@@ -40,8 +40,8 @@ int main() {
 
 	mythril::RenderGraph graph;
 	graph.addGraphicsPass("main")
-	.write({
-		.texture = colorTarget.handle(),
+	.attachment({
+		.texDesc = colorTarget,
 		.clearValue = {1, 0, 0, 1},
 		.loadOp = mythril::LoadOperation::CLEAR,
 		.storeOp = mythril::StoreOperation::STORE
@@ -50,10 +50,10 @@ int main() {
 		cmd.cmdBeginRendering();
 		cmd.cmdDrawImGui();
 		cmd.cmdEndRendering();
-		cmd.cmdBlitImage(colorTarget.handle(), ctx->getCurrentSwapchainTex());
-		cmd.cmdTransitionLayout(ctx->getCurrentSwapchainTex(), VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
-
 	});
+	graph.addIntermediate("present")
+	.blit(colorTarget, ctx->getBackBufferTexture())
+	.finish();
 	graph.compile(*ctx);
 
 

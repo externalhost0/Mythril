@@ -72,7 +72,9 @@ namespace mythril {
 		switch (type) {
 			case PassDesc::Type::Graphics: return "Graphics";
 			case PassDesc::Type::Compute: return "Compute";
+			case PassDesc::Type::Intermediate: return "Transfer";
 		}
+		assert(false);
 	}
 
 	PassDesc::Type CommandBuffer::getCurrentPassType() {
@@ -255,11 +257,22 @@ namespace mythril {
 			}
 		}
 	}
-	void CommandBuffer::cmdBlitImage(TextureHandle source, TextureHandle destination) {
+	void CommandBuffer::CheckImageLayoutAuto(TextureHandle sourceHandle, TextureHandle destinationHandle, const char* operation) {
+		auto& sourceObject = _ctx->view(sourceHandle);
+		auto& destinationObject = _ctx->view(destinationHandle);
+		if (sourceObject.getImageLayout() != VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) {
+			LOG_SYSTEM(LogType::Info, "Automatically resolved texture ({}) to be in correct layout (VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) before {}. Was in ({})", sourceObject._debugName, operation, vkstring::VulkanImageLayoutToString(sourceObject.getImageLayout()));
+			this->cmdTransitionLayout(sourceHandle, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+		}
+		if (destinationObject.getImageLayout() != VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
+			LOG_SYSTEM(LogType::Info, "Automatically resolved texture ({}) to be in correct layout (VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) before {}. Was in ({})", destinationObject._debugName, operation, vkstring::VulkanImageLayoutToString(destinationObject.getImageLayout()));
+			this->cmdTransitionLayout(destinationHandle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+		}
+	}
+	void CommandBuffer::cmdBlitImageToSwapchain(TextureHandle source) {
 		DRY_RETURN()
-		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_COMMAND);
+		const TextureHandle destination = this->_ctx->getCurrentSwapchainTexHandle();
 		ASSERT_MSG(source.valid() && destination.valid(), "Textures must be valid handles!");
-
 		auto &sourceTex = _ctx->view(source);
 		auto &destinationTex = _ctx->view(destination);
 #ifdef DEBUG
@@ -267,11 +280,47 @@ namespace mythril {
 		CheckTextureRenderingUsage(sourceTex, destinationTex, "blit");
 		// check if copy could have been used instead
 		if (CheckTextureCopyInstead(sourceTex, destinationTex)) {
-			LOG_SYSTEM(LogType::Suggestion, "Usage of cmdBlitImage can be replaced by cmdCopyImage");
+			LOG_SYSTEM(LogType::Suggestion, "Usage of cmdBlitImage can be replaced by cmdCopyImage between src: '{}' and dest: '{}'", sourceTex.getDebugName(), destinationTex.getDebugName());
 		}
 #endif
 		ASSERT_MSG(sourceTex.getSampleCount() == VK_SAMPLE_COUNT_1_BIT, "You cannot blit a image with more than 1 samples.");
-		// CheckImageLayoutAuto(source, destination, "blitting");
+		CheckImageLayoutAuto(source, destination, "blitting");
+		cmdBlitImageImpl(source, destination, sourceTex.getExtentAs2D(), destinationTex.getExtentAs2D());
+	}
+	void CommandBuffer::cmdCopyImageToSwapchain(TextureHandle source) {
+		DRY_RETURN()
+		const TextureHandle destination = this->_ctx->getCurrentSwapchainTexHandle();
+		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_COMMAND);
+		ASSERT_MSG(source.valid() && destination.valid(), "Textures must be valid handles!");
+
+		auto &sourceTex = _ctx->view(source);
+		auto &destinationTex = _ctx->view(destination);
+#ifdef DEBUG
+		CheckTextureRenderingUsage(sourceTex, destinationTex, "copy");
+#endif
+		CheckImageLayoutAuto(source, destination, "copying");
+		// needs to be same so doesnt matter if we take source or destination size
+		cmdCopyImageImpl(source, destination, _ctx->view(source).getExtentAs2D());
+	}
+
+
+	void CommandBuffer::cmdBlitImage(TextureHandle source, TextureHandle destination) {
+		DRY_RETURN()
+		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_COMMAND);
+		ASSERT_MSG(source.valid() && destination.valid(), "Textures must be valid handles!");
+
+		const AllocatedTexture& sourceTex = _ctx->view(source);
+		const AllocatedTexture& destinationTex = _ctx->view(destination);
+#ifdef DEBUG
+		// check if textures are being rendered to
+		CheckTextureRenderingUsage(sourceTex, destinationTex, "blit");
+		// check if copy could have been used instead
+		if (CheckTextureCopyInstead(sourceTex, destinationTex)) {
+			LOG_SYSTEM(LogType::Suggestion, "Usage of cmdBlitImage can be replaced by cmdCopyImage between src: '{}' and dest: '{}'", sourceTex.getDebugName(), destinationTex.getDebugName());
+		}
+#endif
+		ASSERT_MSG(sourceTex.getSampleCount() == VK_SAMPLE_COUNT_1_BIT, "You cannot blit a image with more than 1 samples.");
+		CheckImageLayoutAuto(source, destination, "blitting");
 		cmdBlitImageImpl(source, destination, sourceTex.getExtentAs2D(), destinationTex.getExtentAs2D());
 	}
 	void CommandBuffer::cmdCopyImage(TextureHandle source, TextureHandle destination) {
@@ -284,7 +333,7 @@ namespace mythril {
 #ifdef DEBUG
 		CheckTextureRenderingUsage(sourceTex, destinationTex, "copy");
 #endif
-		// CheckImageLayoutAuto(source, destination, "copying");
+		CheckImageLayoutAuto(source, destination, "copying");
 		// needs to be same so doesnt matter if we take source or destination size
 		cmdCopyImageImpl(source, destination, _ctx->view(source).getExtentAs2D());
 	}
@@ -305,15 +354,13 @@ namespace mythril {
 
 		// we just use the enum for PassSource::Type even though it makes no sense cause thats not what we are testing for
 		const PassDesc::Type type = getCurrentPassType();
-		VkShaderStageFlags stages = 0;
-		switch (type) {
-			case PassDesc::Type::Compute: {
-				stages = VK_SHADER_STAGE_COMPUTE_BIT;
-			} break;
-			case PassDesc::Type::Graphics: {
-				stages = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+		const VkShaderStageFlags stages = [](const PassDesc::Type passType) -> VkShaderStageFlags {
+			switch (passType) {
+				case PassDesc::Type::Graphics: return VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+				case PassDesc::Type::Compute: return VK_SHADER_STAGE_COMPUTE_BIT;
+				default: assert(false);
 			}
-		}
+		}(type);
 #ifdef DEBUG
 		MaybeWarnPushConstantSizeMismatch(_currentPipelineInfo->core, size, _currentPipelineInfo->debugName);
 #endif
@@ -489,7 +536,7 @@ namespace mythril {
 		if (hasDepth) {
 			vk_depth_attachment_info = _activePass.depthAttachment->getAsVkRenderingAttachmentInfo();
 		}
-		VkRenderingInfo info = {
+		const VkRenderingInfo info = {
 			.sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
 			.pNext = nullptr,
 			.flags = 0,

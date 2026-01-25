@@ -28,7 +28,7 @@ namespace mythril {
     class RenderGraph;
 
     struct AttachmentInfo {
-        VkFormat imageFormat; // the only field that RenderingAttachmentInfo doesnt need
+        VkFormat imageFormat; // the only field that RenderingAttachmentInfo doesnt need but GraphcsPipeline does
         VkImageView imageView;
         VkImageLayout imageLayout;
         // optional resolve target
@@ -40,11 +40,6 @@ namespace mythril {
 
         VkClearValue clearValue;
 
-        // for dynamic textures, ie swapchain
-        std::function<VkImageView()> imageViewCallback;
-        std::function<VkImageView()> resolveImageViewCallback;
-        bool isDynamic = false;
-
         VkRenderingAttachmentInfo getAsVkRenderingAttachmentInfo() const {
             const bool isResolving = resolveImageView != VK_NULL_HANDLE;
             return {
@@ -52,7 +47,7 @@ namespace mythril {
                 .pNext = nullptr,
                 .imageView = imageView,
                 .imageLayout = imageLayout,
-                .resolveMode = isResolving ? (vkutil::IsIntegerFormat(imageFormat) ? VK_RESOLVE_MODE_SAMPLE_ZERO_BIT : VK_RESOLVE_MODE_AVERAGE_BIT) : VK_RESOLVE_MODE_NONE,
+                .resolveMode = isResolving ? (vkutil::IsIntegerFormat(imageFormat) || vkutil::IsFormatDepthOrStencil(imageFormat) ? VK_RESOLVE_MODE_SAMPLE_ZERO_BIT : VK_RESOLVE_MODE_AVERAGE_BIT) : VK_RESOLVE_MODE_NONE,
                 .resolveImageView = resolveImageView,
                 .resolveImageLayout = resolveImageLayout,
                 .loadOp = loadOp,
@@ -178,7 +173,10 @@ namespace mythril {
     struct CompiledImageBarrier {
         // we dont want to only rely on a vkImage as when the texture updates we need to be able to fetch its new version
         TextureHandle textureHandle;
-        VkImageMemoryBarrier2 barrier{};
+        SubresourceRange range{};
+        VkImageLayout dstLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        vkutil::StageAccess dstMask{};
+        bool isSwapchain = false;
     };
 
     // hidden information that transforms the PassSource into usable info
@@ -205,84 +203,86 @@ namespace mythril {
             : _rGraph(rGraph), _passSource(pName, type) {
             ASSERT(!_passSource.name.empty());
         }
-        void setExecuteCallback(const std::function<void(CommandBuffer& cmd)>& callback);
     protected:
         RenderGraph& _rGraph;
+        void setExecuteCallback(const std::function<void(CommandBuffer& cmd)>& callback);
     private:
         PassDesc _passSource;
-        template<typename Derived>
-        friend class WithDependencies;
-        template<typename Derived>
-        friend class WithAttachments;
+        friend class GraphicsPassBuilder;
+        friend class ComputePassBuilder;
+        friend class IntermediateBuilder;
     };
 
-    template<typename Derived>
-    class WithDependencies {
-    public:
-        Derived& dependency(const TextureDesc& texDesc, const Layout layout = Layout::GENERAL) {
-            ASSERT_MSG(texDesc.handle.valid(), "Texture added as dependency is invalid!");
-            self()._passSource.dependencyOperations.emplace_back(texDesc, layout);
-            return self();
-        }
-        Derived& dependency(const Texture* tex, int count, const Layout layout = Layout::GENERAL) {
-            ASSERT(tex);
-            for (int i = 0; i < count; i++)
-                dependency(tex[i], layout);
-            return self();
-        }
-    private:
-        Derived& self() { return static_cast<Derived &>(*this); }
-    };
 
-    template<typename Derived>
-    class WithAttachments {
-    public:
-        Derived& attachment(const AttachmentDesc& desc) {
-            ASSERT_MSG(desc.texDesc.handle.valid(), "Texture added as attachment is invalid!");
-            self()._passSource.attachmentOperations.push_back(desc);
-            return self();
-        }
-    private:
-        Derived& self() { return static_cast<Derived &>(*this); }
-    };
+    inline void add(PassDesc& passSource, const TextureDesc& desc, const Layout layout) {
+        passSource.dependencyOperations.emplace_back(desc, layout);
+    }
 
-    template<typename Derived>
-    class WithSwapchain {
-    public:
-        Derived& sendToSwapchain(TextureHandle& handle) {
-            ASSERT_MSG(handle.valid(), "Texture used in 'sendToSwapchain' is invalid!");
-            return self();
-        }
-    private:
-        Derived& self() { return static_cast<Derived &>(*this); }
-    };
-
-    class GraphicsPassBuilder
-        : public BasePassBuilder
-        , public WithAttachments<GraphicsPassBuilder>
-        , public WithDependencies<GraphicsPassBuilder> {
+    class GraphicsPassBuilder {
     public:
         GraphicsPassBuilder() = delete;
         GraphicsPassBuilder(RenderGraph& rGraph, const char* pName)
-            : BasePassBuilder(rGraph, pName, PassDesc::Type::Graphics) {
+            : base(rGraph, pName, PassDesc::Type::Graphics) {}
+
+        GraphicsPassBuilder& attachment(const AttachmentDesc& desc) {
+            this->base._passSource.attachmentOperations.push_back(desc);
+            return *this;
         }
+        GraphicsPassBuilder& dependency(const TextureDesc& texDesc, const Layout layout = Layout::GENERAL) {
+            add(this->base._passSource, texDesc, layout);
+            return *this;
+        }
+        GraphicsPassBuilder& dependency(const Texture* tex, int count, const Layout layout = Layout::GENERAL) {
+            for (int i = 0; i < count; i++) {
+                add(this->base._passSource, tex[i], layout);
+            }
+            return *this;
+        }
+
+        void setExecuteCallback(const std::function<void(CommandBuffer& cmd)>& callback) {
+            base.setExecuteCallback(callback);
+        }
+    private:
+        BasePassBuilder base;
     };
 
-    class ComputePassBuilder
-        : public BasePassBuilder
-        , public WithDependencies<ComputePassBuilder> {
+    class ComputePassBuilder {
     public:
         ComputePassBuilder() = delete;
         ComputePassBuilder(RenderGraph& rGraph, const char* pName)
-            : BasePassBuilder(rGraph, pName, PassDesc::Type::Compute) {
+            : base(rGraph, pName, PassDesc::Type::Compute) {}
+
+        ComputePassBuilder& dependency(const TextureDesc& texDesc, const Layout layout = Layout::GENERAL) {
+                add(this->base._passSource, texDesc, layout);
+            return *this;
         }
+        ComputePassBuilder& dependency(const Texture* tex, int count, const Layout layout = Layout::GENERAL) {
+            for (int i = 0; i < count; i++) {
+                add(this->base._passSource, tex[i], layout);
+            }
+            return *this;
+        }
+
+        void setExecuteCallback(const std::function<void(CommandBuffer& cmd)>& callback) {
+            base.setExecuteCallback(callback);
+        }
+    private:
+        BasePassBuilder base;
     };
 
-    class PresentationPassBuilder {
+    class IntermediateBuilder {
     public:
+        IntermediateBuilder() = delete;
+        IntermediateBuilder(RenderGraph& rGraph, const char* pName)
+            : base(rGraph, pName, PassDesc::Type::Intermediate) {}
 
-        void transferToSwapchain();
-
+        // helper that encomposses a order of the below fuctions
+        IntermediateBuilder& copy(TextureDesc src, TextureDesc dst);
+        IntermediateBuilder& blit(TextureDesc src, TextureDesc dst);
+        IntermediateBuilder& generateMipmaps(const Texture& texture);
+        void finish();
+    private:
+        BasePassBuilder base;
     };
 
     class RenderGraph {
@@ -295,6 +295,9 @@ namespace mythril {
         [[nodiscard]] ComputePassBuilder addComputePass(const char* pName) {
             return ComputePassBuilder{*this, pName};
         }
+        [[nodiscard]] IntermediateBuilder addIntermediate(const char* pName) {
+            return IntermediateBuilder{*this, pName};
+        }
         // compile is where ALL of the overhead should be, all data stored during setup is now translated into pieces that are easier to direct with
         // called sparingly, perhaps once
         void compile(CTX& rCtx);
@@ -302,14 +305,14 @@ namespace mythril {
         void execute(CommandBuffer& cmd);
 
     private:
-        static void PerformImageBarrierTransitions(CommandBuffer& cmd, const CompiledPass& compiledPass);
-        void processResourceAccess(const CTX& rCtx, const TextureDesc& texDesc, VkImageLayout desiredLayout, CompiledPass& outPass);
-        void processPassResources(CTX& rCtx, const PassDesc& passDesc, CompiledPass& outPass);
+        void PerformImageBarrierTransitions(CommandBuffer& cmd, const CompiledPass& compiledPass);
+        static void processResourceAccess(const TextureDesc& texDesc, VkImageLayout desiredLayout, CompiledPass& outPass);
+        void processPassResources(const PassDesc& passDesc, CompiledPass& outPass);
         void processAttachments(CTX& rCtx, const PassDesc& pass_desc, CompiledPass& outPass);
         void performDryRun(CTX& rCtx);
         // every texture used in the framegraph needs proper tracking to ensure its layout is correct...
         // at every pass, even more necessary for textures that request individual mips/layers
-        std::unordered_map<TextureHandle, TextureStateTracker> resourceTrackers;
+        std::unordered_map<TextureHandle, TextureStateTracker> _resourceTrackers;
         // data used during compilation
         std::vector<PassDesc> _passDescriptions;
         // data fetched during execution
@@ -320,5 +323,6 @@ namespace mythril {
         friend struct BasePassBuilder;
         friend class GraphicsPassBuilder;
         friend class ComputePassBuilder;
+        friend class IntermediateBuilder;
     };
 }

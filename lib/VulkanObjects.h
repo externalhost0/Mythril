@@ -39,7 +39,7 @@ namespace mythril {
 		[[nodiscard]] uint32_t getNumMips() const { return _numLevels; }
 		[[nodiscard]] uint32_t getNumLayers() const { return _numLayers; }
 
-		[[nodiscard]] VkSampleCountFlagBits getSampleCount() const { return _vkSampleCountFlagBits; }
+		[[nodiscard]] uint8_t getSampleCount() const { return _sampleCount; }
 		[[nodiscard]] VkImageType getType() const { return _vkImageType; }
 		[[nodiscard]] VkImageLayout getImageLayout() const { return _vkCurrentImageLayout; }
 		[[nodiscard]] Dimensions getDimensions() const { return {_vkExtent.width, _vkExtent.height, _vkExtent.depth}; }
@@ -67,6 +67,21 @@ namespace mythril {
 
 		void generateMipmap(VkCommandBuffer cmd);
 		void transitionLayout(VkCommandBuffer cmd, VkImageLayout newImageLayout, const VkImageSubresourceRange &subresourceRange);
+
+		constexpr VkSampleCountFlagBits getVkSampleCountBits() {
+			switch (_sampleCount) {
+				case 1: return VK_SAMPLE_COUNT_1_BIT;
+				case 2: return VK_SAMPLE_COUNT_2_BIT;
+				case 4: return VK_SAMPLE_COUNT_4_BIT;
+				case 8: return VK_SAMPLE_COUNT_8_BIT;
+				case 16: return VK_SAMPLE_COUNT_16_BIT;
+				case 32: return VK_SAMPLE_COUNT_32_BIT;
+				case 64: return VK_SAMPLE_COUNT_64_BIT;
+					default: ASSERT_MSG(false,
+						"Something went horribly wrong! The _sampleCount of texture '{}' is not 2^n where n is in the range of integars 1-6, its '{}'.",
+						getDebugName(), _sampleCount);
+			}
+		}
 	private:
 		VkImage _vkImage = VK_NULL_HANDLE;
 		VkImageView _vkImageView = VK_NULL_HANDLE;
@@ -83,7 +98,7 @@ namespace mythril {
 		VkImageType _vkImageType = VK_IMAGE_TYPE_MAX_ENUM;
 		VkImageViewType _vkImageViewType = VK_IMAGE_VIEW_TYPE_MAX_ENUM;
 		VkImageUsageFlags _vkUsageFlags = 0;
-		VkSampleCountFlagBits _vkSampleCountFlagBits = VK_SAMPLE_COUNT_1_BIT;
+		uint8_t _sampleCount = 1;
 		VkMemoryPropertyFlags _vkMemoryPropertyFlags = 0;
 
 		VmaAllocation _vmaAllocation = VK_NULL_HANDLE;

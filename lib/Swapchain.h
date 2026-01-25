@@ -30,11 +30,10 @@ namespace mythril {
 		void acquire();
 		void present();
 	public:
-		inline uint32_t getNumOfSwapchainImages() const { return _numSwapchainImages; }
-		inline bool isDirty() const { return _isDirty; }
+		uint32_t getNumOfSwapchainImages() const { return _numSwapchainImages; }
+		bool isDirty() const { return _isDirty; }
 		const TextureHandle& getCurrentSwapchainTextureHandle() const { return _swapchainTextures[_currentImageIndex]; }
-		const AllocatedTexture& getCurrentSwapchainTextureObject() const;
-		inline VkExtent2D getSwapchainExtent() const { return _vkExtent2D; };
+		VkExtent2D getSwapchainExtent() const { return _vkExtent2D; };
 	private:
 
 		VkSwapchainKHR _vkSwapchain = VK_NULL_HANDLE;

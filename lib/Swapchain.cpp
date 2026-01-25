@@ -105,11 +105,6 @@ namespace mythril {
 		}
 	}
 
-	// helper, though possibly unsafe, if initialize behaves correctly this should also be fine
-	const AllocatedTexture& Swapchain::getCurrentSwapchainTextureObject() const {
-		return *_ctx._texturePool.get(this->getCurrentSwapchainTextureHandle());
-	}
-
 	void Swapchain::acquire() {
 		if (_getNextImage) {
 			const VkSemaphoreWaitInfo waitInfo = {
@@ -135,10 +130,9 @@ namespace mythril {
 		}
 	}
 
+
+
 	void Swapchain::present() {
-		// ASSERT_MSG(getCurrentSwapchainTextureObject().getImageLayout() == VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-		// 	"Swapchain image layout is in '{}' but should be in VK_IMAGE_LAYOUT_PRESENT_SRC_KHR before presentation!",
-		// 	vkstring::VulkanImageLayoutToString(getCurrentSwapchainTextureObject().getImageLayout()));
 		VkSemaphore semaphore = _ctx._imm->acquireLastSubmitSemaphore();
 		const VkPresentInfoKHR present_info = {
 				.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,

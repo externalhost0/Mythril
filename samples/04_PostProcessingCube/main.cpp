@@ -185,15 +185,15 @@ int main() {
 
 	mythril::RenderGraph graph;
 	graph.addGraphicsPass("main")
-	.write({
-		.texture = colorTarget.handle(),
+	.attachment({
+		.texDesc = colorTarget,
 		.clearValue = {0.2f, 0.2f, 0.2f, 1.f},
 		.loadOp = mythril::LoadOperation::CLEAR,
 		.storeOp = mythril::StoreOperation::STORE,
-		.resolveTexture = resolveColorTarget.handle()
+		.resolveTexDesc = resolveColorTarget
 	})
-	.write({
-		.texture = depthTarget.handle(),
+	.attachment({
+		.texDesc = depthTarget,
 		.clearValue = {1.f, 0},
 		.loadOp = mythril::LoadOperation::CLEAR
 	})
@@ -225,12 +225,12 @@ int main() {
 		cmd.cmdEndRendering();
 	});
 	graph.addGraphicsPass("post_processing")
-	.write({
-		.texture = postColorTarget.handle(),
+	.attachment({
+		.texDesc = postColorTarget,
 		.loadOp = mythril::LoadOperation::NO_CARE,
 		.storeOp = mythril::StoreOperation::STORE
 	})
-	.read(resolveColorTarget)
+	.dependency(resolveColorTarget, mythril::Layout::READ)
 	.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
 		cmd.cmdBeginRendering();
 		cmd.cmdBindGraphicsPipeline(postPipeline);
@@ -245,11 +245,10 @@ int main() {
 		cmd.cmdPushConstants(push);
 		cmd.cmdDraw(3);
 		cmd.cmdEndRendering();
-		
-		cmd.cmdBlitImage(postColorTarget.handle(), ctx->getCurrentSwapchainTex());
-		cmd.cmdTransitionLayout(ctx->getCurrentSwapchainTex(), VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
-
 	});
+	graph.addIntermediate("present")
+	.blit(postColorTarget, ctx->getBackBufferTexture())
+	.finish();
 	graph.compile(*ctx);
 
 

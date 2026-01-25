@@ -110,6 +110,7 @@ namespace mythril {
 #ifdef MYTH_ENABLED_IMGUI
 		void cmdDrawImGui();
 #endif
+	private:
 		// TODO: safegaurd these commands
 		void cmdGenerateMipmap(TextureHandle handle);
 		void cmdGenerateMipmap(const Texture& texture) { cmdGenerateMipmap(texture.handle()); }
@@ -131,6 +132,8 @@ namespace mythril {
 		void cmdClearDepthStencilImage(TextureHandle texture, const ClearDepthStencil& value);
 
 	private:
+		void cmdBlitImageToSwapchain(TextureHandle source);
+		void cmdCopyImageToSwapchain(TextureHandle source);
 		// just repeated logic
 		void cmdBindPipelineImpl(const PipelineCoreData* common, VkPipelineBindPoint bindPoint);
 
@@ -151,6 +154,7 @@ namespace mythril {
 		// helpers
 		PassDesc::Type getCurrentPassType();
 		void CheckTextureRenderingUsage(const AllocatedTexture& source, const AllocatedTexture& destination, const char* operation);
+		void CheckImageLayoutAuto(TextureHandle sourceHandle, TextureHandle destinationHandle, const char* operation);
 	private:
 		// pretty important members for communication to the rest of the renderer
 		CTX* _ctx = nullptr;
@@ -173,6 +177,7 @@ namespace mythril {
 
 		friend class RenderGraph; // for access to set _activePass
 		friend class CTX; // for injection of command buffer data
+		friend class IntermediateBuilder;
 	};
 
 }

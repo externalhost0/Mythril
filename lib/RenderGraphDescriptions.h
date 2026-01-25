@@ -46,10 +46,9 @@ namespace mythril {
 
 
     struct TextureDesc {
-        TextureDesc(const Texture& h) {
-            handle = h.handle();
-        }
-        TextureHandle handle;
+        TextureDesc() = delete;
+        TextureDesc(const Texture& tex) : texture(tex) {}
+        const Texture& texture;
         std::optional<uint32_t> baseLevel;
         std::optional<uint32_t> numLevels;
         std::optional<uint32_t> baseLayer;
@@ -79,7 +78,7 @@ namespace mythril {
 
     // user defined information from addPass and RenderPassBuilder
     struct PassDesc {
-        enum class Type { Graphics, Compute, Transfer };
+        enum class Type { Graphics, Compute, Intermediate, Presentation };
         // these first three members are sent straight over to PassCompiled
         std::string name;
         Type type;

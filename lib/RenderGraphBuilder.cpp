@@ -14,6 +14,66 @@
 #include "vkstring.h"
 
 namespace mythril {
+	IntermediateBuilder& IntermediateBuilder::blit(TextureDesc src, TextureDesc dst) {
+		TextureHandle srcHandle = src.texture.handle();
+		TextureHandle dstHandle = dst.texture.handle();
+
+		add(base._passSource, src, Layout::TRANSFER_SRC);
+		add(base._passSource, dst, Layout::TRANSFER_DST);
+
+		auto oldCallback = base._passSource.executeCallback;
+		if (dst.texture->isSwapchainImage()) {
+			base._passSource.executeCallback = [oldCallback, srcHandle, dstHandle](CommandBuffer& cmd) {
+				if (oldCallback) oldCallback(cmd);
+				cmd.cmdBlitImageToSwapchain(srcHandle);
+			};
+		} else {
+			base._passSource.executeCallback = [oldCallback, srcHandle, dstHandle](CommandBuffer& cmd) {
+				if (oldCallback) oldCallback(cmd);
+				cmd.cmdBlitImage(srcHandle, dstHandle);
+			};
+		}
+		return *this;
+	}
+	IntermediateBuilder& IntermediateBuilder::copy(TextureDesc src, TextureDesc dst) {
+		TextureHandle srcHandle = src.texture.handle();
+		TextureHandle dstHandle = dst.texture.handle();
+
+		add(base._passSource, src, Layout::TRANSFER_SRC);
+		add(base._passSource, dst, Layout::TRANSFER_DST);
+
+		auto oldCallback = base._passSource.executeCallback;
+		if (dst.texture->isSwapchainImage()) {
+			base._passSource.executeCallback = [oldCallback, srcHandle, dstHandle](CommandBuffer& cmd) {
+				if (oldCallback) oldCallback(cmd);
+				cmd.cmdCopyImageToSwapchain(srcHandle);
+			};
+		} else {
+			base._passSource.executeCallback = [oldCallback, srcHandle, dstHandle](CommandBuffer& cmd) {
+				if (oldCallback) oldCallback(cmd);
+				cmd.cmdCopyImage(srcHandle, dstHandle);
+			};
+		}
+		return *this;
+	}
+	// todo: i have no clue how this just works immediately besides the fact we dont actually touch the base image + restore its original layout
+	IntermediateBuilder& IntermediateBuilder::generateMipmaps(const Texture& texture) {
+		TextureHandle handle = texture.handle();
+		auto oldCallback = base._passSource.executeCallback;
+		base._passSource.executeCallback = [oldCallback, handle](CommandBuffer& cmd) {
+			if (oldCallback) oldCallback(cmd);
+			cmd.cmdGenerateMipmap(handle);
+		};
+		return *this;
+	}
+
+	void IntermediateBuilder::finish() {
+		this->base._rGraph._passDescriptions.push_back(base._passSource);
+		this->base._rGraph._hasCompiled = false;
+	}
+
+
+
 
 	void BasePassBuilder::setExecuteCallback(const std::function<void(CommandBuffer& cmd)>& callback) {
 		_passSource.executeCallback = callback;
@@ -59,51 +119,27 @@ namespace mythril {
 		return false;
 	}
 
-	void RenderGraph::processResourceAccess(const CTX& rCtx, const TextureDesc& texDesc, VkImageLayout desiredLayout, CompiledPass& outPass) {
-		const TextureHandle handle = texDesc.handle;
-		const AllocatedTexture& texture = rCtx.view(handle);
-
-		// make sure a tracker for given handle exists
-		if (!resourceTrackers.contains(texDesc.handle)) {
-			resourceTrackers.emplace(
-				std::piecewise_construct,
-				std::forward_as_tuple(texDesc.handle),
-				std::forward_as_tuple(texture.getNumMips(), texture.getNumLayers())
-			);
-		}
-		TextureStateTracker& tracker = resourceTrackers.at(texDesc.handle);
+	void RenderGraph::processResourceAccess(const TextureDesc& texDesc, VkImageLayout desiredLayout, CompiledPass& outPass) {
+		const TextureHandle handle = texDesc.texture.handle();
+		const AllocatedTexture& texture = texDesc.texture.view();
+		const bool isSwapchain = texture.isSwapchainImage();
 		const SubresourceRange range = {
 			.baseMip = texDesc.baseLevel.value_or(0),
 			.numMips = texDesc.numLevels.value_or(texture.getNumMips()),
 			.baseLayer = texDesc.baseLayer.value_or(0),
 			.numLayers = texDesc.numLayers.value_or(texture.getNumLayers())
 		};
-
-		// SubresourceState includes StageAccess
-		const SubresourceState currentState = tracker.getState(range);
-		const vkutil::StageAccess desiredMask = vkutil::GetPipelineStageAccess(desiredLayout);
-
-		if (NeedsBarrier(currentState, desiredLayout, desiredMask)) {
-			const VkImageMemoryBarrier2 barrier2 = {
-				.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-				.pNext = nullptr,
-				.srcStageMask = currentState.mask.stage,
-				.srcAccessMask = currentState.mask.access,
-				.dstStageMask = desiredMask.stage,
-				.dstAccessMask = desiredMask.access,
-				.oldLayout = currentState.layout,
-				.newLayout = desiredLayout,
-				.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-				.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-				.image = texture.getImage(),
-				.subresourceRange = MakeVkRange(texture.getFormat(), range)
-			};
-			outPass.imageBarriers.emplace_back(CompiledImageBarrier{handle, barrier2});
-		}
-		tracker.setState(range, SubresourceState{desiredLayout, desiredMask});
+		const vkutil::StageAccess dstMask = vkutil::GetPipelineStageAccess(desiredLayout);
+		outPass.imageBarriers.push_back({
+			.textureHandle = handle,
+			.range = range,
+			.dstLayout = desiredLayout,
+			.dstMask = dstMask,
+			.isSwapchain = isSwapchain
+		});
 	}
 
-	void RenderGraph::processPassResources(CTX& rCtx, const PassDesc& passDesc, CompiledPass& outPass) {
+	void RenderGraph::processPassResources(const PassDesc& passDesc, CompiledPass& outPass) {
 		// we expect to use a max of this
 		outPass.imageBarriers.reserve(passDesc.dependencyOperations.size() + passDesc.attachmentOperations.size());
 		for (const DependencyDesc& dependency_desc : passDesc.dependencyOperations) {
@@ -117,12 +153,12 @@ namespace mythril {
 						default: assert(false);
 				}
 			}(dependency_desc.desiredLayout);
-			processResourceAccess(rCtx, dependency_desc.texDesc, layout, outPass);
+			processResourceAccess(dependency_desc.texDesc, layout, outPass);
 		}
 		for (const AttachmentDesc& attachment_desc : passDesc.attachmentOperations) {
-			const AllocatedTexture& texture = rCtx.view(attachment_desc.texDesc.handle);
+			const AllocatedTexture& texture = attachment_desc.texDesc.texture.view();
 			const VkImageLayout layout = texture.isDepthAttachment() ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-			processResourceAccess(rCtx, attachment_desc.texDesc, layout, outPass);
+			processResourceAccess(attachment_desc.texDesc, layout, outPass);
 		}
 	}
 
@@ -131,7 +167,7 @@ namespace mythril {
 		uint32_t max_width = 0, max_height = 0;
 		bool hasDepthAttachment = false;
 		for (const AttachmentDesc& attachment_desc : pass_desc.attachmentOperations) {
-			const AllocatedTexture& texture = rCtx.view(attachment_desc.texDesc.handle);
+			const AllocatedTexture& texture = attachment_desc.texDesc.texture.view();
 
 			const bool isDepthAttachment = vkutil::IsFormatDepth(texture.getFormat());
 			if (isDepthAttachment) {
@@ -156,7 +192,7 @@ namespace mythril {
 			};
 			if (attachment_desc.resolveTexDesc.has_value()) {
 				const TextureDesc& resolve_desc = attachment_desc.resolveTexDesc.value();
-				const AllocatedTexture& resolve_texture = rCtx.view(resolve_desc.handle);
+				const AllocatedTexture resolve_texture = resolve_desc.texture.view();
 				ASSERT_MSG(resolve_texture.getSampleCount() == VK_SAMPLE_COUNT_1_BIT,
 					"Pass '{}': Resolve Texture must have a sample count of 1 (found '{}' to be of a greater sample count)",
 					pass_desc.name,
@@ -221,7 +257,7 @@ namespace mythril {
 
 			// do not worry about the return value,
 			// every type of process should run for every pass
-			processPassResources(rCtx, pass_desc, compiled_pass);
+			processPassResources(pass_desc, compiled_pass);
 			processAttachments(rCtx, pass_desc, compiled_pass);
 
 			_compiledPasses.push_back(std::move(compiled_pass));
@@ -233,30 +269,54 @@ namespace mythril {
 	void RenderGraph::PerformImageBarrierTransitions(CommandBuffer& cmd, const CompiledPass& compiledPass) {
 		if (compiledPass.imageBarriers.empty()) return;
 		ASSERT(cmd._wrapper->_cmdBuf);
+
 		std::vector<VkImageMemoryBarrier2> vkBarriers;
 		vkBarriers.reserve(compiledPass.imageBarriers.size());
 		// we have to update the image associated if its a swapchain image
 		// as it changes every frame
-		for (const CompiledImageBarrier& image_barrier : compiledPass.imageBarriers) {
-			VkImageMemoryBarrier2 vk_image_memory_barrier2 = image_barrier.barrier;
-			if (cmd._ctx->view(image_barrier.textureHandle).isSwapchainImage())
-				vk_image_memory_barrier2.image = cmd._ctx->view(cmd._ctx->getCurrentSwapchainTex()).getImage();
-			vkBarriers.push_back(vk_image_memory_barrier2);
-		}
+		for (const CompiledImageBarrier& req : compiledPass.imageBarriers) {
+			const TextureHandle activeHandle = req.isSwapchain ? cmd._ctx->getCurrentSwapchainTexHandle() : req.textureHandle;
+			const AllocatedTexture& activeTexture = cmd._ctx->view(activeHandle);
+			if (!_resourceTrackers.contains(activeHandle)) {
+				_resourceTrackers.emplace(activeHandle, TextureStateTracker{activeTexture.getNumMips(), activeTexture.getNumLayers()});
+			}
+			TextureStateTracker& tracker = _resourceTrackers.at(activeHandle);
 
-		const VkDependencyInfo dependencyInfo = {
-			.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-			.pNext = nullptr,
-			.imageMemoryBarrierCount = static_cast<uint32_t>(compiledPass.imageBarriers.size()),
-			.pImageMemoryBarriers = vkBarriers.data()
-		};
-		vkCmdPipelineBarrier2(cmd._wrapper->_cmdBuf, &dependencyInfo);
+			if (SubresourceState currentState = tracker.getState(req.range); NeedsBarrier(currentState, req.dstLayout, req.dstMask)) {
+				vkBarriers.push_back({
+					.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+					.srcStageMask = currentState.mask.stage,
+					.srcAccessMask = currentState.mask.access,
+					.dstStageMask = req.dstMask.stage,
+					.dstAccessMask = req.dstMask.access,
+					.oldLayout = currentState.layout,
+					.newLayout = req.dstLayout,
+					.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+					.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+					.image = activeTexture.getImage(),
+					.subresourceRange = MakeVkRange(activeTexture.getFormat(), req.range)
+				});
+				tracker.setState(req.range, {req.dstLayout, req.dstMask});
+				cmd._ctx->access(activeHandle)._vkCurrentImageLayout = req.dstLayout;
+			}
+		}
+		if (!vkBarriers.empty()) {
+			const VkDependencyInfo dependencyInfo = {
+				.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+				.pNext = nullptr,
+				.imageMemoryBarrierCount = static_cast<uint32_t>(vkBarriers.size()),
+				.pImageMemoryBarriers = vkBarriers.data()
+			};
+			vkCmdPipelineBarrier2(cmd._wrapper->_cmdBuf, &dependencyInfo);
+		}
 	}
 
 	void RenderGraph::execute(CommandBuffer& cmd) {
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_RENDERGRAPH);
 		ASSERT_MSG(!cmd.isDrying(), "You cannot call RenderGraph::execute inside an execution callback!");
 		ASSERT_MSG(_hasCompiled, "RenderGraph must be compiled before it can be executed!");
+
+
 		for (const CompiledPass& pass : _compiledPasses) {
 			// reset current states
 			PerformImageBarrierTransitions(cmd, pass);
@@ -265,6 +325,11 @@ namespace mythril {
 			cmd._activePass = pass;
 			pass.executeCallback(cmd);
 		}
+		// fixme: make this cleaner im so lazy right now
+		cmd.cmdTransitionLayout(cmd._ctx->getCurrentSwapchainTexHandle(), VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+		const vkutil::StageAccess dstMask = vkutil::GetPipelineStageAccess(VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+		_resourceTrackers.at(cmd._ctx->getCurrentSwapchainTexHandle()).setState({}, SubresourceState{VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, dstMask});
+		cmd._ctx->access(cmd._ctx->getCurrentSwapchainTexHandle())._vkCurrentImageLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 	}
 
 // 	void RenderGraph::compile(CTX& rCtx) {

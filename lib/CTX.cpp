@@ -1072,7 +1072,7 @@ namespace mythril {
 		MYTH_PROFILER_FUNCTION();
 		AllocatedTexture* image = _texturePool.get(handle);
 		if (!image) {
-			LOG_SYSTEM(LogType::Warning, "'resizeTexture' ");
+			LOG_SYSTEM(LogType::Warning, "'resizeTexture' called on invalid handle!");
 			return;
 		}
 
@@ -1112,7 +1112,7 @@ namespace mythril {
 				image->_vkImageViewType,
 				image->_numLevels,
 				image->_numLayers,
-				image->_vkSampleCountFlagBits,
+				image->getVkSampleCountBits(),
 				image->_vkComponentMappings,
 				createFlags
 				);
@@ -1317,7 +1317,7 @@ namespace mythril {
 		VK_CHECK(vmaCreateImage(_vmaAllocator, &image_ci, &allocation_ci, &obj._vkImage, &obj._vmaAllocation, nullptr));
 		obj._vkExtent = extent3D;
 		obj._vkUsageFlags = usageFlags;
-		obj._vkSampleCountFlagBits = sampleCountFlagBits;
+		obj._sampleCount = sampleCountFlagBits;
 		obj._vkImageType = imageType;
 		obj._vkImageViewType = imageViewType;
 		obj._vkFormat = format;
@@ -1555,6 +1555,7 @@ namespace mythril {
 		_currentCommandBuffer = CommandBuffer(this, type);
 		if (type == CommandBuffer::Type::Graphics) {
 			_swapchain->acquire();
+			wrappedBackBuffer.updateHandle(this, _swapchain->getCurrentSwapchainTextureHandle());
 		}
 		return _currentCommandBuffer;
 	}
@@ -1575,6 +1576,7 @@ namespace mythril {
 		cmd._lastSubmitHandle = _imm->submit(*cmd._wrapper);
 		if (isPresenting) {
 			MYTH_PROFILER_ZONE("Swapchain Presentation", MYTH_PROFILER_COLOR_PRESENT);
+			ASSERT(_texturePool.get(_swapchain->getCurrentSwapchainTextureHandle())->getImageLayout() == VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
 			_swapchain->present();
 			MYTH_PROFILER_ZONE_END();
 		}

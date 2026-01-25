@@ -170,15 +170,15 @@ int main() {
 
 	mythril::RenderGraph graph;
 	graph.addGraphicsPass("main")
-	.write({
-		.texture = colorTarget.handle(),
+	.attachment({
+		.texDesc = colorTarget,
 		.clearValue = {0.2f, 0.2f, 0.2f, 1.f},
 		.loadOp = mythril::LoadOperation::CLEAR,
 		.storeOp = mythril::StoreOperation::NO_CARE,
-		.resolveTexture = resolveColorTarget.handle()
+		.resolveTexDesc = resolveColorTarget
 	})
-	.write({
-		.texture = depthTarget.handle(),
+	.attachment({
+		.texDesc = depthTarget,
 		.clearValue = {1.f, 0},
 		.loadOp = mythril::LoadOperation::CLEAR
 	})
@@ -208,10 +208,11 @@ int main() {
 		cmd.cmdBindIndexBuffer(cubeIndexBuffer);
 		cmd.cmdDrawIndexed(cubeIndices.size());
 		cmd.cmdEndRendering();
-
-		cmd.cmdBlitImage(resolveColorTarget.handle(), ctx->getCurrentSwapchainTex());
-		cmd.cmdTransitionLayout(ctx->getCurrentSwapchainTex(), VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
 	});
+	graph.addIntermediate("present")
+	.blit(resolveColorTarget, ctx->getBackBufferTexture())
+	.finish();
+
 	graph.compile(*ctx);
 
 

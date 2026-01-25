@@ -171,9 +171,13 @@ namespace mythril {
 			ASSERT_MSG(_swapchain, "Swapchain has not been created!");
 			return _swapchain->isDirty();
 		}
-		const TextureHandle& getCurrentSwapchainTex() const {
+		const TextureHandle& getCurrentSwapchainTexHandle() const {
 			ASSERT_MSG(_swapchain, "Swapchain has not been created!");
 			return _swapchain->getCurrentSwapchainTextureHandle();
+		}
+		const Texture& getBackBufferTexture() {
+			wrappedBackBuffer.updateHandle(this, _swapchain->getCurrentSwapchainTextureHandle());
+			return wrappedBackBuffer;
 		}
 
 		Window& getWindow() { return _window; }
@@ -347,6 +351,8 @@ namespace mythril {
 		std::unique_ptr<ImmediateCommands> _imm = nullptr;
 		std::unique_ptr<Swapchain> _swapchain = nullptr;
 		std::unique_ptr<StagingDevice> _staging = nullptr;
+
+		Texture wrappedBackBuffer;
 
 		HandlePool<BufferHandle, AllocatedBuffer> _bufferPool;
 		HandlePool<TextureHandle, AllocatedTexture> _texturePool;

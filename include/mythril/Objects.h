@@ -39,8 +39,13 @@ namespace mythril {
 	template<typename InternalHandle>
 	class ObjectHolder {
 		using AllocatedType = HandleToAllocated_t<InternalHandle>;
+		friend class CTX;
+		// basically for swapchain only
+		void updateHandle(CTX* ctx, InternalHandle handle) {
+			_pCtx = ctx;
+			_handle = handle;
+		}
 	public:
-
 		ObjectHolder() = default;
 		ObjectHolder(CTX* ctx, InternalHandle handle) : _handle(handle), _pCtx(ctx) {}
 		virtual ~ObjectHolder();
