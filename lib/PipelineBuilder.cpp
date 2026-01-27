@@ -260,6 +260,10 @@ namespace mythril {
 		}
 		return *this;
 	}
+	GraphicsPipelineBuilder& GraphicsPipelineBuilder::set_viewmask(uint32_t bitmask) {
+		_renderInfo.viewMask = bitmask;
+		return *this;
+	}
 }
 
 

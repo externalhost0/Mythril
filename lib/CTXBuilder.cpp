@@ -357,6 +357,15 @@ namespace mythril {
 					this->_swapchainSpec.width = width;
 					this->_swapchainSpec.height = height;
 			}
+			if (this->_swapchainSpec.format == VK_FORMAT_UNDEFINED) {
+				this->_swapchainSpec.format = VK_FORMAT_B8G8R8A8_UNORM;
+			}
+			if (this->_swapchainSpec.colorSpace == VK_COLOR_SPACE_MAX_ENUM_KHR) {
+				this->_swapchainSpec.colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
+			}
+			if (this->_swapchainSpec.presentMode == VK_PRESENT_MODE_MAX_ENUM_KHR) {
+				this->_swapchainSpec.presentMode = VK_PRESENT_MODE_FIFO_KHR;
+			}
 			ctx->createSwapchain(this->_swapchainSpec);
 		}
 

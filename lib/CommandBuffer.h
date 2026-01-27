@@ -63,7 +63,7 @@ namespace mythril {
 		void cmdSetDepthBiasEnable(bool enable);
 		void cmdSetDepthBias(float constantFactor, float slopeFactor, float clamp);
 
-		void cmdBeginRendering(uint32_t layers = 1);
+		void cmdBeginRendering(uint32_t layerCount = 1, uint32_t viewMask = 0b000000);
 		void cmdEndRendering();
 
 		void cmdDispatchThreadGroup(const Dimensions& threadGroupCount);
@@ -138,7 +138,7 @@ namespace mythril {
 		void cmdBindPipelineImpl(const PipelineCoreData* common, VkPipelineBindPoint bindPoint);
 
 		// all functions that still have equivalent Vulkan commands but should be abstracted away from user
-		void cmdBeginRenderingImpl(uint32_t layers);
+		void cmdBeginRenderingImpl(uint32_t layerCount, uint32_t viewMask);
 		void cmdEndRenderingImpl();
 
 		void cmdTransitionLayoutImpl(TextureHandle source, VkImageLayout currentLayout, VkImageLayout newLayout, VkImageSubresourceRange range);
@@ -172,6 +172,7 @@ namespace mythril {
 
 		SubmitHandle _lastSubmitHandle = {};
 		Type _cmdType = Type::General;
+		uint32_t _viewMask;
 
 		bool _isDryRun = true; // for dummy CommandBuffer
 

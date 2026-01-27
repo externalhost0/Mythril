@@ -103,7 +103,8 @@ namespace mythril {
 		AllocatedGraphicsPipeline* pipeline = _graphicsPipelinePool.get(handle);
 		if (!pipeline->_shared.core._vkPipelineLayout) {
 			LOG_SYSTEM(LogType::Error, "Pipeline '{}' has not been resolved, will do it now.", pipeline->getDebugName());
-			this->resolveGraphicsPipelineImpl(*pipeline);
+			assert(false);
+			// this->resolveGraphicsPipelineImpl(*pipeline, TODO);
 		}
 		return openUpdateImpl(&pipeline->_shared.core, pipeline->getDebugName());
 	}
@@ -266,6 +267,12 @@ namespace mythril {
 		SDL_Quit();
 	}
 
+	void CTX::recreateSwapchainStandard() {
+		const VkExtent2D extent_2d = _window.getFramebufferSize();
+		destroySwapchain();
+		createSwapchain({extent_2d.width, extent_2d.height});
+	}
+
 	void CTX::destroySwapchain() {
 		if (!_swapchain) {
 			LOG_SYSTEM(LogType::Warning, "CTX::destroySwapchain called when no existing swapchain exists!");
@@ -277,8 +284,8 @@ namespace mythril {
 	}
 
 	template<typename T>
-	static void AssignIfDifferentNonZero(T& dst, const T& src) {
-		if (src != T{} && dst != src)
+	static void AssignIfValid(T& dst, const T& src, T invalid) {
+		if (src != invalid && dst != src)
 			dst = src;
 	}
 	void CTX::createSwapchain(const SwapchainSpec& spec) {
@@ -288,24 +295,25 @@ namespace mythril {
 			return;
 		}
 		SwapchainSpec new_swapchain_spec{};
-		if (_swapchain) {
-			new_swapchain_spec = {
-				.width = _swapchain->_vkExtent2D.width,
-				.height = _swapchain->_vkExtent2D.height,
-				.format = _swapchain->_vkImageFormat,
-				.colorSpace = _swapchain->_vkColorSpace,
-				.presentMode = _swapchain->_vkPresentMode,
-			};
-		}
-		AssignIfDifferentNonZero(new_swapchain_spec.width, spec.width);
-		AssignIfDifferentNonZero(new_swapchain_spec.height, spec.height);
-		AssignIfDifferentNonZero(new_swapchain_spec.format, spec.format);
-		AssignIfDifferentNonZero(new_swapchain_spec.colorSpace, spec.colorSpace);
-		AssignIfDifferentNonZero(new_swapchain_spec.presentMode, spec.presentMode);
+		new_swapchain_spec = {
+			.width = lastSwapchainSpec.width,
+			.height = lastSwapchainSpec.height,
+			.format = lastSwapchainSpec.format,
+			.colorSpace = lastSwapchainSpec.colorSpace,
+			.presentMode = lastSwapchainSpec.presentMode,
+		};
+		AssignIfValid(new_swapchain_spec.width, spec.width, (uint32_t)0);
+		AssignIfValid(new_swapchain_spec.height, spec.height, (uint32_t)0);
+		AssignIfValid(new_swapchain_spec.format, spec.format, VK_FORMAT_UNDEFINED);
+		AssignIfValid(new_swapchain_spec.colorSpace, spec.colorSpace, VK_COLOR_SPACE_MAX_ENUM_KHR);
+		AssignIfValid(new_swapchain_spec.presentMode, spec.presentMode, VK_PRESENT_MODE_MAX_ENUM_KHR);
 
 		VK_CHECK(vkDeviceWaitIdle(this->_vkDevice));
 		this->_swapchain = std::make_unique<Swapchain>(*this, new_swapchain_spec);
 		this->_timelineSemaphore = vkutil::CreateTimelineSemaphore(_vkDevice, this->_swapchain->getNumOfSwapchainImages()-1);
+		// we need to store in the situation where the swapcahin is deleted and we want to use the last swapchains settings
+		lastSwapchainSpec = new_swapchain_spec;
+		wrappedBackBuffer.updateHandle(this, _swapchain->getCurrentSwapchainTextureHandle());
 	}
 
 	void CTX::deferTask(std::packaged_task<void()>&& task, SubmitHandle handle) const {
@@ -838,7 +846,7 @@ namespace mythril {
 		// good to go, maybe later you could return it
 	}
 
-	void CTX::resolveGraphicsPipelineImpl(AllocatedGraphicsPipeline& pipeline) {
+	void CTX::resolveGraphicsPipelineImpl(AllocatedGraphicsPipeline& pipeline, uint32_t viewMask) {
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_CREATE);
 		// updating descriptor layout //
 //		if (graphics_pipeline->_vkLastDescriptorSetLayout != _vkBindlessDSL) {
@@ -861,6 +869,7 @@ namespace mythril {
 		builder.set_topology_mode(spec.topology);
 		builder.set_multisampling_mode(spec.multisample);
 		builder.set_blending_mode(spec.blend);
+		builder.set_viewmask(viewMask);
 
 		// things we gather in the middle of the renderpass (attachment formats)
 		// looks at the current pass and reflects those formats in use
@@ -910,6 +919,8 @@ namespace mythril {
 			builder.add_shader_module(shader->vkShaderModule, VK_SHADER_STAGE_FRAGMENT_BIT, fragStage.entryPoint, &fragSpecConstantsBundle->vkInfo);
 			pipeline_layout_signatures.push_back(shader->_pipelineSignature);
 		}
+		// we dont support geometry shaders because my mac doesnt :)
+
 		// ShaderStage& geometryStage = spec.geometryShader;
 		// std::unique_ptr<SpecializationInfoBundle> geomSpecConstantsBundle;
 		// if (geometryStage.valid()) {

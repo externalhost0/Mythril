@@ -39,6 +39,7 @@ namespace mythril {
 		GraphicsPipelineBuilder& set_multisampling_mode(SampleCount count);
 		GraphicsPipelineBuilder& set_cull_mode(CullMode mode);
 		GraphicsPipelineBuilder& set_blending_mode(BlendingMode mode);
+		GraphicsPipelineBuilder& set_viewmask(uint32_t bitmask);
 
 		// formats
 		GraphicsPipelineBuilder& set_color_formats(std::span<VkFormat> formats);

@@ -65,6 +65,8 @@ float3 ComputeBitangent(float3 normal, float4 tangent) {
     return B;
 }
 
+#define kNumLights 4
+
 [shader("fragment")]
 FSOutput fs_main(v2f input) {
     FSOutput output;
@@ -97,7 +99,8 @@ FSOutput fs_main(v2f input) {
     float3 ambient = frame.lighting.environmentLight.illuminate(input.WorldPosition, Nworld, brdf, viewDir);
     float3 direct = frame.lighting.directionalLight.illuminate(input.WorldPosition, Nworld, brdf, viewDir);
     float3 omni = 0.0;
-    for (int i = 0; i < 4; ++i) {
+    [[unroll]]
+    for (int i = 0; i < kNumLights; ++i) {
         float3 pointLightContribution = frame.lighting.pointLights[i].illuminate(input.WorldPosition, Nworld, brdf, viewDir);
 
         float pointShadowFactor = PointShadowCalculation(
@@ -161,21 +164,40 @@ float DirectionalShadowCalculation(float4 lightspacePos) {
 
 static constexpr int kSampleCount = 20;
 
-float PointShadowSingle(float3 fragToLight, TextureCube shadowCubemap, float farPlane) {
+float PointShadowSingle(float3 fragToLight, TextureCube shadowCubemap, float farPlane, float dist) {
     fragToLight.y = -fragToLight.y;
     float closestDepth = farPlane * shadowCubemap.Sample(push.shadowSampler, fragToLight).r;
     float currentDepth = length(fragToLight);
-    return currentDepth - 0.15 > closestDepth ? 0.0 : 1.0;
+    float bias = max(0.005, 0.001 * dist);
+    return currentDepth - bias > closestDepth ? 0.0 : 1.0;
 }
+
+#define kNumOfSamples 12
+static const float3 sampleOffsetDirections[12] = {
+    float3(1, 1, 1), float3(1, -1, 1),
+    float3(-1, -1, 1), float3(-1, 1, 1),
+    float3(1, 1, -1), float3(1, -1, -1),
+    float3(-1, -1, -1), float3(-1, 1, -1),
+    float3(1, 0, 0), float3(-1, 0, 0),
+    float3(0, 1, 0), float3(0, -1, 0)
+};
 float PointShadowCalculation(float3 worldPos, float3 lightPos, TextureCube shadowCubemap, float farPlane) {
     float3 fragToLight = worldPos - lightPos;
     float factor = 0.f;
-    float k = length(fragToLight) * 0.0015;
-    for (int x = -1; x != 2; x++)
-        for (int y = -1; y != 2; y++)
-            for (int z = -1; z != 2; z++)
-                factor += PointShadowSingle(fragToLight + k * float3(x, y, z), shadowCubemap, farPlane);
-    return factor / 28.0;
+    float dist = length(fragToLight);
+
+    float2 dims;
+    shadowCubemap.GetDimensions(dims.x, dims.y);
+    float texelAngularSize = kPID2 / dims.x; // pi/2 / resolution
+    float texelWorldSize = dist * texelAngularSize;
+    float diskRadius = texelWorldSize * 2.0; // 2.0 is the softness multiplier
+    diskRadius = clamp(diskRadius, 0.001, farPlane * 0.1);
+    [[unroll]]
+    for (int i = 0; i < kNumOfSamples; i++) {
+        float3 dir = fragToLight + sampleOffsetDirections[i] * diskRadius;
+        factor += PointShadowSingle(dir, shadowCubemap, farPlane, dist);
+    }
+    return factor / kNumOfSamples;
 }
 
 float PointLightShadowCalculationEXT(float3 worldPos, float3 lightPos, TextureCube shadowCubemap, SamplerState shadowSampler, float farPlane) {

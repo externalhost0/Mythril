@@ -551,7 +551,7 @@ int main() {
 		// mandatory for resizeability
 		// or else your presentation will break
 		if (ctx->isSwapchainDirty()) {
-			ctx->recreateSwapchain();
+			ctx->recreateSwapchainStandard();
 
 			const mythril::Window& window = ctx->getWindow();
 			// get framebuffer size for correct resolution, not windowsize which might not scale to your monitor dpi correctly

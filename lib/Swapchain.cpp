@@ -42,6 +42,9 @@ namespace mythril {
 			LOG_SYSTEM(LogType::Warning, "Requested swapchain size did not take place! \n Requested: {} x {} vs Actual: {} x {}", width, height, _vkExtent2D.width, _vkExtent2D.height);
 		}
 		this->_vkImageFormat = vkbswapchain.image_format;
+		if (args.format != _vkImageFormat) {
+			LOG_SYSTEM(LogType::Warning, "Requested swapchain format did not take place! \n Requested: '{}' vs Actual: '{}'", vkstring::VulkanFormatToString(args.format), vkstring::VulkanFormatToString(_vkImageFormat));
+		}
 		if (vkbswapchain.image_count > kMAX_SWAPCHAIN_IMAGES) {
 			LOG_SYSTEM(LogType::FatalError, "Swapchain image count ({}) exceeds max supported swapchain images ({})!", (int) vkbswapchain.image_count, (int) kMAX_SWAPCHAIN_IMAGES);
 		}

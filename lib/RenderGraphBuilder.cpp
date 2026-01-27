@@ -282,6 +282,7 @@ namespace mythril {
 	void RenderGraph::compile(CTX& rCtx) {
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_RENDERGRAPH);
 		_compiledPasses.clear();
+		_resourceTrackers.clear();
 		// compile works in this order
 		_compiledPasses.reserve(_passDescriptions.size());
 		for (const PassDesc& pass_desc : _passDescriptions) {

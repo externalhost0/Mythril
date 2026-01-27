@@ -16,9 +16,9 @@ namespace mythril {
 	{
 		uint32_t width = 0;
 		uint32_t height = 0;
-		VkFormat format = VK_FORMAT_B8G8R8A8_UNORM;
-		VkColorSpaceKHR colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
-		VkPresentModeKHR presentMode = VK_PRESENT_MODE_FIFO_KHR;
+		VkFormat format = VK_FORMAT_UNDEFINED;
+		VkColorSpaceKHR colorSpace = VK_COLOR_SPACE_MAX_ENUM_KHR;
+		VkPresentModeKHR presentMode = VK_PRESENT_MODE_MAX_ENUM_KHR;
 	};
 
 	class Swapchain final {

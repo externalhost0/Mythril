@@ -68,7 +68,7 @@ int main() {
 		mythril::Window& window = ctx->getWindow();
 		// mandatory for resizeability
 		if (ctx->isSwapchainDirty()) {
-			ctx->recreateSwapchain();
+			ctx->recreateSwapchainStandard();
 
 			extent2D = window.getFramebufferSize();
 			colorTarget.resize({extent2D.width, extent2D.height});

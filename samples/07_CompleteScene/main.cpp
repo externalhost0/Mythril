@@ -124,6 +124,20 @@ struct AssetData {
 		}
 		return outMesh;
 	}
+	std::vector<MeshData> getTransparentMeshData() const {
+		std::vector<MeshData> outMesh;
+		// reserve more than we need
+		outMesh.reserve(meshData.size());
+		for (const auto& mesh : meshData) {
+			std::vector<PrimitiveData> outPrim;
+			for (const auto& primitive : mesh.primitives) {
+				if (!materialData[primitive.materialIndex].isTransparent) continue;
+				outPrim.push_back(primitive);
+			}
+			outMesh.push_back({outPrim});
+		}
+		return outMesh;
+	}
 };
 
 static AssetData loadGLTFAsset(const std::filesystem::path& filepath) {
@@ -530,11 +544,12 @@ static void UpdatePointLightShadowMatrices(
 	for (int i = 0; i < kNumPointLights; ++i) {
 		const glm::vec3 lightPos = lightingData.pointLights[i].position;
 		glm::mat4 shadowProj = glm::perspective(glm::radians(90.0f), 1.0f, nearPlane, farPlane);
+		// we need to swap the +y and -y in order to account for the swith on vulkan
 		const glm::mat4 shadowViews[6] = {
 			glm::lookAt(lightPos, lightPos + glm::vec3( 1,  0,  0), glm::vec3(0, -1,  0)), // +X
 			glm::lookAt(lightPos, lightPos + glm::vec3(-1,  0,  0), glm::vec3(0, -1,  0)), // -X
-			glm::lookAt(lightPos, lightPos + glm::vec3( 0,  1,  0), glm::vec3(0,  0,  1)), // +Y
 			glm::lookAt(lightPos, lightPos + glm::vec3( 0, -1,  0), glm::vec3(0,  0, -1)), // -Y
+			glm::lookAt(lightPos, lightPos + glm::vec3(0, 1, 0), glm::vec3(0, 0, 1)), // +Y
 			glm::lookAt(lightPos, lightPos + glm::vec3( 0,  0,  1), glm::vec3(0, -1,  0)), // +Z
 			glm::lookAt(lightPos, lightPos + glm::vec3( 0,  0, -1), glm::vec3(0, -1,  0)), // -Z
 		};
@@ -568,17 +583,15 @@ int main() {
 	.set_slang_cfg({
 		.searchpaths = slang_searchpaths
 	})
-	.with_default_swapchain({
-		.format = kOffscreenFormat
-	})
+	.with_default_swapchain()
 	.with_ImGui({
 		.format = kOffscreenFormat
 	})
 	.build();
 
 
-	const VkExtent2D extent2D = ctx->getWindow().getFramebufferSize();
-	const mythril::Dimensions windowDimensions = { extent2D.width, extent2D.height, 1 };
+	const VkExtent2D framebufferExtent2D = ctx->getWindow().getFramebufferSize();
+	const mythril::Dimensions windowDimensions = { framebufferExtent2D.width, framebufferExtent2D.height, 1 };
 	mythril::Texture offscreenColorTarget = ctx->createTexture({
 		.dimension = windowDimensions,
 		.format = kOffscreenFormat,
@@ -915,20 +928,13 @@ int main() {
 
 	static constexpr uint32_t pointLightShadowResolution = 512;
 	mythril::Texture pointLightShadowTex[kNumPointLights];
-	mythril::Texture pointLightDepthTemp = ctx->createTexture({
-		.dimension = {pointLightShadowResolution, pointLightShadowResolution, 1},
-		.type = mythril::TextureType::Type_2D,
-		.format = VK_FORMAT_D16_UNORM,
-		.usage = mythril::TextureUsageBits::TextureUsageBits_Attachment,
-		.debugName = "Point Light Depth Tex Temp"
-	});
 	for (int i = 0; i < kNumPointLights; i++) {
 		char debug_name[128];
 		snprintf(debug_name, sizeof(debug_name), "Point Light Shadow Tex %d", i);
 		pointLightShadowTex[i] = ctx->createTexture({
 			.dimension = {pointLightShadowResolution, pointLightShadowResolution, 1},
 			.type = mythril::TextureType::Type_Cube,
-			.format = VK_FORMAT_R8_UNORM,
+			.format = VK_FORMAT_D16_UNORM,
 			.usage = mythril::TextureUsageBits_Attachment | mythril::TextureUsageBits_Sampled,
 			.debugName = debug_name
 		});
@@ -972,55 +978,41 @@ int main() {
 		.debugName = "Point Light Shadow Matrices Buffer"
 	});
 
-	float pointLightdepthBiasConstant = 1.25f, pointLightdepthBiasSlope = 1.75f;
+	GPU::LightingData lastFramelightingData{};
 	for (int i = 0; i < kNumPointLights; i++) {
-		for (int j = 0; j < 6; j++) {
-			mythril::TextureDesc desc{pointLightShadowTex[i]};
-			int actualLayer = j;
-			if (j == 2) actualLayer = 3;      // +Y → render to -Y layer
-			else if (j == 3) actualLayer = 2; // -Y → render to +Y layer
-			desc.baseLayer = actualLayer;
-			desc.numLayers = 1;
-			graph.addGraphicsPass(fmt::format("pointlight_shadow_{}_face_{}", i, j).c_str())
-			.attachment({
-				.texDesc = desc,
-				.clearValue = {1.f, 0.f, 0.f, 1.f },
-				.loadOp = mythril::LoadOperation::CLEAR,
-				.storeOp = mythril::StoreOperation::STORE,
-			})
-			.attachment({
-				.texDesc = pointLightDepthTemp,
-				.clearValue = {1.f, 0},
-				.loadOp = mythril::LoadOperation::CLEAR,
-				.storeOp = mythril::StoreOperation::NO_CARE
-			})
-			.setExecuteCallback([&, i, j](mythril::CommandBuffer& cmd) {
-				cmd.cmdBeginRendering();
-				cmd.cmdBindGraphicsPipeline(pointShadowGraphicsPipeline);
-				cmd.cmdBindDepthState({mythril::CompareOp::LessEqual, true});
-				cmd.cmdSetDepthBiasEnable(true);
-				cmd.cmdSetDepthBias(pointLightdepthBiasConstant, pointLightdepthBiasSlope, 0.f);
-				struct PushConstant {
-					VkDeviceAddress shadowMVPs;
-					VkDeviceAddress vba;
-					glm::mat4 model;
-					uint32_t nLight;
-					uint32_t nFace;
-					glm::vec3 lightPos;
-				} push {
-					.shadowMVPs = pointLightShadowMatrixBuf.gpuAddress(),
-					.vba = opaqueSponzaVertexBuf.gpuAddress(),
-					.model = scaledModel,
-					.nLight = static_cast<uint32_t>(i),
-					.nFace = static_cast<uint32_t>(j),
-					.lightPos = lightingData.pointLights[i].position,
-				};
-				cmd.cmdPushConstants(push);
-				cmd.cmdBindIndexBuffer(opaqueSponzaIndexBuf);
-				cmd.cmdDrawIndexedIndirect(opaqueSponzaIndirectBuf, 0, opaqueDrawCount);
-				cmd.cmdEndRendering();
-			});
-		}
+		graph.addGraphicsPass(fmt::format("pointlight_shadow_{}", i).c_str())
+		.attachment({
+			.texDesc = pointLightShadowTex[i],
+			.clearValue = {1.f, 1 },
+			.loadOp = mythril::LoadOperation::CLEAR,
+			.storeOp = mythril::StoreOperation::STORE,
+		})
+		.setExecuteCallback([&, i](mythril::CommandBuffer& cmd) {
+			// easy optimization
+			if (lightingData.pointLights[i].position == lastFramelightingData.pointLights[i].position) return;
+
+			cmd.cmdBeginRendering(6, 0b111111);
+			cmd.cmdBindGraphicsPipeline(pointShadowGraphicsPipeline);
+			cmd.cmdBindDepthState({mythril::CompareOp::LessEqual, true});
+			// i cant tell enough of a difference with it on or off
+			struct PushConstant {
+				VkDeviceAddress shadowMVPs;
+				VkDeviceAddress vba;
+				glm::mat4 model;
+				uint32_t nLight;
+				glm::vec3 lightPos;
+			} push {
+				.shadowMVPs = pointLightShadowMatrixBuf.gpuAddress(),
+				.vba = opaqueSponzaVertexBuf.gpuAddress(),
+				.model = scaledModel,
+				.nLight = static_cast<uint32_t>(i),
+				.lightPos = lightingData.pointLights[i].position,
+			};
+			cmd.cmdPushConstants(push);
+			cmd.cmdBindIndexBuffer(opaqueSponzaIndexBuf);
+			cmd.cmdDrawIndexedIndirect(opaqueSponzaIndirectBuf, 0, opaqueDrawCount);
+			cmd.cmdEndRendering();
+		});
 	}
 
 	mythril::Sampler pointLightShadowSampler = ctx->createSampler({
@@ -1129,7 +1121,7 @@ int main() {
 			mythril::TextureHandle normalTex = sponzaCompiled.textureHandles[material.normalTextureIndex];
 			mythril::TextureHandle roughnessMetallicTex = sponzaCompiled.textureHandles[material.roughnessMetallicTextureIndex];
 
-			GPU::GeometryPushConstants push {
+			const GPU::GeometryPushConstants push {
 					.model = model,
 					.vba = ctx->gpuAddress(mesh.vertexBufHandle),
 					.tintColor = {1, 1, 1, 1},
@@ -1147,7 +1139,6 @@ int main() {
 		}
 		cmd.cmdEndRendering();
 	});
-
 
 	mythril::Shader particleShader = ctx->createShader({
 		.filePath = "shaders/Particles.slang",
@@ -1209,7 +1200,7 @@ int main() {
 	.attachment({
 		.texDesc = msaaDepthTarget,
 		.loadOp = mythril::LoadOperation::LOAD,
-		.storeOp = mythril::StoreOperation::NONE,
+		.storeOp = mythril::StoreOperation::NO_CARE,
 		.resolveTexDesc = depthTarget
 	})
 	.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
@@ -1531,7 +1522,7 @@ int main() {
 	});
 
 	graph.addIntermediate("present")
-	.copy(finalColorTarget, ctx->getBackBufferTexture())
+	.blit(finalColorTarget, ctx->getBackBufferTexture())
 	.finish();
 	graph.compile(*ctx);
 
@@ -1579,14 +1570,12 @@ int main() {
 		const float elapsedTime = std::chrono::duration<float>(now - startTime).count();
 		lastTime = now;
 
-
 		if (ctx->isSwapchainDirty()) {
-			ctx->destroySwapchain();
-			ctx->createSwapchain();
+			ctx->recreateSwapchainStandard();
 
 			const mythril::Window &window = ctx->getWindow();
-			const VkExtent2D new_extent_2d = window.getFramebufferSize();
-			mythril::Dimensions new_2D_dimensions = {new_extent_2d.width, new_extent_2d.height, 1};
+			const auto [width, height] = window.getFramebufferSize();
+			mythril::Dimensions new_2D_dimensions = {width, height, 1};
 			msaaColorTarget.resize(new_2D_dimensions);
 			offscreenColorTarget.resize(new_2D_dimensions);
 			msaaDepthTarget.resize(new_2D_dimensions);
@@ -1597,7 +1586,6 @@ int main() {
 				offscreenTexs.resize(new_2D_dimensions);
 				new_2D_dimensions = new_2D_dimensions.divide2D(2);
 			}
-
 			graph.compile(*ctx);
 		}
 
@@ -1706,7 +1694,7 @@ int main() {
 		ImGui::Image(adaptedLuminanceTextures[0], {100, 100});
 		ImGui::Text("Progressively Blurred Color Targets");
 		for (int face = 0; face < 6; face++) {
-			ImGui::Image(pointLightShadowTex[3], pointLightShadowTex[3].getView(0, face), {200, 200});
+			// ImGui::Image(pointLightShadowTex[0], pointLightShadowTex[0].getView(0, face), {200, 200});
 		}
 		for (int i = 0; i < kNumColorMips; i++) {
 			mythril::Dimensions dims = {320, 240};
@@ -1715,8 +1703,6 @@ int main() {
 		ImGui::End();
 
 		ImGui::Begin("Lighting", nullptr, window_flags);
-		ImGui::DragFloat("Point Light Depth Bias Constant", &pointLightdepthBiasConstant);
-		ImGui::DragFloat("Point Light Depth Bias Slope", &pointLightdepthBiasSlope);
 		ImGui::DragFloat("Point Light Near", &pointlight_nearplane);
 		ImGui::DragFloat("Point Light Far", &pointlight_farplane);
 		ImGui::DragFloat("Particle Speed", &particle_speed);
@@ -1825,6 +1811,7 @@ int main() {
 		ctx->upload(pointLightShadowMatrixBuf.handle(), &shadowMatrices[0][0], sizeof(glm::mat4) * kNumPointLights * 6, 0);
 		graph.execute(cmd);
 		ctx->submitCommand(cmd);
+		lastFramelightingData = lightingData;
 		std::swap(adaptedLuminanceTextures[0], adaptedLuminanceTextures[1]);
 	}
 	return 0;

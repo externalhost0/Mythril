@@ -138,10 +138,19 @@ namespace mythril {
 	}
 
 	// ALL PUBLIC COMMANDS AVAILBLE TO USER //
-	void CommandBuffer::cmdBeginRendering(uint32_t layers) {
+	void CommandBuffer::cmdBeginRendering(uint32_t layerCount, uint32_t viewMask) {
+		// view mask needs to be stored, as it is used during resolve
+		_viewMask = viewMask;
 		DRY_RETURN();
 		CHECK_PASS_OPERATION_MISMATCH(PassDesc::Type::Graphics);
-		this->cmdBeginRenderingImpl(layers);
+#ifdef DEBUG
+		static bool hasTriggered = false;
+		if ((_currentPipelineInfo && (layerCount != 1 || viewMask != 0) && !hasTriggered)) {
+			LOG_SYSTEM(LogType::Warning, "Calling cmdBeginRendering() with a specified layerCount & viewMask after cmdBind*Pipeline() is not supported, and will lead to broken rendering!");
+			hasTriggered = true;
+		}
+#endif
+		this->cmdBeginRenderingImpl(layerCount, viewMask);
 	}
 
 	void CommandBuffer::cmdEndRendering() {
@@ -383,7 +392,6 @@ namespace mythril {
 
 	void CommandBuffer::cmdBindGraphicsPipeline(GraphicsPipelineHandle handle) {
 		ASSERT(this->_ctx);
-
 		if (handle.empty()) {
 			LOG_SYSTEM(LogType::Warning, "Binded render pipeline was invalid/empty!");
 			return;
@@ -397,7 +405,7 @@ namespace mythril {
 			}
 			// we perform construction inside our dry run for all pipelines, which is when we compile the RenderGraph
 			// we do this so we dont stutter mid gameplay loop
-			_ctx->resolveGraphicsPipelineImpl(*pipeline);
+			_ctx->resolveGraphicsPipelineImpl(*pipeline, _viewMask);
 			return;
 		}
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_COMMAND);
@@ -412,7 +420,6 @@ namespace mythril {
 
 	void CommandBuffer::cmdBindComputePipeline(ComputePipelineHandle handle) {
 		ASSERT(this->_ctx);
-
 		if (handle.empty()) {
 			LOG_SYSTEM(LogType::Warning, "Binded compute pipeline was invalid/empty!");
 			return;
@@ -421,7 +428,7 @@ namespace mythril {
 		this->_ctx->checkAndUpdateBindlessDescriptorSetImpl();
 		if (_isDryRun) {
 			if (pipeline->_shared.core._vkPipeline != VK_NULL_HANDLE) {
-				LOG_SYSTEM(LogType::Error, "Dry run attempting to resolve Pipeline '{}' that has already been built!", pipeline->getDebugName());
+				// LOG_SYSTEM(LogType::Error, "Dry run attempting to resolve Pipeline '{}' that has already been built!", pipeline->getDebugName());
 				return;
 			}
 			_ctx->resolveComputePipelineImpl(*pipeline);
@@ -523,7 +530,7 @@ namespace mythril {
 #endif
 
 // ALL INTERNALLY CALLED COMMAND BUFFER FUNCTIONS
-	void CommandBuffer::cmdBeginRenderingImpl(uint32_t layers) {
+	void CommandBuffer::cmdBeginRenderingImpl(uint32_t layerCount, uint32_t viewMask) {
 		ASSERT_MSG(!_isRendering, "Command Buffer is already rendering!");
 		const bool hasDepth = _activePass.depthAttachment.has_value();
 		const VkRect2D renderArea = _activePass.renderArea;
@@ -541,8 +548,8 @@ namespace mythril {
 			.pNext = nullptr,
 			.flags = 0,
 			.renderArea = renderArea,
-			.layerCount = layers,
-			.viewMask = 0,
+			.layerCount = layerCount,
+			.viewMask = viewMask,
 			.colorAttachmentCount = static_cast<uint32_t>(_activePass.colorAttachments.size()),
 			.pColorAttachments = vk_color_attachment_infos.data(),
 			.pDepthAttachment = hasDepth ? &vk_depth_attachment_info : nullptr,

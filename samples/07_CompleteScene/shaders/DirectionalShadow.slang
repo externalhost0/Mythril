@@ -5,6 +5,7 @@ import GPUStructs;
 // https://docs.shader-slang.org/en/latest/external/slang/docs/user-guide/a2-01-spirv-target-specific.html#using-sv-instanceid-and-sv-vertexid-with-spir-v-target
 struct VSInput {
     uint VertexID : SV_VulkanVertexID;
+    uint ViewID : SV_ViewID;
 };
 struct v2f {
     float4 ClipPos : SV_Position;

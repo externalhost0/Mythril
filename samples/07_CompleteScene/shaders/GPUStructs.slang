@@ -13,8 +13,9 @@ struct Vertex
     float4 tangent;
 };
 
-static constexpr float kPI = 3.141592f;
-static constexpr float k2PI = 6.283185f;
+static constexpr float kPID2 = 1.570796f;
+static constexpr float kPI   = 3.141592f;
+static constexpr float k2PI  = 6.283185f;
 
 struct PBRBRDF
 {
@@ -197,7 +198,6 @@ struct FrameData
     CameraData camera;
     LightingData lighting;
     float time;
-    int one;
 };
 
 struct GeometryPushConstants

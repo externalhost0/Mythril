@@ -161,11 +161,8 @@ namespace mythril {
 		// arguements are optional as when not given we recreate with the same settings as the last swapchain
 		void createSwapchain(const SwapchainSpec& spec = {});
 		void destroySwapchain();
-		// wraps create & destroy Swapchain functions
-		void recreateSwapchain() {
-			destroySwapchain();
-			createSwapchain();
-		}
+		// wraps create & destroy Swapchain functions as a most common use case
+		void recreateSwapchainStandard();
 
 		bool isSwapchainDirty() const {
 			ASSERT_MSG(_swapchain, "Swapchain has not been created!");
@@ -257,7 +254,7 @@ namespace mythril {
 		PipelineCoreData buildPipelineCommonDataExceptVkPipelineImpl(const PipelineLayoutSignature& signature);
 
 		// return values from resolvings are ignored for now
-		void resolveGraphicsPipelineImpl(AllocatedGraphicsPipeline& pipeline);
+		void resolveGraphicsPipelineImpl(AllocatedGraphicsPipeline& pipeline, uint32_t viewMask);
 		void resolveComputePipelineImpl(AllocatedComputePipeline& pipeline);
 
 		// VkPipeline buildGraphicsPipelineImpl(VkPipelineLayout layout, GraphicsPipelineSpec spec);
@@ -353,6 +350,7 @@ namespace mythril {
 		std::unique_ptr<StagingDevice> _staging = nullptr;
 
 		Texture wrappedBackBuffer;
+		SwapchainSpec lastSwapchainSpec;
 
 		HandlePool<BufferHandle, AllocatedBuffer> _bufferPool;
 		HandlePool<TextureHandle, AllocatedTexture> _texturePool;
