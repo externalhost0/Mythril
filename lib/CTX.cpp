@@ -1169,7 +1169,7 @@ namespace mythril {
 		// resolve memory flags
 		const VkMemoryPropertyFlags mem_flags = StorageTypeToVkMemoryPropertyFlags(spec.storage);
 		// resolve extent3D
-		VkExtent3D extent3D = { spec.dimension.width, spec.dimension.height, spec.dimension.depth };
+		const VkExtent3D extent3D = { spec.dimension.width, spec.dimension.height, spec.dimension.depth };
 
 		// resolve actions based on texture type
 		uint32_t _numLayers = spec.numLayers;
@@ -1187,7 +1187,7 @@ namespace mythril {
 				break;
 			case TextureType::Type_Cube:
 				_imagetype = VK_IMAGE_TYPE_2D;
-				_imageviewtype = (_numLayers > 1) ? VK_IMAGE_VIEW_TYPE_CUBE_ARRAY : VK_IMAGE_VIEW_TYPE_CUBE;
+				_imageviewtype = _numLayers > 1 ? VK_IMAGE_VIEW_TYPE_CUBE_ARRAY : VK_IMAGE_VIEW_TYPE_CUBE;
 				_numLayers *= 6;
 				_imageCreateFlags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
 				break;
@@ -1704,8 +1704,8 @@ namespace ImGui {
 		}
 		ImGui::Image(reinterpret_cast<ImTextureID>(im_image_ds), size, uv0, uv1);
 	}
-	void Image(const mythril::Texture& texture, const mythril::TextureView& view, const ImVec2& image_size, const ImVec2& uv0, const ImVec2& uv1) {
-		Image(texture.getHandle(view), mythril::SamplerHandle{}, image_size, uv0, uv1);
+	void Image(const mythril::Texture& texture, const mythril::Texture::ViewKey& viewKey, const ImVec2& image_size, const ImVec2& uv0, const ImVec2& uv1) {
+		Image(texture.handle(viewKey), mythril::SamplerHandle{}, image_size, uv0, uv1);
 	}
 	void Image(const mythril::Texture& texture, const ImVec2& image_size, const ImVec2& uv0, const ImVec2& uv1) {
 		Image(texture.handle(), mythril::SamplerHandle{}, image_size, uv0, uv1);

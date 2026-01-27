@@ -5,8 +5,8 @@
 #pragma once
 
 #include "vkenums.h"
+#include "Constants.h"
 #include "Shader.h"
-#include "../include/mythril/Objects.h"
 
 #include <volk.h>
 #include <slang/slang.h>
@@ -14,6 +14,7 @@
 #include <variant>
 
 namespace mythril {
+
 	enum class ShaderStages {
 		Vertex,
 		TesselationControl,
@@ -34,11 +35,11 @@ namespace mythril {
 	}
 
 	struct ShaderStage {
-		ShaderHandle handle {};
+		ShaderHandle handle{};
 		const char* entryPoint = nullptr;
 
 		ShaderStage() = default;
-		ShaderStage(const Shader& shader) : handle(shader.handle()) {}
+		ShaderStage(const Shader& shader);
 		ShaderStage(ShaderHandle handle) : handle(handle) {}
 		ShaderStage(ShaderHandle handle, const char* entryPoint) : handle(handle), entryPoint(entryPoint) {}
 
@@ -46,7 +47,6 @@ namespace mythril {
 			return handle.valid();
 		}
 	};
-
 
 	struct SpecializationConstantEntry {
 		SpecializationConstantEntry() = default;
@@ -114,7 +114,7 @@ namespace mythril {
 
 	struct SharedPipelineInfo {
 		PipelineCoreData core;
-		char debugName[128] = {0};
+		char debugName[kMaxDebugNameLength] = {0};
 	};
 
 	class AllocatedRayTracingPipeline {

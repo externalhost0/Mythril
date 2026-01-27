@@ -10,7 +10,7 @@
 #include <vk_mem_alloc.h>
 
 #include "CommandBuffer.h"
-
+#include "Constants.h"
 
 namespace mythril {
 	class CTX;
@@ -21,7 +21,7 @@ namespace mythril {
 		[[nodiscard]] std::string_view getDebugName() const { return _debugName; }
 	private:
 		VkSampler _vkSampler = VK_NULL_HANDLE;
-		char _debugName[128] = {0};
+		char _debugName[kMaxDebugNameLength] = {0};
 
 		friend class CTX;
 	};
@@ -41,6 +41,7 @@ namespace mythril {
 
 		[[nodiscard]] uint8_t getSampleCount() const { return _sampleCount; }
 		[[nodiscard]] VkImageType getType() const { return _vkImageType; }
+		[[nodiscard]] VkImageViewType getViewType() const { return _vkImageViewType; }
 		[[nodiscard]] VkImageLayout getImageLayout() const { return _vkCurrentImageLayout; }
 		[[nodiscard]] Dimensions getDimensions() const { return {_vkExtent.width, _vkExtent.height, _vkExtent.depth}; }
 		[[nodiscard]] VkImageAspectFlags getImageAspectFlags() const { return vkutil::AspectMaskFromFormat(_vkFormat); }
@@ -107,7 +108,7 @@ namespace mythril {
 		bool _isResolveAttachment = false;
 		bool _isSwapchainImage = false;
 		bool _isOwning = true;
-		char _debugName[128] = {0};
+		char _debugName[kMaxDebugNameLength] = {0};
 
 		friend class CTX;
 		friend class CommandBuffer;
@@ -143,7 +144,7 @@ namespace mythril {
 
 		void* _mappedPtr = nullptr;
 		bool _isCoherentMemory = false;
-		char _debugName[128] = {0};
+		char _debugName[kMaxDebugNameLength] = {0};
 
 		friend class CTX;
 		friend class CommandBuffer;

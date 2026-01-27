@@ -5,13 +5,14 @@
 #pragma once
 
 #include "faststl/StackVector.h"
+#include "Constants.h"
 
-#include <volk.h>
-#include <slang/slang.h>
 #include <string>
 #include <vector>
 #include <unordered_map>
 
+#include <volk.h>
+#include <slang/slang.h>
 
 namespace mythril {
 	enum class FieldKind {
@@ -141,7 +142,7 @@ namespace mythril {
 		std::vector<PushConstantInfo> _pushConstants;
 
 
-		char _debugName[128] = {0};
+		char _debugName[kMaxDebugNameLength] = {0};
 
 		friend class CTX;
 		friend class CommandBuffer;

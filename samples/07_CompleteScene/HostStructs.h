@@ -52,7 +52,6 @@ namespace GPU {
 		LightingData lighting;
 		float time;
 		float deltaTime;
-		int one;
 	};
 
 	struct GeometryPushConstants {
@@ -66,8 +65,7 @@ namespace GPU {
 		uint64_t shadowTexture;
         uint64_t shadowSampler;
 		glm::mat4 lightSpaceMatrix;
-        float depthBiasConstant;
-        float depthBiasSlope;
+		uint64_t pointLightShadowTextures[4];
 	};
 
 }

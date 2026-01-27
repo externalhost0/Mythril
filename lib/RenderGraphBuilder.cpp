@@ -3,7 +3,6 @@
 //
 
 #include "CommandBuffer.h"
-#include "vkinfo.h"
 #include "vkenums.h"
 #include "CTX.h"
 
@@ -23,7 +22,7 @@ namespace mythril {
 
 		auto oldCallback = base._passSource.executeCallback;
 		if (dst.texture->isSwapchainImage()) {
-			base._passSource.executeCallback = [oldCallback, srcHandle, dstHandle](CommandBuffer& cmd) {
+			base._passSource.executeCallback = [oldCallback, srcHandle](CommandBuffer& cmd) {
 				if (oldCallback) oldCallback(cmd);
 				cmd.cmdBlitImageToSwapchain(srcHandle);
 			};
@@ -44,7 +43,7 @@ namespace mythril {
 
 		auto oldCallback = base._passSource.executeCallback;
 		if (dst.texture->isSwapchainImage()) {
-			base._passSource.executeCallback = [oldCallback, srcHandle, dstHandle](CommandBuffer& cmd) {
+			base._passSource.executeCallback = [oldCallback, srcHandle](CommandBuffer& cmd) {
 				if (oldCallback) oldCallback(cmd);
 				cmd.cmdCopyImageToSwapchain(srcHandle);
 			};
@@ -56,6 +55,7 @@ namespace mythril {
 		}
 		return *this;
 	}
+
 	// todo: i have no clue how this just works immediately besides the fact we dont actually touch the base image + restore its original layout
 	IntermediateBuilder& IntermediateBuilder::generateMipmaps(const Texture& texture) {
 		TextureHandle handle = texture.handle();
@@ -66,14 +66,10 @@ namespace mythril {
 		};
 		return *this;
 	}
-
 	void IntermediateBuilder::finish() {
 		this->base._rGraph._passDescriptions.push_back(base._passSource);
 		this->base._rGraph._hasCompiled = false;
 	}
-
-
-
 
 	void BasePassBuilder::setExecuteCallback(const std::function<void(CommandBuffer& cmd)>& callback) {
 		_passSource.executeCallback = callback;
@@ -131,7 +127,7 @@ namespace mythril {
 		};
 		const vkutil::StageAccess dstMask = vkutil::GetPipelineStageAccess(desiredLayout);
 		outPass.imageBarriers.push_back({
-			.textureHandle = handle,
+			.handle = texDesc.texture,
 			.range = range,
 			.dstLayout = desiredLayout,
 			.dstMask = dstMask,
@@ -162,25 +158,61 @@ namespace mythril {
 		}
 	}
 
-	void RenderGraph::processAttachments(CTX& rCtx, const PassDesc& pass_desc, CompiledPass& outPass) {
+	void RenderGraph::processAttachments(const PassDesc& pass_desc, CompiledPass& outPass) {
 		if (pass_desc.attachmentOperations.empty()) return;
 		uint32_t max_width = 0, max_height = 0;
 		bool hasDepthAttachment = false;
 		for (const AttachmentDesc& attachment_desc : pass_desc.attachmentOperations) {
-			const AllocatedTexture& texture = attachment_desc.texDesc.texture.view();
+			const TextureDesc& texDesc = attachment_desc.texDesc;
+			const AllocatedTexture& allocatedTexture = attachment_desc.texDesc.texture.view();
 
-			const bool isDepthAttachment = vkutil::IsFormatDepth(texture.getFormat());
+			const bool isDepthAttachment = vkutil::IsFormatDepth(allocatedTexture.getFormat());
 			if (isDepthAttachment) {
 				ASSERT_MSG(!hasDepthAttachment,
 				           "Pass '{}': Multiple depth attachments not allowed (found '{}' to be a second depth attachment)",
-				           outPass.name, texture.getDebugName());
+				           outPass.name, allocatedTexture.getDebugName());
 				hasDepthAttachment = true;
+			}
+			const bool needsCustomView = texDesc.baseLayer.has_value() ||
+							  texDesc.baseLevel.has_value() ||
+							  texDesc.numLayers.has_value() ||
+							  texDesc.numLevels.has_value();
+
+			VkImageView imageView;
+			if (needsCustomView) {
+				const uint32_t baseLayer = texDesc.baseLayer.value_or(0);
+				const uint32_t numLayers = texDesc.numLayers.value_or(
+					texDesc.baseLayer.has_value() ? 1 : allocatedTexture.getNumLayers()
+				);
+				const uint32_t baseMip = texDesc.baseLevel.value_or(0);
+				const uint32_t numMips = texDesc.numLevels.value_or(
+					texDesc.baseLevel.has_value() ? 1 : allocatedTexture.getNumMips()
+				);
+
+				auto& mutableTexture = const_cast<Texture&>(texDesc.texture);
+				VkImageViewType viewType = allocatedTexture.getViewType();
+				if (numLayers == 1 && viewType == VK_IMAGE_VIEW_TYPE_CUBE) {
+					viewType = VK_IMAGE_VIEW_TYPE_2D;
+				}
+				Texture::ViewKey viewKey = mutableTexture.createView({
+					.type = viewType,
+					.layer = baseLayer,
+					.numLayers = numLayers,
+					.mipLevel = baseMip,
+					.numMipLevels = numMips
+				});
+
+				TextureHandle viewHandle = mutableTexture.handle(viewKey);
+				const AllocatedTexture& viewTexture = texDesc.texture._pCtx->view(viewHandle);
+				imageView = viewTexture.getImageView();
+			} else {
+				imageView = allocatedTexture.getImageView();
 			}
 
 			const ClearValue& clear_value = attachment_desc.clearValue;
 			AttachmentInfo attachment_info = {
-				.imageFormat = texture.getFormat(),
-				.imageView = texture.getImageView(),
+				.imageFormat = allocatedTexture.getFormat(),
+				.imageView = imageView,
 				.imageLayout = isDepthAttachment ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
 				// these fields are "resolved" in the next steps, haha
 				.resolveImageView = VK_NULL_HANDLE,
@@ -197,14 +229,14 @@ namespace mythril {
 					"Pass '{}': Resolve Texture must have a sample count of 1 (found '{}' to be of a greater sample count)",
 					pass_desc.name,
 					resolve_texture.getDebugName());
-				ASSERT_MSG(texture.getSampleCount() > VK_SAMPLE_COUNT_1_BIT,
+				ASSERT_MSG(allocatedTexture.getSampleCount() > VK_SAMPLE_COUNT_1_BIT,
 					"Pass '{}': Resolve operation on non-multisampled texture '{}'!",
-					pass_desc.name, texture.getDebugName());
-				ASSERT_MSG(resolve_texture.getFormat() == texture.getFormat(),
+					pass_desc.name, allocatedTexture.getDebugName());
+				ASSERT_MSG(resolve_texture.getFormat() == allocatedTexture.getFormat(),
 					"Pass '{}': Resolve texture must have the same format as the texture it resolves from (found texture '{}' to be of format {} while resolve texture '{}' is of format {})",
 					pass_desc.name,
-					texture.getDebugName(),
-					vkstring::VulkanFormatToString(texture.getFormat()),
+					allocatedTexture.getDebugName(),
+					vkstring::VulkanFormatToString(allocatedTexture.getFormat()),
 					resolve_texture.getDebugName(),
 					vkstring::VulkanFormatToString(resolve_texture.getFormat())
 					);
@@ -217,14 +249,17 @@ namespace mythril {
 			if (isDepthAttachment) outPass.depthAttachment.emplace(attachment_info);
 			else outPass.colorAttachments.emplace_back(attachment_info);
 
-			const Dimensions& dims = texture.getDimensions();
-			// second logical statement protects againt the first iteration
-			if ((max_width != dims.width || max_height != dims.height) && (max_width != 0 || max_height != 0))
+			const Dimensions& baseDims = allocatedTexture.getDimensions();
+			const uint32_t mipLevel = texDesc.baseLevel.value_or(0);
+			const uint32_t width = std::max(1u, baseDims.width >> mipLevel);
+			const uint32_t height = std::max(1u, baseDims.height >> mipLevel);
+
+			if ((max_width != baseDims.width || max_height != baseDims.height) && (max_width != 0 || max_height != 0))
 				LOG_SYSTEM(LogType::Warning,
 			           "Pass '{}': You have attachments of different dimensions, this is allowed but experimental.",
 			           pass_desc.name);
-			max_width = std::max(max_width, dims.width);
-			max_height = std::max(max_height, dims.height);
+			max_width = std::max(max_width, width);
+			max_height = std::max(max_height, height);
 		}
 		outPass.renderArea = {{0, 0}, {max_width, max_height}};
 	}
@@ -258,7 +293,7 @@ namespace mythril {
 			// do not worry about the return value,
 			// every type of process should run for every pass
 			processPassResources(pass_desc, compiled_pass);
-			processAttachments(rCtx, pass_desc, compiled_pass);
+			processAttachments(pass_desc, compiled_pass);
 
 			_compiledPasses.push_back(std::move(compiled_pass));
 		}
@@ -275,7 +310,7 @@ namespace mythril {
 		// we have to update the image associated if its a swapchain image
 		// as it changes every frame
 		for (const CompiledImageBarrier& req : compiledPass.imageBarriers) {
-			const TextureHandle activeHandle = req.isSwapchain ? cmd._ctx->getCurrentSwapchainTexHandle() : req.textureHandle;
+			const TextureHandle activeHandle = req.isSwapchain ? cmd._ctx->getCurrentSwapchainTexHandle() : req.handle;
 			const AllocatedTexture& activeTexture = cmd._ctx->view(activeHandle);
 			if (!_resourceTrackers.contains(activeHandle)) {
 				_resourceTrackers.emplace(activeHandle, TextureStateTracker{activeTexture.getNumMips(), activeTexture.getNumLayers()});
@@ -316,7 +351,6 @@ namespace mythril {
 		ASSERT_MSG(!cmd.isDrying(), "You cannot call RenderGraph::execute inside an execution callback!");
 		ASSERT_MSG(_hasCompiled, "RenderGraph must be compiled before it can be executed!");
 
-
 		for (const CompiledPass& pass : _compiledPasses) {
 			// reset current states
 			PerformImageBarrierTransitions(cmd, pass);
@@ -331,242 +365,4 @@ namespace mythril {
 		_resourceTrackers.at(cmd._ctx->getCurrentSwapchainTexHandle()).setState({}, SubresourceState{VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, dstMask});
 		cmd._ctx->access(cmd._ctx->getCurrentSwapchainTexHandle())._vkCurrentImageLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 	}
-
-// 	void RenderGraph::compile(CTX& rCtx) {
-// 		MYTH_PROFILER_ZONE("RenderGraph::Compile", MYTH_PROFILER_COLOR_RENDERGRAPH);
-// 		this->_compiledPasses.clear();
-//
-// 		// BUILD PASS DESCRIPTIONS -> PIPELINE BARRIERS //
-// 		for (const PassDesc& source: this->_passDescriptions) {
-// 			CompiledPass compiled;
-// 			compiled.name = source.name;
-// 			compiled.type = source.type;
-// 			compiled.executeCallback = source.executeCallback;
-//
-// 			// STEP 1: PROCESS READ OPERATIONS
-// 			for (const ReadSpec& readOperation : source.readOperations) {
-// 				compiled.preBarriers.emplace_back(CompileReadOperation(rCtx, readOperation));
-// 			}
-//
-// 			// STEP 2: PROCESS WRITE OPERATIONS
-// 			if (source.type == PassDesc::Type::Graphics) {
-// 				ASSERT_MSG(!source.writeOperations.empty(),
-// 						   "Graphics Pass '{}' has no write operations, which is not allowed.",
-// 						   source.name);
-//
-// 				VkExtent2D referenceExtent2D = rCtx.view(source.writeOperations.front().texture).getExtentAs2D();
-// 				compiled.extent2D = referenceExtent2D;
-//
-// #ifdef DEBUG
-// 				ValidateWriteOperationResolutions(rCtx, source, referenceExtent2D);
-// #endif
-//
-// 				bool hasDepthAttachment = false;
-// 				for (const WriteSpec& writeOperation: source.writeOperations) {
-// 					// get .texture associated with write()
-// 					const AllocatedTexture& currentTexture = rCtx.view(writeOperation.texture);
-// 					ASSERT_MSG(currentTexture._vkImage != VK_NULL_HANDLE,
-// 							   "Pass '{}': Texture write operation references invalid vkImage for '{}'",
-// 							   source.name, currentTexture.getDebugName());
-//
-// 					// first check of writes is if its depth
-// 					if (currentTexture.isDepthAttachment()) {
-// 						ASSERT_MSG(!hasDepthAttachment,
-// 								   "Pass '{}': Multiple depth attachments not allowed (found '{}')",
-// 								   source.name, currentTexture.getDebugName());
-// 						hasDepthAttachment = true;
-//
-// 						// Depth attachment info
-// 						DepthAttachmentInfo depthInfo = {
-// 							.imageView = currentTexture._vkImageView,
-// 							.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-// 							.imageFormat = currentTexture._vkFormat,
-// 							// if resolve target is included, fill in the following steps
-// 							.resolveImageView = VK_NULL_HANDLE,
-// 							.resolveImageLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-//
-// 							.loadOp = toVulkan(writeOperation.loadOp),
-// 							.storeOp = toVulkan(writeOperation.storeOp),
-// 							.clearDepthStencil = writeOperation.clearValue.clearDepthStencil.getAsVkClearDepthStencilValue()
-// 						};
-//
-// 						// create barrier for depth attachment
-// 						constexpr VkImageLayout newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-// 						compiled.preBarriers.push_back(
-// 							CompileWriteOperation(rCtx, writeOperation, newLayout)
-// 						);
-// 						// Handle MSAA Depth resolve
-// 						if (writeOperation.resolveTexture.has_value()) {
-// 							const AllocatedTexture& resolveTexture = rCtx.view(writeOperation.resolveTexture.value());
-// 							ASSERT_MSG(resolveTexture._vkImage != VK_NULL_HANDLE,
-// 									   "Pass '{}': Resolve target '{}' for '{}' has invalid vkImage!",
-// 									   source.name, resolveTexture.getDebugName(), currentTexture.getDebugName());
-// 							ASSERT_MSG(currentTexture.getSampleCount() > VK_SAMPLE_COUNT_1_BIT,
-// 									   "Pass '{}': Resolve operation on non-multisampled texture '{}'!",
-// 									   source.name, currentTexture.getDebugName());
-// 							ASSERT_MSG(resolveTexture.getSampleCount() == VK_SAMPLE_COUNT_1_BIT,
-// 									   "Pass '{}': Resolve target '{}' is multisampled!",
-// 									   source.name, resolveTexture.getDebugName());
-//
-// 							depthInfo.resolveImageView = resolveTexture._vkImageView;
-// 							depthInfo.resolveImageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-//
-// 							// create barrier for resolve target
-// 							VkImageMemoryBarrier2 resolveBarrier = vkinfo::CreateImageMemoryBarrier2(
-// 									resolveTexture._vkImage,
-// 									resolveTexture._vkFormat,
-// 									VK_IMAGE_LAYOUT_UNDEFINED,  // PLACEHOLDER
-// 									VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-// 									true);
-// 							compiled.preBarriers.push_back({resolveBarrier, writeOperation.resolveTexture.value(), false, true});
-// 						}
-// 						// set it
-// 						compiled.depthAttachment = depthInfo;
-// 					} else {
-// 						// Color attachment info
-// 						ColorAttachmentInfo colorInfo = {
-// 							.imageView = currentTexture._vkImageView,
-// 							.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-// 							.imageFormat = currentTexture._vkFormat,
-// 							// if resolve target is included, fill in the following steps
-// 							.resolveImageView = VK_NULL_HANDLE,
-// 							.resolveImageLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-// 							.loadOp = toVulkan(writeOperation.loadOp),
-// 							.storeOp = toVulkan(writeOperation.storeOp),
-// 							.clearColor = writeOperation.clearValue.clearColor.getAsVkClearColorValue(),
-// 						};
-// 						// Create barrier for color attachment
-// 						constexpr VkImageLayout newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-// 						compiled.preBarriers.push_back(
-// 							CompileWriteOperation(rCtx, writeOperation, newLayout)
-// 						);
-//
-// 						// Handle MSAA Color resolve
-// 						if (writeOperation.resolveTexture.has_value()) {
-// 							const AllocatedTexture& resolveTexture = rCtx.view(writeOperation.resolveTexture.value());
-//
-// 							ASSERT_MSG(resolveTexture._vkImage != VK_NULL_HANDLE,
-// 									   "Pass '{}': Resolve target '{}' for '{}' has invalid vkImage!",
-// 									   source.name, resolveTexture.getDebugName(), currentTexture.getDebugName());
-// 							ASSERT_MSG(currentTexture.getSampleCount() > VK_SAMPLE_COUNT_1_BIT,
-// 									   "Pass '{}': Resolve operation on non-multisampled texture '{}'!",
-// 									   source.name, currentTexture.getDebugName());
-// 							ASSERT_MSG(resolveTexture.getSampleCount() == VK_SAMPLE_COUNT_1_BIT,
-// 									   "Pass '{}': Resolve target '{}' is multisampled!",
-// 									   source.name, resolveTexture.getDebugName());
-//
-// 							colorInfo.resolveImageView = resolveTexture._vkImageView;
-// 							colorInfo.resolveImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-//
-// 							// create barrier for resolve target
-// 							VkImageMemoryBarrier2 resolveBarrier = vkinfo::CreateImageMemoryBarrier2(
-// 									resolveTexture._vkImage,
-// 									resolveTexture._vkFormat,
-// 									VK_IMAGE_LAYOUT_UNDEFINED,  // PLACEHOLDER
-// 									VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-// 									true);
-// 							compiled.preBarriers.push_back({resolveBarrier, writeOperation.resolveTexture.value(), false, true});
-// 						}
-//
-// 						compiled.colorAttachments.push_back(colorInfo);
-// 					}
-// 				}
-//
-// 				ASSERT_MSG(!compiled.colorAttachments.empty() || hasDepthAttachment,
-// 						   "Pass '{}' was given no color or depth attachments!", source.name);
-// 			}
-//
-// 			this->_compiledPasses.push_back(std::move(compiled));
-// 		}
-//
-// 		// BUILD RENDER PIPELINES & other commands //
-// 		// This runs the callbacks in a "dry run" mode to let them create pipelines
-// 		for (const CompiledPass& pass : this->_compiledPasses) {
-// 			CommandBuffer dryCmd;
-// 			dryCmd._ctx = &rCtx;
-// 			dryCmd._activePass = pass;
-// 			rCtx._currentCommandBuffer = dryCmd;
-// 			ASSERT_MSG(pass.executeCallback != nullptr, "Pass '{}' doesn't have an execute callback, something went horribly wrong!", pass.name);
-// 			pass.executeCallback(dryCmd);
-// 		}
-// 		rCtx._currentCommandBuffer = {};
-//
-// 		_hasCompiled = true;
-// 		MYTH_PROFILER_ZONE_END();
-// 	}
-//
-// 	void RenderGraph::PerformTransitions(CommandBuffer& cmd, const CompiledPass& currentPass) {
-// 		std::vector<VkImageMemoryBarrier2> barriers;
-// 		barriers.reserve(currentPass.preBarriers.size());
-// 		CTX& ctx = *cmd._ctx;
-//
-// 		for (const CompiledBarrier& compiled_bi : currentPass.preBarriers) {
-// 			VkImageMemoryBarrier2 barrier = compiled_bi.barrier;
-// 			const AllocatedTexture& tex = ctx.view(compiled_bi.textureHandle);
-// 			barrier.oldLayout = tex.getImageLayout();
-//
-// 			if (barrier.oldLayout == barrier.newLayout) {
-// 				continue;
-// 			}
-// 			// LOG_SYSTEM(LogType::Info, "For Pass '{}': Barrier for '{}': {} -> {}",
-// 			// 	currentPass.name,
-// 			//   tex.getDebugName(),
-// 			//   vkstring::VulkanImageLayoutToString(barrier.oldLayout),
-// 			//   vkstring::VulkanImageLayoutToString(barrier.newLayout));
-//
-// 			barriers.push_back(barrier);
-// 		}
-//
-// 		if (!barriers.empty()) {
-// 			ASSERT(cmd._wrapper->_cmdBuf);
-// 			VkDependencyInfo dependencyInfo = {
-// 				.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-// 				.pNext = nullptr,
-// 				.imageMemoryBarrierCount = static_cast<uint32_t>(barriers.size()),
-// 				.pImageMemoryBarriers = barriers.data()
-// 			};
-// 			vkCmdPipelineBarrier2(cmd._wrapper->_cmdBuf, &dependencyInfo);
-//
-// 			// Update tracked layouts - use the barriers we actually submitted!
-// 			for (const VkImageMemoryBarrier2& barrier : barriers) {
-// 				// Find the texture handle that corresponds to this barrier's image
-// 				for (const CompiledBarrier& cb : currentPass.preBarriers) {
-// 					const AllocatedTexture& tex = ctx.view(cb.textureHandle);
-// 					if (tex.getImage() == barrier.image) {
-// 						ctx._texturePool.get(cb.textureHandle)->_vkCurrentImageLayout = barrier.newLayout;
-// 						break;
-// 					}
-// 				}
-// 			}
-// 		}
-// 	}
-//
-// 	void RenderGraph::execute(CommandBuffer& cmd) {
-// 		MYTH_PROFILER_ZONE("RenderGraph::execute", MYTH_PROFILER_COLOR_RENDERGRAPH);
-// 		ASSERT_MSG(!cmd.isDrying(), "You cannot call RenderGraph::execute inside an execution callback!");
-// 		ASSERT_MSG(this->_hasCompiled, "RenderGraph must be compiled before it can be executed!");
-// 		if (this->_compiledPasses.empty()) {
-// 			LOG_SYSTEM(LogType::Warning, "RenderGraph has no passes, execute will do nothing!");
-// 			return;
-// 		}
-// 		// execute each pass in order of added
-// 		for (const CompiledPass& pass : _compiledPasses) {
-// 			// reset current states
-// 			cmd._currentPipelineInfo = nullptr;
-// 			cmd._currentPipelineHandle = {};
-// 			cmd._activePass = pass;
-// 			// if barriers are required
-// 			MYTH_PROFILER_ZONE("Transitions", MYTH_PROFILER_COLOR_RENDERGRAPH);
-// 			PerformTransitions(cmd, pass);
-// 			MYTH_PROFILER_ZONE_END();
-// // #ifdef DEBUG
-// // 			ValidateReadImageLayouts(*cmd._ctx, this->_sourcePasses);
-// // #endif
-// 			// execute the pass callback
-// 			MYTH_PROFILER_ZONE(pass.name.c_str(), MYTH_PROFILER_COLOR_RENDERPASS);
-// 			pass.executeCallback(cmd);
-// 			MYTH_PROFILER_ZONE_END();
-// 		}
-// 		MYTH_PROFILER_ZONE_END();
-// 	}
 }

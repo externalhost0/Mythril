@@ -519,6 +519,30 @@ void UpdateParticles(std::vector<ParticleData>& particles, float deltaTime, floa
 	}
 }
 
+static constexpr uint8_t kNumPointLights = 4;
+static void UpdatePointLightShadowMatrices(
+	const GPU::LightingData& lightingData,
+	float modelScale,
+	float nearPlane,
+	float farPlane,
+	glm::mat4 outShadowMatrices[kNumPointLights][6]) {
+	const glm::mat4 scaledModel = glm::scale(glm::mat4(1.0f), glm::vec3(modelScale));
+	for (int i = 0; i < kNumPointLights; ++i) {
+		const glm::vec3 lightPos = lightingData.pointLights[i].position;
+		glm::mat4 shadowProj = glm::perspective(glm::radians(90.0f), 1.0f, nearPlane, farPlane);
+		const glm::mat4 shadowViews[6] = {
+			glm::lookAt(lightPos, lightPos + glm::vec3( 1,  0,  0), glm::vec3(0, -1,  0)), // +X
+			glm::lookAt(lightPos, lightPos + glm::vec3(-1,  0,  0), glm::vec3(0, -1,  0)), // -X
+			glm::lookAt(lightPos, lightPos + glm::vec3( 0,  1,  0), glm::vec3(0,  0,  1)), // +Y
+			glm::lookAt(lightPos, lightPos + glm::vec3( 0, -1,  0), glm::vec3(0,  0, -1)), // -Y
+			glm::lookAt(lightPos, lightPos + glm::vec3( 0,  0,  1), glm::vec3(0, -1,  0)), // +Z
+			glm::lookAt(lightPos, lightPos + glm::vec3( 0,  0, -1), glm::vec3(0, -1,  0)), // -Z
+		};
+		for (int face = 0; face < 6; ++face) {
+			outShadowMatrices[i][face] = shadowProj * shadowViews[face] * scaledModel;
+		}
+	}
+}
 
 int main() {
 	static constexpr VkFormat kOffscreenFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
@@ -615,7 +639,7 @@ int main() {
 		.components = swizzle,
 		.debugName = "Luminance Texture"
 	});
-	mythril::TextureView averageLuminanceView = luminanceTexture.createView({
+	mythril::Texture::ViewKey averageLuminanceView = luminanceTexture.createView({
 		.mipLevel = numMipLumLevels-1,
 		.components = swizzle,
 		.debugName = "Avergae Luminance Texture View"
@@ -632,8 +656,9 @@ int main() {
 		.magFilter = mythril::SamplerFilter::Linear,
 		.minFilter = mythril::SamplerFilter::Linear,
 		.mipMap = mythril::SamplerMipMap::Linear,
-		.wrapU = mythril::SamplerWrap::ClampBorder,
-		.wrapV = mythril::SamplerWrap::ClampBorder,
+		.wrapU = mythril::SamplerWrap::ClampEdge,
+		.wrapV = mythril::SamplerWrap::ClampEdge,
+		.wrapW = mythril::SamplerWrap::ClampEdge,
 		.depthCompareEnabled = true,
 		.depthCompareOp = mythril::CompareOp::LessEqual,
 		.debugName = "Shadow Sampler"
@@ -888,28 +913,25 @@ int main() {
 		cmd.cmdEndRendering();
 	});
 
-	static constexpr uint8_t kNumPointLights = 4;
 	static constexpr uint32_t pointLightShadowResolution = 512;
 	mythril::Texture pointLightShadowTex[kNumPointLights];
+	mythril::Texture pointLightDepthTemp = ctx->createTexture({
+		.dimension = {pointLightShadowResolution, pointLightShadowResolution, 1},
+		.type = mythril::TextureType::Type_2D,
+		.format = VK_FORMAT_D16_UNORM,
+		.usage = mythril::TextureUsageBits::TextureUsageBits_Attachment,
+		.debugName = "Point Light Depth Tex Temp"
+	});
 	for (int i = 0; i < kNumPointLights; i++) {
-		char debug_name[64];
+		char debug_name[128];
 		snprintf(debug_name, sizeof(debug_name), "Point Light Shadow Tex %d", i);
 		pointLightShadowTex[i] = ctx->createTexture({
 			.dimension = {pointLightShadowResolution, pointLightShadowResolution, 1},
 			.type = mythril::TextureType::Type_Cube,
-			.format = VK_FORMAT_D16_UNORM,
+			.format = VK_FORMAT_R8_UNORM,
 			.usage = mythril::TextureUsageBits_Attachment | mythril::TextureUsageBits_Sampled,
 			.debugName = debug_name
 		});
-	}
-	mythril::TextureView plShadowView[kNumPointLights][6];
-	for (int i = 0; i < kNumPointLights; i++) {
-		for (int j = 0; j < 6; j++) {
-			plShadowView[i][j] = pointLightShadowTex[i].createView({
-				.type = VK_IMAGE_VIEW_TYPE_2D,
-				.layer = static_cast<uint32_t>(j),
-			});
-		}
 	}
 	mythril::Shader pointshadowShader = ctx->createShader({
 		.filePath = "shaders/PointShadow.slang",
@@ -927,69 +949,84 @@ int main() {
 	lightingData.pointLights[2] = { {0.7f, 1.0f, 0.7f},  5.0f, { 60.0f,  4.0f, -3.0f}, 5.f };
 	lightingData.pointLights[3] = { {1.0f, 0.0f, 0.1f},  11.0f, { -40.0f,  1.0f,  4.0f}, 25.f };
 
-	const auto model = glm::scale(glm::mat4(1.0), glm::vec3(kMODELSCALE));
+	const auto scaledModel = glm::scale(glm::mat4(1.0), glm::vec3(kMODELSCALE));
 
 	// the sizeof 6 matrices is over the 128 min,
 	// but also i just want to precalculate the matrices
 	// we could push the perspective and model once and than only push the view matrix at a different offset for every face
-	float pointlight_nearplane = 0.01f;
-	float pointlight_farplane = 70.f;
 	glm::mat4 shadowMatrices[kNumPointLights][6];
-	for (int i = 0; i < kNumPointLights; i++) {
-		glm::vec3 lightPos = lightingData.pointLights[i].position;
-		glm::mat4 shadowProj = glm::perspective(glm::radians(90.f), 1.f, pointlight_nearplane, pointlight_farplane);
-		glm::mat4 shadowViews[6] = {
-			glm::lookAt(lightPos, lightPos + glm::vec3(1, 0, 0), glm::vec3(0, -1, 0)),  // +X
-			glm::lookAt(lightPos, lightPos + glm::vec3(-1, 0, 0), glm::vec3(0, -1, 0)), // -X
-			glm::lookAt(lightPos, lightPos + glm::vec3(0, 1, 0), glm::vec3(0, 0, 1)),   // +Y
-			glm::lookAt(lightPos, lightPos + glm::vec3(0, -1, 0), glm::vec3(0, 0, -1)), // -Y
-			glm::lookAt(lightPos, lightPos + glm::vec3(0, 0, 1), glm::vec3(0, -1, 0)),  // +Z
-			glm::lookAt(lightPos, lightPos + glm::vec3(0, 0, -1), glm::vec3(0, -1, 0))  // -Z
-		};
-		for (int f = 0; f < 6; f++) {
-			shadowMatrices[i][f] = shadowProj * shadowViews[f] * model;
-		}
-	}
-
+	float pointlight_nearplane = 0.1f;
+	float pointlight_farplane = 60.f;
+	UpdatePointLightShadowMatrices(
+	lightingData,
+	kMODELSCALE,
+	pointlight_nearplane,
+	pointlight_farplane,
+	shadowMatrices);
 
 	mythril::Buffer pointLightShadowMatrixBuf = ctx->createBuffer({
 		.size = sizeof(glm::mat4) * kNumPointLights * 6,
 		.usage = mythril::BufferUsageBits::BufferUsageBits_Storage,
 		.storage = mythril::StorageType::Device,
-		.initialData = &shadowMatrices[0],
+		.initialData = &shadowMatrices[0][0],
 		.debugName = "Point Light Shadow Matrices Buffer"
 	});
 
-	// for (int i = 0; i < kNumPointLights; i++) {
-	// 	for (int j = 0; j < 6; j++) {
-	// 		mythril::TextureDesc desc{pointLightShadowTex[i]};
-	// 		graph.addGraphicsPass(fmt::format("pointlight_shadow_{}_face_{}", i, j).c_str())
-	// 		.attachment({
-	// 			.texDesc = desc,
-	// 			.clearValue = {1.f, 0 },
-	// 			.loadOp = mythril::LoadOperation::CLEAR,
-	// 			.storeOp = mythril::StoreOperation::STORE,
-	// 		})
-	// 		.setExecuteCallback([&, i, j](mythril::CommandBuffer& cmd) {
-	// 			cmd.cmdBeginRendering();
-	// 			cmd.cmdBindGraphicsPipeline(pointShadowGraphicsPipeline);
-	// 			cmd.cmdBindDepthState({mythril::CompareOp::LessEqual, true});
-	// 			struct PushConstant {
-	// 				VkDeviceAddress shadowMVPs;
-	// 				VkDeviceAddress vba;
-	// 				uint32_t nLight;
-	// 			} push {
-	// 				.shadowMVPs = pointLightShadowMatrixBuf.gpuAddress(),
-	// 				.vba = opaqueSponzaVertexBuf.gpuAddress(),
-	// 				.nLight = static_cast<uint32_t>(i)
-	// 			};
-	// 			cmd.cmdPushConstants(push);
-	// 			cmd.cmdBindIndexBuffer(opaqueSponzaIndexBuf);
-	// 			cmd.cmdDrawIndexedIndirect(opaqueSponzaIndirectBuf, 0, opaqueDrawCount);
-	// 			cmd.cmdEndRendering();
-	// 		});
-	// 	}
-	// }
+	float pointLightdepthBiasConstant = 1.25f, pointLightdepthBiasSlope = 1.75f;
+	for (int i = 0; i < kNumPointLights; i++) {
+		for (int j = 0; j < 6; j++) {
+			mythril::TextureDesc desc{pointLightShadowTex[i]};
+			int actualLayer = j;
+			if (j == 2) actualLayer = 3;      // +Y → render to -Y layer
+			else if (j == 3) actualLayer = 2; // -Y → render to +Y layer
+			desc.baseLayer = actualLayer;
+			desc.numLayers = 1;
+			graph.addGraphicsPass(fmt::format("pointlight_shadow_{}_face_{}", i, j).c_str())
+			.attachment({
+				.texDesc = desc,
+				.clearValue = {1.f, 0.f, 0.f, 1.f },
+				.loadOp = mythril::LoadOperation::CLEAR,
+				.storeOp = mythril::StoreOperation::STORE,
+			})
+			.attachment({
+				.texDesc = pointLightDepthTemp,
+				.clearValue = {1.f, 0},
+				.loadOp = mythril::LoadOperation::CLEAR,
+				.storeOp = mythril::StoreOperation::NO_CARE
+			})
+			.setExecuteCallback([&, i, j](mythril::CommandBuffer& cmd) {
+				cmd.cmdBeginRendering();
+				cmd.cmdBindGraphicsPipeline(pointShadowGraphicsPipeline);
+				cmd.cmdBindDepthState({mythril::CompareOp::LessEqual, true});
+				cmd.cmdSetDepthBiasEnable(true);
+				cmd.cmdSetDepthBias(pointLightdepthBiasConstant, pointLightdepthBiasSlope, 0.f);
+				struct PushConstant {
+					VkDeviceAddress shadowMVPs;
+					VkDeviceAddress vba;
+					glm::mat4 model;
+					uint32_t nLight;
+					uint32_t nFace;
+					glm::vec3 lightPos;
+				} push {
+					.shadowMVPs = pointLightShadowMatrixBuf.gpuAddress(),
+					.vba = opaqueSponzaVertexBuf.gpuAddress(),
+					.model = scaledModel,
+					.nLight = static_cast<uint32_t>(i),
+					.nFace = static_cast<uint32_t>(j),
+					.lightPos = lightingData.pointLights[i].position,
+				};
+				cmd.cmdPushConstants(push);
+				cmd.cmdBindIndexBuffer(opaqueSponzaIndexBuf);
+				cmd.cmdDrawIndexedIndirect(opaqueSponzaIndirectBuf, 0, opaqueDrawCount);
+				cmd.cmdEndRendering();
+			});
+		}
+	}
+
+	mythril::Sampler pointLightShadowSampler = ctx->createSampler({
+		.wrapU = mythril::SamplerWrap::ClampBorder,
+		.debugName = "Point Light Shadow Sampler"
+	});
 
 	mythril::Shader standardShader = ctx->createShader({
 		.filePath = "shaders/Standard.slang",
@@ -1018,12 +1055,11 @@ int main() {
 		.storeOp = mythril::StoreOperation::STORE,
 	})
 	.dependency(shadowMap, mythril::Layout::READ)
+	.dependency(&pointLightShadowTex[0], kNumPointLights, mythril::Layout::READ)
 	.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
 		cmd.cmdBeginRendering();
 		cmd.cmdBindGraphicsPipeline(opaquePipeline);
 		cmd.cmdBindDepthState({mythril::CompareOp::Greater, true});
-		auto model = glm::mat4(1.0);
-		model = glm::scale(model, glm::vec3(kMODELSCALE));
 		for (const MeshCompiled& mesh : sponzaCompiled.meshes) {
 			const MaterialData& material = sponzaCompiled.materials[mesh.materialIndex];
 			if (material.isTransparent) continue;
@@ -1033,7 +1069,7 @@ int main() {
 			mythril::TextureHandle roughnessMetallicTex = sponzaCompiled.textureHandles[material.roughnessMetallicTextureIndex];
 
 			const GPU::GeometryPushConstants push {
-				.model = model,
+				.model = scaledModel,
 				.vba = ctx->gpuAddress(mesh.vertexBufHandle),
 				.tintColor = {1, 1, 1, 1},
 				.baseColorTexture = baseColorTex.index(),
@@ -1043,9 +1079,12 @@ int main() {
 				.shadowTexture = shadowMap.index(),
 				.shadowSampler = shadowSampler.index(),
 				.lightSpaceMatrix = lightSpaceMatrix,
-				// i only really want to apply shadow mapping to opaques
-				.depthBiasConstant = depthBiasConstant,
-				.depthBiasSlope = depthBiasSlope
+				.pointLightShadowTextures = {
+					pointLightShadowTex[0].index(),
+					pointLightShadowTex[1].index(),
+					pointLightShadowTex[2].index(),
+					pointLightShadowTex[3].index()
+				}
 			};
 			cmd.cmdPushConstants(push);
 			cmd.cmdBindIndexBuffer(mesh.indexBufHandle);
@@ -1659,18 +1698,27 @@ int main() {
 		ImGui::End();
 
 		ImGuiWindowFlags window_flags = focused ? ImGuiWindowFlags_NoMouseInputs : ImGuiWindowFlags_None;
-		ImGui::Begin("Lighting", nullptr, window_flags);
+		ImGui::Begin("Previews", nullptr, window_flags);
 		ImGui::Image(shadowMap, {200, 200});
 		ImGui::SameLine();
 		ImGui::Image(brightTarget, {200, 200});
 		ImGui::Text("Average Luminance");
 		ImGui::Image(adaptedLuminanceTextures[0], {100, 100});
 		ImGui::Text("Progressively Blurred Color Targets");
+		for (int face = 0; face < 6; face++) {
+			ImGui::Image(pointLightShadowTex[3], pointLightShadowTex[3].getView(0, face), {200, 200});
+		}
 		for (int i = 0; i < kNumColorMips; i++) {
 			mythril::Dimensions dims = {320, 240};
 			ImGui::Image(offscreenColorTexs[kNumColorMips-1-i], {static_cast<float>(dims.width), static_cast<float>(dims.height)});
 		}
+		ImGui::End();
 
+		ImGui::Begin("Lighting", nullptr, window_flags);
+		ImGui::DragFloat("Point Light Depth Bias Constant", &pointLightdepthBiasConstant);
+		ImGui::DragFloat("Point Light Depth Bias Slope", &pointLightdepthBiasSlope);
+		ImGui::DragFloat("Point Light Near", &pointlight_nearplane);
+		ImGui::DragFloat("Point Light Far", &pointlight_farplane);
 		ImGui::DragFloat("Particle Speed", &particle_speed);
 		ImGui::DragFloat("Particle Emission", &particle_emission, 0.1f);
 		ImGui::DragFloat("Upsample Blending", &blend, 0.001f);
@@ -1764,16 +1812,17 @@ int main() {
 			.camera = cameraData,
 			.lighting = lightingData,
 			.time = elapsedTime,
-			.deltaTime = deltaTime,
-			.one = 1
+			.deltaTime = deltaTime
 		};
 
 		UpdateParticles(particles, deltaTime, particle_speed);
+		UpdatePointLightShadowMatrices(frameData.lighting, kMODELSCALE, pointlight_nearplane, pointlight_farplane, shadowMatrices);
 
 		mythril::CommandBuffer& cmd = ctx->openCommand(mythril::CommandBuffer::Type::Graphics);
 		cmd.cmdUpdateBuffer(frameDataHandle, frameData);
 		// because the data we want to store in the particle buffer is so large, we need to upload it like this
 		ctx->upload(particles_buffer.handle(), particles.data(), sizeof(ParticleData) * particles.size(), 0);
+		ctx->upload(pointLightShadowMatrixBuf.handle(), &shadowMatrices[0][0], sizeof(glm::mat4) * kNumPointLights * 6, 0);
 		graph.execute(cmd);
 		ctx->submitCommand(cmd);
 		std::swap(adaptedLuminanceTextures[0], adaptedLuminanceTextures[1]);

@@ -4,15 +4,17 @@
 
 #pragma once
 
-#include "ObjectHandles.h"
 #include "Pipelines.h"
 
 #include <volk.h>
 #include <deque>
 #include <vector>
 
+#include "ObjectHandles.h"
+
 namespace mythril {
 	class CTX;
+	class Buffer;
 
 	class DWriter {
 	public:
@@ -29,8 +31,8 @@ namespace mythril {
 
 	class DescriptorSetWriter {
 	public:
-		void updateBinding(const Buffer& buffer, const char* name) { updateBinding(buffer.handle(), name); }
-		void updateBinding(const Buffer& buffer, int set, int binding) { updateBinding(buffer.handle(), set, binding); }
+		void updateBinding(const Buffer& buffer, const char* name);
+		void updateBinding(const Buffer& buffer, int set, int binding);
 
 	private:
 		void updateBinding(BufferHandle bufHandle, const char *name);

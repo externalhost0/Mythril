@@ -20,7 +20,6 @@
 
 #include <volk.h>
 
-
 namespace mythril {
     struct DependencyDesc;
     struct AttachmentDesc;
@@ -56,7 +55,6 @@ namespace mythril {
             };
         }
     };
-
 
     struct SubresourceState {
         VkImageLayout layout; // uint32_t
@@ -172,7 +170,8 @@ namespace mythril {
 
     struct CompiledImageBarrier {
         // we dont want to only rely on a vkImage as when the texture updates we need to be able to fetch its new version
-        TextureHandle textureHandle;
+        TextureHandle handle;
+        // TextureHandle textureHandle;
         SubresourceRange range{};
         VkImageLayout dstLayout = VK_IMAGE_LAYOUT_UNDEFINED;
         vkutil::StageAccess dstMask{};
@@ -232,7 +231,7 @@ namespace mythril {
             add(this->base._passSource, texDesc, layout);
             return *this;
         }
-        GraphicsPassBuilder& dependency(const Texture* tex, int count, const Layout layout = Layout::GENERAL) {
+        GraphicsPassBuilder& dependency(Texture* tex, int count, const Layout layout = Layout::GENERAL) {
             for (int i = 0; i < count; i++) {
                 add(this->base._passSource, tex[i], layout);
             }
@@ -256,7 +255,7 @@ namespace mythril {
                 add(this->base._passSource, texDesc, layout);
             return *this;
         }
-        ComputePassBuilder& dependency(const Texture* tex, int count, const Layout layout = Layout::GENERAL) {
+        ComputePassBuilder& dependency(Texture* tex, int count, const Layout layout = Layout::GENERAL) {
             for (int i = 0; i < count; i++) {
                 add(this->base._passSource, tex[i], layout);
             }
@@ -308,7 +307,7 @@ namespace mythril {
         void PerformImageBarrierTransitions(CommandBuffer& cmd, const CompiledPass& compiledPass);
         static void processResourceAccess(const TextureDesc& texDesc, VkImageLayout desiredLayout, CompiledPass& outPass);
         void processPassResources(const PassDesc& passDesc, CompiledPass& outPass);
-        void processAttachments(CTX& rCtx, const PassDesc& pass_desc, CompiledPass& outPass);
+        void processAttachments(const PassDesc& pass_desc, CompiledPass& outPass);
         void performDryRun(CTX& rCtx);
         // every texture used in the framegraph needs proper tracking to ensure its layout is correct...
         // at every pass, even more necessary for textures that request individual mips/layers

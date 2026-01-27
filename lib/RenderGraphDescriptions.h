@@ -4,6 +4,8 @@
 
 #pragma once
 
+#include "../include/mythril/Objects.h"
+
 #include <functional>
 #include <volk.h>
 
@@ -47,8 +49,9 @@ namespace mythril {
 
     struct TextureDesc {
         TextureDesc() = delete;
-        TextureDesc(const Texture& tex) : texture(tex) {}
-        const Texture& texture;
+        TextureDesc(Texture& tex) : texture(tex) {}
+        TextureDesc(const Texture& tex) : texture(const_cast<Texture&>(tex)) {}
+        Texture& texture;
         std::optional<uint32_t> baseLevel;
         std::optional<uint32_t> numLevels;
         std::optional<uint32_t> baseLayer;

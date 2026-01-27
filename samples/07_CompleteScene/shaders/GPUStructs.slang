@@ -212,6 +212,5 @@ struct GeometryPushConstants
     DescriptorHandle<Texture2D> shadowTexture;
     DescriptorHandle<SamplerState> shadowSampler;
     float4x4 lightSpaceMatrix;
-    float minBias;
-    float maxBias;
+    DescriptorHandle<TextureCube> pointLightCubemaps[4];
 };

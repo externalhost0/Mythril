@@ -16,6 +16,7 @@
 #include <slang/slang-com-ptr.h>
 #include <spirv_reflect.h>
 
+#include "mythril/Objects.h"
 
 namespace mythril {
 

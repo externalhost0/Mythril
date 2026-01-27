@@ -47,8 +47,8 @@ int main() {
 		cmd.cmdEndRendering();
 	});
 	graph.addIntermediate("present")
-	.blit(colorTarget, ctx->getBackBufferTexture()).
-	finish();
+	.blit(colorTarget, ctx->getBackBufferTexture())
+	.finish();
 
 	graph.compile(*ctx);
 
@@ -63,6 +63,5 @@ int main() {
 		graph.execute(cmd);
 		ctx->submitCommand(cmd);
 	}
-
 	return 0;
 }

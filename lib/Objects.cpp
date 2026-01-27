@@ -14,29 +14,83 @@ namespace mythril {
 		return addr + offset;
 	}
 
-	TextureHandle Texture::getHandle(const TextureView view) const {
-		// when view is base, we can evaluate this at compile time
-		if (view.isBase()) {
-			return _handle;
+	Texture::~Texture() {
+		if (_pCtx) {
+			for (const auto& view: _additionalViews) {
+				_pCtx->destroy(view.second);
+			}
+			_pCtx->destroy(_handle);
 		}
-		uint32_t viewIndex = view._index - 1;  // Convert from 1-based to 0-based
-		ASSERT_MSG(viewIndex < _additionalViews.size(),
-				   "Invalid TextureView - index {} out of range (have {} views)",
-				   viewIndex, _additionalViews.size());
-		return _additionalViews[viewIndex];
+		_additionalViews.clear();
 	}
 
-	uint32_t Texture::index(const TextureView view) const {
-		return getHandle(view).index();
+	Texture& Texture::operator=(Texture&& other) noexcept {
+		if (this != &other) {
+			if (_pCtx) {
+				for (const auto& view : _additionalViews) {
+					_pCtx->destroy(view.second);
+				}
+			}
+			_additionalViews.clear();
+			ObjectHolder::operator=(std::move(other));
+			_additionalViews = std::move(other._additionalViews);
+		}
+		return *this;
+	}
+
+	uint32_t Texture::index(ViewKey key) const {
+        auto it = _additionalViews.find(key);
+        ASSERT_MSG(it != _additionalViews.end(), "ViewKey not found in additional views!");
+        return it->second.index();
+	}
+	TextureHandle Texture::handle(ViewKey key) const {
+		auto it = _additionalViews.find(key);
+		ASSERT_MSG(it != _additionalViews.end(), "ViewKey not found in additional views!");
+		return it->second;
 	}
 
 	void Texture::resize(const Dimensions newDimensions) {
 		_pCtx->resizeTexture(_handle, newDimensions);
 	}
 
-	TextureView Texture::createView(const TextureViewSpec& spec) {
-		_additionalViews.push_back(_pCtx->createTextureView(_handle, spec));
-		return TextureView(static_cast<uint32_t>(_additionalViews.size()));
+	Texture::ViewKey Texture::createView(const TextureViewSpec& spec) {
+		const uint32_t baseMip = spec.mipLevel;
+		const uint32_t numMips = spec.numMipLevels;
+		const uint32_t baseLayer = spec.layer;
+		const uint32_t numLayers = spec.numLayers;
+
+		ASSERT(_pCtx);
+		const uint64_t key = packViewKey(baseMip, numMips, baseLayer, numLayers);
+		auto it = _additionalViews.find(key);
+		if (it != _additionalViews.end()) {
+			return key;
+		}
+
+		// if not make a new texture for the view
+		const AllocatedTexture& texture = view();
+		VkImageViewType viewType = spec.type != VK_IMAGE_VIEW_TYPE_MAX_ENUM ? spec.type : texture.getViewType();
+		if (numLayers == 1 && viewType == VK_IMAGE_VIEW_TYPE_CUBE) {
+			viewType = VK_IMAGE_VIEW_TYPE_2D;
+		}
+
+		char data[kMaxDebugNameLength];
+		snprintf(data, sizeof(data), "%s - View (Mip: %d, NumMips: %d, Layer: %d, NumLayers: %d)",
+			texture.getDebugName().data(),
+			baseMip,
+			numMips,
+			baseLayer,
+			numLayers
+			);
+		const TextureHandle newView = _pCtx->createTextureView(_handle, {
+			.type = viewType,
+			.layer = baseLayer,
+			.numLayers = numLayers,
+			.mipLevel = baseMip,
+			.numMipLevels = numMips,
+			.debugName = data
+		});
+		_additionalViews.emplace(key, newView);
+		return key;
 	}
 
 	// ObjectHolder implementations that needed the defined CTX

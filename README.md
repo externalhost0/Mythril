@@ -17,7 +17,7 @@ It aims to provide a easy to create and highly abstracted API for Vulkan, aswell
 
 int main() {
 	auto ctx = mythril::CTXBuilder{}
-	.set_info_spec({
+	.set_vulkan_cfg({
 		.app_name = "Cool App Name",
 		.engine_name = "Cool Engine Name"
 	})
@@ -28,20 +28,23 @@ int main() {
 		.height = 480,
 		.resizeable = false,
 	})
+	.with_default_swapchain()
 	.build();
 
-	VkExtent2D extent2D = {1280, 720};
+	const VkExtent2D extent2D = ctx->getWindow().getFramebufferSize();
+	const mythril::Dimensions dims = {extent2D.width, extent2D.height, 1};
 	mythril::Texture colorTarget = ctx->createTexture({
-		.dimension = extent2D,
-		.usage = mythril::TextureUsageBits::TextureUsageBits_Attachment,
+		.dimension = dims,
 		.format = VK_FORMAT_R8G8B8A8_UNORM,
+		.usage = mythril::TextureUsageBits::TextureUsageBits_Attachment,
+		.storage = mythril::StorageType::Device,
 		.debugName = "Color Texture"
 	});
 
 	mythril::RenderGraph graph;
-	graph.addPass("main", mythril::PassSource::Type::Graphics)
-	.write({
-		.texture = colorTarget,
+	graph.addGraphicsPass("main")
+	.attachment({
+		.texDesc = colorTarget,
 		.clearValue = {1, 0, 0, 1},
 		.loadOp = mythril::LoadOperation::CLEAR,
 		.storeOp = mythril::StoreOperation::STORE
@@ -51,8 +54,11 @@ int main() {
 		cmd.cmdBeginRendering();
 		cmd.cmdEndRendering();
 	});
-	graph.compile(*ctx);
+	graph.addIntermediate("present")
+	.blit(colorTarget, ctx->getBackBufferTexture())
+	.finish();
 
+	graph.compile(*ctx);
 
 	bool quit = false;
 	while(!quit) {
@@ -65,7 +71,6 @@ int main() {
 		graph.execute(cmd);
 		ctx->submitCommand(cmd);
 	}
-
 	return 0;
 }
 ```
@@ -91,12 +96,14 @@ add_subdirectory(mythril)
 ```
 
 ### CMake Options
-| Option                       | Default | Description                                                       |
-|------------------------------|---------|-------------------------------------------------------------------|
-| `MYTH_RUN_SAMPLES`           | `ON`    | Enables sample apps.                                              |
-| `MYTH_ENABLE_IMGUI_STANDARD` | `OFF`   | Installs ImGui (Main Branch) and enables mythril's ImGuiPlugin    |
-| `MYTH_ENABLE_IMGUI_DOCKING`  | `OFF`   | Installs ImGui (Docking Branch) and enables mythril's ImGuiPlugin |
-| `MYTH_ENABLE_TESTS`          | `OFF`   | Builds tests directory to be run by CMake.                        |
+| Option                       | Default | Description                                                                |
+|------------------------------|---------|----------------------------------------------------------------------------|
+| `MYTH_RUN_SAMPLES`           | `ON`    | Enables sample apps.                                                       |
+| `MYTH_ENABLE_IMGUI_STANDARD` | `OFF`   | Installs ImGui (Main Branch) and enables mythril's ImGuiPlugin             |
+| `MYTH_ENABLE_IMGUI_DOCKING`  | `OFF`   | Installs ImGui (Docking Branch) and enables mythril's ImGuiPlugin          |
+| `MYTH_ENABLE_TESTS`          | `OFF`   | Builds tests directory to be run by CMake.                                 |
+| `MYTH_ENABLE_TRACY`          | `OFF`   | Installs Tracy and enabled mythrils' TracyPlugin                           |
+| `MYTH_ENABLE_TRACY_GPU`      | `OFF`   | Requires ENABLE_TRACY to be ON, allows GPU timing (CURRENTLY EXPERIMENTAL) |
 > Note: `MYTH_ENABLE_IMGUI_STANDARD` and `MYTH_ENABLE_IMGUI_DOCKING` are mutually exclusive!
 
 

@@ -2,11 +2,19 @@
 // Created by Hayden Rivas on 12/9/25.
 //
 
-#include "DescriptorWriter.h"
 #include "HelperMacros.h"
 #include "CTX.h"
 
 namespace mythril {
+	ShaderStage::ShaderStage(const Shader& shader) : handle(shader.handle()) {}
+
+	void DescriptorSetWriter::updateBinding(const Buffer& buffer, const char* name) {
+		updateBinding(buffer.handle(), name);
+	}
+	void DescriptorSetWriter::updateBinding(const Buffer& buffer, int set, int binding) {
+		updateBinding(buffer.handle(), set, binding);
+	}
+
 	static void CheckUpdateBindingCall(const PipelineCoreData* pipeline, BufferHandle bufHandle, const char* debugName) {
 		ASSERT_MSG(pipeline, "You must call updateBinding within opening and submitting a DescriptorSetWriter!");
 		ASSERT_MSG(pipeline->_vkPipeline != VK_NULL_HANDLE, "Pipeline '{}' has not yet been resolved, pipeline was probably not included when compiling RenderGraph!", debugName);

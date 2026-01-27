@@ -404,7 +404,7 @@ namespace mythril {
 namespace ImGui {
 	void Image(const mythril::Texture& texture, const ImVec2 &image_size = {0, 0}, const ImVec2 &uv0 = {0, 0}, const ImVec2 &uv1 = {1, 1});
 	void Image(mythril::TextureHandle texHandle, const ImVec2 &image_size = {0, 0}, const ImVec2 &uv0 = {0, 0}, const ImVec2 &uv1 = {1, 1});
-	void Image(const mythril::Texture& texture, const mythril::TextureView& view, const ImVec2& image_size = {0, 0}, const ImVec2& uv0={0, 0}, const ImVec2& uv1={1, 1});
+	void Image(const mythril::Texture& texture, const mythril::Texture::ViewKey& viewKey, const ImVec2& image_size = {0, 0}, const ImVec2& uv0={0, 0}, const ImVec2& uv1={1, 1});
 }
 #endif
 

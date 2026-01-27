@@ -4,13 +4,13 @@
 
 #pragma once
 
-#include <unordered_map>
 
 #include "../../lib/Specs.h"
 #include "../../lib/ObjectHandles.h"
 
 #include <volk.h>
 
+#include <unordered_map>
 
 namespace mythril {
 	struct TextureViewSpec;
@@ -65,7 +65,7 @@ namespace mythril {
 			return *this;
 		}
 	public:
-		inline operator InternalHandle() const { return _handle; }
+		operator InternalHandle() const { return _handle; }
 		InternalHandle handle() const { return _handle; }
 
 
@@ -107,29 +107,40 @@ namespace mythril {
 
 	};
 
-	// opaque object used to index into _additionalViews
-	class TextureView {
-	public:
-		TextureView() = default;
-		constexpr bool isBase() const { return _index == 0; }
-	private:
-		uint32_t _index = 0;  // 0 = base view, 1+ are indices into _additionalViews vector
-		explicit constexpr TextureView(uint32_t index) : _index(index) {}
-		friend class Texture;
-	};
 	// ref: AllocatedTexture
 	class Texture : public ObjectHolder<TextureHandle> {
 		using ObjectHolder::ObjectHolder;
 	public:
+		// opaque object used to index into _additionalViews
+		using ViewKey = uint64_t;
+		// we need some custom constructors and operators because of our additional data
+		~Texture() override;
+		Texture(Texture&& other) noexcept
+			: ObjectHolder(std::move(other)),
+			  _additionalViews(std::move(other._additionalViews)) {}
+		Texture& operator=(const Texture&) = delete;
+		Texture& operator=(Texture&& other) noexcept;
+
+		// default index and index of specific view
 		using ObjectHolder::index;
-		uint32_t index(TextureView view) const;
+		using ObjectHolder::handle;
+		TextureHandle handle(ViewKey key) const;
+		uint32_t index(ViewKey key) const;
 
-		TextureView createView(const TextureViewSpec& spec);
+		ViewKey createView(const TextureViewSpec& spec);
+		ViewKey getView(uint32_t baseMip, uint32_t baseLayer) {
+			return packViewKey(baseMip, 1, baseLayer, 1);
+		}
 		void resize(Dimensions newDimensions);
-
-		TextureHandle getHandle(TextureView view = TextureView()) const;
 	private:
-		std::vector<TextureHandle> _additionalViews;
+		static constexpr uint64_t packViewKey(uint32_t baseMip, uint32_t numMips, uint32_t baseLayer, uint32_t numLayers) {
+			return (static_cast<uint64_t>(baseMip & 0xFFFF) << 48) |
+				   (static_cast<uint64_t>(numMips & 0xFFFF) << 32) |
+				   (static_cast<uint64_t>(baseLayer & 0xFFFF) << 16) |
+				   (static_cast<uint64_t>(numLayers & 0xFFFF));
+		}
+		std::unordered_map<uint64_t, TextureHandle> _additionalViews;
+		friend class RenderGraph;
 	};
 
 	// todo: remove shader being its own object, its redundant and can be merged into the pipeline object

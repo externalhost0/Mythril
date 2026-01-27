@@ -98,11 +98,19 @@ FSOutput fs_main(v2f input) {
     float3 direct = frame.lighting.directionalLight.illuminate(input.WorldPosition, Nworld, brdf, viewDir);
     float3 omni = 0.0;
     for (int i = 0; i < 4; ++i) {
-        omni += frame.lighting.pointLights[i].illuminate(input.WorldPosition, Nworld, brdf, viewDir);
+        float3 pointLightContribution = frame.lighting.pointLights[i].illuminate(input.WorldPosition, Nworld, brdf, viewDir);
+
+        float pointShadowFactor = PointShadowCalculation(
+            input.WorldPosition,
+            frame.lighting.pointLights[i].position,
+            push.pointLightCubemaps[i],
+            60 // farPlane
+        );
+        omni += pointLightContribution * pointShadowFactor;
     }
 
-    float shadowFactor = ShadowCalculation(input.LightSpacePos);
-    float3 finalColor = ambient + omni + (direct * (1-shadowFactor));
+    float shadowFactor = DirectionalShadowCalculation(input.LightSpacePos);
+    float3 finalColor = ambient + omni + (direct * (shadowFactor));
 
     output.FragColor = float4(finalColor, alpha);
     return output;
@@ -121,7 +129,7 @@ FSOutput fs_main(v2f input) {
 //     return push.shadowTexture.SampleCmpLevelZero(push.shadowSampler, projCoords.xy, projCoords.z);
 // }
 
-float ShadowCalculation(float4 lightspacePos) {
+float DirectionalShadowCalculation(float4 lightspacePos) {
     float3 projCoords = lightspacePos.xyz / lightspacePos.w;
     if (projCoords.z > 1.0)
         return 0.0;
@@ -144,40 +152,56 @@ float ShadowCalculation(float4 lightspacePos) {
     for (int x = -range; x <= range; x++) {
         for (int y = -range; y <= range; y++) {
             float pcfDepth = push.shadowTexture.Sample(push.shadowSampler, projCoords.xy + float2(x, y) * texelSize).r;
-            shadow += currentDepth > pcfDepth ? 1.0 : 0.0;
+            shadow += currentDepth > pcfDepth ? 0.0 : 1.0;
             count++;
         }
     }
     return shadow / count;
 }
 
-// float ShadowCalculationEXT(float4 lightspacePos, float bias) {
-//     float3 projCoords = lightspacePos.xyz / lightspacePos.w;
-//     if (projCoords.z > 1.0)
-//         return 0.0;
-//     projCoords.xy = projCoords.xy * 0.5 + 0.5;
-//     projCoords.y = 1.0 - projCoords.y;
-//     // get closest depth value from light's perspective (using [0,1] range fragPosLight as coords)
-//     float closestDepth = push.shadowTexture.Sample(push.shadowSampler, projCoords.xy).r;
-//     // get depth of current fragment from light's perspective
-//     float currentDepth = projCoords.z;
-//     // check whether current frag pos is in shadow
-//     float shadow = 0.0;
+static constexpr int kSampleCount = 20;
 
-//     // PCF 3x3
-//     int2 texDim;
-//     push.shadowTexture.GetDimensions(texDim.x, texDim.y);
-//     float scale = 1.5;
-//     float2 texelSize = scale * 1.0 / texDim;
+float PointShadowSingle(float3 fragToLight, TextureCube shadowCubemap, float farPlane) {
+    fragToLight.y = -fragToLight.y;
+    float closestDepth = farPlane * shadowCubemap.Sample(push.shadowSampler, fragToLight).r;
+    float currentDepth = length(fragToLight);
+    return currentDepth - 0.15 > closestDepth ? 0.0 : 1.0;
+}
+float PointShadowCalculation(float3 worldPos, float3 lightPos, TextureCube shadowCubemap, float farPlane) {
+    float3 fragToLight = worldPos - lightPos;
+    float factor = 0.f;
+    float k = length(fragToLight) * 0.0015;
+    for (int x = -1; x != 2; x++)
+        for (int y = -1; y != 2; y++)
+            for (int z = -1; z != 2; z++)
+                factor += PointShadowSingle(fragToLight + k * float3(x, y, z), shadowCubemap, farPlane);
+    return factor / 28.0;
+}
 
-//     int count = 0;
-//     int range = 1;
-//     for (int x = -range; x <= range; x++) {
-//         for (int y = -range; y <= range; y++) {
-//             float pcfDepth = push.shadowTexture.Sample(push.shadowSampler, projCoords.xy + float2(x, y) * texelSize).r;
-//             shadow += currentDepth - bias > pcfDepth ? 1.0 : 0.0;
-//             count++;
-//         }
-//     } 
-//     return shadow / count;
-// }
+float PointLightShadowCalculationEXT(float3 worldPos, float3 lightPos, TextureCube shadowCubemap, SamplerState shadowSampler, float farPlane) {
+    float3 fragToLight = worldPos - lightPos;
+    fragToLight.y = -fragToLight.y;
+    float currentDepth = length(fragToLight);
+
+    // PCF sampling offsets
+    static const float3 sampleOffsetDirections[] = {
+        float3(1, 1, 1), float3(1, -1, 1), float3(-1, -1, 1), float3(-1, 1, 1),
+        float3(1, 1, -1), float3(1, -1, -1), float3(-1, -1, -1), float3(-1, 1, -1),
+        float3(1, 1, 0), float3(1, -1, 0), float3(-1, -1, 0), float3(-1, 1, 0),
+        float3(1, 0, 1), float3(-1, 0, 1), float3(1, 0, -1), float3(-1, 0, -1),
+        float3(0, 1, 1), float3(0, -1, 1), float3(0, -1, -1), float3(0, 1, -1)
+    };
+
+    float shadow = 0.0;
+    float bias = 0.15;
+    float samples = kSampleCount;
+    float diskRadius = 0.05; // Controls shadow softness
+
+    for (int i = 0; i < kSampleCount; ++i) {
+        float3 sampleDir = fragToLight + sampleOffsetDirections[i] * diskRadius;
+        float closestDepth = shadowCubemap.Sample(shadowSampler, sampleDir).r;
+        closestDepth *= farPlane;
+        shadow += currentDepth - bias > closestDepth ? 1.0 : 0.0;
+    }
+    return shadow / samples;
+}
