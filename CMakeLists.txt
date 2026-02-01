@@ -113,7 +113,7 @@ else()
     set(SLANG_INCLUDE_DIR "${Vulkan_INCLUDE_DIRS}/slang")
     if(WIN32)
         set(SLANG_LIBRARY_DIR "${VULKAN_SDK_DIR}/Lib")
-    elseif(APPLE)
+    else()
         set(SLANG_LIBRARY_DIR "${VULKAN_SDK_DIR}/lib")
     endif()
 
@@ -155,7 +155,7 @@ target_include_directories(SPIRV-Reflect PUBLIC
 if(WIN32)
     set(VOLK_PLATFORM_DEFINE VK_USE_PLATFORM_WIN32_KHR)
 elseif(APPLE)
-    set(VOLK_PLATFORM_DEFINE VK_USE_PLATFORM_METAL_EXT)
+#    set(VOLK_PLATFORM_DEFINE VK_USE_PLATFORM_METAL_EXT)
 elseif(UNIX)
     set(VOLK_PLATFORM_DEFINE VK_USE_PLATFORM_XLIB_KHR)
 endif()
@@ -187,8 +187,8 @@ CPMAddPackage(
         GITHUB_REPOSITORY "libsdl-org/SDL"
         GIT_TAG release-3.4.0
         OPTIONS
-        "SDL_SHARED OFF"
-        "SDL_STATIC ON"
+        "SDL_SHARED ON"
+        "SDL_STATIC OFF"
         "SDL_TEST_LIBRARY OFF"
         "SDL_TESTS OFF"
         "SDL_DISABLE_INSTALL ON"
@@ -288,11 +288,10 @@ endif()
 
 add_library(mythril STATIC ${MYTHRIL_SOURCES})
 
-target_compile_options(mythril PRIVATE
-        $<$<OR:$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>,$<CXX_COMPILER_ID:GNU>>:
-        -Wall>
-        $<$<CXX_COMPILER_ID:MSVC>:
-        /permissive->)
+#target_compile_options(mythril PRIVATE
+#        $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX>
+#        $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wall -Wextra -Wpedantic -Werror>
+#)
 
 target_include_directories(mythril
         PUBLIC

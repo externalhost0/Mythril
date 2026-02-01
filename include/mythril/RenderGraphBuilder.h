@@ -227,11 +227,11 @@ namespace mythril {
             this->base._passSource.attachmentOperations.push_back(desc);
             return *this;
         }
-        GraphicsPassBuilder& dependency(const TextureDesc& texDesc, const Layout layout = Layout::GENERAL) {
+        GraphicsPassBuilder& dependency(const TextureDesc& texDesc, const Layout layout = Layout::READ) {
             add(this->base._passSource, texDesc, layout);
             return *this;
         }
-        GraphicsPassBuilder& dependency(Texture* tex, int count, const Layout layout = Layout::GENERAL) {
+        GraphicsPassBuilder& dependency(Texture* tex, int count, const Layout layout = Layout::READ) {
             for (int i = 0; i < count; i++) {
                 add(this->base._passSource, tex[i], layout);
             }

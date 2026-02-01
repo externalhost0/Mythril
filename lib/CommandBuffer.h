@@ -29,7 +29,7 @@ namespace mythril {
 	};
 
 	struct DepthState {
-		CompareOp compareOp = CompareOp::Always;
+		CompareOp compareOp = CompareOp::AlwaysPass;
 		bool isDepthWriteEnabled = false;
 	};
 

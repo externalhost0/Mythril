@@ -35,7 +35,7 @@ namespace mythril::vkutil {
 		const uint8_t numPlanes = 1;
 	};
 
-#define PROPS(fmt, bpb, ...) TextureFormatProperties { VK_FORMAT_##fmt, bpb, ##__VA_ARGS__ }
+#define PROPS(fmt, bpb, ...) TextureFormatProperties { VK_FORMAT_##fmt, bpb __VA_OPT__(,) __VA_ARGS__ }
 	static constexpr std::array<TextureFormatProperties, 21> kTextureFormatTable = {{
 		PROPS(R8_UNORM, 1),                       // 9
 		PROPS(R8G8_UNORM, 2),                     // 16

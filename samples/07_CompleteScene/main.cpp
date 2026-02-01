@@ -637,34 +637,12 @@ int main() {
 	});
 	constexpr uint32_t bloom_size = 512;
 	// we combine results of a single channel (red) into all in order to have a grayscale image
-	constexpr mythril::ComponentMapping swizzle = {
+	constexpr mythril::ComponentMapping red_swizzle = {
 			.r = mythril::Swizzle::Swizzle_R,
 			.g = mythril::Swizzle::Swizzle_R,
 			.b = mythril::Swizzle::Swizzle_R,
 			.a = mythril::Swizzle::Swizzle_1
 	};
-	constexpr uint8_t numMipLumLevels = mythril::vkutil::CalcNumMipLevels(bloom_size, bloom_size);
-	mythril::Texture luminanceTexture = ctx->createTexture({
-		.dimension = {bloom_size, bloom_size},
-		.format = VK_FORMAT_R16_SFLOAT,
-		.usage = mythril::TextureUsageBits::TextureUsageBits_Sampled |
-		         mythril::TextureUsageBits::TextureUsageBits_Storage,
-		.numMipLevels = numMipLumLevels,
-		.components = swizzle,
-		.debugName = "Luminance Texture"
-	});
-	mythril::Texture::ViewKey averageLuminanceView = luminanceTexture.createView({
-		.mipLevel = numMipLumLevels-1,
-		.components = swizzle,
-		.debugName = "Avergae Luminance Texture View"
-	});
-
-	mythril::Texture brightTarget = ctx->createTexture({
-		.dimension = {bloom_size, bloom_size},
-		.format = kOffscreenFormat,
-		.usage = mythril::TextureUsageBits::TextureUsageBits_Sampled | mythril::TextureUsageBits_Storage,
-		.debugName = "Bright Pass Texture"
-	});
 
 	mythril::Sampler shadowSampler = ctx->createSampler({
 		.magFilter = mythril::SamplerFilter::Linear,
@@ -751,7 +729,7 @@ int main() {
 		.format = VK_FORMAT_R16_SFLOAT,
 		.usage = mythril::TextureUsageBits::TextureUsageBits_Sampled | mythril::TextureUsageBits_Storage,
 		.storage = mythril::StorageType::Device,
-		.components = swizzle,
+		.components = red_swizzle,
 		.initialData = &brightPixel,
 		.debugName = "Luminance Adaptation 0"
 	};
@@ -881,8 +859,8 @@ int main() {
 	.attachment({
 		.texDesc = {shadowMap},
 		.clearValue = {1.f, 0},
-		.loadOp = mythril::LoadOperation::CLEAR,
-		.storeOp = mythril::StoreOperation::STORE
+		.loadOp = mythril::LoadOp::CLEAR,
+		.storeOp = mythril::StoreOp::STORE
 	})
 	.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
 		cmd.cmdBeginRendering();
@@ -985,8 +963,8 @@ int main() {
 		.attachment({
 			.texDesc = pointLightShadowTex[i],
 			.clearValue = {1.f, 1 },
-			.loadOp = mythril::LoadOperation::CLEAR,
-			.storeOp = mythril::StoreOperation::STORE,
+			.loadOp = mythril::LoadOp::CLEAR,
+			.storeOp = mythril::StoreOp::STORE,
 		})
 		.setExecuteCallback([&, i](mythril::CommandBuffer& cmd) {
 			// easy optimization
@@ -1037,15 +1015,15 @@ int main() {
 	.attachment({
 		.texDesc = msaaColorTarget,
 		.clearValue = {0.349f, 0.635f, 0.82f, 1.f},
-		.loadOp = mythril::LoadOperation::CLEAR,
-		.storeOp = mythril::StoreOperation::STORE,
+		.loadOp = mythril::LoadOp::CLEAR,
+		.storeOp = mythril::StoreOp::STORE,
 	})
 	.attachment({
 		.texDesc = msaaDepthTarget,
 		// clear to 0, we do reverse depth buffering
 		.clearValue = {0.f, 0},
-		.loadOp = mythril::LoadOperation::CLEAR,
-		.storeOp = mythril::StoreOperation::STORE,
+		.loadOp = mythril::LoadOp::CLEAR,
+		.storeOp = mythril::StoreOp::STORE,
 	})
 	.dependency(shadowMap, mythril::Layout::READ)
 	.dependency(&pointLightShadowTex[0], kNumPointLights, mythril::Layout::READ)
@@ -1098,13 +1076,13 @@ int main() {
 	graph.addGraphicsPass("geometry_transparent")
 	.attachment({
 		.texDesc = msaaColorTarget,
-		.loadOp = mythril::LoadOperation::LOAD,
-		.storeOp = mythril::StoreOperation::STORE,
+		.loadOp = mythril::LoadOp::LOAD,
+		.storeOp = mythril::StoreOp::STORE,
 	})
 	.attachment({
 		.texDesc = msaaDepthTarget,
-		.loadOp = mythril::LoadOperation::LOAD,
-		.storeOp = mythril::StoreOperation::STORE,
+		.loadOp = mythril::LoadOp::LOAD,
+		.storeOp = mythril::StoreOp::STORE,
 	})
 	.dependency(shadowMap, mythril::Layout::READ)
 	.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
@@ -1194,14 +1172,14 @@ int main() {
 	graph.addGraphicsPass("Ambient Particles")
 	.attachment({
 		.texDesc = msaaColorTarget,
-		.loadOp = mythril::LoadOperation::LOAD,
-		.storeOp = mythril::StoreOperation::NO_CARE,
+		.loadOp = mythril::LoadOp::LOAD,
+		.storeOp = mythril::StoreOp::NO_CARE,
 		.resolveTexDesc = offscreenColorTarget
 	})
 	.attachment({
 		.texDesc = msaaDepthTarget,
-		.loadOp = mythril::LoadOperation::LOAD,
-		.storeOp = mythril::StoreOperation::NO_CARE,
+		.loadOp = mythril::LoadOp::LOAD,
+		.storeOp = mythril::StoreOp::NO_CARE,
 		.resolveTexDesc = depthTarget
 	})
 	.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
@@ -1277,7 +1255,16 @@ int main() {
 			cmd.cmdDispatchThreadGroup(roundedDims);
 		}
 	});
-
+	mythril::Texture currentLuminanceTex = ctx->createTexture({
+		.dimension = {100, 100, 1},
+		.format = VK_FORMAT_R16_SFLOAT,
+		.usage = mythril::TextureUsageBits::TextureUsageBits_Storage,
+		.components = red_swizzle,
+		.debugName = "Luminance Current Texture"
+	});
+	graph.addIntermediate("copy to lum")
+	.blit(offscreenColorTexs[7], currentLuminanceTex)
+	.finish();
 
 	mythril::Shader upsampleComputeShader = ctx->createShader({
 		.filePath = "shaders/Upsample.slang",
@@ -1318,36 +1305,6 @@ int main() {
 		}
 	});
 
-	float exposure_bright = 3.3f;
-	graph.addComputePass("Luminance Generation")
-	.dependency(offscreenColorTarget, mythril::Layout::READ)
-	.dependency(brightTarget, mythril::Layout::GENERAL)
-	.dependency(luminanceTexture, mythril::Layout::GENERAL)
-	.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
-		cmd.cmdBindComputePipeline(luminanceComputePipeline);
-		// on cpu its 40 due to alignment rules, but on gpu its 36 with C style layout
-		// therefore we definitely should add paddding onto the gpu struct to match
-		struct PushConstants {
-			uint64_t colorTex;
-			uint64_t outTex;
-			uint64_t luminanceTex;
-			uint64_t sampler;
-			float exposure;
-		} push {
-			.colorTex = offscreenColorTarget.index(),
-			.outTex = brightTarget.index(),
-			.luminanceTex = luminanceTexture.index(),
-			.sampler = clampSampler.index(),
-			.exposure = exposure_bright
-		};
-		cmd.cmdPushConstants(push);
-		static constexpr uint32_t threadNum = 16;
-		cmd.cmdDispatchThreadGroup({bloom_size/threadNum, bloom_size/threadNum, 1});
-	});
-	graph.addIntermediate("generate mipmaps for luminance")
-	.generateMipmaps(luminanceTexture)
-	.finish();
-
 	mythril::Shader adaptationShader = ctx->createShader({
 		.filePath = "shaders/Adaptation.slang",
 		.debugName = "Adaptation Compute Shader"
@@ -1360,9 +1317,9 @@ int main() {
 	float adaptationSpeed = 1.5f;
 	auto st = std::chrono::steady_clock::now();
 	graph.addComputePass("adaptation")
+	.dependency(currentLuminanceTex, mythril::Layout::GENERAL)
 	.dependency(adaptedLuminanceTextures[0], mythril::Layout::GENERAL)
 	.dependency(adaptedLuminanceTextures[1], mythril::Layout::GENERAL)
-	.dependency(luminanceTexture, mythril::Layout::GENERAL)
 	.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
 		cmd.cmdBindComputePipeline(adaptationComputePipeline);
 	    const auto ct = std::chrono::steady_clock::now();
@@ -1375,7 +1332,7 @@ int main() {
 			uint64_t nextAdaptedLumTex;
 			float adaptionSpeed;
 		} push {
-			.currentSceneLumTex = luminanceTexture.index(averageLuminanceView),
+			.currentSceneLumTex = currentLuminanceTex.index(),
 			.prevAdaptedLumTex = adaptedLuminanceTextures[0].index(),
 			.nextAdaptedLumTex = adaptedLuminanceTextures[1].index(),
 			.adaptionSpeed = adaptationSpeed * dt
@@ -1412,8 +1369,8 @@ int main() {
 	.attachment({
 		.texDesc = finalColorTarget,
 		.clearValue = {0, 0, 0, 1},
-		.loadOp = mythril::LoadOperation::CLEAR,
-		.storeOp = mythril::StoreOperation::STORE
+		.loadOp = mythril::LoadOp::CLEAR,
+		.storeOp = mythril::StoreOp::STORE
 	})
 	.dependency(offscreenColorTarget, mythril::Layout::READ)
 	.dependency(offscreenColorTexs[0], mythril::Layout::READ)
@@ -1477,8 +1434,8 @@ int main() {
 	graph.addGraphicsPass("shadow_pos_debug")
 	.attachment({
 		.texDesc = finalColorTarget,
-		.loadOp = mythril::LoadOperation::LOAD,
-		.storeOp = mythril::StoreOperation::STORE
+		.loadOp = mythril::LoadOp::LOAD,
+		.storeOp = mythril::StoreOp::STORE
 	})
 	.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
 		cmd.cmdBeginRendering();
@@ -1508,11 +1465,10 @@ int main() {
 	graph.addGraphicsPass("gui")
 	.attachment({
 		.texDesc = finalColorTarget,
-		.loadOp = mythril::LoadOperation::LOAD,
-		.storeOp = mythril::StoreOperation::STORE
+		.loadOp = mythril::LoadOp::LOAD,
+		.storeOp = mythril::StoreOp::STORE
 	})
 	.dependency(shadowMap, mythril::Layout::READ)
-	.dependency(brightTarget, mythril::Layout::READ)
 	.dependency(adaptedLuminanceTextures[0], mythril::Layout::READ)
 	.dependency(&offscreenColorTexs[0], kNumColorMips, mythril::Layout::READ)
 	.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
@@ -1689,7 +1645,6 @@ int main() {
 		ImGui::Begin("Previews", nullptr, window_flags);
 		ImGui::Image(shadowMap, {200, 200});
 		ImGui::SameLine();
-		ImGui::Image(brightTarget, {200, 200});
 		ImGui::Text("Average Luminance");
 		ImGui::Image(adaptedLuminanceTextures[0], {100, 100});
 		ImGui::Text("Progressively Blurred Color Targets");
@@ -1710,7 +1665,6 @@ int main() {
 		ImGui::DragFloat("Upsample Blending", &blend, 0.001f);
 		ImGui::DragFloat("Filter Radius", &filter_radius, 0.001f, -1.f, 1.f);
 		ImGui::DragFloat("Bloom Strength", &bloom_strength, 0.01f, 0.0f, 100.f);
-		ImGui::DragFloat("Bright Exposure", &exposure_bright, 0.01f, 0.0001f, 10.f);
 		ImGui::DragFloat("Adaptation Speed", &adaptationSpeed, 0.1f, 0.1f, 10.f);
 		ImGui::DragFloat("Final Exposure", &exposure_final, 0.01f, 0.0001f, 10.f);
 

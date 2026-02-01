@@ -21,26 +21,6 @@
 #include <SDL3/SDL_vulkan.h>
 
 namespace mythril {
-	static constexpr const char* ResolveInstanceExtension_Colorspace(const VkColorSpaceKHR colorSpaceKhr) {
-		switch (colorSpaceKhr) {
-			case VK_COLOR_SPACE_ADOBERGB_LINEAR_EXT:
-			case VK_COLOR_SPACE_ADOBERGB_NONLINEAR_EXT:
-			case VK_COLOR_SPACE_BT2020_LINEAR_EXT:
-			case VK_COLOR_SPACE_BT709_LINEAR_EXT:
-			case VK_COLOR_SPACE_BT709_NONLINEAR_EXT:
-			case VK_COLOR_SPACE_DCI_P3_NONLINEAR_EXT:
-			case VK_COLOR_SPACE_DISPLAY_P3_LINEAR_EXT:
-			case VK_COLOR_SPACE_DISPLAY_P3_NONLINEAR_EXT:
-			case VK_COLOR_SPACE_DOLBYVISION_EXT:
-			case VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT:
-			case VK_COLOR_SPACE_EXTENDED_SRGB_NONLINEAR_EXT:
-			case VK_COLOR_SPACE_HDR10_HLG_EXT:
-			case VK_COLOR_SPACE_HDR10_ST2084_EXT:
-			case VK_COLOR_SPACE_PASS_THROUGH_EXT:
-				return VK_EXT_SWAPCHAIN_COLOR_SPACE_EXTENSION_NAME;
-			default: return nullptr;
-		}
-	}
 
 	struct VulkanInstanceInputs
 	{
@@ -130,11 +110,6 @@ namespace mythril {
 		uint32_t transferQueueFamilyIndex = Invalid<uint32_t>;
 	};
 
-	static void GetFamilyQueueIndices() {
-
-	}
-
-
 	static VkDevice CreateVulkanLogicalDevice(
 		vkb::PhysicalDevice& vkbPhysicalDevice,
 		std::span<const char *> user_device_extensions,
@@ -158,7 +133,7 @@ namespace mythril {
 			}
 		}
 		std::vector<const char*> enabledExtensions = {};
-		// get extensions
+		// get extensions, this will get extensions that were enabled in the last step
 		std::vector<std::string> requestedExtensions = vkbPhysicalDevice.get_extensions();
 		enabledExtensions.reserve(requestedExtensions.size());
 		for (const auto& ext: requestedExtensions) {
@@ -183,7 +158,7 @@ namespace mythril {
 
 		// the following features that are VK_TRUE are required by Mythril
 		// others can be optionally used when supported
-		constexpr VkPhysicalDeviceFeatures requiredfeatures10 = {
+		VkPhysicalDeviceFeatures requiredfeatures10 = {
 			.robustBufferAccess = VK_FALSE,
 			.multiDrawIndirect = VK_TRUE,
 			.depthBiasClamp = VK_TRUE,
@@ -467,7 +442,6 @@ missing_features.append("\n\t(" version ") " #feature);
 
 		for (auto& [familyIndex, allocatedCount] : familyNextIndex) {
 			queuePriorities.emplace_back(allocatedCount, 1.0f);
-
 			queueCreateInfos.push_back({
 				.sType            = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
 				.queueFamilyIndex = familyIndex,
@@ -476,22 +450,21 @@ missing_features.append("\n\t(" version ") " #feature);
 			});
 		}
 
-		VkDeviceCreateInfo device_ci = {
-			.sType                  = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-			.pNext                  = &features2,
-			.flags                  = 0,
-			.queueCreateInfoCount   = static_cast<uint32_t>(queueCreateInfos.size()),
-			.pQueueCreateInfos      = queueCreateInfos.data(),
-			.enabledExtensionCount  = static_cast<uint32_t>(enabledExtensions.size()),
+		const VkDeviceCreateInfo device_ci = {
+			.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+			.pNext = &features2,
+			.flags = 0,
+			.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size()),
+			.pQueueCreateInfos = queueCreateInfos.data(),
+			.enabledExtensionCount = static_cast<uint32_t>(enabledExtensions.size()),
 			.ppEnabledExtensionNames = enabledExtensions.data(),
 		};
-
 		VkDevice device = VK_NULL_HANDLE;
-		vkCreateDevice(vkbPhysicalDevice.physical_device, &device_ci, nullptr, &device);
+		vkCreateDevice(physical_device, &device_ci, nullptr, &device);
 		ASSERT_MSG(device != VK_NULL_HANDLE, "Failed to create Device (VkDevice)");
 		volkLoadDevice(device);
 
-		// retrieve actual VkQueue objects
+		// retrieve actual VkQueue objects and fill out structure
 		vkGetDeviceQueue(device, graphicsAlloc.familyIndex,  graphicsAlloc.queueIndex,  &outQueues.vkGraphicsQueue);
 		outQueues.graphicsQueueFamilyIndex = graphicsAlloc.familyIndex;
 
@@ -552,41 +525,6 @@ missing_features.append("\n\t(" version ") " #feature);
 		const VkResult allocator_result = vmaCreateAllocator(&allocatorInfo, &vma_allocator);
 		ASSERT_MSG(allocator_result == VK_SUCCESS, "Failed to create vma Allocator!");
 		return vma_allocator;
-	}
-
-	static VulkanQueueOutputs CreateVulkanQueues(const vkb::Device& vkb_device) {
-		// out
-		VulkanQueueOutputs output{};
-
-		// graphics queue (required)
-		auto graphics_queue_result = vkb_device.get_queue(vkb::QueueType::graphics);
-		ASSERT_MSG(graphics_queue_result.has_value(), "Failed to get graphics queue. Error: {}", graphics_queue_result.error().message());
-		output.vkGraphicsQueue = graphics_queue_result.value();
-		// graphics queue index
-		auto graphics_queue_index_result = vkb_device.get_queue_index(vkb::QueueType::graphics);
-		ASSERT_MSG(graphics_queue_index_result.has_value(), "Failed to get graphics queue index/family. Error: {}", graphics_queue_index_result.error().message());
-		output.graphicsQueueFamilyIndex = graphics_queue_index_result.value();
-
-		// present queue (optional)
-		if (auto queue = vkb_device.get_queue(vkb::QueueType::present); queue.has_value()) {
-			output.vkPresentQueue = queue.value();
-			if (auto index = vkb_device.get_queue_index(vkb::QueueType::present); index.has_value()) {
-				output.presentQueueFamilyIndex = index.value();
-			}
-		} else {
-			LOG_SYSTEM_NOSOURCE(LogType::Warning, "Could not retrieve a present queue.");
-		}
-
-		// compute queue (optional)
-		if (auto queue = vkb_device.get_queue(vkb::QueueType::compute); queue.has_value()) {
-			output.vkComputeQueue = queue.value();
-			if (auto index = vkb_device.get_queue_index(vkb::QueueType::compute); index.has_value()) {
-				output.computeQueueFamilyIndex = index.value();
-			}
-		} else {
-			LOG_SYSTEM_NOSOURCE(LogType::Warning, "Could not retrieve a compute queue.");
-		}
-		return output;
 	}
 
 	std::unique_ptr<CTX> CTXBuilder::build() {

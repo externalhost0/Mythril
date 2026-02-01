@@ -104,7 +104,7 @@ namespace mythril {
 		std::array<const char*, 16> sp_cstrings = {};
 		int64_t sp_count = 0;
 		for (const std::filesystem::path& path : this->_shaderSearchPaths) {
-			sp_cstrings[sp_count++] = reinterpret_cast<const char*>(path.c_str());
+			sp_cstrings[sp_count++] = path.c_str();
 		}
 
 		const slang::SessionDesc sessionDesc = {
@@ -126,6 +126,13 @@ namespace mythril {
 	static const char* ResolveDiagnosticsMessage(const Slang::ComPtr<slang::IBlob>& diagnostics_blob) {
 		return diagnostics_blob ? static_cast<const char*>(diagnostics_blob->getBufferPointer()) : "(no diagnostics available)";
 	}
+	static std::string JoinActiveSearchPathsLog(const std::vector<std::filesystem::path>& paths) {
+		std::string message;
+		for (const auto& path : paths) {
+			message += "'" + path.string() + "'" + "\n";
+		}
+		return message;
+	}
 
 	CompileResult SlangCompiler::compileSlangFile(const std::filesystem::path& filepath) {
 		MYTH_PROFILER_FUNCTION();
@@ -134,7 +141,11 @@ namespace mythril {
 		Slang::ComPtr<slang::IModule> slang_module;
 		Slang::ComPtr<slang::IBlob> diagnostics_blob;
 		slang_module = this->_slangSession->loadModule(reinterpret_cast<const char*>(filepath.c_str()), diagnostics_blob.writeRef());
-		ASSERT_MSG(slang_module, "Failed Slang module creation, this might happen for a bunch of different reasons like filepath couldnt be found or the shader is invalid, Diagnostics Below:\n{}", ResolveDiagnosticsMessage(diagnostics_blob));
+		ASSERT_MSG(slang_module,
+			"FILE: \n'{}'\nSEARCH_PATHS: \n{}ERROR:\nSlang failed to load module, this might happen for a bunch of different reasons like filepath couldnt be found or the shader is invalid.\nDiagnostics Below:\n{}",
+			filepath.string().c_str(),
+			JoinActiveSearchPathsLog(this->_shaderSearchPaths),
+			ResolveDiagnosticsMessage(diagnostics_blob));
 		diagnostics_blob.setNull();
 
 		// 2. query entry points

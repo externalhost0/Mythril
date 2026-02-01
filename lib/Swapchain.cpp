@@ -81,7 +81,10 @@ namespace mythril {
 			image._vkExtent = { _vkExtent2D.width, _vkExtent2D.height, 1},
 			image._vkFormat = _vkImageFormat;
 			snprintf(image._debugName, sizeof(image._debugName), "Swapchain Image %d", i);
+			char d[64];
+			snprintf(d, sizeof(d), "Swapchain Image %d - View", i);
 			vkutil::SetObjectDebugName(ctx._vkDevice, VK_OBJECT_TYPE_IMAGE, reinterpret_cast<uint64_t>(images[i]), image._debugName);
+			vkutil::SetObjectDebugName(ctx._vkDevice, VK_OBJECT_TYPE_IMAGE_VIEW, reinterpret_cast<uint64_t>(imageviews[i]), d);
 			this->_swapchainTextures[i] = _ctx._texturePool.create(std::move(image));
 		}
 		// SECONDARY DATA CREATION //

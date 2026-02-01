@@ -106,7 +106,9 @@ namespace mythril {
 							VK_ACCESS_2_TRANSFER_WRITE_BIT;
 
 		bool currentStateWrites = (currentState.mask.access & write_flags2) > 0;
-		if (currentStateWrites || IsAttachmentImageLayout(desiredLayout))
+		// if (currentStateWrites || IsAttachmentImageLayout(desiredLayout))
+		// 	return true;
+		if (currentStateWrites && desiredStageAccess.stage != currentState.mask.stage)
 			return true;
 
 		if (currentState.mask.stage != desiredStageAccess.stage) {
@@ -116,7 +118,6 @@ namespace mythril {
 	}
 
 	void RenderGraph::processResourceAccess(const TextureDesc& texDesc, VkImageLayout desiredLayout, CompiledPass& outPass) {
-		const TextureHandle handle = texDesc.texture.handle();
 		const AllocatedTexture& texture = texDesc.texture.view();
 		const bool isSwapchain = texture.isSwapchainImage();
 		const SubresourceRange range = {
@@ -240,6 +241,11 @@ namespace mythril {
 					resolve_texture.getDebugName(),
 					vkstring::VulkanFormatToString(resolve_texture.getFormat())
 					);
+				if (attachment_desc.storeOp == StoreOp::STORE)
+					LOG_SYSTEM_NOSOURCE(LogType::Suggestion, "Pass '{}': Attachment of texture '{}' has StoreOp::STORE and has a resolve attachment, can be replaced with StoreOp::NO_CARE.",
+					pass_desc.name,
+					allocatedTexture.getDebugName(),
+					resolve_texture.getDebugName());
 
 				// set the fields we left empty previously
 				attachment_info.resolveImageLayout = attachment_info.imageLayout;

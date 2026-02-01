@@ -7,6 +7,7 @@
 #include "../include/mythril/Objects.h"
 
 #include <functional>
+#include <optional>
 #include <volk.h>
 
 namespace mythril {
@@ -61,8 +62,8 @@ namespace mythril {
     struct AttachmentDesc {
         TextureDesc texDesc;
         ClearValue clearValue;
-        LoadOperation loadOp = LoadOperation::NO_CARE;
-        StoreOperation storeOp = StoreOperation::NO_CARE;
+        LoadOp loadOp = LoadOp::NO_CARE;
+        StoreOp storeOp = StoreOp::NO_CARE;
         std::optional<TextureDesc> resolveTexDesc;
     };
     enum class Layout : uint8_t {
@@ -76,7 +77,7 @@ namespace mythril {
     struct DependencyDesc
     {
         TextureDesc texDesc;
-        Layout desiredLayout = Layout::GENERAL;
+        Layout desiredLayout = Layout::READ;
     };
 
     // user defined information from addPass and RenderPassBuilder

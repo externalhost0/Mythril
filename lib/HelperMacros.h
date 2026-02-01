@@ -35,7 +35,7 @@
 // DO NOT PASS SIDE EFFECT FUNCTIONS
 #define ASSERT_MSG(ERROR, FORMAT, ...) do { \
     if (!static_cast<bool>(ERROR)) [[unlikely]] {                         \
-        fmt::print(stderr, "[ASSERT_MSG] | {}:{} -> {} -> Error:\n\t" FORMAT "\n", __FILE__, __LINE__, __func__ __VA_OPT__(,) __VA_ARGS__); \
+        fmt::print(stderr, "[ASSERT_MSG] | {}:{} -> {} -> MSG:\n" FORMAT "\n", __FILE__, __LINE__, __func__ __VA_OPT__(,) __VA_ARGS__); \
         std::raise(SIGABRT); \
     } \
     ASSUME_(ERROR); \
@@ -48,7 +48,7 @@
 // DO NOT PASS SIDE EFFECT FUNCTIONS
 #define ASSERT_MSG_NOSOURCE(ERROR, FORMAT, ...) do { \
     if (!static_cast<bool>(ERROR)) [[unlikely]] {                         \
-        fmt::print(stderr, "[ASSERT_MSG] | {} -> Error:\n\t" FORMAT "\n", __func__ __VA_OPT__(,) __VA_ARGS__); \
+        fmt::print(stderr, "[ASSERT_MSG] | {} -> ERROR:\n" FORMAT "\n", __func__ __VA_OPT__(,) __VA_ARGS__); \
         std::raise(SIGABRT); \
     } \
     ASSUME_(ERROR); \

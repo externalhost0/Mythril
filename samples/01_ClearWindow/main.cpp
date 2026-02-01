@@ -38,8 +38,8 @@ int main() {
 	.attachment({
 		.texDesc = colorTarget,
 		.clearValue = {1, 0, 0, 1},
-		.loadOp = mythril::LoadOperation::CLEAR,
-		.storeOp = mythril::StoreOperation::STORE
+		.loadOp = mythril::LoadOp::CLEAR,
+		.storeOp = mythril::StoreOp::STORE
 	})
 	.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
 		// do absolutely nothing, just begin and end a pass

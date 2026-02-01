@@ -88,7 +88,7 @@ const std::vector<uint32_t> cubeIndices = {
 static glm::mat4 calculateViewMatrix(const Camera &camera) {
 	return glm::lookAt(camera.position, camera.position + glm::vec3(0, 0, -1), glm::vec3(0, 1, 0));
 }
-static glm::mat4 calculateProjectionMatrix(Camera camera) {
+static glm::mat4 calculateProjectionMatrix(const Camera& camera) {
 	return glm::perspective(glm::radians(camera.fov), camera.aspectRatio, camera.nearPlane, camera.farPlane);
 }
 
@@ -481,13 +481,13 @@ int main() {
 	.attachment({
 		.texDesc = colorTarget,
 		.clearValue = {0.2f, 0.2f, 0.2f, 1.f},
-		.loadOp = mythril::LoadOperation::CLEAR,
-		.storeOp = mythril::StoreOperation::STORE
+		.loadOp = mythril::LoadOp::CLEAR,
+		.storeOp = mythril::StoreOp::STORE
 	})
 	.attachment({
 		.texDesc = depthTarget,
 		.clearValue = {1.f, 0},
-		.loadOp = mythril::LoadOperation::CLEAR
+		.loadOp = mythril::LoadOp::CLEAR
 	})
 	.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
 		cmd.cmdBeginRendering();
@@ -511,8 +511,8 @@ int main() {
 	graph.addGraphicsPass("gui")
 	.attachment({
 		.texDesc = {colorTarget},
-		.loadOp = mythril::LoadOperation::LOAD,
-		.storeOp = mythril::StoreOperation::STORE
+		.loadOp = mythril::LoadOp::LOAD,
+		.storeOp = mythril::StoreOp::STORE
 	})
 	.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
 		cmd.cmdBeginRendering();
@@ -634,14 +634,18 @@ int main() {
 			.time = time
 		};
 
-		mythril::CommandBuffer& cmd = ctx->openCommand(mythril::CommandBuffer::Type::Graphics);
 
 		// buffer updating must be done before rendering
 		// todo: make this part of the rendergraph
-		cmd.cmdUpdateBuffer(objectDataBuf, objects);
-		cmd.cmdUpdateBuffer(perFrameDataBuffer, frameData);
-		cmd.cmdUpdateBuffer(perMaterialDataBuffer, matData);
+		{
+			mythril::CommandBuffer& cmd = ctx->openCommand(mythril::CommandBuffer::Type::General);
+			cmd.cmdUpdateBuffer(objectDataBuf, objects);
+			cmd.cmdUpdateBuffer(perFrameDataBuffer, frameData);
+			cmd.cmdUpdateBuffer(perMaterialDataBuffer, matData);
+			ctx->submitCommand(cmd);
+		}
 
+		mythril::CommandBuffer& cmd = ctx->openCommand(mythril::CommandBuffer::Type::Graphics);
 		graph.execute(cmd);
 		ctx->submitCommand(cmd);
 	}

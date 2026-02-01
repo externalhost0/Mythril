@@ -14,13 +14,6 @@ namespace mythril {
 		MULTIPLY,
 		MASK // (stencil)
 	};
-	enum class DepthMode {
-		NONE,
-		LESS, // (standard)
-		GREATER,
-		EQUAL,
-		ALWAYS
-	};
 	enum class CullMode {
 		OFF,
 		BACK, // (standard)
@@ -58,22 +51,22 @@ namespace mythril {
 		MirrorClampEdge
 	};
 	enum class CompareOp : uint8_t {
-		Never,
+		NeverPass,
 		Less,
 		LessEqual,
 		Equal,
 		NotEqual,
 		Greater,
 		GreaterEqual,
-		Always
+		AlwaysPass
 	};
-	enum class LoadOperation : uint8_t {
+	enum class LoadOp : uint8_t {
 		NONE = 0,
 		NO_CARE,
 		CLEAR,
 		LOAD
 	};
-	enum class StoreOperation : uint8_t {
+	enum class StoreOp : uint8_t {
 		NONE = 0,
 		NO_CARE,
 		STORE,
@@ -99,19 +92,19 @@ namespace mythril {
 
 
 	// FIXME change how we handle multisampled images
-	constexpr VkAttachmentStoreOp toVulkan(StoreOperation op) {
+	constexpr VkAttachmentStoreOp toVulkan(StoreOp op) {
 		switch (op) {
-			case StoreOperation::NONE: return VK_ATTACHMENT_STORE_OP_NONE;
-			case StoreOperation::NO_CARE: return VK_ATTACHMENT_STORE_OP_DONT_CARE;
-			case StoreOperation::STORE: return VK_ATTACHMENT_STORE_OP_STORE;
+			case StoreOp::NONE: return VK_ATTACHMENT_STORE_OP_NONE;
+			case StoreOp::NO_CARE: return VK_ATTACHMENT_STORE_OP_DONT_CARE;
+			case StoreOp::STORE: return VK_ATTACHMENT_STORE_OP_STORE;
 		}
 	}
-	constexpr VkAttachmentLoadOp toVulkan(LoadOperation op) {
+	constexpr VkAttachmentLoadOp toVulkan(LoadOp op) {
 		switch (op) {
-			case LoadOperation::NONE: return VK_ATTACHMENT_LOAD_OP_NONE;
-			case LoadOperation::NO_CARE: return VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-			case LoadOperation::CLEAR: return VK_ATTACHMENT_LOAD_OP_CLEAR;
-			case LoadOperation::LOAD: return VK_ATTACHMENT_LOAD_OP_LOAD;
+			case LoadOp::NONE: return VK_ATTACHMENT_LOAD_OP_NONE;
+			case LoadOp::NO_CARE: return VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+			case LoadOp::CLEAR: return VK_ATTACHMENT_LOAD_OP_CLEAR;
+			case LoadOp::LOAD: return VK_ATTACHMENT_LOAD_OP_LOAD;
 		}
 	}
 	constexpr VkResolveModeFlagBits toVulkan(ResolveMode mode) {
@@ -174,13 +167,13 @@ namespace mythril {
 	}
 	constexpr VkCompareOp toVulkan(CompareOp op) {
 		switch (op) {
-			case CompareOp::Never: return VK_COMPARE_OP_NEVER;
+			case CompareOp::NeverPass: return VK_COMPARE_OP_NEVER;
 			case CompareOp::Less: return VK_COMPARE_OP_LESS;
 			case CompareOp::LessEqual: return VK_COMPARE_OP_LESS_OR_EQUAL;
 			case CompareOp::Equal: return VK_COMPARE_OP_EQUAL;
 			case CompareOp::Greater: return VK_COMPARE_OP_GREATER;
 			case CompareOp::GreaterEqual: return VK_COMPARE_OP_GREATER_OR_EQUAL;
-			case CompareOp::Always: return VK_COMPARE_OP_ALWAYS;
+			case CompareOp::AlwaysPass: return VK_COMPARE_OP_ALWAYS;
 			case CompareOp::NotEqual: return VK_COMPARE_OP_NOT_EQUAL;
 		}
 	}

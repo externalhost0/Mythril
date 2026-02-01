@@ -85,7 +85,7 @@ glm::mat4 calculateViewMatrix(const Camera &camera) {
 	return glm::lookAt(camera.position, camera.position + glm::vec3(0, 0, -1), glm::vec3(0, 1, 0));
 }
 
-glm::mat4 calculateProjectionMatrix(Camera camera) {
+glm::mat4 calculateProjectionMatrix(const Camera& camera) {
 	return glm::perspective(glm::radians(camera.fov), camera.aspectRatio, camera.nearPlane, camera.farPlane);
 }
 
@@ -188,14 +188,14 @@ int main() {
 	.attachment({
 		.texDesc = colorTarget,
 		.clearValue = {0.2f, 0.2f, 0.2f, 1.f},
-		.loadOp = mythril::LoadOperation::CLEAR,
-		.storeOp = mythril::StoreOperation::STORE,
+		.loadOp = mythril::LoadOp::CLEAR,
+		.storeOp = mythril::StoreOp::NO_CARE,
 		.resolveTexDesc = resolveColorTarget
 	})
 	.attachment({
 		.texDesc = depthTarget,
 		.clearValue = {1.f, 0},
-		.loadOp = mythril::LoadOperation::CLEAR
+		.loadOp = mythril::LoadOp::CLEAR
 	})
 	.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
 		cmd.cmdBeginRendering();
@@ -227,8 +227,8 @@ int main() {
 	graph.addGraphicsPass("post_processing")
 	.attachment({
 		.texDesc = postColorTarget,
-		.loadOp = mythril::LoadOperation::NO_CARE,
-		.storeOp = mythril::StoreOperation::STORE
+		.loadOp = mythril::LoadOp::NO_CARE,
+		.storeOp = mythril::StoreOp::STORE
 	})
 	.dependency(resolveColorTarget, mythril::Layout::READ)
 	.setExecuteCallback([&](mythril::CommandBuffer& cmd) {

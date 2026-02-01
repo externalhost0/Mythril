@@ -1153,7 +1153,7 @@ namespace mythril {
 
 	Texture CTX::createTexture(TextureSpec spec) {
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_CREATE);
-		ASSERT_MSG(spec.usage, "You must set the usage field on a TextureSpec!");
+		ASSERT_MSG(spec.usage, "You must set the usage field of '{}' TextureSpec when used for CTX::createTexture()!", spec.debugName);
 		ASSERT_MSG(!(spec.generateMipmaps && spec.initialData == nullptr), "'generateMipMaps' can only be true when 'initialData' is non-null!");
 		// resolve usage flags
 		VkImageUsageFlags usage_flags = (spec.storage == StorageType::Device) ? VK_IMAGE_USAGE_TRANSFER_DST_BIT : 0;
@@ -1221,6 +1221,9 @@ namespace mythril {
 		snprintf(obj._debugName, sizeof(obj._debugName), "%s", spec.debugName);
 		vmaSetAllocationName(_vmaAllocator, obj._vmaAllocation, obj._debugName);
 		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_IMAGE, reinterpret_cast<uint64_t>(obj._vkImage), obj.getDebugName().data());
+		char d[32];
+		snprintf(d, sizeof(d), "%s - Default View", spec.debugName);
+		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_IMAGE_VIEW, reinterpret_cast<uint64_t>(obj._vkImageView), d);
 		TextureHandle handle = _texturePool.create(std::move(obj));
 		// if we have some data we want to upload, do that
 		_awaitingCreation = true;
