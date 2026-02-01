@@ -25,22 +25,27 @@ macro(ADD_SAMPLE sample_name)
             mythril
             ${SAMPLE_LIBS}
     )
+    # add name for resolving _data directory
+    target_compile_definitions(${sample_name} PRIVATE
+            MYTH_SAMPLE_NAME="${sample_name}"
+    )
 
-    # Apply compile definitions
+    # apply compile definitions specified
     foreach(opt IN LISTS SAMPLE_OPTIONS)
         target_compile_definitions(${sample_name} PRIVATE ${opt})
     endforeach()
 
-    # Copy all sample assets to executable directory
-    # Glob to detect changes in assets
+    # copy all sample assets to executable directory
+    # glob to detect changes in assets!
     file(GLOB_RECURSE SAMPLE_ASSET_FILES "${CMAKE_CURRENT_SOURCE_DIR}/${sample_name}/*")
 
     add_custom_command(TARGET ${sample_name} POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_directory
+        COMMAND ${CMAKE_COMMAND} -E make_directory
+            "$<TARGET_FILE_DIR:${sample_name}>/${sample_name}_data"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
             "${CMAKE_CURRENT_SOURCE_DIR}/${sample_name}/"
-            "$<TARGET_FILE_DIR:${sample_name}>/"
-#            DEPENDS ${SAMPLE_ASSET_FILES}
-            COMMENT "Copying ${sample_name} assets to output directory"
+            "$<TARGET_FILE_DIR:${sample_name}>/${sample_name}_data"
+        COMMENT "Copying ${sample_name} assets to isolated runtime directory"
     )
 
     # Force rebuild for shader editing

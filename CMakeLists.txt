@@ -178,7 +178,7 @@ CPMAddPackage(
 CPMAddPackage(
         NAME vk-bootstrap
         GITHUB_REPOSITORY "charles-lunarg/vk-bootstrap"
-        GIT_TAG main
+        GIT_TAG v1.4.335
 )
 
 # ==================== SDL3 ====================

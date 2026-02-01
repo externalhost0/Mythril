@@ -561,7 +561,7 @@ static void UpdatePointLightShadowMatrices(
 
 int main() {
 	static constexpr VkFormat kOffscreenFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
-
+	const std::filesystem::path dataDir = std::filesystem::path(MYTH_SAMPLE_NAME).concat("_data/");
 	static std::vector slang_searchpaths = {
 		"../../include/",
 		"../include/"
@@ -668,7 +668,7 @@ int main() {
 	});
 
 	mythril::Shader shadowShader = ctx->createShader({
-		.filePath = "shaders/DirectionalShadow.slang",
+		.filePath = dataDir / "shaders/DirectionalShadow.slang",
 		.debugName = "Shadow Shader"
 	});
 
@@ -680,7 +680,7 @@ int main() {
 	});
 
 	mythril::Shader redDebugShader = ctx->createShader({
-		.filePath = "shaders/RedDebug.slang",
+		.filePath = dataDir / "shaders/RedDebug.slang",
 		.debugName = "Red Shader"
 	});
 	mythril::GraphicsPipeline redDebugPipeline = ctx->createGraphicsPipeline({
@@ -704,7 +704,7 @@ int main() {
 		.debugName = "Clamp Sampler"
 	});
 	mythril::Shader luminanceShader = ctx->createShader({
-		.filePath = "shaders/BrightCompute.slang",
+		.filePath = dataDir / "shaders/BrightCompute.slang",
 		.debugName = "Luminance Shader"
 	});
 	mythril::ComputePipeline luminanceComputePipeline = ctx->createComputePipeline({
@@ -713,7 +713,7 @@ int main() {
 	});
 
 	mythril::Shader fullscreenCompositeShader = ctx->createShader({
-		.filePath = "shaders/FullscreenComposite.slang",
+		.filePath = dataDir / "shaders/FullscreenComposite.slang",
 		.debugName = "Fullscreen Composite Shader"
 	});
 	mythril::GraphicsPipeline fullscreenCompositePipeline = ctx->createGraphicsPipeline({
@@ -750,11 +750,11 @@ int main() {
 
 
 	// load gltf asset
-	AssetData sponzaData = loadGLTFAsset("meshes/sponza/Sponza.gltf");
+	AssetData sponzaData = loadGLTFAsset(dataDir / "meshes/sponza/Sponza.gltf");
 	const AssetCompiled sponzaCompiled = compileGLTFAsset(*ctx, sponzaData);
 
 	// load my arrow visualizer
-	AssetData arrowData = loadGLTFAsset("meshes/arrow.glb");
+	AssetData arrowData = loadGLTFAsset(dataDir / "meshes/arrow.glb");
 	const AssetCompiled arrowCompiled = compileGLTFAsset(*ctx, arrowData);
 
 	// create an indirect buffer to draw sponza in one call for shadow passes
@@ -919,7 +919,7 @@ int main() {
 		});
 	}
 	mythril::Shader pointshadowShader = ctx->createShader({
-		.filePath = "shaders/PointShadow.slang",
+		.filePath = dataDir / "shaders/PointShadow.slang",
 		.debugName = "Point Shadow Map Shader"
 	});
 	mythril::GraphicsPipeline pointShadowGraphicsPipeline = ctx->createGraphicsPipeline({
@@ -1000,7 +1000,7 @@ int main() {
 	});
 
 	mythril::Shader standardShader = ctx->createShader({
-		.filePath = "shaders/Standard.slang",
+		.filePath = dataDir / "shaders/Standard.slang",
 		.debugName = "Standard Shader"
 	});
 	mythril::GraphicsPipeline opaquePipeline = ctx->createGraphicsPipeline({
@@ -1120,7 +1120,7 @@ int main() {
 	});
 
 	mythril::Shader particleShader = ctx->createShader({
-		.filePath = "shaders/Particles.slang",
+		.filePath = dataDir / "shaders/Particles.slang",
 		.debugName = "Ambient Particle Shader"
 	});
 	mythril::GraphicsPipeline particle_pipeline = ctx->createGraphicsPipeline({
@@ -1218,7 +1218,7 @@ int main() {
 		colorbloomdimensions = colorbloomdimensions.divide2D(2);
 	}
 	mythril::Shader downsampleComputeShader = ctx->createShader({
-		.filePath = "shaders/Downsample.slang",
+		.filePath = dataDir / "shaders/Downsample.slang",
 		.debugName = "Downsample Compute Shader"
 	});
 	mythril::ComputePipeline downsampleComputePipeline = ctx->createComputePipeline({
@@ -1267,7 +1267,7 @@ int main() {
 	.finish();
 
 	mythril::Shader upsampleComputeShader = ctx->createShader({
-		.filePath = "shaders/Upsample.slang",
+		.filePath = dataDir / "shaders/Upsample.slang",
 		.debugName = "Upsample Compute Shader"
 	});
 	mythril::ComputePipeline upsampleComputePipeline = ctx->createComputePipeline({
@@ -1306,7 +1306,7 @@ int main() {
 	});
 
 	mythril::Shader adaptationShader = ctx->createShader({
-		.filePath = "shaders/Adaptation.slang",
+		.filePath = dataDir / "shaders/Adaptation.slang",
 		.debugName = "Adaptation Compute Shader"
 	});
 	mythril::ComputePipeline adaptationComputePipeline = ctx->createComputePipeline({

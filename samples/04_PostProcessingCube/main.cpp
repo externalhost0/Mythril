@@ -90,9 +90,10 @@ glm::mat4 calculateProjectionMatrix(const Camera& camera) {
 }
 
 int main() {
+	std::filesystem::path dataDir = std::filesystem::path(MYTH_SAMPLE_NAME).concat("_data/");
 	std::vector slang_searchpaths = {
 		"../../include/",
-		"../include/"
+		"../include/",
 	};
 	auto ctx = mythril::CTXBuilder{}
 	.set_vulkan_cfg({
@@ -145,7 +146,7 @@ int main() {
 	});
 
 	mythril::Shader standardShader = ctx->createShader({
-		.filePath = "BasicRed.slang",
+		.filePath = dataDir / "BasicRed.slang",
 		.debugName = "Red Object Shader"
 	});
 	mythril::GraphicsPipeline mainPipeline = ctx->createGraphicsPipeline({
@@ -156,7 +157,7 @@ int main() {
 		.debugName = "Main Pipeline"
 	});
 	mythril::Shader postProcessingShader = ctx->createShader({
-		.filePath = "FullscreenPost.slang",
+		.filePath = dataDir / "FullscreenPost.slang",
 		.debugName = "Fullscreen Shader"
 	});
 	mythril::GraphicsPipeline postPipeline = ctx->createGraphicsPipeline({

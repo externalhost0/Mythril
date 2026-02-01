@@ -378,6 +378,7 @@ void DrawShaderInfo(const mythril::AllocatedShader& shader) {
 }
 
 int main() {
+	std::filesystem::path dataDir = std::filesystem::path(MYTH_SAMPLE_NAME).concat("_data/");
 	std::vector slang_searchpaths = {
 		"../../include/",
 		"../include/"
@@ -426,7 +427,7 @@ int main() {
 	});
 
 	mythril::Shader standardShader = ctx->createShader({
-		.filePath = "Marble.slang",
+		.filePath = dataDir / "Marble.slang",
 		.debugName = "Example Shader"
 	});
 

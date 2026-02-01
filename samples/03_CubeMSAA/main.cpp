@@ -88,7 +88,7 @@ glm::mat4 calculateProjectionMatrix(const Camera& camera) {
 }
 
 int main() {
-
+	std::filesystem::path dataDir = std::filesystem::path(MYTH_SAMPLE_NAME).concat("_data/");
 	std::vector slang_searchpaths = {
 		"../../include/",
 		"../include/"
@@ -136,7 +136,7 @@ int main() {
 	});
 
 	mythril::Shader standardShader = ctx->createShader({
-		.filePath = "BasicRed.slang",
+		.filePath = dataDir / "BasicRed.slang",
 		.debugName = "Example Shader"
 	});
 	mythril::GraphicsPipeline mainPipeline = ctx->createGraphicsPipeline({
