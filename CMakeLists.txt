@@ -11,8 +11,8 @@ option(MYTH_ENABLE_TEST_CASES "Enable Test Cases (NOT DONE YET)" OFF)
 option(MYTH_RUN_SAMPLES "Enable sample apps" ON)
 option(MYTH_ENABLE_IMGUI_STANDARD "Enable ImGui Plugin Main Branch" ON)
 option(MYTH_ENABLE_IMGUI_DOCKING "Enable ImGui Plugin Docking Branch" OFF)
-option(MYTH_ENABLE_TRACY "Enables Tracy Profiling for user & Mythril use" OFF)
-option(MYTH_ENABLE_TRACY_GPU "Enables Tracy Profiling for Mythril's internal Vulkan calls" OFF)
+#option(MYTH_ENABLE_TRACY "Enables Tracy Profiling for user & Mythril use" OFF)
+#option(MYTH_ENABLE_TRACY_GPU "Enables Tracy Profiling for Mythril's internal Vulkan calls" OFF)
 
 # ==================== C++ Standard ====================
 set(CMAKE_CXX_STANDARD 20)

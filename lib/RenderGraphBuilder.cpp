@@ -127,7 +127,7 @@ namespace mythril {
 		};
 		const vkutil::StageAccess dstMask = vkutil::GetPipelineStageAccess(desiredLayout);
 		outPass.imageBarriers.push_back({
-			.handle = texDesc.texture,
+			.handle = texDesc.texture.handle(),
 			.range = range,
 			.dstLayout = desiredLayout,
 			.dstMask = dstMask,
@@ -196,10 +196,10 @@ namespace mythril {
 				}
 				Texture::ViewKey viewKey = mutableTexture.createView({
 					.type = viewType,
+					.mipLevel = baseMip,
+					.numMipLevels = numMips,
 					.layer = baseLayer,
 					.numLayers = numLayers,
-					.mipLevel = baseMip,
-					.numMipLevels = numMips
 				});
 
 				TextureHandle viewHandle = mutableTexture.handle(viewKey);

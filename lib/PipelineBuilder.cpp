@@ -11,6 +11,8 @@
 #include <volk.h>
 #include <algorithm>
 
+#include "vkutil.h"
+
 namespace mythril {
 	// some helper functions //
 	bool isIntegarFormat(VkFormat format) {

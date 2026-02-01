@@ -21,14 +21,14 @@ namespace mythril {
 		uint16_t width = args.width, height = args.height;
 		vkb::SwapchainBuilder swapchainBuilder{_ctx._vkPhysicalDevice, _ctx._vkDevice, _ctx._vkSurfaceKHR};
 		auto swapchain_result = swapchainBuilder
-				.set_desired_format(VkSurfaceFormatKHR{
-						.format = args.format,
-						.colorSpace = args.colorSpace,
-				})
-				.set_desired_present_mode(args.presentMode) // VERY IMPORTANT, decides framerate/buffer/sync
-				.set_desired_extent(width, height)
-				.add_image_usage_flags(VK_IMAGE_USAGE_TRANSFER_DST_BIT)
-				.build();
+			.set_desired_format(VkSurfaceFormatKHR{
+				.format = args.format,
+				.colorSpace = args.colorSpace,
+			})
+			.set_desired_present_mode(args.presentMode) // VERY IMPORTANT, decides framerate/buffer/sync
+			.set_desired_extent(width, height)
+			.add_image_usage_flags(VK_IMAGE_USAGE_TRANSFER_DST_BIT)
+			.build();
 		ASSERT_MSG(swapchain_result.has_value(), "[VULKAN] {}", swapchain_result.error().message());
 
 		vkb::Swapchain& vkbswapchain = swapchain_result.value();
@@ -81,6 +81,7 @@ namespace mythril {
 			image._vkExtent = { _vkExtent2D.width, _vkExtent2D.height, 1},
 			image._vkFormat = _vkImageFormat;
 			snprintf(image._debugName, sizeof(image._debugName), "Swapchain Image %d", i);
+			vkutil::SetObjectDebugName(ctx._vkDevice, VK_OBJECT_TYPE_IMAGE, reinterpret_cast<uint64_t>(images[i]), image._debugName);
 			this->_swapchainTextures[i] = _ctx._texturePool.create(std::move(image));
 		}
 		// SECONDARY DATA CREATION //
@@ -132,8 +133,6 @@ namespace mythril {
 			_ctx._imm->waitSemaphore(acquireSemaphore);
 		}
 	}
-
-
 
 	void Swapchain::present() {
 		VkSemaphore semaphore = _ctx._imm->acquireLastSubmitSemaphore();

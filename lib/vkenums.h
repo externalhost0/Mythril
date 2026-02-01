@@ -84,6 +84,14 @@ namespace mythril {
 		MAX,
 		SAMPLE_ZERO
 	};
+	enum class ShaderStages {
+		Vertex,
+		TesselationControl,
+		TesselationEvaluation,
+		Geometry,
+		Fragment,
+		Compute,
+	};
 
 
 	// FUNCTIONS //
@@ -174,6 +182,16 @@ namespace mythril {
 			case CompareOp::GreaterEqual: return VK_COMPARE_OP_GREATER_OR_EQUAL;
 			case CompareOp::Always: return VK_COMPARE_OP_ALWAYS;
 			case CompareOp::NotEqual: return VK_COMPARE_OP_NOT_EQUAL;
+		}
+	}
+	constexpr VkShaderStageFlagBits toVulkan(ShaderStages stage) {
+		switch (stage) {
+			case ShaderStages::Vertex: return VK_SHADER_STAGE_VERTEX_BIT;
+			case ShaderStages::Fragment: return VK_SHADER_STAGE_FRAGMENT_BIT;
+			case ShaderStages::Geometry: return VK_SHADER_STAGE_GEOMETRY_BIT;
+			case ShaderStages::Compute: return VK_SHADER_STAGE_COMPUTE_BIT;
+			case ShaderStages::TesselationControl: return VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
+			case ShaderStages::TesselationEvaluation: return VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
 		}
 	}
 

@@ -45,12 +45,12 @@ namespace mythril {
 		// by default emits spirv
 		std::array entries = {
 			// capabilities
-			slang::CompilerOptionEntry{ .name = slang::CompilerOptionName::Capability,
-				.value = { .kind = slang::CompilerOptionValueKind::String, .stringValue0 = "SPV_KHR_vulkan_memory_model" }
-			},
-			slang::CompilerOptionEntry{
-				.value = { .kind = slang::CompilerOptionValueKind::String, .stringValue0 = "spvDerivativeControl" }
-			},
+			// slang::CompilerOptionEntry{ .name = slang::CompilerOptionName::Capability,
+			// 	.value = { .kind = slang::CompilerOptionValueKind::String, .stringValue0 = "SPV_KHR_vulkan_memory_model" }
+			// },
+			// slang::CompilerOptionEntry{
+			// 	.value = { .kind = slang::CompilerOptionValueKind::String, .stringValue0 = "spvDerivativeControl" }
+			// },
 			// slang::CompilerOptionEntry{ .name = slang::CompilerOptionName::Capability,
 			// 	.value = { .kind = slang::CompilerOptionValueKind::String, .stringValue0 = "SPV_KHR_compute_shader_derivatives" }
 			// },

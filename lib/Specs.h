@@ -154,10 +154,10 @@ namespace mythril {
 
 	struct TextureViewSpec {
 		VkImageViewType type = VK_IMAGE_VIEW_TYPE_MAX_ENUM;
-		uint32_t layer = 0;
-		uint32_t numLayers = 1;
 		uint32_t mipLevel = 0;
 		uint32_t numMipLevels = 1;
+		uint32_t layer = 0;
+		uint32_t numLayers = 1;
 		ComponentMapping components = {};
 		const char* debugName = "Unnamed Texture View";
 	};

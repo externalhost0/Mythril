@@ -260,6 +260,16 @@ namespace mythril::vkutil {
 		VK_CHECK(vkCreateSemaphore(device, &semaphore_ci, nullptr, &semaphore));
 		return semaphore;
 	}
+    VkResult SetObjectDebugName(VkDevice device, VkObjectType objectType, uint64_t handle, const char* name) {
+		const VkDebugUtilsObjectNameInfoEXT ni = {
+			.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT,
+			.pNext = nullptr,
+			.objectType = objectType,
+			.objectHandle = handle,
+			.pObjectName = name
+		};
+		return vkSetDebugUtilsObjectNameEXT(device, &ni);
+	}
 
 
 }

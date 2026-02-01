@@ -87,9 +87,9 @@
 
 #if defined(MYTH_ENABLED_TRACY_GPU)
 	#include <tracy/TracyVulkan.hpp>
-	#define MYTH_PROFILER_GPU_ZONE(name, ctx, cmdBuffer, color) TracyVkZoneC(ctx->pimpl_->tracyVkCtx_, cmdBuffer, name, color);
+	#define MYTH_PROFILER_GPU_ZONE(name, cmdBuffer, color) TracyVkZoneC(this->_ctx->_tracyPlugin.getTracyVkCtx(), cmdBuffer, name, color);
 #else
-	#define MYTH_PROFILER_GPU_ZONE(name, ctx, cmdBuffer, color)
+	#define MYTH_PROFILER_GPU_ZONE(name, cmdBuffer, color)
 #endif // MYTH_ENABLED_TRACY_GPU
 
 
@@ -190,7 +190,6 @@ namespace mythril {
 
 		Buffer createBuffer(BufferSpec spec);
 		Texture createTexture(TextureSpec spec);
-		TextureHandle createTextureView(TextureHandle handle, TextureViewSpec spec);
 		void resizeTexture(TextureHandle handle, Dimensions newDimensions);
 		Sampler createSampler(SamplerSpec spec);
 		GraphicsPipeline createGraphicsPipeline(const GraphicsPipelineSpec &spec);
@@ -199,10 +198,6 @@ namespace mythril {
 
 		VkDeviceAddress gpuAddress(BufferHandle handle, size_t offset = 0);
 
-		// wrappers around VulkanObjects
-		// advanced functions that user will rarely need to call
-		void transitionLayout(TextureHandle handle, VkImageLayout newLayout, VkImageSubresourceRange range);
-		void generateMipmaps(TextureHandle handle);
 		// for buffers
 		void upload(BufferHandle handle, const void* data, size_t size, size_t offset = 0);
 		void download(BufferHandle handle, void* data, size_t size, size_t offset);
@@ -246,6 +241,12 @@ namespace mythril {
 		VkPhysicalDeviceVulkan12Properties getPhysicalDeviceProperties12() const { return _propertiesVulkan.props12; }
 		VkPhysicalDeviceVulkan13Properties getPhysicalDeviceProperties13() const { return _propertiesVulkan.props13; }
 	private:
+		// wrappers around VulkanObjects
+		// advanced functions that user will rarely need to call
+		void transitionLayout(TextureHandle handle, VkImageLayout newLayout, VkImageSubresourceRange range);
+		void generateMipmaps(TextureHandle handle);
+		TextureHandle createTextureViewImpl(TextureHandle handle, TextureViewSpec spec);
+
 		DescriptorSetWriter openDescriptorUpdate(GraphicsPipelineHandle handle);
 		DescriptorSetWriter openDescriptorUpdate(ComputePipelineHandle handle);
 		DescriptorSetWriter openUpdateImpl(PipelineCoreData* common, std::string_view debugName);
@@ -314,8 +315,7 @@ namespace mythril {
 		// vulkan properties, features, and extensions we query
 		VulkanFeatures _featuresVulkan;
 		VulkanProperties _propertiesVulkan;
-		std::vector<std::string> _enabledInstanceExtensionNames;
-		std::unordered_set<std::string> _enabledDeviceExtensionNames;
+		std::unordered_set<std::string> _enabledExtensionNames; // includes both instance and device extensions
 
 		// vulkan queues
 		VkQueue _vkGraphicsQueue = VK_NULL_HANDLE;
@@ -377,6 +377,7 @@ namespace mythril {
 		friend class CTXBuilder;
 		friend class AllocatedBuffer;
 		friend class AllocatedTexture;
+		friend class Texture;
 		// plugins are usually friends
 		friend class ImGuiPlugin;
 		friend class TracyPlugin;

@@ -49,7 +49,7 @@ namespace mythril {
 		return it->second;
 	}
 
-	void Texture::resize(const Dimensions newDimensions) {
+	void Texture::resize(const Dimensions& newDimensions) {
 		_pCtx->resizeTexture(_handle, newDimensions);
 	}
 
@@ -79,14 +79,13 @@ namespace mythril {
 			baseMip,
 			numMips,
 			baseLayer,
-			numLayers
-			);
-		const TextureHandle newView = _pCtx->createTextureView(_handle, {
+			numLayers);
+		const TextureHandle newView = _pCtx->createTextureViewImpl(_handle, {
 			.type = viewType,
-			.layer = baseLayer,
-			.numLayers = numLayers,
 			.mipLevel = baseMip,
 			.numMipLevels = numMips,
+			.layer = baseLayer,
+			.numLayers = numLayers,
 			.debugName = data
 		});
 		_additionalViews.emplace(key, newView);
@@ -103,6 +102,7 @@ namespace mythril {
     }
 	template<typename InternalHandle>
 	void ObjectHolder<InternalHandle>::reset() {
+		ASSERT(_pCtx);
     	_pCtx->destroy(_handle);
     	_pCtx = nullptr;
     	_handle = InternalHandle{};
@@ -116,7 +116,6 @@ namespace mythril {
 	auto ObjectHolder<InternalHandle>::operator->() const -> const AllocatedType* {
 		return &_pCtx->view(_handle);
 	}
-
 	template<typename InternalHandle>
 	auto ObjectHolder<InternalHandle>::access() -> AllocatedType& {
 		return _pCtx->access(_handle);

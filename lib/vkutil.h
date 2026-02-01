@@ -12,6 +12,7 @@ namespace mythril::vkutil {
         VkAccessFlags2 access;
     };
 
+    VkResult SetObjectDebugName(VkDevice device, VkObjectType objectType, uint64_t handle, const char* name);
     uint32_t GetTextureBytesPerPlane(uint32_t width, uint32_t height, VkFormat format, uint32_t plane);
     uint32_t GetTextureBytesPerLayer(uint32_t width, uint32_t height, VkFormat format, uint32_t level);
     uint32_t GetBytesPerPixel(VkFormat format);

@@ -65,9 +65,7 @@ namespace mythril {
 			return *this;
 		}
 	public:
-		operator InternalHandle() const { return _handle; }
 		InternalHandle handle() const { return _handle; }
-
 
 		AllocatedType* operator->();
 		const AllocatedType* operator->() const;
@@ -131,7 +129,7 @@ namespace mythril {
 		ViewKey getView(uint32_t baseMip, uint32_t baseLayer) {
 			return packViewKey(baseMip, 1, baseLayer, 1);
 		}
-		void resize(Dimensions newDimensions);
+		void resize(const Dimensions& newDimensions);
 	private:
 		static constexpr uint64_t packViewKey(uint32_t baseMip, uint32_t numMips, uint32_t baseLayer, uint32_t numLayers) {
 			return (static_cast<uint64_t>(baseMip & 0xFFFF) << 48) |

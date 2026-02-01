@@ -15,24 +15,6 @@
 
 namespace mythril {
 
-	enum class ShaderStages {
-		Vertex,
-		TesselationControl,
-		TesselationEvaluation,
-		Geometry,
-		Fragment,
-		Compute,
-	};
-	constexpr VkShaderStageFlagBits toVulkan(ShaderStages stage) {
-		switch (stage) {
-			case ShaderStages::Vertex: return VK_SHADER_STAGE_VERTEX_BIT;
-			case ShaderStages::Fragment: return VK_SHADER_STAGE_FRAGMENT_BIT;
-			case ShaderStages::Geometry: return VK_SHADER_STAGE_GEOMETRY_BIT;
-			case ShaderStages::Compute: return VK_SHADER_STAGE_COMPUTE_BIT;
-			case ShaderStages::TesselationControl: return VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
-			case ShaderStages::TesselationEvaluation: return VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
-		}
-	}
 
 	struct ShaderStage {
 		ShaderHandle handle{};

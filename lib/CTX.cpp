@@ -122,8 +122,8 @@ namespace mythril {
 		updater.currentPipelineCommon = nullptr;
 	}
 
-	bool CTX::isExtensionEnabled(std::string_view extension_name) const {
-		return _enabledDeviceExtensionNames.contains(std::string(extension_name));
+	bool CTX::isExtensionEnabled(const std::string_view extension_name) const {
+		return _enabledExtensionNames.contains(std::string(extension_name));
 	}
 	void CTX::construct() {
 		ASSERT(this->_vkInstance != VK_NULL_HANDLE);
@@ -540,6 +540,7 @@ namespace mythril {
 				.pBindings = bindings,
 		};
 		VK_CHECK(vkCreateDescriptorSetLayout(_vkDevice, &dsl_ci, nullptr, &_vkBindlessDSL));
+		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT, reinterpret_cast<uint64_t>(_vkBindlessDSL), "Mythril's Bindless Descriptor SetLayout");
 
 		const VkDescriptorPoolSize poolSizes[BindlessSpaceIndex::kNumOfBinds]{
 			VkDescriptorPoolSize(VK_DESCRIPTOR_TYPE_SAMPLER, newMaxSamplerCount),
@@ -559,6 +560,7 @@ namespace mythril {
 				.pPoolSizes = poolSizes,
 		};
 		VK_CHECK(vkCreateDescriptorPool(_vkDevice, &dp_ci, nullptr, &_vkBindlessDPool));
+		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_DESCRIPTOR_POOL, reinterpret_cast<uint64_t>(_vkBindlessDPool), "Mythril's Bindless Descriptor Pool");
 		const VkDescriptorSetAllocateInfo ds_ai = {
 				.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
 				.descriptorPool = _vkBindlessDPool,
@@ -566,6 +568,7 @@ namespace mythril {
 				.pSetLayouts = &_vkBindlessDSL,
 		};
 		VK_CHECK(vkAllocateDescriptorSets(_vkDevice, &ds_ai, &_vkBindlessDSet));
+		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_DESCRIPTOR_SET, reinterpret_cast<uint64_t>(_vkBindlessDSet), "Mythril's Bindless Descriptor Set");
 		_awaitingNewImmutableSamplers = false;
 	}
 
@@ -828,7 +831,6 @@ namespace mythril {
 
 		VkPipeline vk_pipeline = VK_NULL_HANDLE;
 		VK_CHECK(vkCreateComputePipelines(_vkDevice, nullptr, 1, &pipeline_ci, nullptr, &vk_pipeline));
-		ASSERT(vk_pipeline);
 		return vk_pipeline;
 	}
 
@@ -843,6 +845,7 @@ namespace mythril {
 		PipelineCoreData common = this->buildPipelineCommonDataExceptVkPipelineImpl(shader->_pipelineSignature);
 		pipeline._shared.core = common;
 		pipeline._shared.core._vkPipeline = this->buildComputePipelineImpl(common._vkPipelineLayout, spec);
+		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_PIPELINE, reinterpret_cast<uint64_t>(pipeline._shared.core._vkPipeline), pipeline.getDebugName().data());
 		// good to go, maybe later you could return it
 	}
 
@@ -940,6 +943,7 @@ namespace mythril {
 		PipelineCoreData common = buildPipelineCommonDataExceptVkPipelineImpl(merged_pl_signature);
 		pipeline._shared.core = common;
 		pipeline._shared.core._vkPipeline = builder.build(_vkDevice, common._vkPipelineLayout);
+		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_PIPELINE, reinterpret_cast<uint64_t>(pipeline._shared.core._vkPipeline), pipeline.getDebugName().data());
 		// good to go, maybe later you could return it
 	}
 
@@ -966,11 +970,13 @@ namespace mythril {
 				.compareOp = spec.depthCompareEnabled ? toVulkan(spec.depthCompareOp) : VK_COMPARE_OP_ALWAYS,
 
 				.minLod = static_cast<float>(spec.mipLodMin),
-				.maxLod = (spec.mipMap == mythril::SamplerMipMap::Disabled) ? static_cast<float>(spec.mipLodMin) : static_cast<float>(spec.mipLodMax),
+				.maxLod = (spec.mipMap == SamplerMipMap::Disabled) ? static_cast<float>(spec.mipLodMin) : static_cast<float>(spec.mipLodMax),
 
 				.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK,
 				.unnormalizedCoordinates = VK_FALSE,
 		};
+		auto a = this->getPhysicalDeviceProperties10();
+
 		if (spec.maxAnisotropic > 1) {
 			const float maxSamplerAnisotropy = this->getPhysicalDeviceProperties10().limits.maxSamplerAnisotropy;
 			const bool isAnisotropicFilteringSupported = maxSamplerAnisotropy > 1;
@@ -988,6 +994,7 @@ namespace mythril {
 		AllocatedSampler obj = {};
 		vkCreateSampler(_vkDevice, &info, nullptr, &obj._vkSampler);
 		snprintf(obj._debugName, sizeof(obj._debugName), "%s", spec.debugName);
+		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_SAMPLER, reinterpret_cast<uint64_t>(obj._vkSampler), obj.getDebugName().data());
 		SamplerHandle handle = _samplerPool.create(std::move(obj));
 		_awaitingCreation = true;
 		return {this, handle};
@@ -1011,6 +1018,7 @@ namespace mythril {
 		AllocatedBuffer obj = this->createBufferImpl(spec.size, usage_flags, mem_flags);
 		snprintf(obj._debugName, sizeof(obj._debugName), "%s", spec.debugName);
 		vmaSetAllocationName(_vmaAllocator, obj._vmaAllocation, obj._debugName);
+		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_BUFFER, reinterpret_cast<uint64_t>(obj._vkBuffer), obj.getDebugName().data());
 		BufferHandle handle = _bufferPool.create(std::move(obj));
 		if (spec.initialData) {
 			upload(handle, spec.initialData, spec.size);
@@ -1021,10 +1029,10 @@ namespace mythril {
 	AllocatedBuffer CTX::createBufferImpl(VkDeviceSize bufferSize, VkBufferUsageFlags usageFlags, VkMemoryPropertyFlags memFlags) {
 		ASSERT_MSG(bufferSize > 0, "Buffer size needs to be greater than 0!");
 
-		AllocatedBuffer buf = {};
-		buf._bufferSize = bufferSize;
-		buf._vkUsageFlags = usageFlags;
-		buf._vkMemoryPropertyFlags = memFlags;
+		AllocatedBuffer obj = {};
+		obj._bufferSize = bufferSize;
+		obj._vkUsageFlags = usageFlags;
+		obj._vkMemoryPropertyFlags = memFlags;
 
 		const VkBufferCreateInfo buffer_ci = {
 				.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
@@ -1047,36 +1055,36 @@ namespace mythril {
 		}
 		if (memFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
 			// Check if coherent buffer is available.
-			VK_CHECK(vkCreateBuffer(_vkDevice, &buffer_ci, nullptr, &buf._vkBuffer));
+			VK_CHECK(vkCreateBuffer(_vkDevice, &buffer_ci, nullptr, &obj._vkBuffer));
 			VkMemoryRequirements requirements = {};
-			vkGetBufferMemoryRequirements(_vkDevice, buf._vkBuffer, &requirements);
-			vkDestroyBuffer(_vkDevice, buf._vkBuffer, nullptr);
-			buf._vkBuffer = VK_NULL_HANDLE;
+			vkGetBufferMemoryRequirements(_vkDevice, obj._vkBuffer, &requirements);
+			vkDestroyBuffer(_vkDevice, obj._vkBuffer, nullptr);
+			obj._vkBuffer = VK_NULL_HANDLE;
 
 			if (requirements.memoryTypeBits & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) {
 				vmaAllocInfo.requiredFlags |= VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-				buf._isCoherentMemory = true;
+				obj._isCoherentMemory = true;
 			}
 		}
 		vmaAllocInfo.usage = VMA_MEMORY_USAGE_AUTO;
-		vmaCreateBufferWithAlignment(_vmaAllocator, &buffer_ci, &vmaAllocInfo, 16, &buf._vkBuffer, &buf._vmaAllocation, nullptr);
+		vmaCreateBufferWithAlignment(_vmaAllocator, &buffer_ci, &vmaAllocInfo, 16, &obj._vkBuffer, &obj._vmaAllocation, nullptr);
 		// handle memory-mapped buffers
 		if (memFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
-			vmaMapMemory(_vmaAllocator, buf._vmaAllocation, &buf._mappedPtr);
+			vmaMapMemory(_vmaAllocator, obj._vmaAllocation, &obj._mappedPtr);
 		}
 
-		ASSERT_MSG(buf._vkBuffer != VK_NULL_HANDLE, "VkBuffer is VK_NULL_HANDLE after creation!");
+		ASSERT_MSG(obj._vkBuffer != VK_NULL_HANDLE, "VkBuffer is VK_NULL_HANDLE after creation!");
 
 		// shader access
 		if (usageFlags & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) {
 			const VkBufferDeviceAddressInfo buffer_device_ai = {
 					.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
-					.buffer = buf._vkBuffer,
+					.buffer = obj._vkBuffer,
 			};
-			buf._vkDeviceAddress = vkGetBufferDeviceAddress(_vkDevice, &buffer_device_ai);
-			ASSERT(buf._vkDeviceAddress);
+			obj._vkDeviceAddress = vkGetBufferDeviceAddress(_vkDevice, &buffer_device_ai);
+			ASSERT(obj._vkDeviceAddress);
 		}
-		return buf;
+		return obj;
 	}
 
 	void CTX::resizeTexture(TextureHandle handle, Dimensions newDimensions) {
@@ -1112,7 +1120,7 @@ namespace mythril {
 			createFlags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
 		}
 
-		VkExtent3D extent3D = { newDimensions.width, newDimensions.height, newDimensions.depth };
+		const VkExtent3D extent3D = { newDimensions.width, newDimensions.height, newDimensions.depth };
 
 		AllocatedTexture newImage = this->createTextureImpl(
 				image->_vkUsageFlags,
@@ -1128,6 +1136,7 @@ namespace mythril {
 				createFlags
 				);
 		vmaSetAllocationName(_vmaAllocator, newImage._vmaAllocation, newImage._debugName);
+		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_BUFFER, reinterpret_cast<uint64_t>(newImage._vkImage), image->getDebugName().data());
 
 		// update extent!
 		image->_vkExtent = extent3D;
@@ -1211,6 +1220,7 @@ namespace mythril {
 		obj._vkImageViewType = _imageviewtype;
 		snprintf(obj._debugName, sizeof(obj._debugName), "%s", spec.debugName);
 		vmaSetAllocationName(_vmaAllocator, obj._vmaAllocation, obj._debugName);
+		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_IMAGE, reinterpret_cast<uint64_t>(obj._vkImage), obj.getDebugName().data());
 		TextureHandle handle = _texturePool.create(std::move(obj));
 		// if we have some data we want to upload, do that
 		_awaitingCreation = true;
@@ -1232,7 +1242,7 @@ namespace mythril {
 	}
 	// todo: review this, as it seems alot of the data can simply be read straight from the copy instead of being resolved again
 	// https://github.com/corporateshark/lightweightvk/blob/master/lvk/vulkan/VulkanClasses.cpp#L4351
-	TextureHandle CTX::createTextureView(TextureHandle handle, TextureViewSpec spec) {
+	TextureHandle CTX::createTextureViewImpl(TextureHandle handle, TextureViewSpec spec) {
 		if (!handle.valid()) {
 			LOG_SYSTEM(LogType::Warning, "Texture handle is empty!");
 			return {};
@@ -1279,6 +1289,7 @@ namespace mythril {
 		}
 
 		snprintf(copied_obj._debugName, sizeof(copied_obj._debugName), "%s", spec.debugName);
+		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_IMAGE_VIEW, reinterpret_cast<uint64_t>(copied_obj._vkImageView), copied_obj.getDebugName().data());
 		TextureHandle new_handle = this->_texturePool.create(std::move(copied_obj));
 		this->_awaitingCreation = true;
 		return {new_handle};
@@ -1443,6 +1454,7 @@ namespace mythril {
 		VkShaderModule shaderModule = VK_NULL_HANDLE;
 		// after vkCreateShaderModule we no longer need CompileResult btw
 		VK_CHECK(vkCreateShaderModule(_vkDevice, &create_info, nullptr, &shaderModule));
+		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_SHADER_MODULE, reinterpret_cast<uint64_t>(shaderModule), obj.getDebugName().data());
 		obj.vkShaderModule = shaderModule;
 
 		ShaderHandle handle = _shaderPool.create(std::move(obj));

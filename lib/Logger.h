@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <iostream>
 #include <fmt/printf.h>
 #include <fmt/color.h>
 #include <fmt/format.h>
@@ -23,18 +24,28 @@ namespace mythril {
 			"Fatal Error",
 			"Suggestion"
 	};
-	constexpr fmt::color level_colors[] = {
-			fmt::color::antique_white,
-			fmt::color::gold,
-			fmt::color::red,
-			fmt::color::magenta,
-			fmt::color::cadet_blue
+	constexpr uint32_t level_colors[] = {
+			0xebeae4,
+			0xfadc39,
+			(uint32_t)fmt::color::orange_red,
+			0xcf80ff,
+			(uint32_t)fmt::color::cadet_blue
+	};
+	inline FILE* level_channels[] = {
+		stdout,
+		stdout,
+		stderr,
+		stderr,
+		stdout,
 	};
 	constexpr const char* GetLogLevelAsString(LogType level) {
 		return level_strings[(int)level];
 	}
-	constexpr fmt::color GetLogLevelAsColor(LogType level) {
+	constexpr uint32_t GetLogLevelAsColor(LogType level) {
 		return level_colors[(int)level];
+	}
+	constexpr FILE* GetLogLevelAsFile(LogType level) {
+		return level_channels[(int)level];
 	}
 
 // way to get namespaces and class prefixes without other stuff
@@ -63,26 +74,22 @@ namespace mythril {
 #endif
 
 
+// less commonly placed, used more for user
 #ifdef DEBUG
-#define LOG_DEBUG(message, ...) fmt::print(fg(fmt::color::medium_spring_green), "[DEBUG] Source: {} | {}\n", EXPANDED_FUNCTION, fmt::format(message __VA_OPT__(, __VA_ARGS__)))
+#define LOG_CUSTOM(file, color, message, ...) fmt::print(file, fg(color), "{}\n", fmt::format(message __VA_OPT__(, __VA_ARGS__)))
 #else
-#define LOG_DEBUG(message, ...) ((void)0)
+#define LOG_CUSTOM(file, color, message, ...) ((void)0)
 #endif
 
+// commonly placed logging
 #ifdef DEBUG
-#define LOG_CUSTOM(message, ...) fmt::print(fg(fmt::color::orange), "[CUSTOM] Source: {} | {}\n", EXPANDED_FUNCTION, fmt::format(message __VA_OPT__(, __VA_ARGS__)))
-#else
-#define LOG_CUSTOM(message, ...) ((void)0)
-#endif
-
-#ifdef DEBUG
-#define LOG_SYSTEM(level, message, ...) fmt::print(fg(GetLogLevelAsColor(level)), "[{}] Source: {} | {}\n", GetLogLevelAsString(level), EXPANDED_FUNCTION, fmt::format(message __VA_OPT__(, __VA_ARGS__)))
+#define LOG_SYSTEM(level, message, ...) fmt::print(GetLogLevelAsFile(level), fg((fmt::color)GetLogLevelAsColor(level)), "[{}] Source: {} | {}\n", GetLogLevelAsString(level), EXPANDED_FUNCTION, fmt::format(message __VA_OPT__(, __VA_ARGS__)))
 #else
 #define LOG_SYSTEM(level, message, ...) (void(0))
 #endif
 
 #ifdef DEBUG
-#define LOG_SYSTEM_NOSOURCE(level, message, ...) fmt::print(fg(GetLogLevelAsColor(level)), "[{}] {}\n", GetLogLevelAsString(level), fmt::format(message __VA_OPT__(, __VA_ARGS__)))
+#define LOG_SYSTEM_NOSOURCE(level, message, ...) fmt::print(GetLogLevelAsFile(level), fg((fmt::color)GetLogLevelAsColor(level)), "[{}] {}\n", GetLogLevelAsString(level), fmt::format(message __VA_OPT__(, __VA_ARGS__)))
 #else
 #define LOG_SYSTEM_NOSOURCE(level, message, ...) (void(0))
 #endif

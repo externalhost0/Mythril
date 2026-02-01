@@ -572,6 +572,7 @@ int main() {
 		.engine_name = "Cool Engine Name",
 		.app_version = {0, 0, 1},
 		.engine_version = {0, 0, 1},
+		.enableValidation = true,
 	})
 	.set_window_spec({
 		.title = "Cool Window Name",
@@ -585,7 +586,7 @@ int main() {
 	})
 	.with_default_swapchain()
 	.with_ImGui({
-		.format = kOffscreenFormat
+		.format = kOffscreenFormat,
 	})
 	.build();
 
@@ -1355,6 +1356,7 @@ int main() {
 		.shader = adaptationShader.handle(),
 		.debugName = "Adaptation Compute Pipeline"
 	});
+
 	float adaptationSpeed = 1.5f;
 	auto st = std::chrono::steady_clock::now();
 	graph.addComputePass("adaptation")
@@ -1503,7 +1505,6 @@ int main() {
 		cmd.cmdEndRendering();
 	});
 
-
 	graph.addGraphicsPass("gui")
 	.attachment({
 		.texDesc = finalColorTarget,
@@ -1514,7 +1515,6 @@ int main() {
 	.dependency(brightTarget, mythril::Layout::READ)
 	.dependency(adaptedLuminanceTextures[0], mythril::Layout::READ)
 	.dependency(&offscreenColorTexs[0], kNumColorMips, mythril::Layout::READ)
-	.dependency(pointLightShadowTex[0], mythril::Layout::READ)
 	.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
 		cmd.cmdBeginRendering();
 		cmd.cmdDrawImGui();
@@ -1816,4 +1816,3 @@ int main() {
 	}
 	return 0;
 }
-

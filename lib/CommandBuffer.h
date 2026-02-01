@@ -172,7 +172,7 @@ namespace mythril {
 
 		SubmitHandle _lastSubmitHandle = {};
 		Type _cmdType = Type::General;
-		uint32_t _viewMask;
+		uint32_t _viewMask = 0;
 
 		bool _isDryRun = true; // for dummy CommandBuffer
 

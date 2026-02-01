@@ -23,6 +23,9 @@ namespace mythril {
 		bool isPreRelease() const {
 			return major > 0;
 		}
+		uint32_t getVKVersion() const {
+			return VK_MAKE_VERSION(major, minor, patch);
+		}
 	};
 	// there are other options we could place here, however CTXBuilder fields should be one time not reloadable
 	// so swapchain options shouldnt be here as they can be reloaded during runtime easily
@@ -34,11 +37,12 @@ namespace mythril {
 		Version engine_version = {0, 0, 1};
 
 		bool enableValidation = true;
-		bool enableHeadless = false;
-		std::span<const char*> instanceExtensions = {};
-		std::span<const char*> deviceExtensions   = {};
+		// implement this later
+		// bool enableHeadless = false;
+		std::vector<const char*> instanceExtensions = {};
+		std::vector<const char*> deviceExtensions   = {};
+		void* deviceExtensionFeatureChain = {};
 	};
-	//
 	struct SlangCfg
 	{
 		SlangMatrixLayoutMode matrixLayoutMode = SLANG_MATRIX_LAYOUT_COLUMN_MAJOR;
