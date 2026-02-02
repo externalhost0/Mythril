@@ -53,23 +53,47 @@ v2f vs_main(VSInput input) {
         particle.position +
         (camRight * vertex.pos.x + camUp * vertex.pos.y) * particle.size;
 
-    output.ClipPos = mul(frame.camera.proj, mul(frame.camera.view, float4(worldPos, 1)));
-
+    output.ClipPos = mul(frame.camera.projView, float4(worldPos, 1));
     output.WorldPosition = worldPos;
-
     output.UV = vertex.uv;
-
     // my needs
     output.color = particle.color;
-
-
     return output;
 } 
 
+// [shader("fragment")]
+// FSOutput fs_main(v2f input) {
+//     FSOutput output;
+
+//     output.FragColor = float4(input.color * push.brightness, 0.25f);
+//     return output;
+// }
+
+#define kNumLights 4
 [shader("fragment")]
 FSOutput fs_main(v2f input) {
     FSOutput output;
 
-    output.FragColor = float4(input.color * push.brightness, 0.25f);
+    // base particle color
+    float3 particleColor = input.color * 0.75;
+    float lightBrightness = 0.0;
+    [unroll(kNumLights)]
+    for (int i = 0; i < kNumLights; ++i) {
+       float3 lightPos = frame.lighting.pointLights[i].position;
+        float lightRange = frame.lighting.pointLights[i].range;
+        float lightIntensity = frame.lighting.pointLights[i].intensity;
+        float3 lightColor = frame.lighting.pointLights[i].color;
+        float3 lightDirection = lightPos - input.WorldPosition;
+        float distance = length(lightDirection);
+        float attenuation = clamp(1.0 - (distance * distance) / (lightRange * lightRange), 0.0, 1.0);
+        float3 radiance = lightColor * attenuation * (lightIntensity / distance);
+        float contribution = length(radiance); 
+        lightBrightness += contribution;
+        particleColor += radiance * 0.5; 
+    }
+
+    float3 litColor = particleColor * (1.0 + lightBrightness);
+
+    output.FragColor = float4(litColor, 0.25f);
     return output;
 }

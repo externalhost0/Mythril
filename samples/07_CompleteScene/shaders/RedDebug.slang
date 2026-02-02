@@ -31,7 +31,7 @@ v2f vs_main(VSInput input) {
     Vertex v = push.vba[input.VertexID];
 
     float3 worldpos = mul(push.model, float4(v.position, 1)).xyz;
-    output.ClipPos = mul(mul(frame.camera.proj, frame.camera.view), float4(worldpos, 1));
+    output.ClipPos = mul(frame.camera.projView, float4(worldpos, 1));
 
     return output;
 }

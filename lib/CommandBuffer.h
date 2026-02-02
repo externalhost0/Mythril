@@ -127,10 +127,6 @@ namespace mythril {
 		void cmdCopyImage(TextureHandle source, TextureHandle destination);
 		void cmdBlitImage(TextureHandle source, TextureHandle destination);
 		void cmdCopyImageToBuffer(TextureHandle source, BufferHandle destination, const VkBufferImageCopy& region);
-
-		void cmdClearColorImage(TextureHandle texture, const ClearColor& value);
-		void cmdClearDepthStencilImage(TextureHandle texture, const ClearDepthStencil& value);
-
 	private:
 		void cmdBlitImageToSwapchain(TextureHandle source);
 		void cmdCopyImageToSwapchain(TextureHandle source);

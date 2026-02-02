@@ -8,8 +8,6 @@
 #include "SDL3/SDL.h"
 
 int main() {
-	std::filesystem::path dataDir = std::filesystem::path(MYTH_SAMPLE_NAME).concat("_data/");
-
 	auto ctx = mythril::CTXBuilder{}
 	.set_vulkan_cfg({
 		.app_name = "Cool App Name",
@@ -38,7 +36,7 @@ int main() {
 	mythril::RenderGraph graph;
 	graph.addGraphicsPass("main")
 	.attachment({
-		.texDesc = colorTarget,
+		.texDesc = ctx->getBackBufferTexture(),
 		.clearValue = {1, 0, 0, 1},
 		.loadOp = mythril::LoadOp::CLEAR,
 		.storeOp = mythril::StoreOp::STORE
@@ -48,9 +46,9 @@ int main() {
 		cmd.cmdBeginRendering();
 		cmd.cmdEndRendering();
 	});
-	graph.addIntermediate("present")
-	.blit(colorTarget, ctx->getBackBufferTexture())
-	.finish();
+	// graph.addIntermediate("present")
+	// .blit(colorTarget, ctx->getBackBufferTexture())
+	// .finish();
 
 	graph.compile(*ctx);
 

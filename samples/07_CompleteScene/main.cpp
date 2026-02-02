@@ -561,11 +561,12 @@ static void UpdatePointLightShadowMatrices(
 
 int main() {
 	static constexpr VkFormat kOffscreenFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
-	const std::filesystem::path dataDir = std::filesystem::path(MYTH_SAMPLE_NAME).concat("_data/");
+	const std::filesystem::path kDataDir = std::filesystem::path(MYTH_SAMPLE_NAME).concat("_data/");
 	static std::vector slang_searchpaths = {
 		"../../include/",
 		"../include/"
 	};
+	static std::vector<const char*> vulkan_extensions = {};
 	auto ctx = mythril::CTXBuilder{}
 	.set_vulkan_cfg({
 		.app_name = "Cool App Name",
@@ -573,6 +574,7 @@ int main() {
 		.app_version = {0, 0, 1},
 		.engine_version = {0, 0, 1},
 		.enableValidation = true,
+		.deviceExtensions = vulkan_extensions,
 	})
 	.set_window_spec({
 		.title = "Cool Window Name",
@@ -629,13 +631,13 @@ int main() {
 	});
 
 	constexpr uint32_t shadow_map_size = 4096;
+	static constexpr VkFormat kShadowFormat = VK_FORMAT_D16_UNORM;
 	mythril::Texture shadowMap = ctx->createTexture({
 		.dimension = {shadow_map_size, shadow_map_size},
-		.format = VK_FORMAT_D16_UNORM,
+		.format = kShadowFormat,
 		.usage = mythril::TextureUsageBits::TextureUsageBits_Attachment | mythril::TextureUsageBits::TextureUsageBits_Sampled,
 		.debugName = "Shadow Map Texture"
 	});
-	constexpr uint32_t bloom_size = 512;
 	// we combine results of a single channel (red) into all in order to have a grayscale image
 	constexpr mythril::ComponentMapping red_swizzle = {
 			.r = mythril::Swizzle::Swizzle_R,
@@ -643,18 +645,6 @@ int main() {
 			.b = mythril::Swizzle::Swizzle_R,
 			.a = mythril::Swizzle::Swizzle_1
 	};
-
-	mythril::Sampler shadowSampler = ctx->createSampler({
-		.magFilter = mythril::SamplerFilter::Linear,
-		.minFilter = mythril::SamplerFilter::Linear,
-		.mipMap = mythril::SamplerMipMap::Linear,
-		.wrapU = mythril::SamplerWrap::ClampEdge,
-		.wrapV = mythril::SamplerWrap::ClampEdge,
-		.wrapW = mythril::SamplerWrap::ClampEdge,
-		.depthCompareEnabled = true,
-		.depthCompareOp = mythril::CompareOp::LessEqual,
-		.debugName = "Shadow Sampler"
-	});
 
 
 	mythril::Sampler repeatSampler = ctx->createSampler({
@@ -668,7 +658,7 @@ int main() {
 	});
 
 	mythril::Shader shadowShader = ctx->createShader({
-		.filePath = dataDir / "shaders/DirectionalShadow.slang",
+		.filePath = kDataDir / "shaders/DirectionalShadow.slang",
 		.debugName = "Shadow Shader"
 	});
 
@@ -680,7 +670,7 @@ int main() {
 	});
 
 	mythril::Shader redDebugShader = ctx->createShader({
-		.filePath = dataDir / "shaders/RedDebug.slang",
+		.filePath = kDataDir / "shaders/RedDebug.slang",
 		.debugName = "Red Shader"
 	});
 	mythril::GraphicsPipeline redDebugPipeline = ctx->createGraphicsPipeline({
@@ -704,7 +694,7 @@ int main() {
 		.debugName = "Clamp Sampler"
 	});
 	mythril::Shader luminanceShader = ctx->createShader({
-		.filePath = dataDir / "shaders/BrightCompute.slang",
+		.filePath = kDataDir / "shaders/BrightCompute.slang",
 		.debugName = "Luminance Shader"
 	});
 	mythril::ComputePipeline luminanceComputePipeline = ctx->createComputePipeline({
@@ -713,7 +703,7 @@ int main() {
 	});
 
 	mythril::Shader fullscreenCompositeShader = ctx->createShader({
-		.filePath = dataDir / "shaders/FullscreenComposite.slang",
+		.filePath = kDataDir / "shaders/FullscreenComposite.slang",
 		.debugName = "Fullscreen Composite Shader"
 	});
 	mythril::GraphicsPipeline fullscreenCompositePipeline = ctx->createGraphicsPipeline({
@@ -750,11 +740,11 @@ int main() {
 
 
 	// load gltf asset
-	AssetData sponzaData = loadGLTFAsset(dataDir / "meshes/sponza/Sponza.gltf");
+	AssetData sponzaData = loadGLTFAsset(kDataDir / "meshes/sponza/Sponza.gltf");
 	const AssetCompiled sponzaCompiled = compileGLTFAsset(*ctx, sponzaData);
 
 	// load my arrow visualizer
-	AssetData arrowData = loadGLTFAsset(dataDir / "meshes/arrow.glb");
+	AssetData arrowData = loadGLTFAsset(kDataDir / "meshes/arrow.glb");
 	const AssetCompiled arrowCompiled = compileGLTFAsset(*ctx, arrowData);
 
 	// create an indirect buffer to draw sponza in one call for shadow passes
@@ -812,9 +802,9 @@ int main() {
 
 		// we are not dependant on the buffers we created so the order here doesnt matter
 		uint32_t drawId = 0;
-		std::vector<VkDrawIndexedIndirectCommand> indirectCmdsDirectionalLight;
+		std::vector<VkDrawIndexedIndirectCommand> indirectCmds;
 		for (const IndirectMeshData& mesh : indirect_mesh_data) {
-			indirectCmdsDirectionalLight.push_back({
+			indirectCmds.push_back({
 				.indexCount = mesh.indexCount,
 				.instanceCount = 1,
 				.firstIndex = mesh.firstIndex,
@@ -825,10 +815,10 @@ int main() {
 		}
 		// make the indirect buffer object
 		opaqueSponzaIndirectBuf = ctx->createBuffer({
-			.size = sizeof(VkDrawIndexedIndirectCommand) * indirectCmdsDirectionalLight.size(),
+			.size = sizeof(VkDrawIndexedIndirectCommand) * indirectCmds.size(),
 			.usage = mythril::BufferUsageBits::BufferUsageBits_Indirect,
 			.storage = mythril::StorageType::Device,
-			.initialData = indirectCmdsDirectionalLight.data(),
+			.initialData = indirectCmds.data(),
 			.debugName = "Sponza Indirect Buf"
 		});
 	}
@@ -913,25 +903,25 @@ int main() {
 		pointLightShadowTex[i] = ctx->createTexture({
 			.dimension = {pointLightShadowResolution, pointLightShadowResolution, 1},
 			.type = mythril::TextureType::Type_Cube,
-			.format = VK_FORMAT_D16_UNORM,
+			.format = kShadowFormat,
 			.usage = mythril::TextureUsageBits_Attachment | mythril::TextureUsageBits_Sampled,
 			.debugName = debug_name
 		});
 	}
 	mythril::Shader pointshadowShader = ctx->createShader({
-		.filePath = dataDir / "shaders/PointShadow.slang",
+		.filePath = kDataDir / "shaders/PointShadow.slang",
 		.debugName = "Point Shadow Map Shader"
 	});
 	mythril::GraphicsPipeline pointShadowGraphicsPipeline = ctx->createGraphicsPipeline({
 		.vertexShader = pointshadowShader,
 		.fragmentShader = pointshadowShader,
 		.cull = mythril::CullMode::BACK,
-		.debugName = "Point Shadow Map Graphcis Pipeline"
+		.debugName = "Point Shadow Map Graphics Pipeline"
 	});
 	// we need position data
 	lightingData.pointLights[0] = { {1.0f, 0.8f, 0.7f},  10.0f, { 10.0f,  3.0f,  2.0f}, 20.f };
 	lightingData.pointLights[1] = { {0.7f, 0.8f, 1.0f},  9.0f, {-30.0f,  2.5f, -1.0f}, 50.f };
-	lightingData.pointLights[2] = { {0.7f, 1.0f, 0.7f},  5.0f, { 60.0f,  4.0f, -3.0f}, 5.f };
+	lightingData.pointLights[2] = { {0.7f, 1.0f, 0.7f},  12.0f, { 40.0f,  4.0f, -3.0f}, 14.f };
 	lightingData.pointLights[3] = { {1.0f, 0.0f, 0.1f},  11.0f, { -40.0f,  1.0f,  4.0f}, 25.f };
 
 	const auto scaledModel = glm::scale(glm::mat4(1.0), glm::vec3(kMODELSCALE));
@@ -994,13 +984,16 @@ int main() {
 		});
 	}
 
-	mythril::Sampler pointLightShadowSampler = ctx->createSampler({
+	mythril::Sampler shadowSampler = ctx->createSampler({
 		.wrapU = mythril::SamplerWrap::ClampBorder,
-		.debugName = "Point Light Shadow Sampler"
+		.wrapV = mythril::SamplerWrap::ClampBorder,
+		.depthCompareEnabled = true,
+		.depthCompareOp = mythril::CompareOp::LessEqual,
+		.debugName = "Shadow Sampler Comparison"
 	});
 
 	mythril::Shader standardShader = ctx->createShader({
-		.filePath = dataDir / "shaders/Standard.slang",
+		.filePath = kDataDir / "shaders/Standard.slang",
 		.debugName = "Standard Shader"
 	});
 	mythril::GraphicsPipeline opaquePipeline = ctx->createGraphicsPipeline({
@@ -1120,7 +1113,7 @@ int main() {
 	});
 
 	mythril::Shader particleShader = ctx->createShader({
-		.filePath = dataDir / "shaders/Particles.slang",
+		.filePath = kDataDir / "shaders/Particles.slang",
 		.debugName = "Ambient Particle Shader"
 	});
 	mythril::GraphicsPipeline particle_pipeline = ctx->createGraphicsPipeline({
@@ -1218,7 +1211,7 @@ int main() {
 		colorbloomdimensions = colorbloomdimensions.divide2D(2);
 	}
 	mythril::Shader downsampleComputeShader = ctx->createShader({
-		.filePath = dataDir / "shaders/Downsample.slang",
+		.filePath = kDataDir / "shaders/Downsample.slang",
 		.debugName = "Downsample Compute Shader"
 	});
 	mythril::ComputePipeline downsampleComputePipeline = ctx->createComputePipeline({
@@ -1255,19 +1248,46 @@ int main() {
 			cmd.cmdDispatchThreadGroup(roundedDims);
 		}
 	});
+
+	mythril::Shader luminanceConversionShader = ctx->createShader({
+		.filePath = kDataDir /  "shaders/ConversionLuminance.slang",
+		.debugName = "Luminance Conversion Compute Shader"
+	});
+	mythril::ComputePipeline conversionLuminancePipeline = ctx->createComputePipeline({
+		.shader = luminanceConversionShader.handle(),
+		.debugName = "Luminance Conversion Pipeline"
+	});
 	mythril::Texture currentLuminanceTex = ctx->createTexture({
-		.dimension = {100, 100, 1},
-		.format = VK_FORMAT_R16_SFLOAT,
+		.dimension = {1, 1, 1},
+		.format = VK_FORMAT_R8_UNORM,
 		.usage = mythril::TextureUsageBits::TextureUsageBits_Storage,
 		.components = red_swizzle,
 		.debugName = "Luminance Current Texture"
 	});
-	graph.addIntermediate("copy to lum")
-	.blit(offscreenColorTexs[7], currentLuminanceTex)
-	.finish();
+	graph.addComputePass("convert into current lum")
+	.dependency(offscreenColorTexs[7], mythril::Layout::READ)
+	.dependency(currentLuminanceTex, mythril::Layout::GENERAL)
+	.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
+		cmd.cmdBindComputePipeline(conversionLuminancePipeline);
+		struct PushConstant {
+			uint64_t lowResColorTex;
+			uint64_t curLumOutTex;
+			uint64_t sampler;
+		} push {
+			.lowResColorTex = offscreenColorTexs[7].index(),
+			.curLumOutTex = currentLuminanceTex.index(),
+			.sampler = 0
+		};
+		cmd.cmdPushConstants(push);
+		mythril::Dimensions texDims = offscreenColorTexs[7]->getDimensions();
+		glm::vec2 threadsPerGroup = {16, 16};
+		uint groupX = (texDims.width + threadsPerGroup.x - 1) / threadsPerGroup.x;
+		uint groupY = (texDims.height + threadsPerGroup.y - 1) / threadsPerGroup.y;
+		cmd.cmdDispatchThreadGroup({groupX, groupY, 1});
+	});
 
 	mythril::Shader upsampleComputeShader = ctx->createShader({
-		.filePath = dataDir / "shaders/Upsample.slang",
+		.filePath = kDataDir / "shaders/Upsample.slang",
 		.debugName = "Upsample Compute Shader"
 	});
 	mythril::ComputePipeline upsampleComputePipeline = ctx->createComputePipeline({
@@ -1281,18 +1301,19 @@ int main() {
 	.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
 		cmd.cmdBindComputePipeline(upsampleComputePipeline);
 		for (int i = kNumColorMips-1; i > 0; i--) {
+			mythril::Dimensions outdims = offscreenColorTexs[i-1]->getDimensions();
 			struct PushConstants {
 				uint64_t inTex;
 				uint64_t outTex;
 				uint64_t sampler;
+				glm::ivec2 outSize;
 				float filterRadius;
-				float blend;
 			} push {
 				.inTex = offscreenColorTexs[i].index(),
 				.outTex = offscreenColorTexs[i-1].index(),
 				.sampler = clampSampler.index(),
+				.outSize = {outdims.width, outdims.height},
 				.filterRadius = filter_radius,
-				.blend = blend
 			};
 			cmd.cmdPushConstants(push);
 			static constexpr uint32_t threadNum = 8;
@@ -1306,7 +1327,7 @@ int main() {
 	});
 
 	mythril::Shader adaptationShader = ctx->createShader({
-		.filePath = dataDir / "shaders/Adaptation.slang",
+		.filePath = kDataDir / "shaders/Adaptation.slang",
 		.debugName = "Adaptation Compute Shader"
 	});
 	mythril::ComputePipeline adaptationComputePipeline = ctx->createComputePipeline({
@@ -1597,7 +1618,8 @@ int main() {
 			.nearPlane = 0.1f,
 			.farPlane = 200.f
 		};
-		const glm::mat4 camera_projection_matrix = calculateProjectionMatrix(camera, true);
+		const glm::mat4 reversedCameraProj = calculateProjectionMatrix(camera, true);
+		const glm::mat4 cameraView = calculateViewMatrix(camera);
 
 		auto UVToViewRay = [&](const glm::vec2& uv, const glm::mat4& invProj) -> glm::vec3 {
 			glm::vec4 ndc;
@@ -1609,15 +1631,17 @@ int main() {
 			glm::vec3 viewPos = glm::vec3(view) / view.w;
 			return viewPos / viewPos.z;
 		};
-		glm::mat4 invProj = glm::inverse(camera_projection_matrix);
+		glm::mat4 invProj = glm::inverse(reversedCameraProj);
 		glm::vec3 view00 = UVToViewRay({0,0}, invProj);
 		glm::vec3 view11 = UVToViewRay({1,1}, invProj);
 		glm::vec2 ray00 = { view00.x / view00.z, view00.y / view00.z };
 		glm::vec2 ray11 = { view11.x / view11.z, view11.y / view11.z };
 		const GPU::CameraData cameraData = {
-			.proj = camera_projection_matrix,
+			.projView = reversedCameraProj * cameraView,
 			.invProj = invProj,
-			.view = calculateViewMatrix(camera),
+			.forward = glm::normalize(-glm::vec3(cameraView[0][2], cameraView[1][2], cameraView[2][2])),
+			.up = glm::normalize(glm::vec3(cameraView[0][1], cameraView[1][1], cameraView[2][1])),
+			.right = glm::normalize(glm::vec3(cameraView[0][0], cameraView[1][0], cameraView[2][0])),
 			.position = camera.position,
 			.uvToViewA = ray11 - ray00,
 			.uvToViewB = ray00,
@@ -1730,7 +1754,7 @@ int main() {
 		ImGuizmo::SetDrawlist(ImGui::GetBackgroundDrawList());
 		ImGuizmo::SetRect(0, 0, windowSize.width, windowSize.height);
 		ImGuizmo::Manipulate(
-				glm::value_ptr(cameraData.view),
+				glm::value_ptr(cameraView),
 				glm::value_ptr(calculateProjectionMatrix(camera, false)),
 				ImGuizmo::OPERATION::ROTATE,
 				ImGuizmo::MODE::WORLD,

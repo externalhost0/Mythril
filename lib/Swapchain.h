@@ -22,8 +22,8 @@ namespace mythril {
 	};
 
 	class Swapchain final {
-		enum { kMAX_SWAPCHAIN_IMAGES = 16 };
 	public:
+		enum { kMAX_SWAPCHAIN_IMAGES = 16 };
 		explicit Swapchain(CTX& ctx, SwapchainSpec args);
 		~Swapchain();
 	public: // actually used in the loop
@@ -32,10 +32,11 @@ namespace mythril {
 	public:
 		uint32_t getNumOfSwapchainImages() const { return _numSwapchainImages; }
 		bool isDirty() const { return _isDirty; }
+		uint32_t getCurrentImageIndex() const { return _currentImageIndex; }
 		const TextureHandle& getCurrentSwapchainTextureHandle() const { return _swapchainTextures[_currentImageIndex]; }
+		const TextureHandle& getSwapchainTextureHandle(uint32_t index) const { return _swapchainTextures[index]; }
 		VkExtent2D getSwapchainExtent() const { return _vkExtent2D; };
 	private:
-
 		VkSwapchainKHR _vkSwapchain = VK_NULL_HANDLE;
 		VkExtent2D _vkExtent2D = {};
 		VkFormat _vkImageFormat = VK_FORMAT_UNDEFINED;

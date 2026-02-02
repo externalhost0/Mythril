@@ -152,13 +152,15 @@ target_include_directories(SPIRV-Reflect PUBLIC
 )
 
 # ==================== Volk (Vulkan Meta-Loader) ====================
-if(WIN32)
-    set(VOLK_PLATFORM_DEFINE VK_USE_PLATFORM_WIN32_KHR)
-elseif(APPLE)
+
+# no clue why but these defines will cause conflicts when compiling on systems like Ubuntu
+#if(WIN32)
+#    set(VOLK_PLATFORM_DEFINE VK_USE_PLATFORM_WIN32_KHR)
+#elseif(APPLE)
 #    set(VOLK_PLATFORM_DEFINE VK_USE_PLATFORM_METAL_EXT)
-elseif(UNIX)
-    set(VOLK_PLATFORM_DEFINE VK_USE_PLATFORM_XLIB_KHR)
-endif()
+#elseif(UNIX)
+#    set(VOLK_PLATFORM_DEFINE VK_USE_PLATFORM_XLIB_KHR)
+#endif()
 
 CPMAddPackage(
         NAME volk

@@ -77,9 +77,9 @@ int main() {
 ![Minimal Example Screenshot][basic_window_img]
 
 ## Building
-* C++ 20 (Clang 16.0.0+)
+* C++ 20 (Tested on clang 16.0.0 & gcc 13.3.0)
 * CMake 3.28+
-* Vulkan SDK 1.4.3+
+* Vulkan SDK 1.4.335.0+
 
 ## Installing
 You can easily include with CPM.

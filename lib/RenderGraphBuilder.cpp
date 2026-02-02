@@ -159,7 +159,7 @@ namespace mythril {
 		}
 	}
 
-	void RenderGraph::processAttachments(const PassDesc& pass_desc, CompiledPass& outPass) {
+	void RenderGraph::processAttachments(const CTX& rCtx, const PassDesc& pass_desc, CompiledPass& outPass) {
 		if (pass_desc.attachmentOperations.empty()) return;
 		uint32_t max_width = 0, max_height = 0;
 		bool hasDepthAttachment = false;
@@ -221,7 +221,7 @@ namespace mythril {
 
 				.loadOp = toVulkan(attachment_desc.loadOp),
 				.storeOp = toVulkan(attachment_desc.storeOp),
-				.clearValue = isDepthAttachment ? clear_value.getDepthStencilValue() : clear_value.getColorValue()
+				.clearValue = isDepthAttachment ? clear_value.getDepthStencilValue() : clear_value.getColorValue(),
 			};
 			if (attachment_desc.resolveTexDesc.has_value()) {
 				const TextureDesc& resolve_desc = attachment_desc.resolveTexDesc.value();
@@ -251,10 +251,23 @@ namespace mythril {
 				attachment_info.resolveImageLayout = attachment_info.imageLayout;
 				attachment_info.resolveImageView = resolve_texture.getImageView();
 			}
+			// detect if attachment is part of swapchain
+			if (allocatedTexture.isSwapchainImage()) {
+				attachment_info.isSwapchainImage = true;
+				const auto& swapchain = rCtx._swapchain;
+				const uint32_t numImages = swapchain->getNumOfSwapchainImages();
+				for (uint32_t i = 0; i < numImages; i++) {
+					const TextureHandle handle = swapchain->getSwapchainTextureHandle(i);
+					attachment_info.swapchainImageViews[i] = rCtx.view(handle).getImageView();
+				}
+			}
 
+			// submit AttachmentInfo
 			if (isDepthAttachment) outPass.depthAttachment.emplace(attachment_info);
 			else outPass.colorAttachments.emplace_back(attachment_info);
 
+			// calculate the necessary dimensions of the vkCmdBeginRendering call
+			// thats all the below code does
 			const Dimensions& baseDims = allocatedTexture.getDimensions();
 			const uint32_t mipLevel = texDesc.baseLevel.value_or(0);
 			const uint32_t width = std::max(1u, baseDims.width >> mipLevel);
@@ -300,7 +313,7 @@ namespace mythril {
 			// do not worry about the return value,
 			// every type of process should run for every pass
 			processPassResources(pass_desc, compiled_pass);
-			processAttachments(pass_desc, compiled_pass);
+			processAttachments(rCtx, pass_desc, compiled_pass);
 
 			_compiledPasses.push_back(std::move(compiled_pass));
 		}
@@ -358,9 +371,18 @@ namespace mythril {
 		ASSERT_MSG(!cmd.isDrying(), "You cannot call RenderGraph::execute inside an execution callback!");
 		ASSERT_MSG(_hasCompiled, "RenderGraph must be compiled before it can be executed!");
 
-		for (const CompiledPass& pass : _compiledPasses) {
-			// reset current states
+		for (CompiledPass& pass : _compiledPasses) {
+			// perform batched vkCmdPipelineBarrier
 			PerformImageBarrierTransitions(cmd, pass);
+			// switch color attachment imageViews for Swapchain
+		    const uint32_t swapIdx = cmd._ctx->_swapchain->getCurrentImageIndex();
+		    for (auto& color : pass.colorAttachments) {
+		        if (color.isSwapchainImage)
+		            color.imageView = color.swapchainImageViews[swapIdx];
+		    }
+		    if (pass.depthAttachment && pass.depthAttachment->isSwapchainImage)
+				pass.depthAttachment->imageView = pass.depthAttachment->swapchainImageViews[swapIdx];
+			// reset current states
 			cmd._currentPipelineInfo = nullptr;
 			cmd._currentPipelineHandle = {};
 			cmd._activePass = pass;

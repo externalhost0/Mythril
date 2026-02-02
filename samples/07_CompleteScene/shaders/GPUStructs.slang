@@ -132,7 +132,6 @@ struct EnvironmentLight : ILight
         return brdf.albedo * kd * color * intensity;
     }
 }
-
 struct LightingData
 {
     PointLight pointLights[4];
@@ -156,41 +155,20 @@ struct LightingData
 
 struct CameraData
 {
-    float4x4 proj;
+    float4x4 projView;
     float4x4 invProj;
-    float4x4 view;
+    float3 forward;
+    float3 up;
+    float3 right;
     float3 position;
     float2 g_f2UVToViewA;
     float2 g_f2UVToViewB;
     float far;
     float near;
 
-    float3 getRight() {
-        // Row 0 of view matrix
-        return normalize(float3(
-            view._11,
-            view._12,
-            view._13
-        ));
-    }
-
-    float3 getUp() {
-        // Row 1 of view matrix
-        return normalize(float3(
-            view._21,
-            view._22,
-            view._23
-        ));
-    }
-
-    float3 getForward() {
-        // Camera looks down -Z
-        return normalize(-float3(
-            view._31,
-            view._32,
-            view._33
-        ));
-    }
+    float3 getRight() { return right; }
+    float3 getUp() { return up; }
+    float3 getForward() { return forward; }
 };
 
 struct FrameData
@@ -209,8 +187,8 @@ struct GeometryPushConstants
     DescriptorHandle<Texture2D> normalTexture;
     DescriptorHandle<Texture2D> roughnessMetallicTexture;
     DescriptorHandle<SamplerState> linearSampler;
-    DescriptorHandle<Texture2D> shadowTexture;
-    DescriptorHandle<SamplerState> shadowSampler;
+    DescriptorHandle<Texture2D<float>> shadowTexture;
+    DescriptorHandle<SamplerComparisonState> shadowSamplerComparison;
     float4x4 lightSpaceMatrix;
     DescriptorHandle<TextureCube> pointLightCubemaps[4];
 };

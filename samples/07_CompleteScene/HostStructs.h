@@ -16,9 +16,11 @@ namespace GPU {
 	};
 
 	struct CameraData {
-		glm::mat4 proj;
+		glm::mat4 projView;
 		glm::mat4 invProj;
-		glm::mat4 view;
+		glm::vec3 forward;
+		glm::vec3 up;
+		glm::vec3 right;
 		glm::vec3 position;
 		glm::vec2 uvToViewA;
 		glm::vec2 uvToViewB;

@@ -14,6 +14,9 @@ struct SDL_Window;
 
 namespace mythril {
 	static constexpr uint32_t kMaxUserExtensions = 32;
+	static constexpr VkFormat kDefaultSwapchainFormat = VK_FORMAT_B8G8R8A8_UNORM;
+	static constexpr VkColorSpaceKHR kDefaultSwapchainColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
+	static constexpr VkPresentModeKHR kDefaultSwapchainPresentMode = VK_PRESENT_MODE_FIFO_KHR;
 
 	struct Version
 	{
@@ -39,8 +42,11 @@ namespace mythril {
 		bool enableValidation = true;
 		// implement this later
 		// bool enableHeadless = false;
+		// instance extension names
 		std::vector<const char*> instanceExtensions = {};
+		// device extension names
 		std::vector<const char*> deviceExtensions   = {};
+		// device extension feautures, will not be handled if unsupported!
 		void* deviceExtensionFeatureChain = {};
 	};
 	struct SlangCfg

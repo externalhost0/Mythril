@@ -9,6 +9,7 @@
 #include "../../lib/vkenums.h"
 #include "../../lib/RenderGraphDescriptions.h"
 #include "../../lib/vkutil.h"
+#include "../../lib/Swapchain.h"
 
 
 #include <unordered_set>
@@ -19,6 +20,7 @@
 #include <span>
 
 #include <volk.h>
+
 
 namespace mythril {
     struct DependencyDesc;
@@ -38,6 +40,10 @@ namespace mythril {
         VkAttachmentStoreOp storeOp;
 
         VkClearValue clearValue;
+
+        // will need to handle the special case of using a swapchain image as an attachment
+        bool isSwapchainImage = false;
+        VkImageView swapchainImageViews[Swapchain::kMAX_SWAPCHAIN_IMAGES] = {};
 
         VkRenderingAttachmentInfo getAsVkRenderingAttachmentInfo() const {
             const bool isResolving = resolveImageView != VK_NULL_HANDLE;
@@ -307,7 +313,7 @@ namespace mythril {
         void PerformImageBarrierTransitions(CommandBuffer& cmd, const CompiledPass& compiledPass);
         static void processResourceAccess(const TextureDesc& texDesc, VkImageLayout desiredLayout, CompiledPass& outPass);
         void processPassResources(const PassDesc& passDesc, CompiledPass& outPass);
-        void processAttachments(const PassDesc& pass_desc, CompiledPass& outPass);
+        void processAttachments(const CTX& rCtx, const PassDesc& pass_desc, CompiledPass& outPass);
         void performDryRun(CTX& rCtx);
         // every texture used in the framegraph needs proper tracking to ensure its layout is correct...
         // at every pass, even more necessary for textures that request individual mips/layers

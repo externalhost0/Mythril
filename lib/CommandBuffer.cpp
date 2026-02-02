@@ -215,6 +215,7 @@ namespace mythril {
 	}
 	void CommandBuffer::cmdGenerateMipmap(TextureHandle handle) {
 		DRY_RETURN()
+		CHECK_PASS_OPERATION_MISMATCH(PassDesc::Type::Intermediate);
 		MYTH_PROFILER_GPU_ZONE("cmdGenerateMipmap()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
 
 		if (handle.empty()) {
@@ -417,6 +418,7 @@ namespace mythril {
 		// alias it
 		const SharedPipelineInfo* info = this->_currentPipelineInfo;
 		CHECK_PIPELINE_REBIND(&info->core, _lastBoundvkPipeline, info->debugName);
+		CHECK_PASS_OPERATION_MISMATCH(PassDesc::Type::Graphics);
 		this->cmdBindPipelineImpl(&info->core, VK_PIPELINE_BIND_POINT_GRAPHICS);
 	}
 
@@ -440,6 +442,7 @@ namespace mythril {
 		this->_currentPipelineInfo = &pipeline->_shared;
 		const SharedPipelineInfo* info = this->_currentPipelineInfo;
 		CHECK_PIPELINE_REBIND(&info->core, _lastBoundvkPipeline, info->debugName);
+		CHECK_PASS_OPERATION_MISMATCH(PassDesc::Type::Compute);
 		this->cmdBindPipelineImpl(&info->core, VK_PIPELINE_BIND_POINT_COMPUTE);
 	}
 
@@ -481,6 +484,7 @@ namespace mythril {
 	}
 	void CommandBuffer::cmdBindDepthState(const DepthState& state) {
 		DRY_RETURN()
+		CHECK_PASS_OPERATION_MISMATCH(PassDesc::Type::Graphics);
 		// https://github.com/corporateshark/lightweightvk/blob/master/lvk/vulkan/VulkanClasses.cpp#L2458
 		const VkCompareOp op = toVulkan(state.compareOp);
 		vkCmdSetDepthWriteEnable(_wrapper->_cmdBuf, state.isDepthWriteEnabled ? VK_TRUE : VK_FALSE);
@@ -489,10 +493,12 @@ namespace mythril {
 	}
 	void CommandBuffer::cmdSetDepthBiasEnable(bool enable) {
 		DRY_RETURN();
+		CHECK_PASS_OPERATION_MISMATCH(PassDesc::Type::Graphics);
 		vkCmdSetDepthBiasEnable(_wrapper->_cmdBuf, enable ? VK_TRUE : VK_FALSE);
 	}
 	void CommandBuffer::cmdSetDepthBias(float constantFactor, float slopeFactor, float clamp) {
 		DRY_RETURN();
+		CHECK_PASS_OPERATION_MISMATCH(PassDesc::Type::Graphics);
 		vkCmdSetDepthBias(_wrapper->_cmdBuf, constantFactor, clamp, slopeFactor);
 	}
 
@@ -516,6 +522,7 @@ namespace mythril {
 	void CommandBuffer::cmdDrawImGui() {
 		DRY_RETURN()
 		CHECK_SHOULD_BE_RENDERING();
+		CHECK_PASS_OPERATION_MISMATCH(PassDesc::Type::Graphics);
 #ifdef DEBUG
 		for (const auto& color_attachment : this->_activePass.colorAttachments) {
 			ASSERT_MSG(color_attachment.resolveImageView == VK_NULL_HANDLE, "Rendering of ImGui cannot be done inside a multisampled texture!");

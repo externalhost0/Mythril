@@ -117,12 +117,12 @@ namespace mythril {
 		VulkanFeatures& outFeatures,
 		VulkanProperties& outProperties,
 		VulkanQueueOutputs& outQueues) {
-		ASSERT(vkbPhysicalDevice.physical_device != VK_NULL_HANDLE);
 
+		ASSERT(vkbPhysicalDevice.physical_device != VK_NULL_HANDLE);
 		// VALIDATE EXTENSIONS
 		{
 			std::string missing_extensions;
-			for (const auto& ext : user_device_extensions) {
+			for (const auto ext : user_device_extensions) {
 				if (!vkbPhysicalDevice.enable_extension_if_present(ext)) {
 					missing_extensions += "\n\t" + std::string(ext);
 				}
@@ -161,19 +161,20 @@ namespace mythril {
 		VkPhysicalDeviceFeatures requiredfeatures10 = {
 			.robustBufferAccess = VK_FALSE,
 			.multiDrawIndirect = VK_TRUE,
-			.depthBiasClamp = VK_TRUE,
-			.samplerAnisotropy = VK_TRUE,
-			.fragmentStoresAndAtomics = VK_TRUE,
+			.depthBiasClamp = supportedfeatures10.features.depthBiasClamp,
+			.samplerAnisotropy = supportedfeatures10.features.samplerAnisotropy,
+			.fragmentStoresAndAtomics = supportedfeatures10.features.fragmentStoresAndAtomics,
 		};
 		VkPhysicalDeviceVulkan11Features requiredfeatures11 = {
 			.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
 			.pNext = user_device_extension_features != nullptr ? user_device_extension_features : nullptr,
-			.multiview = VK_TRUE,
-			.shaderDrawParameters = VK_TRUE
+			.multiview = supportedfeatures11.multiview,
+			.shaderDrawParameters = VK_TRUE,
 		};
 		VkPhysicalDeviceVulkan12Features requiredfeatures12 = {
 			.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
 			.pNext = &requiredfeatures11,
+			.shaderFloat16 = supportedfeatures12.shaderFloat16,
 			.descriptorIndexing = VK_TRUE,
 			.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE,
 			.descriptorBindingStorageImageUpdateAfterBind = VK_TRUE,
@@ -187,7 +188,7 @@ namespace mythril {
 		VkPhysicalDeviceVulkan13Features requiredfeatures13 = {
 			.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
 			.pNext = &requiredfeatures12,
-			.computeFullSubgroups = VK_TRUE,
+			.computeFullSubgroups = supportedfeatures13.computeFullSubgroups,
 			.synchronization2 = VK_TRUE,
 			.dynamicRendering = VK_TRUE,
 		};
@@ -623,13 +624,13 @@ missing_features.append("\n\t(" version ") " #feature);
 					this->_swapchainSpec.height = height;
 			}
 			if (this->_swapchainSpec.format == VK_FORMAT_UNDEFINED) {
-				this->_swapchainSpec.format = VK_FORMAT_B8G8R8A8_UNORM;
+				this->_swapchainSpec.format = kDefaultSwapchainFormat;
 			}
 			if (this->_swapchainSpec.colorSpace == VK_COLOR_SPACE_MAX_ENUM_KHR) {
-				this->_swapchainSpec.colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
+				this->_swapchainSpec.colorSpace = kDefaultSwapchainColorSpace;
 			}
 			if (this->_swapchainSpec.presentMode == VK_PRESENT_MODE_MAX_ENUM_KHR) {
-				this->_swapchainSpec.presentMode = VK_PRESENT_MODE_FIFO_KHR;
+				this->_swapchainSpec.presentMode = kDefaultSwapchainPresentMode;
 			}
 			ctx->createSwapchain(this->_swapchainSpec);
 		}
