@@ -3,18 +3,17 @@ Mythril is C++20 Vulkan rendering framework for Windows, Linux, and MacOS.
 It aims to provide a easy to create and highly abstracted API for Vulkan, aswell as some bonus features described below.
 
 ### Features:
-* RenderGraph implementation.
+* RenderGraph implementation, automatically builds and optimizes your described frame.
+* Bindless design for textures & samplers.
 * Automatic shader reflection.
 * Abstracted and easy to use resource descriptors.
+* RAII Object System, all Vulkan objects are cleaned up automatically.
+* Supported plugin system for commonly used dev tools — currently includes ImGui and Tracy.
 
+![Sample 07 Screenshot][sample_07_img]
 
 ### Minimal Example:
 ```cpp
-#include <mythril/CTXBuilder.h>
-#include <mythril/RenderGraphBuilder.h>
-
-#include <SDL3/SDL.h>
-
 int main() {
 	auto ctx = mythril::CTXBuilder{}
 	.set_vulkan_cfg({
@@ -31,32 +30,19 @@ int main() {
 	.with_default_swapchain()
 	.build();
 
-	const VkExtent2D extent2D = ctx->getWindow().getFramebufferSize();
-	const mythril::Dimensions dims = {extent2D.width, extent2D.height, 1};
-	mythril::Texture colorTarget = ctx->createTexture({
-		.dimension = dims,
-		.format = VK_FORMAT_R8G8B8A8_UNORM,
-		.usage = mythril::TextureUsageBits::TextureUsageBits_Attachment,
-		.storage = mythril::StorageType::Device,
-		.debugName = "Color Texture"
-	});
-
 	mythril::RenderGraph graph;
 	graph.addGraphicsPass("main")
 	.attachment({
-		.texDesc = colorTarget,
+		.texDesc = ctx->getBackBufferTexture(),
 		.clearValue = {1, 0, 0, 1},
-		.loadOp = mythril::LoadOperation::CLEAR,
-		.storeOp = mythril::StoreOperation::STORE
+		.loadOp = mythril::LoadOp::CLEAR,
+		.storeOp = mythril::StoreOp::STORE
 	})
 	.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
 		// do absolutely nothing, just begin and end a pass
 		cmd.cmdBeginRendering();
 		cmd.cmdEndRendering();
 	});
-	graph.addIntermediate("present")
-	.blit(colorTarget, ctx->getBackBufferTexture())
-	.finish();
 
 	graph.compile(*ctx);
 
@@ -116,3 +102,4 @@ This project is distributed under the **Mozilla Public License Version 2.0**, pl
 
 <!-- image definitions -->
 [basic_window_img]: docs/img/basic_window.png
+[sample_07_img]: docs/img/sample07.png

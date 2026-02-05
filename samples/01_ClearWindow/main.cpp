@@ -23,16 +23,6 @@ int main() {
 	.with_default_swapchain()
 	.build();
 
-	const VkExtent2D extent2D = ctx->getWindow().getFramebufferSize();
-	const mythril::Dimensions dims = {extent2D.width, extent2D.height, 1};
-	mythril::Texture colorTarget = ctx->createTexture({
-		.dimension = dims,
-		.format = VK_FORMAT_R8G8B8A8_UNORM,
-		.usage = mythril::TextureUsageBits::TextureUsageBits_Attachment,
-		.storage = mythril::StorageType::Device,
-		.debugName = "Color Texture"
-	});
-
 	mythril::RenderGraph graph;
 	graph.addGraphicsPass("main")
 	.attachment({
@@ -46,9 +36,6 @@ int main() {
 		cmd.cmdBeginRendering();
 		cmd.cmdEndRendering();
 	});
-	// graph.addIntermediate("present")
-	// .blit(colorTarget, ctx->getBackBufferTexture())
-	// .finish();
 
 	graph.compile(*ctx);
 
