@@ -8,7 +8,7 @@ It aims to provide a easy to create and highly abstracted API for Vulkan, aswell
 * Automatic shader reflection.
 * Abstracted and easy to use resource descriptors.
 * RAII Object System, all Vulkan objects are cleaned up automatically.
-* Supported plugin system for commonly used dev tools — currently includes ImGui and Tracy.
+* Supported plugin system for commonly used dev tools, currently includes ImGui and Tracy.
 
 ![Sample 07 Screenshot][sample_07_img]
 
