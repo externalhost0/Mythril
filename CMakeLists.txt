@@ -11,8 +11,8 @@ option(MYTH_ENABLE_TEST_CASES "Enable Test Cases (NOT DONE YET)" OFF)
 option(MYTH_RUN_SAMPLES "Enable sample apps" ON)
 option(MYTH_ENABLE_IMGUI_STANDARD "Enable ImGui Plugin Main Branch" ON)
 option(MYTH_ENABLE_IMGUI_DOCKING "Enable ImGui Plugin Docking Branch" OFF)
-#option(MYTH_ENABLE_TRACY "Enables Tracy Profiling for user & Mythril use" OFF)
-#option(MYTH_ENABLE_TRACY_GPU "Enables Tracy Profiling for Mythril's internal Vulkan calls" OFF)
+option(MYTH_ENABLE_TRACY "Enables Tracy Profiling for user & Mythril use" ON)
+option(MYTH_ENABLE_TRACY_GPU "Enables Tracy Profiling for Mythril's internal Vulkan calls" ON)
 
 # ==================== C++ Standard ====================
 set(CMAKE_CXX_STANDARD 20)
@@ -153,20 +153,11 @@ target_include_directories(SPIRV-Reflect PUBLIC
 
 # ==================== Volk (Vulkan Meta-Loader) ====================
 
-# no clue why but these defines will cause conflicts when compiling on systems like Ubuntu
-#if(WIN32)
-#    set(VOLK_PLATFORM_DEFINE VK_USE_PLATFORM_WIN32_KHR)
-#elseif(APPLE)
-#    set(VOLK_PLATFORM_DEFINE VK_USE_PLATFORM_METAL_EXT)
-#elseif(UNIX)
-#    set(VOLK_PLATFORM_DEFINE VK_USE_PLATFORM_XLIB_KHR)
-#endif()
-
 CPMAddPackage(
         NAME volk
         GITHUB_REPOSITORY "zeux/volk"
         GIT_TAG vulkan-sdk-1.4.328
-        OPTIONS "VOLK_STATIC_DEFINES ${VOLK_PLATFORM_DEFINE}"
+#        OPTIONS "VOLK_STATIC_DEFINES ${VOLK_PLATFORM_DEFINE}"
 )
 
 # ==================== Vulkan Memory Allocator ====================
@@ -349,9 +340,9 @@ if (MYTH_ENABLE_TRACY)
     target_link_libraries(mythril PUBLIC TracyClient)
 
     if (MYTH_ENABLE_TRACY_GPU)
-        if (APPLE)
-            message(FATAL_ERROR "MYTH_ENABLE_TRACY_GPU is not supported on APPLE platforms currently! Please switch the option 'OFF'")
-        endif()
+#        if (APPLE)
+#            message(FATAL_ERROR "MYTH_ENABLE_TRACY_GPU is not supported on APPLE platforms currently! Please switch the option 'OFF'")
+#        endif()
         target_compile_definitions(mythril PUBLIC
                 MYTH_ENABLED_TRACY_GPU
                 TRACY_VK_USE_SYMBOL_TABLE

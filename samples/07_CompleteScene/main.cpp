@@ -590,6 +590,7 @@ int main() {
 	.with_ImGui({
 		.format = kOffscreenFormat,
 	})
+	.with_TracyGPU()
 	.build();
 
 
@@ -1668,7 +1669,6 @@ int main() {
 		ImGuiWindowFlags window_flags = focused ? ImGuiWindowFlags_NoMouseInputs : ImGuiWindowFlags_None;
 		ImGui::Begin("Previews", nullptr, window_flags);
 		ImGui::Image(shadowMap, {200, 200});
-		ImGui::SameLine();
 		ImGui::Text("Average Luminance");
 		ImGui::Image(adaptedLuminanceTextures[0], {100, 100});
 		ImGui::Text("Progressively Blurred Color Targets");

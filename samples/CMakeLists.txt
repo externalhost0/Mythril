@@ -124,6 +124,7 @@ ADD_SAMPLE("07_CompleteScene" LIBS glm fastgltf stb_image imguizmo
         OPTIONS
             MYTH_ENABLE_IMGUI_STANDARD=ON
             MYTH_ENABLE_TRACY=ON
+            MYTH_ENABLE_TRACY_GPU=ON
 )
 
 

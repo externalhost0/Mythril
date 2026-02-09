@@ -113,6 +113,7 @@ namespace mythril {
 	}
 
 	void Swapchain::acquire() {
+		MYTH_PROFILER_FUNCTION();
 		if (_getNextImage) {
 			const VkSemaphoreWaitInfo waitInfo = {
 					.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
@@ -138,6 +139,7 @@ namespace mythril {
 	}
 
 	void Swapchain::present() {
+		MYTH_PROFILER_FUNCTION();
 		VkSemaphore semaphore = _ctx._imm->acquireLastSubmitSemaphore();
 		const VkPresentInfoKHR present_info = {
 				.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,

@@ -48,7 +48,7 @@
 #define MYTH_PROFILER_COLOR_SUBMIT 0x6b28de // dark purple
 #define MYTH_PROFILER_COLOR_PRESENT 0xbf1bb7 // magenta
 #define MYTH_PROFILER_COLOR_BARRIER 0xbdd1ff // baby blue
-#define MYTH_PROFILER_COLOR_COMMAND 0x1a1b2e // light saturated blue
+#define MYTH_PROFILER_COLOR_COMMAND 0x3f449e // light saturated blue
 
 // function colors
 #define MYTH_PROFILER_COLOR_CREATE 0x22bf4f // dark green

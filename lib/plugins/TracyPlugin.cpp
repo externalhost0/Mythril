@@ -26,9 +26,6 @@ namespace mythril {
 			vkGetPhysicalDeviceCalibrateableTimeDomainsEXT(vk_physical_device, &numTimeDomains, timeDomains.data());
 		}
 		const bool hasHostQuery = ctx.getPhysicalDeviceFeatures12().hostQueryReset && [&timeDomains]() -> bool {
-#ifdef __APPLE__
-			return false;
-#endif
 			for (const VkTimeDomainEXT domain : timeDomains)
 				if (domain == VK_TIME_DOMAIN_CLOCK_MONOTONIC_RAW_EXT || domain == VK_TIME_DOMAIN_QUERY_PERFORMANCE_COUNTER_EXT)
 					return true;

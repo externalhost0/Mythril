@@ -1601,10 +1601,8 @@ namespace mythril {
 
 		cmd._lastSubmitHandle = _imm->submit(*cmd._wrapper);
 		if (isPresenting) {
-			MYTH_PROFILER_ZONE("Swapchain Presentation", MYTH_PROFILER_COLOR_PRESENT);
 			ASSERT(_texturePool.get(_swapchain->getCurrentSwapchainTextureHandle())->getImageLayout() == VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
 			_swapchain->present();
-			MYTH_PROFILER_ZONE_END();
 		}
 		processDeferredTasks();
 		SubmitHandle handle = cmd._lastSubmitHandle;
