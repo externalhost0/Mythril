@@ -144,7 +144,7 @@ static AssetData loadGLTFAsset(const std::filesystem::path& filepath) {
 	// 1. load asset
 	fastgltf::Parser parser;
 	auto data_result = fastgltf::GltfDataBuffer::FromPath(filepath);
-	ASSERT_MSG(data_result.error() == fastgltf::Error::None, "Data load from path {} failed!", filepath.c_str());
+	ASSERT_MSG(data_result.error() == fastgltf::Error::None, "Data load from path {} failed!", filepath.string().c_str());
 	fastgltf::GltfDataBuffer data = std::move(data_result.get());
 
 	constexpr fastgltf::Options options =
@@ -164,7 +164,7 @@ static AssetData loadGLTFAsset(const std::filesystem::path& filepath) {
 		case fastgltf::GltfType::Invalid:
 			assert(false);
 	}
-	ASSERT_MSG(asset_result.error() == fastgltf::Error::None, "Error when validating {}", filepath.c_str());
+	ASSERT_MSG(asset_result.error() == fastgltf::Error::None, "Error when validating {}", filepath.string().c_str());
 	fastgltf::Asset gltf = std::move(asset_result.get());
 
 	// 2. process asset
@@ -279,7 +279,7 @@ static AssetData loadGLTFAsset(const std::filesystem::path& filepath) {
 		int w, h, nChannels;
 		std::visit(fastgltf::visitor {
 			[&](auto& args) {
-					ASSERT_MSG(false, "Unsupported image named: '{}' from gltf: '{}'", image.name, filepath.c_str());
+					ASSERT_MSG(false, "Unsupported image named: '{}' from gltf: '{}'", image.name, filepath.string().c_str());
 				},
 				[&](const fastgltf::sources::BufferView& view) {
 					const fastgltf::BufferView& bufferView = gltf.bufferViews[view.bufferViewIndex];
@@ -291,7 +291,7 @@ static AssetData loadGLTFAsset(const std::filesystem::path& filepath) {
 										reinterpret_cast<const stbi_uc*>(vector.bytes.data() + bufferView.byteOffset),
 										static_cast<int>(bufferView.byteLength),
 										&w, &h, &nChannels, 4);
-								ASSERT_MSG(image_data, "Failed to load data from image named: '{}' from gltf: '{}'", image.name, filepath.c_str());
+								ASSERT_MSG(image_data, "Failed to load data from image named: '{}' from gltf: '{}'", image.name, filepath.string().c_str());
 								texture.width = w;
 								texture.height = h;
 								texture.channels = nChannels;
@@ -304,7 +304,7 @@ static AssetData loadGLTFAsset(const std::filesystem::path& filepath) {
 							reinterpret_cast<const stbi_uc*>(array.bytes.data()),
 							static_cast<int>(array.bytes.size()),
 							&w, &h, &nChannels, 4);
-					ASSERT_MSG(image_data, "Failed to load data from image named: '{}' from gltf: '{}'", image.name, filepath.c_str());
+					ASSERT_MSG(image_data, "Failed to load data from image named: '{}' from gltf: '{}'", image.name, filepath.string().c_str());
 					texture.width = w;
 					texture.height = h;
 					texture.channels = nChannels;
@@ -315,7 +315,7 @@ static AssetData loadGLTFAsset(const std::filesystem::path& filepath) {
 							reinterpret_cast<const stbi_uc*>(vector.bytes.data()),
 							static_cast<int>(vector.bytes.size()),
 							&w, &h, &nChannels, 4);
-					ASSERT_MSG(image_data, "Failed to load data from image named: '{}' from gltf: '{}'", image.name, filepath.c_str());
+					ASSERT_MSG(image_data, "Failed to load data from image named: '{}' from gltf: '{}'", image.name, filepath.string().c_str());
 					texture.width = w;
 					texture.height = h;
 					texture.channels = nChannels;
@@ -326,8 +326,8 @@ static AssetData loadGLTFAsset(const std::filesystem::path& filepath) {
 					ASSERT(uri_source.uri.isLocalPath());
 
 					const std::filesystem::path image_path = uri_source.uri.path();
-					unsigned char* image_data = stbi_load(image_path.c_str(), &w, &h, &nChannels, 4);
-					ASSERT_MSG(image_data, "Failed to load data from image named: '{}' from gltf: '{}'", image.name, filepath.c_str());
+					unsigned char* image_data = stbi_load(image_path.string().c_str(), &w, &h, &nChannels, 4);
+					ASSERT_MSG(image_data, "Failed to load data from image named: '{}' from gltf: '{}'", image.name, filepath.string().c_str());
 					texture.width = w;
 					texture.height = h;
 					texture.channels = nChannels;
@@ -344,7 +344,7 @@ static mythril::Texture loadTexture(mythril::CTX& ctx, const std::filesystem::pa
 	assert(std::filesystem::exists(filepath));
 
 	int w, h, nChannels;
-	unsigned char* image_data = stbi_load(filepath.c_str(), &w, &h, &nChannels, 4);
+	unsigned char* image_data = stbi_load(filepath.string().c_str(), &w, &h, &nChannels, 4);
 	assert(image_data);
 	mythril::Texture texture = ctx.createTexture({
 		.dimension = { static_cast<uint32_t>(w), static_cast<uint32_t>(h) },
@@ -354,7 +354,7 @@ static mythril::Texture loadTexture(mythril::CTX& ctx, const std::filesystem::pa
 		.numMipLevels = mythril::vkutil::CalcNumMipLevels(w, h),
 		.initialData = image_data,
 		.generateMipmaps = true,
-		.debugName = filepath.filename().c_str()
+		.debugName = filepath.filename().string().c_str()
 	});
 	stbi_image_free(image_data);
 	return texture;
@@ -562,9 +562,10 @@ static void UpdatePointLightShadowMatrices(
 int main() {
 	static constexpr VkFormat kOffscreenFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
 	const std::filesystem::path kDataDir = std::filesystem::path(MYTH_SAMPLE_NAME).concat("_data/");
-	static std::vector slang_searchpaths = {
+	const static std::vector<std::string> slang_searchpaths = {
 		"../../include/",
-		"../include/"
+		"../include/",
+		(kDataDir / "shaders/").string()
 	};
 	static std::vector<const char*> vulkan_extensions = {};
 	auto ctx = mythril::CTXBuilder{}
@@ -692,14 +693,6 @@ int main() {
 		.wrapU = mythril::SamplerWrap::ClampEdge,
 		.wrapV = mythril::SamplerWrap::ClampEdge,
 		.debugName = "Clamp Sampler"
-	});
-	mythril::Shader luminanceShader = ctx->createShader({
-		.filePath = kDataDir / "shaders/BrightCompute.slang",
-		.debugName = "Luminance Shader"
-	});
-	mythril::ComputePipeline luminanceComputePipeline = ctx->createComputePipeline({
-		.shader = luminanceShader.handle(),
-		.debugName = "Luminance Compute Pipeline"
 	});
 
 	mythril::Shader fullscreenCompositeShader = ctx->createShader({
@@ -1281,8 +1274,8 @@ int main() {
 		cmd.cmdPushConstants(push);
 		mythril::Dimensions texDims = offscreenColorTexs[7]->getDimensions();
 		glm::vec2 threadsPerGroup = {16, 16};
-		uint groupX = (texDims.width + threadsPerGroup.x - 1) / threadsPerGroup.x;
-		uint groupY = (texDims.height + threadsPerGroup.y - 1) / threadsPerGroup.y;
+		uint32_t groupX = (texDims.width + threadsPerGroup.x - 1) / threadsPerGroup.x;
+		uint32_t groupY = (texDims.height + threadsPerGroup.y - 1) / threadsPerGroup.y;
 		cmd.cmdDispatchThreadGroup({groupX, groupY, 1});
 	});
 

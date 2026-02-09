@@ -36,3 +36,7 @@
 cmake-build-*
 .idea
 .cache/
+# for visual studio
+out/
+build/
+.vs/

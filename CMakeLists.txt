@@ -18,6 +18,10 @@ option(MYTH_ENABLE_IMGUI_DOCKING "Enable ImGui Plugin Docking Branch" OFF)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+# required for __va_opt__ on msvc
+if(MSVC)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /Zc:preprocessor /bigobj")
+endif()   
 
 # ==================== Build Type Configuration ====================
 if(CMAKE_BUILD_TYPE STREQUAL "Release")

@@ -7,11 +7,13 @@
 #include "vkenums.h"
 #include "HelperMacros.h"
 #include "Logger.h"
+#include "vkutil.h"
 
 #include <volk.h>
 #include <algorithm>
+#include <array>
 
-#include "vkutil.h"
+
 
 namespace mythril {
 	// some helper functions //
