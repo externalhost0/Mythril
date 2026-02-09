@@ -46,6 +46,7 @@ namespace mythril {
 		pool_info.pPoolSizes = pool_sizes;
 		VK_CHECK(vkCreateDescriptorPool(ctx._vkDevice, &pool_info, nullptr, &this->_descriptorPool));
 
+		// todo: have the image counts be variable
 		ImGui_ImplVulkan_InitInfo vulkanInitInfo = {
 				.ApiVersion = VK_API_VERSION_1_3,
 				.Instance = ctx._vkInstance,
@@ -55,7 +56,7 @@ namespace mythril {
 				.Queue = ctx._vkGraphicsQueue,
 				.DescriptorPool = this->_descriptorPool,
 				.MinImageCount = 2,
-				.ImageCount = 2,
+				.ImageCount = 3,
 				.PipelineInfoMain = {
 						.MSAASamples = VK_SAMPLE_COUNT_1_BIT,
 						.PipelineRenderingCreateInfo = {

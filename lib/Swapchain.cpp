@@ -25,6 +25,7 @@ namespace mythril {
 				.format = args.format,
 				.colorSpace = args.colorSpace,
 			})
+			// .set_desired_min_image_count(vkb::SwapchainBuilder::DOUBLE_BUFFERING)
 			.set_desired_present_mode(args.presentMode) // VERY IMPORTANT, decides framerate/buffer/sync
 			.set_desired_extent(width, height)
 			.add_image_usage_flags(VK_IMAGE_USAGE_TRANSFER_DST_BIT)
@@ -112,24 +113,61 @@ namespace mythril {
 		}
 	}
 
+	// void Swapchain::acquire() {
+	// 	MYTH_PROFILER_FUNCTION();
+	// 	if (_getNextImage) {
+	// 		const VkSemaphoreWaitInfo waitInfo = {
+	// 				.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
+	// 				.semaphoreCount = 1,
+	// 				.pSemaphores = &_ctx._timelineSemaphore,
+	// 				.pValues = &_timelineWaitValues[_currentImageIndex],
+	// 		};
+	// 		ASSERT_MSG(_currentImageIndex < (sizeof(_timelineWaitValues)/sizeof(_timelineWaitValues[0])), "Image index out of range");
+	// 		VK_CHECK(vkWaitSemaphores(_ctx._vkDevice, &waitInfo, UINT64_MAX));
+	// 		VK_CHECK(vkWaitForFences(_ctx._vkDevice, 1, &_vkAcquireFences[_currentImageIndex], VK_TRUE, UINT64_MAX));
+	// 		VK_CHECK(vkResetFences(_ctx._vkDevice, 1, &_vkAcquireFences[_currentImageIndex]));
+	//
+	// 		// aliases
+	// 		VkFence acquireFence = _vkAcquireFences[_currentImageIndex];
+	// 		VkSemaphore acquireSemaphore = _vkAcquireSemaphores[_currentImageIndex];
+	// 		const VkResult result = vkAcquireNextImageKHR(_ctx._vkDevice, _vkSwapchain, UINT64_MAX, acquireSemaphore, acquireFence, &_currentImageIndex);
+	// 		if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR && result != VK_ERROR_OUT_OF_DATE_KHR) {
+	// 			ASSERT(result);
+	// 		}
+	// 		_getNextImage = false;
+	// 		_ctx._imm->waitSemaphore(acquireSemaphore);
+	// 	}
+	// }
 	void Swapchain::acquire() {
 		MYTH_PROFILER_FUNCTION();
 		if (_getNextImage) {
-			const VkSemaphoreWaitInfo waitInfo = {
-					.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
-					.semaphoreCount = 1,
-					.pSemaphores = &_ctx._timelineSemaphore,
-					.pValues = &_timelineWaitValues[_currentImageIndex],
-			};
-			ASSERT_MSG(_currentImageIndex < (sizeof(_timelineWaitValues)/sizeof(_timelineWaitValues[0])), "Image index out of range");
-			VK_CHECK(vkWaitSemaphores(_ctx._vkDevice, &waitInfo, UINT64_MAX));
-			VK_CHECK(vkWaitForFences(_ctx._vkDevice, 1, &_vkAcquireFences[_currentImageIndex], VK_TRUE, UINT64_MAX));
-			VK_CHECK(vkResetFences(_ctx._vkDevice, 1, &_vkAcquireFences[_currentImageIndex]));
+			// calculate frame in flight index, which is different from image index
+			uint32_t frameIndex = _currentFrameNum % _numSwapchainImages;
 
-			// aliases
-			VkFence acquireFence = _vkAcquireFences[_currentImageIndex];
-			VkSemaphore acquireSemaphore = _vkAcquireSemaphores[_currentImageIndex];
-			const VkResult result = vkAcquireNextImageKHR(_ctx._vkDevice, _vkSwapchain, UINT64_MAX, acquireSemaphore, acquireFence, &_currentImageIndex);
+			// wait for frame N - numSwapchainImages
+			const VkSemaphoreWaitInfo waitInfo = {
+				.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
+				.semaphoreCount = 1,
+				.pSemaphores = &_ctx._timelineSemaphore,
+				.pValues = &_timelineWaitValues[frameIndex],
+			};
+			VK_CHECK(vkWaitSemaphores(_ctx._vkDevice, &waitInfo, UINT64_MAX));
+
+			VK_CHECK(vkWaitForFences(_ctx._vkDevice, 1, &_vkAcquireFences[frameIndex], VK_TRUE, UINT64_MAX));
+			VK_CHECK(vkResetFences(_ctx._vkDevice, 1, &_vkAcquireFences[frameIndex]));
+
+			// acquire with this upcoming frames semaphore and fence
+			VkSemaphore acquireSemaphore = _vkAcquireSemaphores[frameIndex];
+			VkFence acquireFence = _vkAcquireFences[frameIndex];
+
+			const VkResult result = vkAcquireNextImageKHR(
+				_ctx._vkDevice,
+				_vkSwapchain,
+				UINT64_MAX,
+				acquireSemaphore,
+				acquireFence,
+				&_currentImageIndex
+			);
 			if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR && result != VK_ERROR_OUT_OF_DATE_KHR) {
 				ASSERT(result);
 			}
@@ -146,7 +184,7 @@ namespace mythril {
 				.pNext = nullptr,
 				.waitSemaphoreCount = 1,
 				.pWaitSemaphores = &semaphore,
-				.swapchainCount = 1u,
+				.swapchainCount = 1,
 				.pSwapchains = &_vkSwapchain,
 				.pImageIndices = &_currentImageIndex,
 		};

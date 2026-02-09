@@ -32,6 +32,7 @@ namespace mythril {
 		ImmediateCommands& operator=(const ImmediateCommands&) = delete;
 	public:
 		void wait(SubmitHandle handle);
+
 		void waitAll();
 		bool isReady(SubmitHandle handle, bool fastCheckNoVulkan = false) const;
 		VkFence getVkFence(SubmitHandle handle) const;
@@ -40,6 +41,8 @@ namespace mythril {
 
 		void waitSemaphore(VkSemaphore semaphore);
 		void signalSemaphore(VkSemaphore semaphore, uint64_t signalValue);
+
+		void waitTimelineSemaphore(VkSemaphore semaphore, uint64_t value);
 
 		VkSemaphore acquireLastSubmitSemaphore() { return std::exchange(_lastSubmitSemaphore.semaphore, VK_NULL_HANDLE); }
 		SubmitHandle getLastSubmitHandle() const { return _lastSubmitHandle; };
@@ -62,6 +65,10 @@ namespace mythril {
 		VkSemaphoreSubmitInfo _signalSemaphore = {
 				.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
 				.stageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT
+		};
+		VkSemaphoreSubmitInfo _waitTimelineSemaphore = {
+			.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+			.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT
 		};
 
 		VkQueue _vkQueue = VK_NULL_HANDLE;

@@ -529,7 +529,7 @@ missing_features.append("\n\t(" version ") " #feature);
 	}
 
 	std::unique_ptr<CTX> CTXBuilder::build() {
-		MYTH_PROFILER_ZONE("CTXBuilder::build", MYTH_PROFILER_COLOR_CREATE);
+		MYTH_PROFILER_ZONE_COLOR("CTXBuilder::build", MYTH_PROFILER_COLOR_CREATE);
 		// mythril should only provide graphics related things
 		// fixme as this means that we have no audio
 		if (!SDL_Init(SDL_INIT_VIDEO)) {

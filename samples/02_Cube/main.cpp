@@ -88,10 +88,11 @@ glm::mat4 calculateProjectionMatrix(const Camera& camera) {
 	return glm::perspective(glm::radians(camera.fov), camera.aspectRatio, camera.nearPlane, camera.farPlane);
 }
 int main() {
-	std::filesystem::path dataDir = std::filesystem::path(MYTH_SAMPLE_NAME).concat("_data/");
-	std::vector slang_searchpaths = {
+	static const std::filesystem::path kDataDir = std::filesystem::path(MYTH_SAMPLE_NAME).concat("_data/");
+	static const std::vector<std::string> slang_searchpaths = {
 		"../../include/",
-		"../include/"
+		"../include/",
+		kDataDir.string()
 	};
 	auto ctx = mythril::CTXBuilder{}
 	.set_vulkan_cfg({
@@ -127,7 +128,7 @@ int main() {
 	});
 
 	mythril::Shader standardShader = ctx->createShader({
-		.filePath = dataDir / "BasicRed.slang",
+		.filePath = kDataDir / "BasicRed.slang",
 		.debugName = "Red Object Shader"
 	});
 	mythril::GraphicsPipeline mainPipeline = ctx->createGraphicsPipeline({

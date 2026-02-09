@@ -68,10 +68,16 @@
 	#define MYTH_PROFILER_FUNCTION_COLOR(color) ZoneScopedNC(__PRETTY_FUNCTION__, color)
 #endif
 
-#define MYTH_PROFILER_ZONE(name, color) { \
+#define MYTH_PROFILER_ZONE_COLOR(name, color) { \
 	ZoneScopedC(color); \
 	ZoneName(name, strlen(name))
+
+#define MYTH_PROFILER_ZONE(name) { \
+	ZoneScoped(); \
+	ZoneName(name, strlen(name))
+
 #define MYTH_PROFILER_ZONE_END() }
+
 
 #define MYTH_PROFILER_THREAD(name) tracy::SetThreadName(name)
 #define MYTH_PROFILER_FRAME(name) FrameMarkNamed(name)
@@ -80,6 +86,7 @@
  #define MYTH_PROFILER_FUNCTION()
  #define MYTH_PROFILER_FUNCTION_COLOR(color)
  #define MYTH_PROFILER_ZONE(name, color) {
+#define MYTH_PROFILER_ZONE(name) {
  #define MYTH_PROFILER_ZONE_END() }
  #define MYTH_PROFILER_THREAD(name)
  #define MYTH_PROFILER_FRAME(name)
@@ -105,7 +112,7 @@ namespace mythril {
 	// class ComputePipeline;
 
 	struct DeferredTask {
-		DeferredTask(std::packaged_task<void()>&& task, SubmitHandle handle) : _task(std::move(task)), _handle(handle) {}
+		DeferredTask(std::packaged_task<void()>&& task, SubmitHandle handle, uint64_t frameNum) : _task(std::move(task)), _handle(handle) {}
 		std::packaged_task<void()> _task;
 		SubmitHandle _handle;
 	};
@@ -303,7 +310,8 @@ namespace mythril {
 		void processDeferredTasks();
 		void waitDeferredTasks();
 
-	private: // Vulkan Members //
+	private:
+		// Vulkan Members //
 		VkInstance _vkInstance = VK_NULL_HANDLE;
 		VkDebugUtilsMessengerEXT _vkDebugMessenger = VK_NULL_HANDLE;
 		VkSurfaceKHR _vkSurfaceKHR = VK_NULL_HANDLE;
@@ -317,7 +325,7 @@ namespace mythril {
 		VulkanProperties _propertiesVulkan;
 		std::unordered_set<std::string> _enabledExtensionNames; // includes both instance and device extensions
 
-		// vulkan queues
+		// queues
 		VkQueue _vkGraphicsQueue = VK_NULL_HANDLE;
 		uint32_t _graphicsQueueFamilyIndex = -1;
 		// optional queues
@@ -325,12 +333,14 @@ namespace mythril {
 		uint32_t _presentQueueFamilyIndex = -1;
 		VkQueue _vkComputeQueue = VK_NULL_HANDLE;
 		uint32_t _computeQueueFamilyIndex = -1;
-	private: // not really my stuff //
+	private:
+		// not really my stuff //
 		Texture _dummyTexture;
 		Sampler _dummyLinearSampler;
 
 		mutable std::vector<DeferredTask> _deferredTasks;
 
+		// for updating the bindless set
 		bool _awaitingCreation = false;
 		bool _awaitingNewImmutableSamplers = false;
 		uint32_t _currentMaxTextureCount = 16;
@@ -344,7 +354,9 @@ namespace mythril {
 
 		CommandBuffer _currentCommandBuffer;
 		DescriptorAllocatorGrowable _descriptorAllocator;
-	private: // my stuff //
+	private:
+		// my stuff //
+		uint64_t _currentFrameNumber = 0;
 		std::unique_ptr<ImmediateCommands> _imm = nullptr;
 		std::unique_ptr<Swapchain> _swapchain = nullptr;
 		std::unique_ptr<StagingDevice> _staging = nullptr;

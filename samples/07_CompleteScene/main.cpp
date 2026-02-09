@@ -9,6 +9,7 @@
 
 #include <vector>
 #include <filesystem>
+#include <execution>
 
 #include <imgui.h>
 #include <imgui_impl_vulkan.h>
@@ -74,8 +75,7 @@ struct AssetCompiled {
 	uint32_t getNumOfOpaqueMeshes() const {
 		uint32_t n = 0;
 		for (const MeshCompiled& mesh : meshes) {
-			const MaterialData& material = materials[mesh.materialIndex];
-			if (material.isTransparent) continue;
+			if (materials[mesh.materialIndex].isTransparent) continue;
 			n++;
 		}
 		return n;
@@ -83,8 +83,7 @@ struct AssetCompiled {
 	uint32_t getNumOfTransparentMeshes() const {
 		uint32_t n = 0;
 		for (const MeshCompiled& mesh : meshes) {
-			const MaterialData& material = materials[mesh.materialIndex];
-			if (!material.isTransparent) continue;
+			if (!materials[mesh.materialIndex].isTransparent) continue;
 			n++;
 		}
 		return n;
@@ -153,7 +152,7 @@ static AssetData loadGLTFAsset(const std::filesystem::path& filepath) {
 			fastgltf::Options::LoadExternalImages          |
 			fastgltf::Options::AllowDouble;
 
-	fastgltf::Expected<fastgltf::Asset> asset_result = fastgltf::Expected<fastgltf::Asset>(fastgltf::Error::None);
+	auto asset_result = fastgltf::Expected<fastgltf::Asset>(fastgltf::Error::None);
 	switch (determineGltfFileType(data)) {
 		case fastgltf::GltfType::glTF:
 			asset_result = parser.loadGltf(data, filepath.parent_path(), options);
@@ -215,7 +214,7 @@ static AssetData loadGLTFAsset(const std::filesystem::path& filepath) {
 			{
 				const fastgltf::Accessor& indexAccessor = gltf.accessors[primitive.indicesAccessor.value()];
 				indices.reserve(indices.size() + indexAccessor.count);
-				fastgltf::iterateAccessor<uint32_t>(gltf, indexAccessor, [&](uint32_t idx) {
+				fastgltf::iterateAccessor<uint32_t>(gltf, indexAccessor, [&indices, initial_vertex](const uint32_t idx) {
 					indices.push_back(idx + initial_vertex);
 				});
 			}
@@ -226,7 +225,7 @@ static AssetData loadGLTFAsset(const std::filesystem::path& filepath) {
 
 				// initialize vertex values
 				// load position
-				fastgltf::iterateAccessorWithIndex<glm::vec3>(gltf, posAccessor, [&](glm::vec3 v, size_t index) {
+				fastgltf::iterateAccessorWithIndex<glm::vec3>(gltf, posAccessor, [&vertices, initial_vertex](const glm::vec3 v, const size_t index) {
 					GPU::GeneralVertex vertex = {};
 					vertex.position = v;
 					vertex.uv_x = 0;
@@ -237,26 +236,23 @@ static AssetData loadGLTFAsset(const std::filesystem::path& filepath) {
 				});
 
 				// load normals
-				auto normals = primitive.findAttribute("NORMAL");
-				if (normals != primitive.attributes.end()) {
-					fastgltf::iterateAccessorWithIndex<glm::vec3>(gltf, gltf.accessors[(*normals).accessorIndex], [&](glm::vec3 v, size_t index) {
+				if (auto normals = primitive.findAttribute("NORMAL"); normals != primitive.attributes.end()) {
+					fastgltf::iterateAccessorWithIndex<glm::vec3>(gltf, gltf.accessors[normals->accessorIndex], [&vertices, initial_vertex](glm::vec3 v, size_t index) {
 						vertices[initial_vertex + index].normal = v;
 					});
 				}
 
 				// load UVs
-				auto uv = primitive.findAttribute("TEXCOORD_0");
-				if (uv != primitive.attributes.end()) {
-					fastgltf::iterateAccessorWithIndex<glm::vec2>(gltf, gltf.accessors[(*uv).accessorIndex], [&](glm::vec2 v, size_t index) {
+				if (auto uv = primitive.findAttribute("TEXCOORD_0"); uv != primitive.attributes.end()) {
+					fastgltf::iterateAccessorWithIndex<glm::vec2>(gltf, gltf.accessors[uv->accessorIndex], [&vertices, initial_vertex](glm::vec2 v, size_t index) {
 						vertices[initial_vertex + index].uv_x = v.x;
 						vertices[initial_vertex + index].uv_y = v.y;
 					});
 				}
 
 				// load tangents
-				auto tangents = primitive.findAttribute("TANGENT");
-				if (tangents != primitive.attributes.end()) {
-					fastgltf::iterateAccessorWithIndex<glm::vec4>(gltf, gltf.accessors[(*tangents).accessorIndex], [&](glm::vec4 v, size_t index) {
+				if (auto tangents = primitive.findAttribute("TANGENT"); tangents != primitive.attributes.end()) {
+					fastgltf::iterateAccessorWithIndex<glm::vec4>(gltf, gltf.accessors[tangents->accessorIndex], [&vertices, initial_vertex](glm::vec4 v, size_t index) {
 						vertices[initial_vertex + index].tangent = v;
 					});
 				}
@@ -382,7 +378,7 @@ static AssetCompiled compileGLTFAsset(mythril::CTX& ctx, AssetData& data) {
 			MeshCompiled mesh_compiled;
 			mesh_compiled.materialIndex = primitive_data.materialIndex;
 
-			mythril::BufferHandle mesh_vertex_buffer = ctx.createBuffer({
+			const mythril::BufferHandle mesh_vertex_buffer = ctx.createBuffer({
 				.size = sizeof(GPU::GeneralVertex) * primitive_data.vertexData.size(),
 				.usage = mythril::BufferUsageBits::BufferUsageBits_Storage,
 				.storage = mythril::StorageType::Device,
@@ -392,7 +388,7 @@ static AssetCompiled compileGLTFAsset(mythril::CTX& ctx, AssetData& data) {
 			mesh_compiled.vertexBufHandle = mesh_vertex_buffer;
 			mesh_compiled.vertexCount = primitive_data.vertexData.size();
 
-			mythril::BufferHandle mesh_index_buffer = ctx.createBuffer({
+			const mythril::BufferHandle mesh_index_buffer = ctx.createBuffer({
 				.size = sizeof(uint32_t) * primitive_data.indexData.size(),
 				.usage = mythril::BufferUsageBits::BufferUsageBits_Index,
 				.storage = mythril::StorageType::Device,
@@ -525,49 +521,49 @@ void UpdateParticles(std::vector<ParticleData>& particles, float deltaTime, floa
 	const float dtSpeed = deltaTime * speed;
 	for (auto& p : particles) {
 		p.position += p.velocity * dtSpeed;
-		// Optional: bounce off bounds
-		for (int i = 0; i < 3; ++i) {
-			if (p.position[i] < -50.0f || p.position[i] > 100.0f)
-				p.velocity[i] = -p.velocity[i]; // reflect velocity
-		}
+		// for (int i = 0; i < 3; ++i) {
+		// 	if (p.position[i] < -50.0f || p.position[i] > 100.0f)
+		// 		p.velocity[i] = -p.velocity[i]; // reflect velocity
+		// }
 	}
 }
-
 static constexpr uint8_t kNumPointLights = 4;
 static void UpdatePointLightShadowMatrices(
-	const GPU::LightingData& lightingData,
-	float modelScale,
-	float nearPlane,
-	float farPlane,
-	glm::mat4 outShadowMatrices[kNumPointLights][6]) {
-	const glm::mat4 scaledModel = glm::scale(glm::mat4(1.0f), glm::vec3(modelScale));
-	for (int i = 0; i < kNumPointLights; ++i) {
-		const glm::vec3 lightPos = lightingData.pointLights[i].position;
-		glm::mat4 shadowProj = glm::perspective(glm::radians(90.0f), 1.0f, nearPlane, farPlane);
-		// we need to swap the +y and -y in order to account for the swith on vulkan
-		const glm::mat4 shadowViews[6] = {
-			glm::lookAt(lightPos, lightPos + glm::vec3( 1,  0,  0), glm::vec3(0, -1,  0)), // +X
-			glm::lookAt(lightPos, lightPos + glm::vec3(-1,  0,  0), glm::vec3(0, -1,  0)), // -X
-			glm::lookAt(lightPos, lightPos + glm::vec3( 0, -1,  0), glm::vec3(0,  0, -1)), // -Y
-			glm::lookAt(lightPos, lightPos + glm::vec3(0, 1, 0), glm::vec3(0, 0, 1)), // +Y
-			glm::lookAt(lightPos, lightPos + glm::vec3( 0,  0,  1), glm::vec3(0, -1,  0)), // +Z
-			glm::lookAt(lightPos, lightPos + glm::vec3( 0,  0, -1), glm::vec3(0, -1,  0)), // -Z
-		};
-		for (int face = 0; face < 6; ++face) {
-			outShadowMatrices[i][face] = shadowProj * shadowViews[face] * scaledModel;
-		}
-	}
+    const GPU::LightingData& lightingData,
+    float modelScale,
+    float nearPlane,
+    float farPlane,
+    glm::mat4 outShadowMatrices[kNumPointLights][6]) {
+    const glm::mat4 shadowProj = glm::perspective(glm::radians(90.0f), 1.0f, nearPlane, farPlane);
+    const glm::mat4 scaledModel = glm::scale(glm::mat4(1.0f), glm::vec3(modelScale));
+    const glm::mat4 projModel = shadowProj;
+    static const struct { glm::vec3 target; glm::vec3 up; } faceDirs[6] = {
+        { { 1, 0, 0}, {0,-1, 0} }, // +X
+        { {-1, 0, 0}, {0,-1, 0} }, // -X
+        { { 0,-1, 0}, {0, 0,-1} }, // -Y
+        { { 0, 1, 0}, {0, 0, 1} }, // +Y
+        { { 0, 0, 1}, {0,-1, 0} }, // +Z
+        { { 0, 0,-1}, {0,-1, 0} }  // -Z
+    };
+    for (int i = 0; i < kNumPointLights; ++i) {
+        const glm::vec3& lightPos = lightingData.pointLights[i].position;
+        for (int face = 0; face < 6; ++face) {
+            outShadowMatrices[i][face] = projModel * glm::lookAt(lightPos, lightPos + faceDirs[face].target, faceDirs[face].up) * scaledModel;
+        }
+    }
 }
 
 int main() {
 	static constexpr VkFormat kOffscreenFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
-	const std::filesystem::path kDataDir = std::filesystem::path(MYTH_SAMPLE_NAME).concat("_data/");
-	const static std::vector<std::string> slang_searchpaths = {
+	static const std::filesystem::path kDataDir = std::filesystem::path(MYTH_SAMPLE_NAME).concat("_data/");
+	static const std::vector<std::string> slang_searchpaths = {
 		"../../include/",
 		"../include/",
 		(kDataDir / "shaders/").string()
 	};
-	static std::vector<const char*> vulkan_extensions = {};
+	static std::vector<const char*> vulkan_extensions = {
+		VK_EXT_CALIBRATED_TIMESTAMPS_EXTENSION_NAME
+	};
 	auto ctx = mythril::CTXBuilder{}
 	.set_vulkan_cfg({
 		.app_name = "Cool App Name",
@@ -1272,10 +1268,10 @@ int main() {
 			.sampler = 0
 		};
 		cmd.cmdPushConstants(push);
-		mythril::Dimensions texDims = offscreenColorTexs[7]->getDimensions();
-		glm::vec2 threadsPerGroup = {16, 16};
-		uint32_t groupX = (texDims.width + threadsPerGroup.x - 1) / threadsPerGroup.x;
-		uint32_t groupY = (texDims.height + threadsPerGroup.y - 1) / threadsPerGroup.y;
+		const mythril::Dimensions texDims = offscreenColorTexs[7]->getDimensions();
+		constexpr glm::vec2 threadsPerGroup = {16, 16};
+		const auto groupX = static_cast<uint32_t>((texDims.width + threadsPerGroup.x - 1) / threadsPerGroup.x);
+		const auto groupY = static_cast<uint32_t>((texDims.height + threadsPerGroup.y - 1) / threadsPerGroup.y);
 		cmd.cmdDispatchThreadGroup({groupX, groupY, 1});
 	});
 
@@ -1527,9 +1523,8 @@ int main() {
 	constexpr float kShiftCameraSpeed = kBaseCameraSpeed * 3.f;
 	glm::vec3 camera_position = {0.f, 5.f, 0.f};
 
-
 	lightingData.environmentLight.color     = {0.25f, 0.30f, 0.35f};
-	lightingData.environmentLight.intensity = 0.3f;
+	lightingData.environmentLight.intensity = 0.2f;
 
 	auto startTime = std::chrono::steady_clock::now();
 	bool quit = false;
@@ -1744,7 +1739,7 @@ int main() {
 
 		ImGuizmo::SetOrthographic(false);
 		ImGuizmo::SetDrawlist(ImGui::GetBackgroundDrawList());
-		ImGuizmo::SetRect(0, 0, windowSize.width, windowSize.height);
+		ImGuizmo::SetRect(0, 0, static_cast<float>(windowSize.width), static_cast<float>(windowSize.height));
 		ImGuizmo::Manipulate(
 				glm::value_ptr(cameraView),
 				glm::value_ptr(calculateProjectionMatrix(camera, false)),
@@ -1771,16 +1766,20 @@ int main() {
 			.deltaTime = deltaTime
 		};
 
+		MYTH_PROFILER_ZONE_COLOR("updating buffers cpu", MYTH_PROFILER_COLOR_PRESENT);
 		UpdateParticles(particles, deltaTime, particle_speed);
 		UpdatePointLightShadowMatrices(frameData.lighting, kMODELSCALE, pointlight_nearplane, pointlight_farplane, shadowMatrices);
-
-		mythril::CommandBuffer& cmd = ctx->openCommand(mythril::CommandBuffer::Type::Graphics);
-		cmd.cmdUpdateBuffer(frameDataHandle, frameData);
-		// because the data we want to store in the particle buffer is so large, we need to upload it like this
+		MYTH_PROFILER_ZONE_END()
 		ctx->upload(particles_buffer.handle(), particles.data(), sizeof(ParticleData) * particles.size(), 0);
 		ctx->upload(pointLightShadowMatrixBuf.handle(), &shadowMatrices[0][0], sizeof(glm::mat4) * kNumPointLights * 6, 0);
-		graph.execute(cmd);
-		ctx->submitCommand(cmd);
+		{
+			MYTH_PROFILER_ZONE_COLOR("Main Graphics Command", MYTH_PROFILER_COLOR_RENDERPASS);
+			mythril::CommandBuffer& cmd = ctx->openCommand(mythril::CommandBuffer::Type::Graphics);
+			cmd.cmdUpdateBuffer(frameDataHandle, frameData);
+			graph.execute(cmd);
+			ctx->submitCommand(cmd);
+			MYTH_PROFILER_ZONE_END();
+		}
 		lastFramelightingData = lightingData;
 		std::swap(adaptedLuminanceTextures[0], adaptedLuminanceTextures[1]);
 	}

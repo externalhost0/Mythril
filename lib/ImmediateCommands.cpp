@@ -59,6 +59,7 @@ namespace mythril {
 	void ImmediateCommands::wait(SubmitHandle handle) {
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_WAIT);
 		if (handle.empty()) {
+			LOG_SYSTEM(LogType::Warning, "A vkDeviceWaitIdle is running...");
 			vkDeviceWaitIdle(_vkDevice);
 			return;
 		}
@@ -110,6 +111,8 @@ namespace mythril {
 		}
 	}
 	bool ImmediateCommands::isReady(const SubmitHandle handle, const bool fastCheckNoVulkan) const {
+		ASSERT(handle.bufferIndex_ < kMaxCommandBuffers);
+
 		if (handle.empty()) {
 			// a null handle
 			return true;
@@ -134,13 +137,16 @@ namespace mythril {
 		ASSERT_MSG(wrapper._isEncoding, "Command buffer must be encoding!");
 		VK_CHECK(vkEndCommandBuffer(wrapper._cmdBuf));
 
-		VkSemaphoreSubmitInfo waitSemaphores[] = {{}, {}};
+		VkSemaphoreSubmitInfo waitSemaphores[] = {{}, {}, {}};
 		uint32_t numWaitSemaphores = 0;
 		if (_waitSemaphore.semaphore) {
 			waitSemaphores[numWaitSemaphores++] = _waitSemaphore;
 		}
 		if (_lastSubmitSemaphore.semaphore) {
 			waitSemaphores[numWaitSemaphores++] = _lastSubmitSemaphore;
+		}
+		if (_waitTimelineSemaphore.semaphore) {
+			waitSemaphores[numWaitSemaphores++] = _waitTimelineSemaphore;
 		}
 		VkSemaphoreSubmitInfo signalSemaphores[] = {
 				VkSemaphoreSubmitInfo{
@@ -167,12 +173,15 @@ namespace mythril {
 				.signalSemaphoreInfoCount = numSignalSemaphores,
 				.pSignalSemaphoreInfos = signalSemaphores,
 		};
+		MYTH_PROFILER_ZONE_COLOR("vkQueueSubmit2", MYTH_PROFILER_COLOR_SUBMIT);
 		VK_CHECK(vkQueueSubmit2(_vkQueue, 1u, &si, wrapper._fence));
+		MYTH_PROFILER_ZONE_END();
 
 		_lastSubmitSemaphore.semaphore = wrapper._semaphore;
 		_lastSubmitHandle = wrapper._handle;
 		_waitSemaphore.semaphore = VK_NULL_HANDLE;
 		_signalSemaphore.semaphore = VK_NULL_HANDLE;
+		_waitTimelineSemaphore.semaphore = VK_NULL_HANDLE;
 
 		// reset
 		const_cast<CommandBufferWrapper&>(wrapper)._isEncoding = false;
@@ -187,6 +196,11 @@ namespace mythril {
 	void ImmediateCommands::waitSemaphore(VkSemaphore semaphore) {
 		ASSERT_MSG(_waitSemaphore.semaphore == VK_NULL_HANDLE, "Current wait semaphore is VK_NULL_HANDLE!");
 		_waitSemaphore.semaphore = semaphore;
+	}
+	void ImmediateCommands::waitTimelineSemaphore(VkSemaphore semaphore, uint64_t value) {
+		ASSERT_MSG(_waitTimelineSemaphore.semaphore == VK_NULL_HANDLE, "Current wait timeline semaphore is not VK_NULL_HANDLE!");
+		_waitTimelineSemaphore.semaphore = semaphore;
+		_waitTimelineSemaphore.value = value;
 	}
 	void ImmediateCommands::signalSemaphore(VkSemaphore semaphore, uint64_t signalValue) {
 		ASSERT_MSG(_signalSemaphore.semaphore == VK_NULL_HANDLE, "Current signal semaphore is VK_NULL_HANDLE!");

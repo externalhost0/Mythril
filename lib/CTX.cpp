@@ -316,27 +316,6 @@ namespace mythril {
 		wrappedBackBuffer.updateHandle(this, _swapchain->getCurrentSwapchainTextureHandle());
 	}
 
-	void CTX::deferTask(std::packaged_task<void()>&& task, SubmitHandle handle) const {
-		if (handle.empty()) {
-			handle = _imm->getNextSubmitHandle();
-		}
-		_deferredTasks.emplace_back(std::move(task), handle);
-	}
-	void CTX::processDeferredTasks() {
-		auto it = _deferredTasks.begin();
-		while (it != _deferredTasks.end() && _imm->isReady(it->_handle, true)) {
-			(it++)->_task();
-		}
-		_deferredTasks.erase(_deferredTasks.begin(), it);
-	}
-	void CTX::waitDeferredTasks() {
-		for (auto& task : _deferredTasks) {
-			_imm->wait(task._handle);
-			task._task();
-		}
-		_deferredTasks.clear();
-	}
-
 	void CTX::checkAndUpdateBindlessDescriptorSetImpl() {
 		MYTH_PROFILER_FUNCTION();
 		if (!_awaitingCreation) {
@@ -1594,24 +1573,85 @@ namespace mythril {
 #endif
 		const bool isPresenting = cmd._cmdType == CommandBuffer::Type::Graphics;
 		if (isPresenting) {
+			// Use FRAME index, not IMAGE index for timeline values
+			uint32_t frameIndex = _swapchain->_currentFrameNum % _swapchain->getNumOfSwapchainImages();
 			const uint64_t signalValue = _swapchain->_currentFrameNum + _swapchain->getNumOfSwapchainImages();
-			_swapchain->_timelineWaitValues[_swapchain->_currentImageIndex] = signalValue;
+			_swapchain->_timelineWaitValues[frameIndex] = signalValue;
 			_imm->signalSemaphore(_timelineSemaphore, signalValue);
 		}
-
 		cmd._lastSubmitHandle = _imm->submit(*cmd._wrapper);
 		if (isPresenting) {
 			ASSERT(_texturePool.get(_swapchain->getCurrentSwapchainTextureHandle())->getImageLayout() == VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
 			_swapchain->present();
 		}
+		_currentFrameNumber++;
 		processDeferredTasks();
 		SubmitHandle handle = cmd._lastSubmitHandle;
-		// reset
 		_currentCommandBuffer = {};
-		// might return the submit handle no clue
 		return handle;
 	}
+	void CTX::deferTask(std::packaged_task<void()>&& task, SubmitHandle handle) const {
+		if (handle.empty()) {
+			handle = _imm->getNextSubmitHandle();
+		}
+		_deferredTasks.emplace_back(std::move(task), handle, _currentFrameNumber);
+	}
+	void CTX::processDeferredTasks() {
+		auto it = _deferredTasks.begin();
+		while (it != _deferredTasks.end() && _imm->isReady(it->_handle, true)) {
+			(it++)->_task();
+		}
+		_deferredTasks.erase(_deferredTasks.begin(), it);
+	}
 
+// void CTX::processDeferredTasks() {
+//     const uint64_t numFramesToWait = _swapchain->getNumOfSwapchainImages();
+//     const uint64_t safeFrameThreshold = _currentFrameNumber > numFramesToWait
+//         ? _currentFrameNumber - numFramesToWait
+//         : 0;
+//
+//     auto it = _deferredTasks.begin();
+//     while (it != _deferredTasks.end() && it->_frameNumber < safeFrameThreshold) {
+//         // Wait for this specific work to finish (blocks CPU if needed)
+//         _imm->wait(it->_handle);
+//         (it++)->_task();
+//     }
+//     _deferredTasks.erase(_deferredTasks.begin(), it);
+// }
+	void CTX::waitDeferredTasks() {
+		for (auto& task : _deferredTasks) {
+			_imm->wait(task._handle);
+			task._task();
+		}
+		_deferredTasks.clear();
+	}
+
+// 	SubmitHandle CTX::submitCommand(CommandBuffer& cmd) {
+// 		ASSERT(cmd._ctx);
+// 		ASSERT(cmd._wrapper);
+// #ifdef MYTH_ENABLED_TRACY_GPU
+// 		if (_tracyPlugin.isEnabled())
+// 			TracyVkCollect(_tracyPlugin.getTracyVkCtx(), cmd._wrapper->_cmdBuf);
+// #endif
+// 		const bool isPresenting = cmd._cmdType == CommandBuffer::Type::Graphics;
+// 		if (isPresenting) {
+// 			const uint64_t signalValue = _swapchain->_currentFrameNum + _swapchain->getNumOfSwapchainImages();
+// 			_swapchain->_timelineWaitValues[_swapchain->_currentImageIndex] = signalValue;
+// 			_imm->signalSemaphore(_timelineSemaphore, signalValue);
+// 		}
+//
+// 		cmd._lastSubmitHandle = _imm->submit(*cmd._wrapper);
+// 		if (isPresenting) {
+// 			ASSERT(_texturePool.get(_swapchain->getCurrentSwapchainTextureHandle())->getImageLayout() == VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+// 			_swapchain->present();
+// 		}
+// 		processDeferredTasks();
+// 		SubmitHandle handle = cmd._lastSubmitHandle;
+// 		// reset
+// 		_currentCommandBuffer = {};
+// 		// might return the submit handle no clue
+// 		return handle;
+// 	}
 	void CTX::destroy(BufferHandle handle) {
 		AllocatedBuffer* buf = _bufferPool.get(handle);
 		if (!buf) {
