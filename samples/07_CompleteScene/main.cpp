@@ -591,7 +591,6 @@ int main() {
 	.with_ImGui({
 		.format = kOffscreenFormat,
 	})
-	.with_TracyGPU()
 	.build();
 
 
