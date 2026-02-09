@@ -249,7 +249,7 @@ namespace mythril {
 		cmdTransitionLayoutImpl(source, _ctx->_texturePool.get(source)->_vkCurrentImageLayout, newLayout, range);
 	}
 
-	static constexpr bool CheckTextureCopyInstead(const AllocatedTexture& source, const AllocatedTexture& destination) {
+	static bool CheckTextureCopyInstead(const AllocatedTexture& source, const AllocatedTexture& destination) {
 		if (source.getFormat() != destination.getFormat()) {
 			return false;
 		}

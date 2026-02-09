@@ -52,7 +52,7 @@ namespace mythril {
 	struct SlangCfg
 	{
 		SlangMatrixLayoutMode matrixLayoutMode = SLANG_MATRIX_LAYOUT_COLUMN_MAJOR;
-		std::span<const char*> searchpaths = {};
+		std::vector<std::string> searchpaths = {};
 		std::span<slang::CompilerOptionEntry> compilerOptions = {};
 	};
 
