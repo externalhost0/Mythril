@@ -55,6 +55,40 @@ namespace mythril {
 		}
 		vkDestroyCommandPool(_vkDevice, _vkCommandPool, nullptr);
 	}
+	const ImmediateCommands::CommandBufferWrapper& ImmediateCommands::acquire() {
+		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_ACQUIRE);
+		if (!_numAvailableCommandBuffers) {
+			_purge();
+		}
+		while (!_numAvailableCommandBuffers) {
+			LOG_SYSTEM(LogType::Warning, "Waiting for command buffers..");
+			_purge();
+		}
+		CommandBufferWrapper* current = nullptr;
+		// we are ok with any available buffer
+		for (CommandBufferWrapper& buf : _buffers) {
+			if (buf._cmdBuf == VK_NULL_HANDLE) {
+				current = &buf;
+				break;
+			}
+		}
+		ASSERT_MSG(_numAvailableCommandBuffers, "No available command buffers");
+		ASSERT_MSG(current, "No available command buffers");
+		ASSERT_MSG(current->_cmdBufAllocated != VK_NULL_HANDLE, "Command buffer allocated is NULL_HANDLE");
+
+		current->_handle.submitId_ = _submitCounter;
+		_numAvailableCommandBuffers--;
+
+		current->_cmdBuf = current->_cmdBufAllocated;
+		current->_isEncoding = true;
+		const VkCommandBufferBeginInfo bi = {
+			.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+			.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+	};
+		VK_CHECK(vkBeginCommandBuffer(current->_cmdBuf, &bi));
+		_nextSubmitHandle = current->_handle;
+		return *current;
+	}
 
 	void ImmediateCommands::wait(SubmitHandle handle) {
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_WAIT);
@@ -137,16 +171,13 @@ namespace mythril {
 		ASSERT_MSG(wrapper._isEncoding, "Command buffer must be encoding!");
 		VK_CHECK(vkEndCommandBuffer(wrapper._cmdBuf));
 
-		VkSemaphoreSubmitInfo waitSemaphores[] = {{}, {}, {}};
+		VkSemaphoreSubmitInfo waitSemaphores[] = {{}, {} };
 		uint32_t numWaitSemaphores = 0;
 		if (_waitSemaphore.semaphore) {
 			waitSemaphores[numWaitSemaphores++] = _waitSemaphore;
 		}
 		if (_lastSubmitSemaphore.semaphore) {
 			waitSemaphores[numWaitSemaphores++] = _lastSubmitSemaphore;
-		}
-		if (_waitTimelineSemaphore.semaphore) {
-			waitSemaphores[numWaitSemaphores++] = _waitTimelineSemaphore;
 		}
 		VkSemaphoreSubmitInfo signalSemaphores[] = {
 				VkSemaphoreSubmitInfo{
@@ -173,15 +204,12 @@ namespace mythril {
 				.signalSemaphoreInfoCount = numSignalSemaphores,
 				.pSignalSemaphoreInfos = signalSemaphores,
 		};
-		MYTH_PROFILER_ZONE_COLOR("vkQueueSubmit2", MYTH_PROFILER_COLOR_SUBMIT);
 		VK_CHECK(vkQueueSubmit2(_vkQueue, 1u, &si, wrapper._fence));
-		MYTH_PROFILER_ZONE_END();
 
 		_lastSubmitSemaphore.semaphore = wrapper._semaphore;
 		_lastSubmitHandle = wrapper._handle;
 		_waitSemaphore.semaphore = VK_NULL_HANDLE;
 		_signalSemaphore.semaphore = VK_NULL_HANDLE;
-		_waitTimelineSemaphore.semaphore = VK_NULL_HANDLE;
 
 		// reset
 		const_cast<CommandBufferWrapper&>(wrapper)._isEncoding = false;
@@ -194,16 +222,11 @@ namespace mythril {
 		return _lastSubmitHandle;
 	}
 	void ImmediateCommands::waitSemaphore(VkSemaphore semaphore) {
-		ASSERT_MSG(_waitSemaphore.semaphore == VK_NULL_HANDLE, "Current wait semaphore is VK_NULL_HANDLE!");
+		ASSERT_MSG(_waitSemaphore.semaphore == VK_NULL_HANDLE, "Wait semaphore has already been set!");
 		_waitSemaphore.semaphore = semaphore;
 	}
-	void ImmediateCommands::waitTimelineSemaphore(VkSemaphore semaphore, uint64_t value) {
-		ASSERT_MSG(_waitTimelineSemaphore.semaphore == VK_NULL_HANDLE, "Current wait timeline semaphore is not VK_NULL_HANDLE!");
-		_waitTimelineSemaphore.semaphore = semaphore;
-		_waitTimelineSemaphore.value = value;
-	}
 	void ImmediateCommands::signalSemaphore(VkSemaphore semaphore, uint64_t signalValue) {
-		ASSERT_MSG(_signalSemaphore.semaphore == VK_NULL_HANDLE, "Current signal semaphore is VK_NULL_HANDLE!");
+		ASSERT_MSG(_signalSemaphore.semaphore == VK_NULL_HANDLE, "Signal semaphore has already been set!");
 		_signalSemaphore.semaphore = semaphore;
 		_signalSemaphore.value = signalValue;
 	}
@@ -212,39 +235,5 @@ namespace mythril {
 			return VK_NULL_HANDLE;
 		}
 		return _buffers[handle.bufferIndex_]._fence;
-	}
-	const ImmediateCommands::CommandBufferWrapper& ImmediateCommands::acquire() {
-		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_ACQUIRE);
-		if (!_numAvailableCommandBuffers) {
-			_purge();
-		}
-		while (!_numAvailableCommandBuffers) {
-			LOG_SYSTEM(LogType::Warning, "Waiting for command buffers..");
-			_purge();
-		}
-		CommandBufferWrapper* current = nullptr;
-		// we are ok with any available buffer
-		for (CommandBufferWrapper& buf : _buffers) {
-			if (buf._cmdBuf == VK_NULL_HANDLE) {
-				current = &buf;
-				break;
-			}
-		}
-		ASSERT_MSG(_numAvailableCommandBuffers, "No available command buffers");
-		ASSERT_MSG(current, "No available command buffers");
-		ASSERT_MSG(current->_cmdBufAllocated != VK_NULL_HANDLE, "Command buffer allocated is NULL_HANDLE");
-
-		current->_handle.submitId_ = _submitCounter;
-		_numAvailableCommandBuffers--;
-
-		current->_cmdBuf = current->_cmdBufAllocated;
-		current->_isEncoding = true;
-		const VkCommandBufferBeginInfo bi = {
-				.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-				.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
-		};
-		VK_CHECK(vkBeginCommandBuffer(current->_cmdBuf, &bi));
-		_nextSubmitHandle = current->_handle;
-		return *current;
 	}
 }

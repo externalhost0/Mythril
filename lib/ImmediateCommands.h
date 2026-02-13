@@ -14,7 +14,7 @@ namespace mythril {
 
 	class ImmediateCommands final {
 	public:
-		static constexpr uint32_t kMaxCommandBuffers = 64;
+		static constexpr uint32_t kMaxCommandBuffers = 64; // overkill lvk
 		struct CommandBufferWrapper {
 			VkCommandBuffer _cmdBuf = VK_NULL_HANDLE;
 			VkCommandBuffer _cmdBufAllocated = VK_NULL_HANDLE;
@@ -65,10 +65,6 @@ namespace mythril {
 		VkSemaphoreSubmitInfo _signalSemaphore = {
 				.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
 				.stageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT
-		};
-		VkSemaphoreSubmitInfo _waitTimelineSemaphore = {
-			.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
-			.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT
 		};
 
 		VkQueue _vkQueue = VK_NULL_HANDLE;

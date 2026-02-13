@@ -46,9 +46,12 @@
 #define MYTH_PROFILER_COLOR_WAIT  0x8a89a1 // blue gray
 #define MYTH_PROFILER_COLOR_ACQUIRE 0x3128de // rich blue
 #define MYTH_PROFILER_COLOR_SUBMIT 0x6b28de // dark purple
+
 #define MYTH_PROFILER_COLOR_PRESENT 0xbf1bb7 // magenta
 #define MYTH_PROFILER_COLOR_BARRIER 0xbdd1ff // baby blue
 #define MYTH_PROFILER_COLOR_COMMAND 0x3f449e // light saturated blue
+
+#define MYTH_PROFILER_COLOR_UPDATE 0xd1c12e // light yellow
 
 // function colors
 #define MYTH_PROFILER_COLOR_CREATE 0x22bf4f // dark green
@@ -64,23 +67,30 @@
     #define MYTH_PROFILER_FUNCTION() ZoneScopedN(__FUNCSIG__)
 	#define MYTH_PROFILER_FUNCTION_COLOR(color) ZoneScopedNC(__FUNCSIG__, color)
 #else
-    #define MYTH_PROFILER_FUNCTION() ZoneScopedN(__PRETTY_FUNCTION__)
+#if defined(__APPLE__)
+#define MYTH_PROFILER_FUNCTION() \
+	ZoneScopedN(__PRETTY_FUNCTION__) \
+
+#define MYTH_PROFILER_FUNCTION_COLOR(color) \
+	ZoneScopedNC(__PRETTY_FUNCTION__, color) \
+
+#else
+	#define MYTH_PROFILER_FUNCTION() ZoneScopedN(__PRETTY_FUNCTION__)
 	#define MYTH_PROFILER_FUNCTION_COLOR(color) ZoneScopedNC(__PRETTY_FUNCTION__, color)
+#endif
 #endif
 
 #define MYTH_PROFILER_ZONE_COLOR(name, color) { \
-	ZoneScopedC(color); \
-	ZoneName(name, strlen(name))
+	ZoneScopedNC(name, color);
 
 #define MYTH_PROFILER_ZONE(name) { \
-	ZoneScoped(); \
-	ZoneName(name, strlen(name))
+	ZoneScopedN(name);
 
 #define MYTH_PROFILER_ZONE_END() }
 
 
 #define MYTH_PROFILER_THREAD(name) tracy::SetThreadName(name)
-#define MYTH_PROFILER_FRAME(name) FrameMarkNamed(name)
+#define MYTH_PROFILER_FRAME() FrameMark;
 
 #else
  #define MYTH_PROFILER_FUNCTION()
@@ -112,9 +122,10 @@ namespace mythril {
 	// class ComputePipeline;
 
 	struct DeferredTask {
-		DeferredTask(std::packaged_task<void()>&& task, SubmitHandle handle, uint64_t frameNum) : _task(std::move(task)), _handle(handle) {}
+		DeferredTask(std::packaged_task<void()>&& task, SubmitHandle handle, uint64_t frameNum) : _task(std::move(task)), _handle(handle), _frameNumber(frameNum) {}
 		std::packaged_task<void()> _task;
 		SubmitHandle _handle;
+		uint64_t _frameNumber;
 	};
 
 	struct LayoutBuildResult {
@@ -187,7 +198,7 @@ namespace mythril {
 		Window& getWindow() { return _window; }
 		const Texture& getNullTexture() const { return this->_dummyTexture; }
 
-		CommandBuffer& openCommand(CommandBuffer::Type type);
+		CommandBuffer& acquireCommand(CommandBuffer::Type type);
 		SubmitHandle submitCommand(CommandBuffer& cmd);
 
 		DescriptorSetWriter openDescriptorUpdate(const GraphicsPipeline& pipeline) { return openDescriptorUpdate(pipeline.handle()); }
@@ -250,7 +261,6 @@ namespace mythril {
 	private:
 		// wrappers around VulkanObjects
 		// advanced functions that user will rarely need to call
-		void transitionLayout(TextureHandle handle, VkImageLayout newLayout, VkImageSubresourceRange range);
 		void generateMipmaps(TextureHandle handle);
 		TextureHandle createTextureViewImpl(TextureHandle handle, TextureViewSpec spec);
 

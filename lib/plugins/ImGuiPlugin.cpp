@@ -56,7 +56,7 @@ namespace mythril {
 				.Queue = ctx._vkGraphicsQueue,
 				.DescriptorPool = this->_descriptorPool,
 				.MinImageCount = 2,
-				.ImageCount = 3,
+				.ImageCount = kNUM_FRAMES_IN_FLIGHT,
 				.PipelineInfoMain = {
 						.MSAASamples = VK_SAMPLE_COUNT_1_BIT,
 						.PipelineRenderingCreateInfo = {

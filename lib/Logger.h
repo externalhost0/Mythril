@@ -58,7 +58,7 @@ namespace mythril {
 		start = (start == std::string_view::npos) ? 0 : start + 1;
 		return pretty.substr(start, lparen - start);
 	}
-	#define EXPANDED_FUNCTION StripPrettyFunction(__PRETTY_FUNCTION__)
+	#define EXPANDED_FUNCTION mythril::StripPrettyFunction(__PRETTY_FUNCTION__)
 #elif defined(_MSC_VER)
 	constexpr std::string_view StripFuncSig(std::string_view sig) {
 		const auto lparen = sig.find('(');
@@ -68,7 +68,7 @@ namespace mythril {
 		start = (start == std::string_view::npos) ? 0 : start + 1;
 		return sig.substr(start, lparen - start);
 	}
-	#define EXPANDED_FUNCTION StripFuncSig(__FUNCSIG__)
+	#define EXPANDED_FUNCTION mythril::StripFuncSig(__FUNCSIG__)
 #else
 	#define EXPANDED_FUNCTION __FUNCTION__
 #endif

@@ -43,7 +43,7 @@ namespace mythril {
 
         // will need to handle the special case of using a swapchain image as an attachment
         bool isSwapchainImage = false;
-        VkImageView swapchainImageViews[Swapchain::kMAX_SWAPCHAIN_IMAGES] = {};
+        VkImageView swapchainImageViews[kMAX_SWAPCHAIN_IMAGES] = {};
 
         VkRenderingAttachmentInfo getAsVkRenderingAttachmentInfo() const {
             const bool isResolving = resolveImageView != VK_NULL_HANDLE;

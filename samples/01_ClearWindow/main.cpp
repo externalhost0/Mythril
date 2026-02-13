@@ -20,7 +20,9 @@ int main() {
 		.height = 480,
 		.resizeable = false,
 	})
-	.with_default_swapchain()
+	.with_default_swapchain({
+		.presentMode = VK_PRESENT_MODE_IMMEDIATE_KHR
+	})
 	.build();
 
 	mythril::RenderGraph graph;
@@ -46,9 +48,10 @@ int main() {
 			if (e.type == SDL_EVENT_QUIT) quit = true;
 		}
 
-		mythril::CommandBuffer& cmd = ctx->openCommand(mythril::CommandBuffer::Type::Graphics);
+		mythril::CommandBuffer& cmd = ctx->acquireCommand(mythril::CommandBuffer::Type::Graphics);
 		graph.execute(cmd);
 		ctx->submitCommand(cmd);
 	}
+
 	return 0;
 }

@@ -583,7 +583,9 @@ int main() {
 	.set_slang_cfg({
 		.searchpaths = slang_searchpaths
 	})
-	.with_default_swapchain()
+	.with_default_swapchain({
+		.presentMode = VK_PRESENT_MODE_FIFO_RELAXED_KHR
+	})
 	.with_ImGui({
 		.format = kOffscreenFormat,
 	})
@@ -1658,10 +1660,10 @@ int main() {
 		ImGui::Image(shadowMap, {200, 200});
 		ImGui::Text("Average Luminance");
 		ImGui::Image(adaptedLuminanceTextures[0], {100, 100});
-		ImGui::Text("Progressively Blurred Color Targets");
-		for (int face = 0; face < 6; face++) {
+		// for (int face = 0; face < 6; face++) {
 			// ImGui::Image(pointLightShadowTex[0], pointLightShadowTex[0].getView(0, face), {200, 200});
-		}
+		// }
+		ImGui::Text("Progressively Blurred Color Targets");
 		for (int i = 0; i < kNumColorMips; i++) {
 			mythril::Dimensions dims = {320, 240};
 			ImGui::Image(offscreenColorTexs[kNumColorMips-1-i], {static_cast<float>(dims.width), static_cast<float>(dims.height)});
@@ -1766,15 +1768,15 @@ int main() {
 			.deltaTime = deltaTime
 		};
 
-		MYTH_PROFILER_ZONE_COLOR("updating buffers cpu", MYTH_PROFILER_COLOR_PRESENT);
+		MYTH_PROFILER_ZONE("updating buffers cpu");
 		UpdateParticles(particles, deltaTime, particle_speed);
 		UpdatePointLightShadowMatrices(frameData.lighting, kMODELSCALE, pointlight_nearplane, pointlight_farplane, shadowMatrices);
-		MYTH_PROFILER_ZONE_END()
+		MYTH_PROFILER_ZONE_END();
 		ctx->upload(particles_buffer.handle(), particles.data(), sizeof(ParticleData) * particles.size(), 0);
 		ctx->upload(pointLightShadowMatrixBuf.handle(), &shadowMatrices[0][0], sizeof(glm::mat4) * kNumPointLights * 6, 0);
 		{
 			MYTH_PROFILER_ZONE_COLOR("Main Graphics Command", MYTH_PROFILER_COLOR_RENDERPASS);
-			mythril::CommandBuffer& cmd = ctx->openCommand(mythril::CommandBuffer::Type::Graphics);
+			mythril::CommandBuffer& cmd = ctx->acquireCommand(mythril::CommandBuffer::Type::Graphics);
 			cmd.cmdUpdateBuffer(frameDataHandle, frameData);
 			graph.execute(cmd);
 			ctx->submitCommand(cmd);

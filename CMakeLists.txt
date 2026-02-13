@@ -344,9 +344,9 @@ if (MYTH_ENABLE_TRACY)
     target_link_libraries(mythril PUBLIC TracyClient)
 
     if (MYTH_ENABLE_TRACY_GPU)
-#        if (APPLE)
-#            message(FATAL_ERROR "MYTH_ENABLE_TRACY_GPU is not supported on APPLE platforms currently! Please switch the option 'OFF'")
-#        endif()
+        if (APPLE)
+            message(FATAL_ERROR "MYTH_ENABLE_TRACY_GPU is not supported on APPLE platforms currently! Please switch the option 'OFF'")
+        endif()
         target_compile_definitions(mythril PUBLIC
                 MYTH_ENABLED_TRACY_GPU
                 TRACY_VK_USE_SYMBOL_TABLE

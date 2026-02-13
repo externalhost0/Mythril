@@ -40,6 +40,7 @@ namespace mythril {
 				.queueFamilyIndex = ctx._graphicsQueueFamilyIndex
 			};
 			VK_CHECK(vkCreateCommandPool(vk_device, &command_pool_ci, nullptr, &this->_commandPool));
+			vkutil::SetObjectDebugName(vk_device, VK_OBJECT_TYPE_COMMAND_POOL, reinterpret_cast<uint64_t>(this->_commandPool), "TracyGPU: CommandPool");
 			const VkCommandBufferAllocateInfo command_buffer_ai = {
 				.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
 				.commandPool = this->_commandPool,
@@ -47,6 +48,7 @@ namespace mythril {
 				.commandBufferCount = 1
 			};
 			VK_CHECK(vkAllocateCommandBuffers(vk_device, &command_buffer_ai, &this->_commandBuffer));
+			vkutil::SetObjectDebugName(vk_device, VK_OBJECT_TYPE_COMMAND_BUFFER, reinterpret_cast<uint64_t>(this->_commandBuffer), "TracyGPU: CommandBuffer");
 			if (hasCalibratedTimestamps) {
 				this->_tracyVkCtx = TracyVkContextCalibrated(vk_instance, vk_physical_device, vk_device, ctx._vkGraphicsQueue, this->_commandBuffer, vkGetInstanceProcAddr, vkGetDeviceProcAddr);
 			} else {

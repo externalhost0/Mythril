@@ -640,14 +640,14 @@ int main() {
 		// buffer updating must be done before rendering
 		// todo: make this part of the rendergraph
 		{
-			mythril::CommandBuffer& cmd = ctx->openCommand(mythril::CommandBuffer::Type::General);
+			mythril::CommandBuffer& cmd = ctx->acquireCommand(mythril::CommandBuffer::Type::General);
 			cmd.cmdUpdateBuffer(objectDataBuf, objects);
 			cmd.cmdUpdateBuffer(perFrameDataBuffer, frameData);
 			cmd.cmdUpdateBuffer(perMaterialDataBuffer, matData);
 			ctx->submitCommand(cmd);
 		}
 
-		mythril::CommandBuffer& cmd = ctx->openCommand(mythril::CommandBuffer::Type::Graphics);
+		mythril::CommandBuffer& cmd = ctx->acquireCommand(mythril::CommandBuffer::Type::Graphics);
 		graph.execute(cmd);
 		ctx->submitCommand(cmd);
 	}

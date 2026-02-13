@@ -145,7 +145,8 @@ namespace mythril {
 							0xFF000000 + ((x ^ y) << 16) + ((x ^ y) << 8) + (x ^ y);
 				}
 			}
-			// now take the pattern and create the first texture, the default and fallback texture for missing textures
+			// now take the pattern and create the first texture
+			// fallback texture, index 0
 			this->_dummyTexture = this->createTexture({
 				.dimension = {texWidth, texHeight},
 				.format = VK_FORMAT_R8G8B8A8_UNORM,
@@ -153,6 +154,7 @@ namespace mythril {
 				.initialData = pixels.data(),
 				.debugName = "Dummy Texture"
 			});
+			// fallback sampler, index 0
 			this->_dummyLinearSampler = this->createSampler({
 				.magFilter = SamplerFilter::Linear,
 				.minFilter = SamplerFilter::Linear,
@@ -161,10 +163,12 @@ namespace mythril {
 				.wrapW = SamplerWrap::ClampEdge,
 				.debugName = "Linear Sampler"
 			});
-
+			// initial descriptor pool creation
 			this->growBindlessDescriptorPoolImpl(this->_currentMaxTextureCount, this->_currentMaxSamplerCount);
 
+			// initial descriptor allocator for users descriptor sets
 			// i think these are reasonable defaults
+			// todo: honestly faze this out and replace with push descriptors
 			// https://vkguide.dev/docs/new_chapter_4/descriptor_abstractions/#:~:text=the%20end%20of-,init_descriptors,-()
 			std::vector<DescriptorAllocatorGrowable::PoolSizeRatio> frame_sizes = {
 					{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 3},
@@ -234,6 +238,8 @@ namespace mythril {
 			}
 		}
 
+		// the order of operations is very specific so that we dont trigger any validation warnings
+
 		// wipe buffers
 		_bufferPool.clear();
 		_texturePool.clear();
@@ -268,6 +274,7 @@ namespace mythril {
 	}
 
 	void CTX::recreateSwapchainStandard() {
+		VK_CHECK(vkDeviceWaitIdle(this->_vkDevice));
 		const VkExtent2D extent_2d = _window.getFramebufferSize();
 		destroySwapchain();
 		createSwapchain({extent_2d.width, extent_2d.height});
@@ -278,7 +285,6 @@ namespace mythril {
 			LOG_SYSTEM(LogType::Warning, "CTX::destroySwapchain called when no existing swapchain exists!");
 			return;
 		}
-		VK_CHECK(vkDeviceWaitIdle(this->_vkDevice));
 		this->_swapchain.reset(nullptr);
 		vkDestroySemaphore(_vkDevice, this->_timelineSemaphore, nullptr);
 	}
@@ -302,8 +308,8 @@ namespace mythril {
 			.colorSpace = lastSwapchainSpec.colorSpace,
 			.presentMode = lastSwapchainSpec.presentMode,
 		};
-		AssignIfValid(new_swapchain_spec.width, spec.width, (uint32_t)0);
-		AssignIfValid(new_swapchain_spec.height, spec.height, (uint32_t)0);
+		AssignIfValid(new_swapchain_spec.width, spec.width, static_cast<uint32_t>(0));
+		AssignIfValid(new_swapchain_spec.height, spec.height, static_cast<uint32_t>(0));
 		AssignIfValid(new_swapchain_spec.format, spec.format, VK_FORMAT_UNDEFINED);
 		AssignIfValid(new_swapchain_spec.colorSpace, spec.colorSpace, VK_COLOR_SPACE_MAX_ENUM_KHR);
 		AssignIfValid(new_swapchain_spec.presentMode, spec.presentMode, VK_PRESENT_MODE_MAX_ENUM_KHR);
@@ -506,6 +512,7 @@ namespace mythril {
 		for (VkDescriptorBindingFlags& bindingFlag : bindingFlags) {
 			bindingFlag = dsbinding_flags;
 		}
+		// ReSharper disable once CppVariableCanBeMadeConstexpr
 		const VkDescriptorSetLayoutBindingFlagsCreateInfo dsl_bf_ci = {
 				.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO,
 				.bindingCount = static_cast<uint32_t>(BindlessSpaceIndex::kNumOfBinds),
@@ -1073,7 +1080,6 @@ namespace mythril {
 			LOG_SYSTEM(LogType::Warning, "'resizeTexture' called on invalid handle!");
 			return;
 		}
-
 		// copies destroy for Texture logic
 		deferTask(std::packaged_task<void()>([device = _vkDevice, imageView = image->_vkImageView]() {
 			vkDestroyImageView(device, imageView, nullptr);
@@ -1100,7 +1106,6 @@ namespace mythril {
 		}
 
 		const VkExtent3D extent3D = { newDimensions.width, newDimensions.height, newDimensions.depth };
-
 		AllocatedTexture newImage = this->createTextureImpl(
 				image->_vkUsageFlags,
 				image->_vkMemoryPropertyFlags,
@@ -1115,7 +1120,15 @@ namespace mythril {
 				createFlags
 				);
 		vmaSetAllocationName(_vmaAllocator, newImage._vmaAllocation, newImage._debugName);
-		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_BUFFER, reinterpret_cast<uint64_t>(newImage._vkImage), image->getDebugName().data());
+		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_IMAGE, reinterpret_cast<uint64_t>(newImage._vkImage), image->getDebugName().data());
+#ifdef MYTH_ENABLED_IMGUI
+		if (auto* mydata = static_cast<mythril::MyUserData*>(ImGui::GetIO().UserData)) {
+			if (auto it = mydata->handleMap.find(handle); it != mydata->handleMap.end()) {
+				ImGui_ImplVulkan_RemoveTexture(it->second);
+				mydata->handleMap.erase(it);
+			}
+		}
+#endif
 
 		// update extent!
 		image->_vkExtent = extent3D;
@@ -1444,16 +1457,6 @@ namespace mythril {
 	}
 
 	// functions that wrap around existing functions for AllocatedObjects
-	void CTX::transitionLayout(TextureHandle handle, VkImageLayout newLayout, VkImageSubresourceRange range) {
-		if (handle.empty()) {
-			LOG_SYSTEM(LogType::Warning, "Transition layout with empty handle!");
-			return;
-		}
-		AllocatedTexture* image = _texturePool.get(handle);
-		const ImmediateCommands::CommandBufferWrapper& wrapper = _imm->acquire();
-		image->transitionLayout(wrapper._cmdBuf, newLayout, range);
-		_imm->submit(wrapper);
-	}
 	void CTX::generateMipmaps(TextureHandle handle) {
 		if (handle.empty()) {
 			LOG_SYSTEM(LogType::Warning, "Generate mipmap with empty handle!");
@@ -1470,6 +1473,7 @@ namespace mythril {
 		_imm->submit(wrapper);
 	}
 	void CTX::upload(BufferHandle handle, const void* data, size_t size, size_t offset) {
+		MYTH_PROFILER_FUNCTION();
 		if (!data) {
 			LOG_SYSTEM(LogType::Warning, "Attempting to upload data which is null!");
 			return;
@@ -1485,6 +1489,7 @@ namespace mythril {
 		_staging->bufferSubData(*buffer, offset, size, data);
 	}
 	void CTX::download(BufferHandle handle, void* data, size_t size, size_t offset) {
+		MYTH_PROFILER_FUNCTION();
 		if (!data) {
 			LOG_SYSTEM(LogType::Warning, "Data is null");
 			return;
@@ -1502,6 +1507,7 @@ namespace mythril {
 		buffer->getBufferSubData(*this, offset, size, data);
 	}
 	void CTX::upload(TextureHandle handle, const void* data, const TexRange& range) {
+		MYTH_PROFILER_FUNCTION();
 		if (!data) {
 			LOG_SYSTEM(LogType::Warning, "Attempting to upload data which is null!");
 			return;
@@ -1528,6 +1534,7 @@ namespace mythril {
 		}
 	}
 	void CTX::download(TextureHandle handle, void* data, const TexRange &range) {
+		MYTH_PROFILER_FUNCTION();
 		if (!data) {
 			LOG_SYSTEM(LogType::Warning, "Data is null.");
 			return;
@@ -1555,16 +1562,19 @@ namespace mythril {
 							   data);
 	}
 
-	CommandBuffer& CTX::openCommand(CommandBuffer::Type type) {
+	CommandBuffer& CTX::acquireCommand(CommandBuffer::Type type) {
+		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_ACQUIRE);
 		ASSERT_MSG(!_currentCommandBuffer._ctx, "Cannot open more than 1 CommandBuffer simultaneously!");
-		_currentCommandBuffer = CommandBuffer(this, type);
 		if (type == CommandBuffer::Type::Graphics) {
-			_swapchain->acquire();
+			VkSemaphore acquire_semaphore = _swapchain->acquire();
+			_imm->waitSemaphore(acquire_semaphore);
 			wrappedBackBuffer.updateHandle(this, _swapchain->getCurrentSwapchainTextureHandle());
 		}
+		_currentCommandBuffer = CommandBuffer(this, type);
 		return _currentCommandBuffer;
 	}
 	SubmitHandle CTX::submitCommand(CommandBuffer& cmd) {
+		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_SUBMIT);
 		ASSERT(cmd._ctx);
 		ASSERT(cmd._wrapper);
 #ifdef MYTH_ENABLED_TRACY_GPU
@@ -1573,20 +1583,19 @@ namespace mythril {
 #endif
 		const bool isPresenting = cmd._cmdType == CommandBuffer::Type::Graphics;
 		if (isPresenting) {
-			// Use FRAME index, not IMAGE index for timeline values
-			uint32_t frameIndex = _swapchain->_currentFrameNum % _swapchain->getNumOfSwapchainImages();
-			const uint64_t signalValue = _swapchain->_currentFrameNum + _swapchain->getNumOfSwapchainImages();
+			const uint32_t frameIndex = _swapchain->getCurrentFrameIndex();
+			const uint64_t signalValue = _currentFrameNumber + _swapchain->getNumOfSwapchainImages();
 			_swapchain->_timelineWaitValues[frameIndex] = signalValue;
 			_imm->signalSemaphore(_timelineSemaphore, signalValue);
 		}
 		cmd._lastSubmitHandle = _imm->submit(*cmd._wrapper);
 		if (isPresenting) {
 			ASSERT(_texturePool.get(_swapchain->getCurrentSwapchainTextureHandle())->getImageLayout() == VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
-			_swapchain->present();
+			_swapchain->present(_imm->acquireLastSubmitSemaphore());
 		}
 		_currentFrameNumber++;
 		processDeferredTasks();
-		SubmitHandle handle = cmd._lastSubmitHandle;
+		const SubmitHandle handle = cmd._lastSubmitHandle;
 		_currentCommandBuffer = {};
 		return handle;
 	}
@@ -1596,28 +1605,30 @@ namespace mythril {
 		}
 		_deferredTasks.emplace_back(std::move(task), handle, _currentFrameNumber);
 	}
-	void CTX::processDeferredTasks() {
-		auto it = _deferredTasks.begin();
-		while (it != _deferredTasks.end() && _imm->isReady(it->_handle, true)) {
-			(it++)->_task();
-		}
-		_deferredTasks.erase(_deferredTasks.begin(), it);
-	}
+	// void CTX::processDeferredTasks() {
+	// 	auto it = _deferredTasks.begin();
+	// 	while (it != _deferredTasks.end() && _imm->isReady(it->_handle, true)) {
+	// 		(it++)->_task();
+	// 	}
+	// 	_deferredTasks.erase(_deferredTasks.begin(), it);
+	// }
+	//
+void CTX::processDeferredTasks() {
+    const uint64_t numFramesToWait = _swapchain->getNumOfSwapchainImages();
+    const uint64_t safeFrameThreshold = _currentFrameNumber > numFramesToWait
+        ? _currentFrameNumber - numFramesToWait
+        : 0;
 
-// void CTX::processDeferredTasks() {
-//     const uint64_t numFramesToWait = _swapchain->getNumOfSwapchainImages();
-//     const uint64_t safeFrameThreshold = _currentFrameNumber > numFramesToWait
-//         ? _currentFrameNumber - numFramesToWait
-//         : 0;
-//
-//     auto it = _deferredTasks.begin();
-//     while (it != _deferredTasks.end() && it->_frameNumber < safeFrameThreshold) {
-//         // Wait for this specific work to finish (blocks CPU if needed)
-//         _imm->wait(it->_handle);
-//         (it++)->_task();
-//     }
-//     _deferredTasks.erase(_deferredTasks.begin(), it);
-// }
+    auto it = _deferredTasks.begin();
+    while (it != _deferredTasks.end() && it->_frameNumber < safeFrameThreshold) {
+        // CRITICAL: Actually check if GPU is done (false = check fence)
+        if (!_imm->isReady(it->_handle, false)) {
+            break;  // GPU not done yet
+        }
+        (it++)->_task();
+    }
+    _deferredTasks.erase(_deferredTasks.begin(), it);
+}
 	void CTX::waitDeferredTasks() {
 		for (auto& task : _deferredTasks) {
 			_imm->wait(task._handle);
@@ -1746,7 +1757,7 @@ namespace mythril {
 namespace ImGui {
 	void Image(mythril::TextureHandle texHandle, mythril::SamplerHandle samplerHandle, const ImVec2& image_size, const ImVec2& uv0, const ImVec2& uv1) {
 		ASSERT_MSG(texHandle.valid(), "Texture handle is invalid!");
-		auto mydata = reinterpret_cast<mythril::MyUserData*>(ImGui::GetIO().UserData);
+		auto mydata = static_cast<mythril::MyUserData*>(ImGui::GetIO().UserData);
 		ImVec2 size;
 		if (image_size.x <= 0 && image_size.y <= 0) {
 			const mythril::Dimensions dims = mydata->ctx->view(texHandle).getDimensions();
@@ -1758,6 +1769,7 @@ namespace ImGui {
 
 		// will always be set
 		VkDescriptorSet im_image_ds;
+		// when a handle has expired or is no longer valid, we need to recreate it in place
 		if (const auto iterator = mydata->handleMap.find(texHandle); iterator != mydata->handleMap.end()) {
 			im_image_ds = iterator->second;
 		} else {
@@ -1776,7 +1788,6 @@ namespace ImGui {
 	}
 	void Image(const mythril::Texture& texture, const mythril::Sampler& sampler, const ImVec2& image_size, const ImVec2& uv0, const ImVec2& uv1) {
 		Image(texture.handle(), sampler.handle(), image_size, uv0, uv1);
-
 	}
 
 }

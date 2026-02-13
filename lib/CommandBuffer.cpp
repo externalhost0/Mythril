@@ -143,6 +143,7 @@ namespace mythril {
 		_viewMask = viewMask;
 		DRY_RETURN();
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_COMMAND);
+		MYTH_PROFILER_GPU_ZONE("cmdBeginRendering()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
 		CHECK_PASS_OPERATION_MISMATCH(PassDesc::Type::Graphics);
 #ifdef DEBUG
 		static bool hasTriggered = false;
@@ -157,6 +158,7 @@ namespace mythril {
 	void CommandBuffer::cmdEndRendering() {
 		DRY_RETURN();
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_COMMAND);
+		MYTH_PROFILER_GPU_ZONE("cmdEndRendering()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
 		CHECK_PASS_OPERATION_MISMATCH(PassDesc::Type::Graphics);
 		this->cmdEndRenderingImpl();
 	}
@@ -563,6 +565,7 @@ namespace mythril {
 	void CommandBuffer::cmdDrawImGui() {
 		DRY_RETURN()
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_COMMAND);
+		MYTH_PROFILER_GPU_ZONE("cmdDrawImgui()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
 		CHECK_SHOULD_BE_RENDERING();
 		CHECK_PASS_OPERATION_MISMATCH(PassDesc::Type::Graphics);
 #ifdef DEBUG

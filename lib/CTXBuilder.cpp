@@ -48,6 +48,16 @@ namespace mythril {
 				assert(false);
 			}
 		}
+#if defined __APPLE__
+		static constexpr uint32_t kLogLevel = 3;
+		static constexpr VkLayerSettingEXT kMvkDebugLevel = {
+			.pLayerName = "MoltenVK",
+			.pSettingName = "MVK_CONFIG_TRACE_VULKAN_CALLS",
+			.type = VK_LAYER_SETTING_TYPE_STRING_EXT,
+			.valueCount = 1,
+			.pValues = &kLogLevel,
+		};
+#endif
 		vkb::Result<vkb::Instance> instanceResult = instanceBuilder
 				.set_app_name(inputs.appName)
 				.set_app_version(inputs.appVersion.getVKVersion())
@@ -56,6 +66,9 @@ namespace mythril {
 				.require_api_version(VK_API_VERSION_1_3)
 				.set_minimum_instance_version(1, 4, 304)
 				.request_validation_layers(enableValidation)
+#if defined __APPLE__
+				.add_layer_setting(kMvkDebugLevel)
+#endif
 				.set_headless(enableHeadless)
 #ifdef DEBUG
 		// we dont need to worry about conditionally having this be called or not depending on enableValidation, its handled internally
@@ -182,6 +195,9 @@ namespace mythril {
 			.descriptorBindingPartiallyBound = VK_TRUE,
 			.runtimeDescriptorArray = VK_TRUE,
 			.scalarBlockLayout = VK_TRUE, // opt
+#if defined MYTH_ENABLED_TRACY_GPU
+			.hostQueryReset = VK_TRUE, // for tracygpu
+#endif
 			.timelineSemaphore = VK_TRUE,
 			.bufferDeviceAddress = VK_TRUE,
 		};
@@ -396,7 +412,7 @@ missing_features.append("\n\t(" version ") " #feature);
 				vkGetPhysicalDeviceSurfaceSupportKHR(physical_device, i, surface, &supported);
 				if (!supported) continue;
 
-				bool hasGraphics = (p.queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0;
+				const bool hasGraphics = (p.queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0;
 
 				if (p.queueFlags == 0)
 					return i;
@@ -466,17 +482,27 @@ missing_features.append("\n\t(" version ") " #feature);
 		volkLoadDevice(device);
 
 		// retrieve actual VkQueue objects and fill out structure
-		vkGetDeviceQueue(device, graphicsAlloc.familyIndex,  graphicsAlloc.queueIndex,  &outQueues.vkGraphicsQueue);
+		vkGetDeviceQueue(device, graphicsAlloc.familyIndex, graphicsAlloc.queueIndex, &outQueues.vkGraphicsQueue);
 		outQueues.graphicsQueueFamilyIndex = graphicsAlloc.familyIndex;
 
-		vkGetDeviceQueue(device, computeAlloc.familyIndex,   computeAlloc.queueIndex,   &outQueues.vkComputeQueue);
-		outQueues.computeQueueFamilyIndex  = computeAlloc.familyIndex;
+		vkGetDeviceQueue(device, computeAlloc.familyIndex, computeAlloc.queueIndex, &outQueues.vkComputeQueue);
+		outQueues.computeQueueFamilyIndex = computeAlloc.familyIndex;
 
-		vkGetDeviceQueue(device, transferAlloc.familyIndex,  transferAlloc.queueIndex,  &outQueues.vkTransferQueue);
+		vkGetDeviceQueue(device, transferAlloc.familyIndex, transferAlloc.queueIndex, &outQueues.vkTransferQueue);
 		outQueues.transferQueueFamilyIndex = transferAlloc.familyIndex;
 
-		vkGetDeviceQueue(device, presentAlloc.familyIndex,   presentAlloc.queueIndex,   &outQueues.vkPresentQueue);
-		outQueues.presentQueueFamilyIndex  = presentAlloc.familyIndex;
+		vkGetDeviceQueue(device, presentAlloc.familyIndex, presentAlloc.queueIndex, &outQueues.vkPresentQueue);
+		outQueues.presentQueueFamilyIndex = presentAlloc.familyIndex;
+
+		{
+			const VkDeviceQueueInfo2 qi = {
+				.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_INFO_2,
+				.pNext = nullptr,
+				.queueFamilyIndex = graphicsAlloc.familyIndex,
+				.queueIndex = graphicsAlloc.queueIndex
+			};
+			vkGetDeviceQueue2(device, &qi, &outQueues.vkGraphicsQueue);
+		}
 
 		// we could do this before building the device but theres no difference
 		// query supported properties
@@ -532,8 +558,8 @@ missing_features.append("\n\t(" version ") " #feature);
 		MYTH_PROFILER_ZONE_COLOR("CTXBuilder::build", MYTH_PROFILER_COLOR_CREATE);
 		// mythril should only provide graphics related things
 		// fixme as this means that we have no audio
-		if (!SDL_Init(SDL_INIT_VIDEO)) {
-			ASSERT_MSG(true, "SDL could not be initialized!");
+		if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO)) {
+			ASSERT_MSG(false, "SDL could not be initialized!");
 		}
 		Window window;
 		window.create(this->_windowSpec);
@@ -574,7 +600,6 @@ missing_features.append("\n\t(" version ") " #feature);
 			features,
 			properties,
 			queues);
-		// auto q = CreateVulkanQueues(vkb_device);
 		VmaAllocator vma_allocator = CreateVulkanMemoryAllocator({
 			.vkInstance = vkb_instance.instance,
 			.vkPhysicalDevice = vkb_physical_device.physical_device,

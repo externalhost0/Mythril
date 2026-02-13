@@ -108,7 +108,7 @@ int main() {
 		ImGui::End();
 
 
-		mythril::CommandBuffer& cmd = ctx->openCommand(mythril::CommandBuffer::Type::Graphics);
+		mythril::CommandBuffer& cmd = ctx->acquireCommand(mythril::CommandBuffer::Type::Graphics);
 		graph.execute(cmd);
 		ctx->submitCommand(cmd);
 	}
