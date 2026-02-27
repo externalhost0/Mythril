@@ -402,7 +402,7 @@ namespace mythril {
 		friend class Texture;
 		// plugins are usually friends
 		friend class ImGuiPlugin;
-		friend class TracyPlugin;
+		friend class TracyGPUPlugin;
 
 		// basically a lvk Holder
 		template<typename T>

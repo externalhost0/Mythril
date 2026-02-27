@@ -561,9 +561,7 @@ int main() {
 		"../include/",
 		(kDataDir / "shaders/").string()
 	};
-	static std::vector<const char*> vulkan_extensions = {
-		VK_EXT_CALIBRATED_TIMESTAMPS_EXTENSION_NAME
-	};
+	static constexpr std::vector<const char*> vulkan_extensions = {};
 	auto ctx = mythril::CTXBuilder{}
 	.set_vulkan_cfg({
 		.app_name = "Cool App Name",

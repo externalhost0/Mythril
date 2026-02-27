@@ -7,12 +7,41 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
 
 # ==================== User Options ====================
-option(MYTH_ENABLE_TEST_CASES "Enable Test Cases (NOT DONE YET)" OFF)
 option(MYTH_RUN_SAMPLES "Enable sample apps" ON)
-option(MYTH_ENABLE_IMGUI_STANDARD "Enable ImGui Plugin Main Branch" ON)
+option(MYTH_ENABLE_TEST_CASES "Enable Test Cases (NOT DONE YET)" OFF)
+option(MYTH_ENABLE_IMGUI_STANDARD "Enable ImGui Plugin Main Branch" OFF)
 option(MYTH_ENABLE_IMGUI_DOCKING "Enable ImGui Plugin Docking Branch" OFF)
-option(MYTH_ENABLE_TRACY "Enables Tracy Profiling for user & Mythril use" ON)
-option(MYTH_ENABLE_TRACY_GPU "Enables Tracy Profiling for Mythril's internal Vulkan calls" OFF)
+option(MYTH_ENABLE_TRACY "Enables Tracy Profiling for user & Mythril use" OFF)
+option(MYTH_ENABLE_TRACY_GPU "Enables Tracy Profiling for Mythril's internal Vulkan calls (EXPERIMENTAL)" OFF)
+
+# ==================== Sample Options Declaration ====================
+if(MYTH_RUN_SAMPLES)
+    # declare each option a sample uses
+    set(SAMPLE_01_ClearWindow_REQUIRES        "")
+    set(SAMPLE_02_Cube_REQUIRES               "")
+    set(SAMPLE_03_CubeMSAA_REQUIRES           "")
+    set(SAMPLE_04_PostProcessingCube_REQUIRES "")
+    set(SAMPLE_05_ImGui_REQUIRES              "MYTH_ENABLE_IMGUI_STANDARD")
+    set(SAMPLE_06_ComplexShader_REQUIRES      "MYTH_ENABLE_IMGUI_STANDARD")
+    set(SAMPLE_07_CompleteScene_REQUIRES      "MYTH_ENABLE_IMGUI_STANDARD;MYTH_ENABLE_TRACY;")
+    set(ALL_SAMPLES
+            01_ClearWindow
+            02_Cube
+            03_CubeMSAA
+            04_PostProcessingCube
+            05_ImGui
+            06_ComplexShader
+            07_CompleteScene
+    )
+    foreach(sample IN LISTS ALL_SAMPLES)
+        foreach(feature IN LISTS SAMPLE_${sample}_REQUIRES)
+            if(NOT ${feature})
+                message(STATUS "[Samples] ${sample} requires ${feature} - enabling")
+                set(${feature} ON CACHE BOOL "Required by sample ${sample}" FORCE)
+            endif()
+        endforeach()
+    endforeach()
+endif()
 
 # ==================== C++ Standard ====================
 set(CMAKE_CXX_STANDARD 20)
@@ -280,7 +309,7 @@ if(MYTH_ENABLE_IMGUI_STANDARD OR MYTH_ENABLE_IMGUI_DOCKING)
     list(APPEND MYTHRIL_SOURCES lib/plugins/ImGuiPlugin.cpp)
 endif()
 if(MYTH_ENABLE_TRACY_GPU)
-    list(APPEND MYTHRIL_SOURCES lib/plugins/TracyPlugin.cpp)
+    list(APPEND MYTHRIL_SOURCES lib/plugins/TracyGPUPlugin.cpp)
 endif()
 
 add_library(mythril STATIC ${MYTHRIL_SOURCES})
@@ -301,7 +330,7 @@ target_include_directories(mythril
 
 target_compile_definitions(mythril PUBLIC
         VK_NO_PROTOTYPES
-        VK_ENABLE_BETA_EXTENSIONS # for portability subset, and more specific imageView swizzle
+        VK_ENABLE_BETA_EXTENSIONS # for portability subset, and more specificly: vkImageView swizzle
 )
 
 target_link_libraries(mythril
@@ -356,6 +385,18 @@ endif()
 
 # ==================== Subdirectories ====================
 if(MYTH_RUN_SAMPLES)
+    # validate sample features are actually enabled
+    foreach(sample IN LISTS ALL_SAMPLES)
+        foreach(feature IN LISTS SAMPLE_${sample}_REQUIRES)
+            if(NOT ${feature})
+                message(WARNING
+                        "Sample '${sample}' requires ${feature}=ON "
+                        "but it is currently OFF. This sample may not compile or run correctly. "
+                        "Re-run CMake configure to resolve."
+                )
+            endif()
+        endforeach()
+    endforeach()
     add_subdirectory(samples)
 endif()
 

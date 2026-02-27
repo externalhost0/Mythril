@@ -9,7 +9,7 @@
 
 
 namespace mythril {
-	void TracyPlugin::onInit(CTX& ctx) {
+	void TracyGPUPlugin::onInit(CTX& ctx) {
 		// aliases
 		VkInstance vk_instance = ctx._vkInstance;
 		VkPhysicalDevice vk_physical_device = ctx._vkPhysicalDevice;
@@ -58,7 +58,7 @@ namespace mythril {
 		assert(this->_tracyVkCtx);
 	}
 
-	void TracyPlugin::onDestroy() {
+	void TracyGPUPlugin::onDestroy() {
 		TracyVkDestroy(this->_tracyVkCtx);
 		if (this->_ctx && this->_commandPool) {
 			vkDestroyCommandPool(this->_ctx->_vkDevice, this->_commandPool, nullptr);

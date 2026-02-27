@@ -7,36 +7,25 @@ option(FORCE_REBUILD_SAMPLES "Always recompile samples" ON)
 macro(ADD_SAMPLE sample_name)
     set(options)
     set(oneValueArgs)
-    set(multiValueArgs LIBS OPTIONS)
+    set(multiValueArgs LIBS)
     cmake_parse_arguments(SAMPLE "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
-    message(STATUS "${sample_name} OPTIONS = ${SAMPLE_OPTIONS}")
+
     set(sample_file "${sample_name}/main.cpp")
-
-    # Handle ImGui cache override
-    if("MYTH_ENABLE_IMGUI_STANDARD=ON" IN_LIST SAMPLE_OPTIONS)
-        set(MYTH_ENABLE_IMGUI_STANDARD ON CACHE BOOL "" FORCE)
-    endif()
-
-    # Create executable
     add_executable(${sample_name} ${sample_file})
 
-    # Link libraries
-    target_link_libraries(${sample_name} PUBLIC
-            mythril
-            ${SAMPLE_LIBS}
-    )
-    # add name for resolving _data directory
+    target_link_libraries(${sample_name} PUBLIC mythril ${SAMPLE_LIBS})
+
     target_compile_definitions(${sample_name} PRIVATE
-            MYTH_SAMPLE_NAME="${sample_name}"
+        MYTH_SAMPLE_NAME="${sample_name}"
     )
 
-    # apply compile definitions specified
-    foreach(opt IN LISTS SAMPLE_OPTIONS)
-        target_compile_definitions(${sample_name} PRIVATE ${opt})
+    foreach(feature IN LISTS SAMPLE_${sample_name}_REQUIRES)
+        if(feature)
+            target_compile_definitions(${sample_name} PRIVATE ${feature}=1)
+        endif()
     endforeach()
 
-    # copy all sample assets to executable directory
-    # glob to detect changes in assets!
+    # copying asset into their own folder
     file(GLOB_RECURSE SAMPLE_ASSET_FILES "${CMAKE_CURRENT_SOURCE_DIR}/${sample_name}/*")
 
     add_custom_command(TARGET ${sample_name} POST_BUILD
@@ -48,16 +37,14 @@ macro(ADD_SAMPLE sample_name)
         COMMENT "Copying ${sample_name} assets to isolated runtime directory"
     )
 
-    # Force rebuild for shader editing
     if(FORCE_REBUILD_SAMPLES)
         add_custom_command(TARGET ${sample_name} PRE_BUILD
-                COMMAND ${CMAKE_COMMAND} -E echo "Forcing rebuild for ${sample_name}"
-                COMMAND ${CMAKE_COMMAND} -E touch "${CMAKE_CURRENT_SOURCE_DIR}/${sample_file}"
-                COMMENT "Touching source to trigger rebuild"
+            COMMAND ${CMAKE_COMMAND} -E echo "Forcing rebuild for ${sample_name}"
+            COMMAND ${CMAKE_COMMAND} -E touch "${CMAKE_CURRENT_SOURCE_DIR}/${sample_file}"
+            COMMENT "Touching source to trigger rebuild"
         )
     endif()
 
-    # Organize in IDE
     set_target_properties(${sample_name} PROPERTIES FOLDER "Samples")
 endmacro()
 
@@ -110,22 +97,12 @@ endif()
 # ==================== Sample Definitions ====================
 
 ADD_SAMPLE("01_ClearWindow")
-ADD_SAMPLE("02_Cube" LIBS glm)
-ADD_SAMPLE("03_CubeMSAA" LIBS glm)
-ADD_SAMPLE("04_PostProcessingCube" LIBS glm)
-ADD_SAMPLE("05_ImGui"
-        OPTIONS
-        MYTH_ENABLE_IMGUI_STANDARD=ON)
-ADD_SAMPLE("06_ComplexShader" LIBS glm
-        OPTIONS
-        MYTH_ENABLE_IMGUI_STANDARD=ON
-)
-ADD_SAMPLE("07_CompleteScene" LIBS glm fastgltf stb_image imguizmo
-        OPTIONS
-            MYTH_ENABLE_IMGUI_STANDARD=ON
-            MYTH_ENABLE_TRACY=ON
-            MYTH_ENABLE_TRACY_GPU=ON
-)
+ADD_SAMPLE("02_Cube"                LIBS glm)
+ADD_SAMPLE("03_CubeMSAA"            LIBS glm)
+ADD_SAMPLE("04_PostProcessingCube"  LIBS glm)
+ADD_SAMPLE("05_ImGui")
+ADD_SAMPLE("06_ComplexShader"       LIBS glm)
+ADD_SAMPLE("07_CompleteScene"       LIBS glm fastgltf stb_image imguizmo)
 
 
 
