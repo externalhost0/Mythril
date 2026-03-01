@@ -1,6 +1,6 @@
 # Mythril Framework
 Mythril is C++20 Vulkan rendering framework for Windows, Linux, and MacOS. 
-It aims to provide a easy to create and highly abstracted API for Vulkan, aswell as some bonus features described below.
+It aims to provide a easy to create context and highly abstracted API for Vulkan, aswell as some bonus features described below.
 
 ### Features:
 * RenderGraph implementation, automatically builds and optimizes your described frame.
@@ -9,54 +9,65 @@ It aims to provide a easy to create and highly abstracted API for Vulkan, aswell
 * Abstracted and easy to use resource descriptors.
 * RAII Object System, all Vulkan objects are cleaned up automatically.
 * Supported plugin system for commonly used dev tools, currently includes ImGui and Tracy.
+* Ability to use whatever window context you like with little work (SDL3/GLFW/any native api)
 
 ![Sample 07 Screenshot][sample_07_img]
 
 ### Minimal Example:
 ```cpp
 int main() {
-	auto ctx = mythril::CTXBuilder{}
-	.set_vulkan_cfg({
-		.app_name = "Cool App Name",
-		.engine_name = "Cool Engine Name"
-	})
-	.set_window_spec({
-		.title = "Cool Window Name",
-		.mode = mythril::WindowMode::Windowed,
-		.width = 640,
-		.height = 480,
-		.resizeable = false,
-	})
-	.with_default_swapchain()
-	.build();
+	SDL_Window* sdlWindow = BuildSDLWindow(false);
+	const auto windowSize = GetSDLWindowFramebufferSize(sdlWindow);
+	{
+		auto ctx = mythril::CTXBuilder{}
+		.set_vulkan_cfg({
+			.app_name = "Cool App Name",
+			.engine_name = "Cool Engine Name"
+		})
+		.set_window_surface([sdlWindow](VkInstance instance) {
+			VkSurfaceKHR surface;
+			SDL_Vulkan_CreateSurface(sdlWindow, instance, nullptr, &surface);
+			return surface;
+		},
+		[](VkInstance instance, VkSurfaceKHR surface_khr) {
+			SDL_Vulkan_DestroySurface(instance, surface_khr, nullptr);
+		})
+		.with_default_swapchain({
+			.width = windowSize.width,
+			.height = windowSize.height,
+			.presentMode = VK_PRESENT_MODE_IMMEDIATE_KHR
+		})
+		.build();
 
-	mythril::RenderGraph graph;
-	graph.addGraphicsPass("main")
-	.attachment({
-		.texDesc = ctx->getBackBufferTexture(),
-		.clearValue = {1, 0, 0, 1},
-		.loadOp = mythril::LoadOp::CLEAR,
-		.storeOp = mythril::StoreOp::STORE
-	})
-	.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
-		// do absolutely nothing, just begin and end a pass
-		cmd.cmdBeginRendering();
-		cmd.cmdEndRendering();
-	});
+		mythril::RenderGraph graph;
+		graph.addGraphicsPass("main")
+		.attachment({
+			.texDesc = ctx->getBackBufferTexture(),
+			.clearValue = {1, 0, 0, 1},
+			.loadOp = mythril::LoadOp::CLEAR,
+			.storeOp = mythril::StoreOp::STORE
+		})
+		.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
+			// do absolutely nothing, just begin and end a pass
+			cmd.cmdBeginRendering();
+			cmd.cmdEndRendering();
+		});
 
-	graph.compile(*ctx);
+		graph.compile(*ctx);
 
-	bool quit = false;
-	while(!quit) {
-		SDL_Event e;
-		while (SDL_PollEvent(&e)) {
-			if (e.type == SDL_EVENT_QUIT) quit = true;
+		bool quit = false;
+		while(!quit) {
+			SDL_Event e;
+			while (SDL_PollEvent(&e)) {
+				if (e.type == SDL_EVENT_QUIT) quit = true;
+			}
+
+			mythril::CommandBuffer& cmd = ctx->acquireCommand(mythril::CommandBuffer::Type::Graphics);
+			graph.execute(cmd);
+			ctx->submitCommand(cmd);
 		}
-
-		mythril::CommandBuffer& cmd = ctx->openCommand(mythril::CommandBuffer::Type::Graphics);
-		graph.execute(cmd);
-		ctx->submitCommand(cmd);
 	}
+	DestroySDLWindow(sdlWindow);
 	return 0;
 }
 ```
@@ -91,6 +102,7 @@ add_subdirectory(mythril)
 | `MYTH_ENABLE_TRACY`          | `OFF`   | Installs Tracy and enabled mythrils' TracyPlugin                           |
 | `MYTH_ENABLE_TRACY_GPU`      | `OFF`   | Requires ENABLE_TRACY to be ON, allows GPU timing (CURRENTLY EXPERIMENTAL) |
 > Note: `MYTH_ENABLE_IMGUI_STANDARD` and `MYTH_ENABLE_IMGUI_DOCKING` are mutually exclusive!
+
 
 
 ## License

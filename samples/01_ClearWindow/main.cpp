@@ -12,7 +12,7 @@
 
 int main() {
 	SDL_Window* sdlWindow = BuildSDLWindow(false);
-	auto windowSize = GetSDLWindowFramebufferSize(sdlWindow);
+	const auto windowSize = GetSDLWindowFramebufferSize(sdlWindow);
 	{
 		auto ctx = mythril::CTXBuilder{}
 		.set_vulkan_cfg({
