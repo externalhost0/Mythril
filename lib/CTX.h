@@ -9,7 +9,6 @@
 #include "ImmediateCommands.h"
 #include "StagingDevice.h"
 #include "ObjectHandles.h"
-#include "Window.h"
 
 #include "VulkanObjects.h"
 #include "Pipelines.h"
@@ -180,7 +179,7 @@ namespace mythril {
 		void createSwapchain(const SwapchainSpec& spec = {});
 		void destroySwapchain();
 		// wraps create & destroy Swapchain functions as a most common use case
-		void recreateSwapchainStandard();
+		void recreateSwapchain(const SwapchainSpec& spec = {});
 
 		bool isSwapchainDirty() const {
 			ASSERT_MSG(_swapchain, "Swapchain has not been created!");
@@ -195,7 +194,6 @@ namespace mythril {
 			return wrappedBackBuffer;
 		}
 
-		Window& getWindow() { return _window; }
 		const Texture& getNullTexture() const { return this->_dummyTexture; }
 
 		CommandBuffer& acquireCommand(CommandBuffer::Type type);
@@ -389,7 +387,7 @@ namespace mythril {
 		TracyPlugin _tracyPlugin;
 #endif
 		SlangCompiler _slangCompiler;
-		Window _window;
+		std::function<void(VkInstance, VkSurfaceKHR)> _surfaceDestroyFunc;
 
 		friend class DescriptorSetWriter;
 		friend class RenderGraph;

@@ -104,7 +104,7 @@ namespace mythril {
 		std::array<const char*, 16> sp_cstrings = {};
 		int64_t sp_count = 0;
 		for (const std::filesystem::path& path : this->_shaderSearchPaths) {
-			sp_cstrings[sp_count++] = path.string().c_str();
+			sp_cstrings[sp_count++] = path.c_str();
 		}
 
 		const slang::SessionDesc sessionDesc = {

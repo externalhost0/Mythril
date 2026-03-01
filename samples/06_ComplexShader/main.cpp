@@ -16,8 +16,10 @@
 
 // for shader structs
 #include <fmt/color.h>
+#include <SDL3/SDL_vulkan.h>
 
 #include "GPUStructs.h"
+#include "../SDL3Usage.h"
 #include "../../lib/vkstring.h"
 
 struct Camera {
@@ -384,272 +386,282 @@ int main() {
 		"../include/",
 		kDataDir.string()
 	};
-	auto ctx = mythril::CTXBuilder{}
-	.set_vulkan_cfg({
-		.app_name = "Cool App Name",
-		.engine_name = "Cool Engine Name"
-	})
-	.set_window_spec({
-		.title = "Cool Window Name",
-		.mode = mythril::WindowMode::Windowed,
-		.width = 1280,
-		.height = 720,
-		.resizeable = true
-	})
-	.set_slang_cfg({
-		.searchpaths = slang_searchpaths
-	})
-	.with_default_swapchain()
-	.with_ImGui()
-	.build();
+	SDL_Window* sdlWindow = BuildSDLWindow(false);
+	auto initialWindowSize = GetSDLWindowFramebufferSize(sdlWindow);
+	{
+		auto ctx = mythril::CTXBuilder{}
+		.set_vulkan_cfg({
+			.app_name = "Cool App Name",
+			.engine_name = "Cool Engine Name"
+		})
+		.set_window_surface([sdlWindow](VkInstance instance) {
+			VkSurfaceKHR surface;
+			SDL_Vulkan_CreateSurface(sdlWindow, instance, nullptr, &surface);
+			return surface;
+		},
+		[](VkInstance instance, VkSurfaceKHR surface_khr) {
+			SDL_Vulkan_DestroySurface(instance, surface_khr, nullptr);
+		})
+		.set_slang_cfg({
+			.searchpaths = slang_searchpaths
+		})
+		.with_default_swapchain({
+			.width = initialWindowSize.width,
+			.height = initialWindowSize.height
+		})
+		.with_ImGui({
+			.windowInitFunction = [sdlWindow] { ImGui_ImplSDL3_InitForVulkan(sdlWindow); },
+			.windowDestroyFunction = [] { ImGui_ImplSDL3_Shutdown(); }
+		})
+		.build();
 
-	const VkExtent2D extent2D = ctx->getWindow().getFramebufferSize();
-	const mythril::Dimensions dims = {extent2D.width, extent2D.height, 1};
-	mythril::Texture colorTarget = ctx->createTexture({
-		.dimension = dims,
-		.format = VK_FORMAT_R8G8B8A8_UNORM,
-		.usage = mythril::TextureUsageBits::TextureUsageBits_Attachment | mythril::TextureUsageBits_Sampled,
-		.storage = mythril::StorageType::Device,
-		.debugName = "Color Texture"
-	});
-	mythril::Texture finalColorTarget = ctx->createTexture({
-		.dimension = dims,
-		.format = VK_FORMAT_R8G8B8A8_UNORM,
-		.usage = mythril::TextureUsageBits::TextureUsageBits_Attachment,
-		.storage = mythril::StorageType::Device,
-		.debugName = "Final Color Texture"
-	});
-	mythril::Texture depthTarget = ctx->createTexture({
-		.dimension = dims,
-		.format = VK_FORMAT_D32_SFLOAT_S8_UINT,
-		.samples = mythril::SampleCount::X1,
-		.usage = mythril::TextureUsageBits::TextureUsageBits_Attachment,
-		.debugName = "Depth Texture"
-	});
+		const mythril::Dimensions dims = { initialWindowSize.width, initialWindowSize.height, 1};
+		mythril::Texture colorTarget = ctx->createTexture({
+			.dimension = dims,
+			.format = VK_FORMAT_R8G8B8A8_UNORM,
+			.usage = mythril::TextureUsageBits::TextureUsageBits_Attachment | mythril::TextureUsageBits_Sampled,
+			.storage = mythril::StorageType::Device,
+			.debugName = "Color Texture"
+		});
+		mythril::Texture finalColorTarget = ctx->createTexture({
+			.dimension = dims,
+			.format = VK_FORMAT_R8G8B8A8_UNORM,
+			.usage = mythril::TextureUsageBits::TextureUsageBits_Attachment,
+			.storage = mythril::StorageType::Device,
+			.debugName = "Final Color Texture"
+		});
+		mythril::Texture depthTarget = ctx->createTexture({
+			.dimension = dims,
+			.format = VK_FORMAT_D32_SFLOAT_S8_UINT,
+			.samples = mythril::SampleCount::X1,
+			.usage = mythril::TextureUsageBits::TextureUsageBits_Attachment,
+			.debugName = "Depth Texture"
+		});
 
-	mythril::Shader standardShader = ctx->createShader({
-		.filePath = kDataDir / "Marble.slang",
-		.debugName = "Example Shader"
-	});
+		mythril::Shader standardShader = ctx->createShader({
+			.filePath = kDataDir / "Marble.slang",
+			.debugName = "Example Shader"
+		});
 
-	mythril::GraphicsPipeline mainPipeline = ctx->createGraphicsPipeline({
-		.vertexShader = {standardShader},
-		.fragmentShader = {standardShader},
-		.topology = mythril::TopologyMode::TRIANGLE,
-		.polygon = mythril::PolygonMode::FILL,
-		.blend = mythril::BlendingMode::OFF,
-		.cull = mythril::CullMode::BACK,
-		.multisample = mythril::SampleCount::X1,
-		.debugName = "Geometry Pipeline"
-	});
+		mythril::GraphicsPipeline mainPipeline = ctx->createGraphicsPipeline({
+			.vertexShader = {standardShader},
+			.fragmentShader = {standardShader},
+			.topology = mythril::TopologyMode::TRIANGLE,
+			.polygon = mythril::PolygonMode::FILL,
+			.blend = mythril::BlendingMode::OFF,
+			.cull = mythril::CullMode::BACK,
+			.multisample = mythril::SampleCount::X1,
+			.debugName = "Geometry Pipeline"
+		});
 
-	mythril::Buffer cubeVertexBuffer = ctx->createBuffer({
-		.size = sizeof(GPU::Vertex) * cubeVertices.size(),
-		.usage = mythril::BufferUsageBits::BufferUsageBits_Storage,
-		.storage = mythril::StorageType::Device,
-		.initialData = cubeVertices.data(),
-		.debugName = "Cube Vertex Buffer"
-	});
-	mythril::Buffer cubeIndexBuffer = ctx->createBuffer({
-		.size = sizeof(uint32_t) * cubeIndices.size(),
-		.usage = mythril::BufferUsageBits::BufferUsageBits_Index,
-		.storage = mythril::StorageType::Device,
-		.initialData = cubeIndices.data(),
-		.debugName = "Cube Index Buffer"
-	});
-	mythril::Buffer perFrameDataBuffer = ctx->createBuffer({
-		.size = sizeof(GPU::GlobalData),
-		.usage = mythril::BufferUsageBits::BufferUsageBits_Uniform,
-		.storage = mythril::StorageType::Device,
-		.debugName = "PerFrameData Uniform Buffer"
-	});
-	mythril::Buffer perMaterialDataBuffer = ctx->createBuffer({
-		.size = sizeof(GPU::MaterialData),
-		.usage = mythril::BufferUsageBits::BufferUsageBits_Uniform,
-		.storage = mythril::StorageType::Device,
-		.debugName = "PerMaterialData Uniform Buffer"
-	});
-	constexpr unsigned int kNumObjects = 50;
-	mythril::Buffer objectDataBuf = ctx->createBuffer({
-		.size = sizeof(GPU::ObjectData) * kNumObjects,
-		.usage = mythril::BufferUsageBits::BufferUsageBits_Storage,
-		.storage = mythril::StorageType::Device,
-		.debugName = "Object Data SSBO"
-	});
+		mythril::Buffer cubeVertexBuffer = ctx->createBuffer({
+			.size = sizeof(GPU::Vertex) * cubeVertices.size(),
+			.usage = mythril::BufferUsageBits::BufferUsageBits_Storage,
+			.storage = mythril::StorageType::Device,
+			.initialData = cubeVertices.data(),
+			.debugName = "Cube Vertex Buffer"
+		});
+		mythril::Buffer cubeIndexBuffer = ctx->createBuffer({
+			.size = sizeof(uint32_t) * cubeIndices.size(),
+			.usage = mythril::BufferUsageBits::BufferUsageBits_Index,
+			.storage = mythril::StorageType::Device,
+			.initialData = cubeIndices.data(),
+			.debugName = "Cube Index Buffer"
+		});
+		mythril::Buffer perFrameDataBuffer = ctx->createBuffer({
+			.size = sizeof(GPU::GlobalData),
+			.usage = mythril::BufferUsageBits::BufferUsageBits_Uniform,
+			.storage = mythril::StorageType::Device,
+			.debugName = "PerFrameData Uniform Buffer"
+		});
+		mythril::Buffer perMaterialDataBuffer = ctx->createBuffer({
+			.size = sizeof(GPU::MaterialData),
+			.usage = mythril::BufferUsageBits::BufferUsageBits_Uniform,
+			.storage = mythril::StorageType::Device,
+			.debugName = "PerMaterialData Uniform Buffer"
+		});
+		constexpr unsigned int kNumObjects = 50;
+		mythril::Buffer objectDataBuf = ctx->createBuffer({
+			.size = sizeof(GPU::ObjectData) * kNumObjects,
+			.usage = mythril::BufferUsageBits::BufferUsageBits_Storage,
+			.storage = mythril::StorageType::Device,
+			.debugName = "Object Data SSBO"
+		});
 
-	auto startTime = std::chrono::high_resolution_clock::now();
-	mythril::RenderGraph graph;
-	graph.addGraphicsPass("geometry")
-	.attachment({
-		.texDesc = colorTarget,
-		.clearValue = {0.2f, 0.2f, 0.2f, 1.f},
-		.loadOp = mythril::LoadOp::CLEAR,
-		.storeOp = mythril::StoreOp::STORE
-	})
-	.attachment({
-		.texDesc = depthTarget,
-		.clearValue = {1.f, 0},
-		.loadOp = mythril::LoadOp::CLEAR
-	})
-	.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
-		cmd.cmdBeginRendering();
-		cmd.cmdBindGraphicsPipeline(mainPipeline);
+		auto startTime = std::chrono::high_resolution_clock::now();
+		mythril::RenderGraph graph;
+		graph.addGraphicsPass("geometry")
+		.attachment({
+			.texDesc = colorTarget,
+			.clearValue = {0.2f, 0.2f, 0.2f, 1.f},
+			.loadOp = mythril::LoadOp::CLEAR,
+			.storeOp = mythril::StoreOp::STORE
+		})
+		.attachment({
+			.texDesc = depthTarget,
+			.clearValue = {1.f, 0},
+			.loadOp = mythril::LoadOp::CLEAR
+		})
+		.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
+			cmd.cmdBeginRendering();
+			cmd.cmdBindGraphicsPipeline(mainPipeline);
 
-		const auto currentTime = std::chrono::high_resolution_clock::now();
-		const float time = std::chrono::duration<float>(currentTime - startTime).count();
-		// rotating cube!
-		glm::mat4 modelmatrix = glm::rotate(glm::mat4(1.0f), time, glm::vec3(0.0f, 1.0f, 0.0f));
-		modelmatrix = glm::rotate(modelmatrix, time * 0.5f, glm::vec3(1.0f, 0.0f, 0.0f));
-		GPU::GeometryPushConstant push {
-			.model =  modelmatrix,
-			.vertexBufferAddress = cubeVertexBuffer.gpuAddress()
-		};
-		cmd.cmdPushConstants(push);
-		cmd.cmdBindIndexBuffer(cubeIndexBuffer);
-		cmd.cmdDrawIndexed(cubeIndices.size());
-		cmd.cmdEndRendering();
-	});
+			const auto currentTime = std::chrono::high_resolution_clock::now();
+			const float time = std::chrono::duration<float>(currentTime - startTime).count();
+			// rotating cube!
+			glm::mat4 modelmatrix = glm::rotate(glm::mat4(1.0f), time, glm::vec3(0.0f, 1.0f, 0.0f));
+			modelmatrix = glm::rotate(modelmatrix, time * 0.5f, glm::vec3(1.0f, 0.0f, 0.0f));
+			GPU::GeometryPushConstant push {
+				.model =  modelmatrix,
+				.vertexBufferAddress = cubeVertexBuffer.gpuAddress()
+			};
+			cmd.cmdPushConstants(push);
+			cmd.cmdBindIndexBuffer(cubeIndexBuffer);
+			cmd.cmdDrawIndexed(cubeIndices.size());
+			cmd.cmdEndRendering();
+		});
 
-	graph.addGraphicsPass("gui")
-	.attachment({
-		.texDesc = {colorTarget},
-		.loadOp = mythril::LoadOp::LOAD,
-		.storeOp = mythril::StoreOp::STORE
-	})
-	.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
-		cmd.cmdBeginRendering();
-		cmd.cmdDrawImGui();
-		cmd.cmdEndRendering();
-	});
+		graph.addGraphicsPass("gui")
+		.attachment({
+			.texDesc = {colorTarget},
+			.loadOp = mythril::LoadOp::LOAD,
+			.storeOp = mythril::StoreOp::STORE
+		})
+		.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
+			cmd.cmdBeginRendering();
+			cmd.cmdDrawImGui();
+			cmd.cmdEndRendering();
+		});
 
-	graph.addIntermediate("presentation")
-	.blit(colorTarget, ctx->getBackBufferTexture())
-	.finish();
+		graph.addIntermediate("presentation")
+		.blit(colorTarget, ctx->getBackBufferTexture())
+		.finish();
 
-	graph.compile(*ctx);
+		graph.compile(*ctx);
 
 
-	// now we should update descriptor sets for the first & only time
-	// we can update multiple descriptor sets at the same time & in the same call
-	mythril::DescriptorSetWriter writer = ctx->openDescriptorUpdate(mainPipeline);
-	writer.updateBinding(perFrameDataBuffer, "perFrame"); // set 0, binding 0
-	writer.updateBinding(perMaterialDataBuffer, "perMaterial"); // set 1, binding 0
-	ctx->submitDescriptorUpdate(writer);
+		// now we should update descriptor sets for the first & only time
+		// we can update multiple descriptor sets at the same time & in the same call
+		mythril::DescriptorSetWriter writer = ctx->openDescriptorUpdate(mainPipeline);
+		writer.updateBinding(perFrameDataBuffer, "perFrame"); // set 0, binding 0
+		writer.updateBinding(perMaterialDataBuffer, "perMaterial"); // set 1, binding 0
+		ctx->submitDescriptorUpdate(writer);
 
-	std::srand(std::time(nullptr));
-	bool quit = false;
-	while(!quit) {
-		SDL_Event e;
-		while (SDL_PollEvent(&e)) {
-			ImGui_ImplSDL3_ProcessEvent(&e);
-			if (e.type == SDL_EVENT_QUIT) quit = true;
-			if (e.type == SDL_EVENT_KEY_DOWN) {
-				if (e.key.key == SDLK_Q) {
-					quit = true;
+		std::srand(std::time(nullptr));
+		bool quit = false;
+		while(!quit) {
+			SDL_Event e;
+			while (SDL_PollEvent(&e)) {
+				ImGui_ImplSDL3_ProcessEvent(&e);
+				if (e.type == SDL_EVENT_QUIT) quit = true;
+				if (e.type == SDL_EVENT_KEY_DOWN) {
+					if (e.key.key == SDLK_Q) {
+						quit = true;
+					}
 				}
 			}
-		}
 
-		// mandatory for resizeability
-		// or else your presentation will break
-		if (ctx->isSwapchainDirty()) {
-			ctx->recreateSwapchainStandard();
+			// mandatory for resizeability
+			// or else your presentation will break
+			auto currentWindowSize = GetSDLWindowFramebufferSize(sdlWindow);
+			if (ctx->isSwapchainDirty()) {
+				ctx->recreateSwapchain({
+					.width = currentWindowSize.width,
+					.height = currentWindowSize.height
+				});
 
-			const mythril::Window& window = ctx->getWindow();
-			// get framebuffer size for correct resolution, not windowsize which might not scale to your monitor dpi correctly
-			VkExtent2D new_extent_2d = window.getFramebufferSize();
-			mythril::Dimensions applied_dimensions = { new_extent_2d.width, new_extent_2d.height, 1};
-			colorTarget.resize(applied_dimensions);
-			depthTarget.resize(applied_dimensions);
-			finalColorTarget.resize(applied_dimensions);
-			// you must recompile your framegraph in order for it to recieve texture changes
-			graph.compile(*ctx);
-		}
+				// get framebuffer size for correct resolution, not windowsize which might not scale to your monitor dpi correctly
+				mythril::Dimensions applied_dimensions = { currentWindowSize.width, currentWindowSize.height, 1};
+				colorTarget.resize(applied_dimensions);
+				depthTarget.resize(applied_dimensions);
+				finalColorTarget.resize(applied_dimensions);
+				// you must recompile your framegraph in order for it to recieve texture changes
+				graph.compile(*ctx);
+			}
 
-		ImGui_ImplVulkan_NewFrame();
-		ImGui_ImplSDL3_NewFrame();
-		ImGui::NewFrame();
-		DrawShaderInfo(standardShader.view());
+			ImGui_ImplVulkan_NewFrame();
+			ImGui_ImplSDL3_NewFrame();
+			ImGui::NewFrame();
+			DrawShaderInfo(standardShader.view());
 
-		ImGui::Begin("Cube Uniforms");
-		ImGui::Text("Original Shader design by 'nasana'.");
-		ImGui::TextLinkOpenURL("Click Here For Their Work", "https://www.shadertoy.com/view/WtdXR8");
-		ImGui::Spacing();
-		ImGui::Separator();
-		ImGui::Spacing();
-		static float col[3] = {1.f, 0.f, 0.f };
-		ImGui::ColorPicker3("Tint Color", col);
-		static float distort_amount = 0.6f;
-		ImGui::SliderFloat("Distort Amount", &distort_amount, 0.f, 1.f);
-		static float glow = 0.5f;
-		ImGui::SliderFloat("Glow", &glow, 0.f, 1.f);
-		static float warp_iterations = 1.0f;
-		ImGui::SliderFloat("Warp Iterations", &warp_iterations, 0.f, 1.f);
-		ImGui::End();
+			ImGui::Begin("Cube Uniforms");
+			ImGui::Text("Original Shader design by 'nasana'.");
+			ImGui::TextLinkOpenURL("Click Here For Their Work", "https://www.shadertoy.com/view/WtdXR8");
+			ImGui::Spacing();
+			ImGui::Separator();
+			ImGui::Spacing();
+			static float col[3] = {1.f, 0.f, 0.f };
+			ImGui::ColorPicker3("Tint Color", col);
+			static float distort_amount = 0.6f;
+			ImGui::SliderFloat("Distort Amount", &distort_amount, 0.f, 1.f);
+			static float glow = 0.5f;
+			ImGui::SliderFloat("Glow", &glow, 0.f, 1.f);
+			static float warp_iterations = 1.0f;
+			ImGui::SliderFloat("Warp Iterations", &warp_iterations, 0.f, 1.f);
+			ImGui::End();
 
-		std::srand(static_cast<unsigned>(std::time(nullptr)));
-		GPU::ObjectData objects[kNumObjects];
-		for (GPU::ObjectData& object : objects) {
-			glm::vec3 pos = {
+			std::srand(static_cast<unsigned>(std::time(nullptr)));
+			GPU::ObjectData objects[kNumObjects];
+			for (GPU::ObjectData& object : objects) {
+				glm::vec3 pos = {
 					(std::rand() / (float)RAND_MAX - 0.5f) * 100.0f, // range [-50, 50]
 					(std::rand() / (float)RAND_MAX - 0.5f) * 100.0f,
 					(std::rand() / (float)RAND_MAX - 0.5f) * 100.0f
-			};
-
-			glm::vec3 color = {
+				};
+				glm::vec3 color = {
 					std::rand() / (float)RAND_MAX, // range [0, 1]
 					std::rand() / (float)RAND_MAX,
 					std::rand() / (float)RAND_MAX
-			};
-			object = { pos, color };
-		}
+				};
+				object = { pos, color };
+			}
 
 
-		const GPU::MaterialData matData = {
+			const GPU::MaterialData matData = {
 				.tint = { col[0], col[1], col[2] },
 				.warpIterations = warp_iterations,
 				.glowAmount = glow,
 				.distortAmount = distort_amount
-		};
+			};
 
-		const VkExtent2D windowSize = ctx->getWindow().getWindowSize();
-		const Camera camera = {
+			const Camera camera = {
 				.position = {0.f, 0.f, 5.f},
-				.aspectRatio = (float) windowSize.width / (float) windowSize.height,
+				.aspectRatio = (float) currentWindowSize.width / (float) currentWindowSize.height,
 				.fov = 80.f,
 				.nearPlane = 0.1f,
 				.farPlane = 100.f
-		};
-		const GPU::CameraData cameraData = {
+			};
+			const GPU::CameraData cameraData = {
 				.proj = calculateProjectionMatrix(camera),
 				.view = calculateViewMatrix(camera),
 				.position = camera.position
-		};
-		auto currentTime = std::chrono::high_resolution_clock::now();
-		float time = std::chrono::duration<float>(currentTime - startTime).count();
-		// once again, getFramebufferSize is the actual resolution we render out
-		const VkExtent2D renderSize = ctx->getWindow().getFramebufferSize();
-		const GPU::GlobalData frameData {
-			.objects = objectDataBuf.gpuAddress(),
-			.camera = cameraData,
-			.renderResolution = { renderSize.width, renderSize.height },
-			.time = time
-		};
+			};
+			auto currentTime = std::chrono::high_resolution_clock::now();
+			float time = std::chrono::duration<float>(currentTime - startTime).count();
+			// once again, getFramebufferSize is the actual resolution we render out
+			const GPU::GlobalData frameData {
+				.objects = objectDataBuf.gpuAddress(),
+				.camera = cameraData,
+				.renderResolution = { currentWindowSize.width, currentWindowSize.height },
+				.time = time
+			};
 
 
-		// buffer updating must be done before rendering
-		// todo: make this part of the rendergraph
-		{
-			mythril::CommandBuffer& cmd = ctx->acquireCommand(mythril::CommandBuffer::Type::General);
-			cmd.cmdUpdateBuffer(objectDataBuf, objects);
-			cmd.cmdUpdateBuffer(perFrameDataBuffer, frameData);
-			cmd.cmdUpdateBuffer(perMaterialDataBuffer, matData);
+			// buffer updating must be done before rendering
+			// todo: make this part of the rendergraph
+			{
+				mythril::CommandBuffer& cmd = ctx->acquireCommand(mythril::CommandBuffer::Type::General);
+				cmd.cmdUpdateBuffer(objectDataBuf, objects);
+				cmd.cmdUpdateBuffer(perFrameDataBuffer, frameData);
+				cmd.cmdUpdateBuffer(perMaterialDataBuffer, matData);
+				ctx->submitCommand(cmd);
+			}
+
+			mythril::CommandBuffer& cmd = ctx->acquireCommand(mythril::CommandBuffer::Type::Graphics);
+			graph.execute(cmd);
 			ctx->submitCommand(cmd);
 		}
-
-		mythril::CommandBuffer& cmd = ctx->acquireCommand(mythril::CommandBuffer::Type::Graphics);
-		graph.execute(cmd);
-		ctx->submitCommand(cmd);
 	}
+	SDL_DestroyWindow(sdlWindow);
 	return 0;
 }

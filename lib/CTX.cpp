@@ -266,18 +266,14 @@ namespace mythril {
 #ifdef DEBUG
 		vkDestroyDebugUtilsMessengerEXT(_vkInstance, _vkDebugMessenger, nullptr);
 #endif
-		SDL_Vulkan_DestroySurface(_vkInstance, _vkSurfaceKHR, nullptr);
+		this->_surfaceDestroyFunc(_vkInstance, _vkSurfaceKHR);
 		vkDestroyInstance(_vkInstance, nullptr);
-
-		this->_window.destroy();
-		SDL_Quit();
 	}
 
-	void CTX::recreateSwapchainStandard() {
+	void CTX::recreateSwapchain(const SwapchainSpec& spec) {
 		VK_CHECK(vkDeviceWaitIdle(this->_vkDevice));
-		const VkExtent2D extent_2d = _window.getFramebufferSize();
 		destroySwapchain();
-		createSwapchain({extent_2d.width, extent_2d.height});
+		createSwapchain(spec);
 	}
 
 	void CTX::destroySwapchain() {

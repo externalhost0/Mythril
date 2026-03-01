@@ -297,7 +297,6 @@ set(MYTHRIL_SOURCES
         lib/VulkanObjects.cpp
         lib/PipelineBuilder.cpp
         lib/RenderGraphBuilder.cpp
-        lib/Window.cpp
         lib/Shader.cpp
         lib/SlangCompiler.cpp
         lib/DescriptorWriter.cpp

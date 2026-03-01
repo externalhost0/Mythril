@@ -17,8 +17,10 @@ macro(ADD_SAMPLE sample_name)
 
     target_compile_definitions(${sample_name} PRIVATE
         MYTH_SAMPLE_NAME="${sample_name}"
+        MYTH_INCLUDE_DIR="${CMAKE_SOURCE_DIR}/include"
     )
 
+    # enable each feature asked
     foreach(feature IN LISTS SAMPLE_${sample_name}_REQUIRES)
         if(feature)
             target_compile_definitions(${sample_name} PRIVATE ${feature}=1)
@@ -28,13 +30,13 @@ macro(ADD_SAMPLE sample_name)
     # copying asset into their own folder
     file(GLOB_RECURSE SAMPLE_ASSET_FILES "${CMAKE_CURRENT_SOURCE_DIR}/${sample_name}/*")
 
+    # ignroe source and header files
     add_custom_command(TARGET ${sample_name} POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E make_directory
-            "$<TARGET_FILE_DIR:${sample_name}>/${sample_name}_data"
-        COMMAND ${CMAKE_COMMAND} -E copy_directory
-            "${CMAKE_CURRENT_SOURCE_DIR}/${sample_name}/"
-            "$<TARGET_FILE_DIR:${sample_name}>/${sample_name}_data"
-        COMMENT "Copying ${sample_name} assets to isolated runtime directory"
+            COMMAND ${CMAKE_COMMAND}
+            -DSRC_DIR="${CMAKE_CURRENT_SOURCE_DIR}/${sample_name}"
+            -DDST_DIR="$<TARGET_FILE_DIR:${sample_name}>/${sample_name}_data"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/CopyAssets.cmake"
+            COMMENT "Copying ${sample_name} assets to isolated runtime directory"
     )
 
     if(FORCE_REBUILD_SAMPLES)
@@ -97,12 +99,12 @@ endif()
 # ==================== Sample Definitions ====================
 
 ADD_SAMPLE("01_ClearWindow")
-ADD_SAMPLE("02_Cube"                LIBS glm)
-ADD_SAMPLE("03_CubeMSAA"            LIBS glm)
-ADD_SAMPLE("04_PostProcessingCube"  LIBS glm)
+ADD_SAMPLE("02_Cube"               LIBS glm)
+ADD_SAMPLE("03_CubeMSAA"           LIBS glm)
+ADD_SAMPLE("04_PostProcessingCube" LIBS glm)
 ADD_SAMPLE("05_ImGui")
-ADD_SAMPLE("06_ComplexShader"       LIBS glm)
-ADD_SAMPLE("07_CompleteScene"       LIBS glm fastgltf stb_image imguizmo)
+ADD_SAMPLE("06_ComplexShader"      LIBS glm)
+ADD_SAMPLE("07_CompleteScene"      LIBS glm fastgltf stb_image imguizmo)
 
 
 

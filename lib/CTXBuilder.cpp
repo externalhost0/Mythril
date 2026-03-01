@@ -558,11 +558,6 @@ missing_features.append("\n\t(" version ") " #feature);
 		MYTH_PROFILER_ZONE_COLOR("CTXBuilder::build", MYTH_PROFILER_COLOR_CREATE);
 		// mythril should only provide graphics related things
 		// fixme as this means that we have no audio
-		if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO)) {
-			ASSERT_MSG(false, "SDL could not be initialized!");
-		}
-		Window window;
-		window.create(this->_windowSpec);
 
 		const VkResult volk_result = volkInitialize();
 		ASSERT_MSG(volk_result == VK_SUCCESS, "Volk failed to initialize!");
@@ -576,10 +571,7 @@ missing_features.append("\n\t(" version ") " #feature);
 			.engineName = this->_vulkanCfg.engine_name,
 		}, this->_vulkanCfg.enableValidation, false, instance_extensions);
 
-		VkSurfaceKHR vk_surface = CreateVulkanSurface({
-			.vkInstance = vkb_instance.instance,
-			.sdlWindow = window._sdlWindow
-		});
+		VkSurfaceKHR vk_surface = this->_surfaceCreateFunc(vkb_instance.instance);
 
 		// do not pass features or extensions here, do that to the vkb::PhysicalDevice
 		vkb::PhysicalDevice vkb_physical_device = SelectVulkanPhysicalDevice({
@@ -615,6 +607,7 @@ missing_features.append("\n\t(" version ") " #feature);
 		ctx->_vkInstance = vkb_instance.instance;
 		ctx->_vkDebugMessenger = vkb_instance.debug_messenger;
 		ctx->_vkSurfaceKHR = vk_surface;
+		ctx->_surfaceDestroyFunc = this->_surfaceDestroyFunc;
 		ctx->_vkPhysicalDevice = vkb_physical_device.physical_device;
 		ctx->_vkDevice = vk_device;
 		ctx->_vmaAllocator = vma_allocator;
@@ -636,17 +629,14 @@ missing_features.append("\n\t(" version ") " #feature);
 		ctx->_vkComputeQueue = queues.vkComputeQueue;
 		ctx->_computeQueueFamilyIndex = queues.computeQueueFamilyIndex;
 
-		// our window
-		ctx->_window = window;
 		// defered initialization of the CTX instance
 		ctx->construct();
 		if (this->_requestedSwapchain) {
 			if (this->_swapchainSpec.width == 0 && this->_swapchainSpec.height == 0) {
 					// swapchain must be built after default texture has been made
 					// or else the fallback texture is the swapchain's texture
-					const auto [width, height] = ctx->getWindow().getFramebufferSize();
-					this->_swapchainSpec.width = width;
-					this->_swapchainSpec.height = height;
+					this->_swapchainSpec.width = 1280;
+					this->_swapchainSpec.height = 720;
 			}
 			if (this->_swapchainSpec.format == VK_FORMAT_UNDEFINED) {
 				this->_swapchainSpec.format = kDefaultSwapchainFormat;
@@ -665,7 +655,9 @@ missing_features.append("\n\t(" version ") " #feature);
 		}
 		// now we can build plugins!
 #ifdef MYTH_ENABLED_IMGUI
-		if (_usingImGui) ctx->_imguiPlugin.onInit(*ctx, ctx->_window._getSDLwindow(), this->_imguiSpec.format);
+		if (_usingImGui) {
+			ctx->_imguiPlugin.onInit(*ctx, this->_imguiSpec);
+		}
 #endif
 #ifdef MYTH_ENABLED_TRACY_GPU
 		if (_usingTracyGPU) ctx->_tracyPlugin.onInit(*ctx);

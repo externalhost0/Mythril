@@ -11,10 +11,15 @@
 #include <backends/imgui_impl_vulkan.h>
 #include <backends/imgui_impl_sdl3.h>
 
+#include "mythril/CTXBuilder.h"
+
 namespace mythril {
-	void ImGuiPlugin::onInit(CTX& ctx, SDL_Window* sdlWindow, VkFormat format) {
+	void ImGuiPlugin::onInit(CTX& ctx, ImGuiPluginSpec spec) {
 		this->_isEnabeld = true;
-		this->_requestedFormat = format;
+		this->_requestedFormat = spec.format;
+		this->_funcWindowInit = spec.windowInitFunction;
+		this->_funcWindowDestroy = spec.windowDestroyFunction;
+
 		_ctx = &ctx;
 		IMGUI_CHECKVERSION();
 		ImGui::CreateContext();
@@ -63,7 +68,7 @@ namespace mythril {
 								.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
 								.pNext = nullptr,
 								.colorAttachmentCount = 1,
-								.pColorAttachmentFormats = &format
+								.pColorAttachmentFormats = &this->_requestedFormat
 						}
 				},
 				.UseDynamicRendering = true,
@@ -74,7 +79,7 @@ namespace mythril {
 					if (err < 0) abort();
 				},
 		};
-		ImGui_ImplSDL3_InitForVulkan(sdlWindow);
+		this->_funcWindowInit();
 		ImGui_ImplVulkan_Init(&vulkanInitInfo);
 		// to pull in ctx to use in aliased functions
 		auto* data = new MyUserData {
@@ -90,7 +95,7 @@ namespace mythril {
 		ImGui_ImplVulkan_Shutdown();
 		// destroying the descriptor pool we made must come after ImplVulkan_Shutdown()
 		vkDestroyDescriptorPool(_ctx->_vkDevice, _descriptorPool, nullptr);
-		ImGui_ImplSDL3_Shutdown();
+		this->_funcWindowDestroy();
 		ImGui::DestroyContext();
 		this->_isEnabeld = false;
 	}

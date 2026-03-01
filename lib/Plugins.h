@@ -5,24 +5,30 @@
 #pragma once
 
 #include <volk.h>
+
+#include "mythril/CTXBuilder.h"
+#include "mythril/CTXBuilder.h"
 #ifdef MYTH_ENABLED_TRACY_GPU
 #include <tracy/TracyVulkan.hpp>
 #endif
 
 namespace mythril {
+	struct ImGuiPluginSpec;
 	class CTX;
 
 #ifdef MYTH_ENABLED_IMGUI
 	class ImGuiPlugin {
 	public:
-		void onInit(CTX& ctx, SDL_Window* sdlWindow, VkFormat format);
+		void onInit(CTX& ctx, ImGuiPluginSpec spec);
 		void onDestroy();
 		inline bool isEnabled() const { return _isEnabeld; }
 		inline VkFormat getFormat() const { return _requestedFormat; }
 	private:
 		CTX* _ctx = nullptr;
 		VkDescriptorPool _descriptorPool = VK_NULL_HANDLE;
-		VkFormat _requestedFormat = VkFormat::VK_FORMAT_UNDEFINED;
+		VkFormat _requestedFormat = VK_FORMAT_UNDEFINED;
+		std::function<void()> _funcWindowInit;
+		std::function<void()> _funcWindowDestroy;
 		bool _isEnabeld = false;
 	};
 #endif

@@ -51,7 +51,5 @@ namespace mythril {
 		bool _sessionExists = false;
 
 		std::vector<std::filesystem::path> _shaderSearchPaths = {};
-
-
 	};
 }

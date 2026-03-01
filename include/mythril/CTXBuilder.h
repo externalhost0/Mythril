@@ -78,6 +78,8 @@ namespace mythril {
 #ifdef MYTH_ENABLED_IMGUI
 	struct ImGuiPluginSpec {
 		VkFormat format = VK_FORMAT_R8G8B8A8_UNORM;
+		std::function<void()> windowInitFunction;
+		std::function<void()> windowDestroyFunction;
 	};
 #endif
 
@@ -95,8 +97,9 @@ namespace mythril {
 			this->_slangCfg = cfg;
 			return *this;
 		}
-		CTXBuilder& set_window_spec(const WindowSpec& spec) {
-			this->_windowSpec = spec;
+		CTXBuilder& set_window_surface(const std::function<VkSurfaceKHR(VkInstance)>& createFunc, const std::function<void(VkInstance, VkSurfaceKHR)>& destroyFunc) {
+			this->_surfaceCreateFunc = createFunc;
+			this->_surfaceDestroyFunc = destroyFunc;
 			return *this;
 		}
 		// can resolve width & height from window
@@ -107,7 +110,12 @@ namespace mythril {
 		}
 
 #ifdef MYTH_ENABLED_IMGUI
-		CTXBuilder& with_ImGui(ImGuiPluginSpec spec = {}) {
+		CTXBuilder& with_ImGui(const ImGuiPluginSpec& spec) {
+			if (!spec.windowInitFunction)
+				throw std::runtime_error("ImGuiPluginSpec: windowInitFunction is required");
+			if (!spec.windowDestroyFunction)
+				throw std::runtime_error("ImGuiPluginSpec: windowDestroyFunction is required");
+
 			this->_usingImGui = true;
 			this->_imguiSpec = spec;
 			return *this;
@@ -131,7 +139,8 @@ namespace mythril {
 		VulkanCfg _vulkanCfg{};
 		SlangCfg _slangCfg{};
 		SwapchainSpec _swapchainSpec{};
-		WindowSpec _windowSpec{};
+		std::function<VkSurfaceKHR(VkInstance)> _surfaceCreateFunc;
+		std::function<void(VkInstance, VkSurfaceKHR)> _surfaceDestroyFunc;
 #ifdef MYTH_ENABLED_IMGUI
 		ImGuiPluginSpec _imguiSpec{};
 #endif
