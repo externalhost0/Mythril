@@ -19,7 +19,8 @@ int main() {
 			.app_name = "Cool App Name",
 			.engine_name = "Cool Engine Name"
 		})
-		.set_window_surface([sdlWindow](VkInstance instance) {
+		.set_window_surface(
+		[sdlWindow](VkInstance instance) {
 			VkSurfaceKHR surface;
 			SDL_Vulkan_CreateSurface(sdlWindow, instance, nullptr, &surface);
 			return surface;
