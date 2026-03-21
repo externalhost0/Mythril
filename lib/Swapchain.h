@@ -16,7 +16,7 @@ namespace mythril {
 	{
 		uint32_t width = 0;
 		uint32_t height = 0;
-		VkFormat format = VK_FORMAT_UNDEFINED;
+		VkFormat format = VK_FORMAT_MAX_ENUM;
 		VkColorSpaceKHR colorSpace = VK_COLOR_SPACE_MAX_ENUM_KHR;
 		VkPresentModeKHR presentMode = VK_PRESENT_MODE_MAX_ENUM_KHR;
 	};

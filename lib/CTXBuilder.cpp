@@ -21,7 +21,6 @@
 #include <SDL3/SDL_vulkan.h>
 
 namespace mythril {
-
 	struct VulkanInstanceInputs
 	{
 		Version appVersion;
@@ -66,10 +65,10 @@ namespace mythril {
 				.require_api_version(VK_API_VERSION_1_3)
 				.set_minimum_instance_version(1, 4, 304)
 				.request_validation_layers(enableValidation)
+				.set_headless(enableHeadless)
 #if defined __APPLE__
 				.add_layer_setting(kMvkDebugLevel)
 #endif
-				.set_headless(enableHeadless)
 #ifdef DEBUG
 		// we dont need to worry about conditionally having this be called or not depending on enableValidation, its handled internally
 				.use_default_debug_messenger()
@@ -100,7 +99,6 @@ namespace mythril {
 		VkSurfaceKHR vkSurface = VK_NULL_HANDLE;
 	};
 	static vkb::PhysicalDevice SelectVulkanPhysicalDevice(VulkanPhysicalDeviceInputs inputs) {
-		ASSERT(inputs.vkSurface != VK_NULL_HANDLE);
 		ASSERT(inputs.vkbInstance.instance != VK_NULL_HANDLE);
 
 		vkb::PhysicalDeviceSelector physicalDeviceSelector{inputs.vkbInstance};
@@ -428,9 +426,12 @@ missing_features.append("\n\t(" version ") " #feature);
 		uint32_t graphics = findBestFamilyIndex(VK_QUEUE_GRAPHICS_BIT, 0);
 		uint32_t compute  = findBestFamilyIndex(VK_QUEUE_COMPUTE_BIT,  VK_QUEUE_GRAPHICS_BIT);
 		uint32_t transfer = findBestFamilyIndex(VK_QUEUE_TRANSFER_BIT, VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT);
-		uint32_t present  = findBestPresentFamilyIndex(vkbPhysicalDevice.surface);
+		uint32_t present = 0;
+		if (vkbPhysicalDevice.surface != VK_NULL_HANDLE) {
+			present = findBestPresentFamilyIndex(vkbPhysicalDevice.surface);
+			ASSERT_MSG(present  != Invalid<uint32_t>, "No present queue family found");
+		}
 		ASSERT_MSG(graphics != Invalid<uint32_t>, "No graphics queue family found");
-		ASSERT_MSG(present  != Invalid<uint32_t>, "No present queue family found");
 		// if no dedicated compute/transfer family exists, share with graphics
 		if (compute  == Invalid<uint32_t>) compute  = graphics;
 		if (transfer == Invalid<uint32_t>) transfer = graphics;
@@ -561,6 +562,7 @@ missing_features.append("\n\t(" version ") " #feature);
 
 		const VkResult volk_result = volkInitialize();
 		ASSERT_MSG(volk_result == VK_SUCCESS, "Volk failed to initialize!");
+		const bool isHeadless = !(this->_surfaceCreateFunc && this->_surfaceDestroyFunc);
 
 		// fill in user instance extensions & resolve based on cfg
 		std::vector instance_extensions(std::begin(this->_vulkanCfg.instanceExtensions), std::end(this->_vulkanCfg.instanceExtensions));
@@ -569,9 +571,11 @@ missing_features.append("\n\t(" version ") " #feature);
 			.engineVersion = this->_vulkanCfg.engine_version,
 			.appName = this->_vulkanCfg.app_name,
 			.engineName = this->_vulkanCfg.engine_name,
-		}, this->_vulkanCfg.enableValidation, false, instance_extensions);
-
-		VkSurfaceKHR vk_surface = this->_surfaceCreateFunc(vkb_instance.instance);
+		}, this->_vulkanCfg.enableValidation, isHeadless, instance_extensions);
+		VkSurfaceKHR vk_surface = VK_NULL_HANDLE;
+		if (!isHeadless) {
+			vk_surface = this->_surfaceCreateFunc(vkb_instance.instance);
+		}
 
 		// do not pass features or extensions here, do that to the vkb::PhysicalDevice
 		vkb::PhysicalDevice vkb_physical_device = SelectVulkanPhysicalDevice({
@@ -638,7 +642,7 @@ missing_features.append("\n\t(" version ") " #feature);
 					this->_swapchainSpec.width = 1280;
 					this->_swapchainSpec.height = 720;
 			}
-			if (this->_swapchainSpec.format == VK_FORMAT_UNDEFINED) {
+			if (this->_swapchainSpec.format == VK_FORMAT_MAX_ENUM) {
 				this->_swapchainSpec.format = kDefaultSwapchainFormat;
 			}
 			if (this->_swapchainSpec.colorSpace == VK_COLOR_SPACE_MAX_ENUM_KHR) {

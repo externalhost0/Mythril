@@ -4,6 +4,8 @@
 
 #include <VkBootstrap.h>
 
+#include <vector>
+
 #include "Swapchain.h"
 #include "ImmediateCommands.h"
 #include "CTX.h"
@@ -17,18 +19,53 @@ namespace mythril {
 	Swapchain::Swapchain(CTX& ctx, SwapchainSpec args)
 	: _ctx(ctx) {
 		ASSERT_MSG(args.width > 0 && args.height > 0, "Swapchain width & height must both be greater than 0!");
-		// PRIMARY SWAPCHAIN DATA CREATION //
 		uint16_t width = args.width, height = args.height;
+
+		uint32_t formatCount = 0;
+		VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(_ctx._vkPhysicalDevice, _ctx._vkSurfaceKHR, &formatCount, nullptr));
+		ASSERT_MSG(formatCount > 0, "No surface formats available for swapchain!");
+		std::vector<VkSurfaceFormatKHR> formats(formatCount);
+		VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(_ctx._vkPhysicalDevice, _ctx._vkSurfaceKHR, &formatCount, formats.data()));
+
+		VkSurfaceFormatKHR surfaceFormat = formats[0];
+		if (args.format != VK_FORMAT_MAX_ENUM) {
+			for (const auto& f : formats) {
+				if (f.format == args.format && (args.colorSpace == VK_COLOR_SPACE_MAX_ENUM_KHR || f.colorSpace == args.colorSpace)) {
+					surfaceFormat = f;
+					break;
+				}
+			}
+		} else if (args.colorSpace != VK_COLOR_SPACE_MAX_ENUM_KHR) {
+			for (const auto& f : formats) {
+				if (f.colorSpace == args.colorSpace) {
+					surfaceFormat = f;
+					break;
+				}
+			}
+		}
+
+		VkSurfaceCapabilitiesKHR caps = {};
+		VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(_ctx._vkPhysicalDevice, _ctx._vkSurfaceKHR, &caps));
+
+		VkFormatProperties2 formatProps2 = {.sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2};
+		vkGetPhysicalDeviceFormatProperties2(_ctx._vkPhysicalDevice, surfaceFormat.format, &formatProps2);
+
+		const bool storageOk =
+				(caps.supportedUsageFlags & VK_IMAGE_USAGE_STORAGE_BIT) != 0 &&
+				(formatProps2.formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT) != 0;
+
+		VkImageUsageFlags extraImageUsage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+		if (storageOk) {
+			extraImageUsage |= VK_IMAGE_USAGE_STORAGE_BIT;
+		}
+
 		vkb::SwapchainBuilder swapchainBuilder{_ctx._vkPhysicalDevice, _ctx._vkDevice, _ctx._vkSurfaceKHR};
 		auto swapchain_result = swapchainBuilder
-			.set_desired_format(VkSurfaceFormatKHR{
-				.format = args.format,
-				.colorSpace = args.colorSpace,
-			})
+			.set_desired_format(surfaceFormat)
 			.set_desired_min_image_count(kNUM_FRAMES_IN_FLIGHT)
 			.set_desired_present_mode(args.presentMode) // VERY IMPORTANT, decides framerate/buffer/sync
 			.set_desired_extent(width, height)
-			.add_image_usage_flags(VK_IMAGE_USAGE_TRANSFER_DST_BIT) // necessary if the user wants to blit onto swapchain instead of rendering on it
+			.add_image_usage_flags(extraImageUsage)
 			.build();
 		ASSERT_MSG(swapchain_result.has_value(), "[VULKAN] {}", swapchain_result.error().message());
 		vkb::Swapchain& vkbswapchain = swapchain_result.value();
@@ -50,32 +87,19 @@ namespace mythril {
 		}
 		this->_numSwapchainImages = vkbswapchain.image_count;
 		ASSERT(_numSwapchainImages <= kMAX_SWAPCHAIN_IMAGES);
-		// things we assign to the textures we will craete
+		ASSERT((caps.minImageCount <= _numSwapchainImages) && (_numSwapchainImages <= caps.maxImageCount));
+
+		const VkImageUsageFlags usage_flags =
+				VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+				(storageOk ? VK_IMAGE_USAGE_STORAGE_BIT : VkImageUsageFlags{});
+
 		std::vector<VkImage> images = vkbswapchain.get_images().value();
 		std::vector<VkImageView> imageviews = vkbswapchain.get_image_views().value();
-		// now for the number of swapchain images available, create our texture handle for them
-		// decide if we can optimially add storage image usage
-		VkImageUsageFlags usage_flags = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-		{
-			VkSurfaceCapabilitiesKHR caps = {};
-			VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(_ctx._vkPhysicalDevice, _ctx._vkSurfaceKHR, &caps));
-			ASSERT((caps.minImageCount <= _numSwapchainImages) && (_numSwapchainImages <= caps.maxImageCount));
-
-			VkFormatProperties2 format_props2 = { .sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2 };
-			vkGetPhysicalDeviceFormatProperties2(_ctx._vkPhysicalDevice, _vkImageFormat, &format_props2);
-
-			const bool isStorageSupported = (caps.supportedUsageFlags & VK_IMAGE_USAGE_STORAGE_BIT) > 0;
-			const bool isTilingOptimalSupported = (format_props2.formatProperties.optimalTilingFeatures & VK_IMAGE_USAGE_STORAGE_BIT) > 0;
-
-			if (isStorageSupported && isTilingOptimalSupported) {
-				usage_flags |= VK_IMAGE_USAGE_STORAGE_BIT;
-			}
-		}
 		for (uint32_t i = 0; i < _numSwapchainImages; i++) {
 			// give necessary info to texture
 			AllocatedTexture image = {};
 			image._isSwapchainImage = true;
-			// the vkImages came from the swapchain itself
+			// basically the only time isOwning is false
 			image._isOwning = false;
 			image._vkUsageFlags = usage_flags;
 			image._vkImageType = VK_IMAGE_TYPE_2D;
@@ -105,7 +129,6 @@ namespace mythril {
 		for (int i = 0; i < _numSwapchainImages; i++) {
 			_ctx.destroy(_swapchainTextures[i]);
 		}
-		// images are destroyed alongside swapchain destruction
 		vkDestroySwapchainKHR(_ctx._vkDevice, _vkSwapchain, nullptr);
 		// DESTROY SECONDARY DATA //
 		for (int i = 0; i < _numSwapchainImages; i++) {
@@ -116,34 +139,8 @@ namespace mythril {
 		}
 	}
 
-	// void Swapchain::acquire() {
-	// 	MYTH_PROFILER_FUNCTION();
-	// 	if (_getNextImage) {
-	// 		const VkSemaphoreWaitInfo waitInfo = {
-	// 				.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
-	// 				.semaphoreCount = 1,
-	// 				.pSemaphores = &_ctx._timelineSemaphore,
-	// 				.pValues = &_timelineWaitValues[_currentImageIndex],
-	// 		};
-	// 		ASSERT_MSG(_currentImageIndex < (sizeof(_timelineWaitValues)/sizeof(_timelineWaitValues[0])), "Image index out of range");
-	// 		VK_CHECK(vkWaitSemaphores(_ctx._vkDevice, &waitInfo, UINT64_MAX));
-	// 		VK_CHECK(vkWaitForFences(_ctx._vkDevice, 1, &_vkAcquireFences[_currentImageIndex], VK_TRUE, UINT64_MAX));
-	// 		VK_CHECK(vkResetFences(_ctx._vkDevice, 1, &_vkAcquireFences[_currentImageIndex]));
-	//
-	// 		// aliases
-	// 		VkFence acquireFence = _vkAcquireFences[_currentImageIndex];
-	// 		VkSemaphore acquireSemaphore = _vkAcquireSemaphores[_currentImageIndex];
-	// 		const VkResult result = vkAcquireNextImageKHR(_ctx._vkDevice, _vkSwapchain, UINT64_MAX, acquireSemaphore, acquireFence, &_currentImageIndex);
-	// 		if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR && result != VK_ERROR_OUT_OF_DATE_KHR) {
-	// 			ASSERT(result);
-	// 		}
-	// 		_getNextImage = false;
-	// 		_ctx._imm->waitSemaphore(acquireSemaphore);
-	// 	}
-	// }
-
 	VkSemaphore Swapchain::acquire() {
-		ZoneScopedN("Swapchain Acquire");
+		MYTH_PROFILER_FUNCTION_N("Swapchain Acquire");
 		ASSERT_MSG(_getNextImage, "Already acquired this frame's acquire semaphore!");
 
 		// wait for frame N - numSwapchainImages
@@ -154,12 +151,6 @@ namespace mythril {
 			.pValues = &_timelineWaitValues[_frameIndex],
 		};
 		VK_CHECK(vkWaitSemaphores(_ctx._vkDevice, &waitInfo, UINT64_MAX));
-
-		// right now we dont need the fence and having it adds about +0.5ms per frame
-		// acquire with this upcoming frames semaphore and fence
-		// VkFence vkAcquireFence = _vkAcquireFences[_frameIndex];
-		// VK_CHECK(vkWaitForFences(_ctx._vkDevice, 1, &vkAcquireFence, VK_TRUE, UINT64_MAX));
-		// VK_CHECK(vkResetFences(_ctx._vkDevice, 1, &vkAcquireFence));
 
 		VkSemaphore vkAcquireSemaphore = _vkAcquireSemaphores[_frameIndex];
 		const VkResult result = vkAcquireNextImageKHR(
@@ -178,7 +169,7 @@ namespace mythril {
 	}
 
 	void Swapchain::present(VkSemaphore waitSemaphore) {
-		ZoneScopedN("Swapchain Present");
+		MYTH_PROFILER_FUNCTION_N("Swapchain Present");
 		const VkPresentInfoKHR present_info = {
 				.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
 				.waitSemaphoreCount = 1,
@@ -193,7 +184,6 @@ namespace mythril {
 			if (presentResult == VK_ERROR_OUT_OF_DATE_KHR) return;
 		}
 		_getNextImage = true;
-		// increment to next frame in flight
 		_frameIndex = (_frameIndex + 1) % kNUM_FRAMES_IN_FLIGHT;
 		MYTH_PROFILER_FRAME();
 	}

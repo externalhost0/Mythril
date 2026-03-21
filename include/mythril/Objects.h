@@ -127,7 +127,7 @@ namespace mythril {
 		uint32_t index(ViewKey key) const;
 
 		ViewKey createView(const TextureViewSpec& spec);
-		ViewKey getView(uint32_t baseMip, uint32_t baseLayer) {
+		static ViewKey getView(uint32_t baseMip, uint32_t baseLayer) {
 			return packViewKey(baseMip, 1, baseLayer, 1);
 		}
 		void resize(const Dimensions& newDimensions);

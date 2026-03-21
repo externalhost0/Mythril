@@ -306,7 +306,7 @@ namespace mythril {
 		};
 		AssignIfValid(new_swapchain_spec.width, spec.width, static_cast<uint32_t>(0));
 		AssignIfValid(new_swapchain_spec.height, spec.height, static_cast<uint32_t>(0));
-		AssignIfValid(new_swapchain_spec.format, spec.format, VK_FORMAT_UNDEFINED);
+		AssignIfValid(new_swapchain_spec.format, spec.format, VK_FORMAT_MAX_ENUM);
 		AssignIfValid(new_swapchain_spec.colorSpace, spec.colorSpace, VK_COLOR_SPACE_MAX_ENUM_KHR);
 		AssignIfValid(new_swapchain_spec.presentMode, spec.presentMode, VK_PRESENT_MODE_MAX_ENUM_KHR);
 
@@ -359,12 +359,15 @@ namespace mythril {
 		VkImageView dummyImageView = _texturePool._objects[0]._obj._vkImageView;
 		for (const auto& obj : _texturePool._objects) {
 			const AllocatedTexture& img = obj._obj;
-			VkImageView view = obj._obj._vkImageView;
-			VkImageView storageView = obj._obj._vkImageViewStorage ? obj._obj._vkImageViewStorage : view;
+			// swapchain images must not be in bindless, after present, the drawable is returned to
+			// already presenting this drawable on moltenvk
+			const bool skipForBindless = img.isSwapchainImage();
+			VkImageView view = skipForBindless ? dummyImageView : obj._obj._vkImageView;
+			VkImageView storageView = skipForBindless ? dummyImageView : (obj._obj._vkImageViewStorage ? obj._obj._vkImageViewStorage : obj._obj._vkImageView);
 			// multisampled images cannot be directly accessed from shaders
 			const bool isTextureAvailable = (img.getSampleCount() & VK_SAMPLE_COUNT_1_BIT) == VK_SAMPLE_COUNT_1_BIT;
-			const bool isSampledImage = isTextureAvailable && img.isSampledImage();
-			const bool isStorageImage = isTextureAvailable && img.isStorageImage();
+			const bool isSampledImage = isTextureAvailable && img.isSampledImage() && !skipForBindless;
+			const bool isStorageImage = isTextureAvailable && img.isStorageImage() && !skipForBindless;
 			// sampled images have no either layout need but shader_read_only
 			infoSampledImages.push_back(VkDescriptorImageInfo{
 					.sampler = VK_NULL_HANDLE,

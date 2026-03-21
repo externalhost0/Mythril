@@ -62,16 +62,17 @@
 #define MYTH_PROFILER_COLOR_RENDERPASS 0xff591c // orange
 
 // macro functions
+#define MYTH_PROFILER_FUNCTION_N(name) ZoneScopedN(name)
 #if defined(_MSC_VER)
     #define MYTH_PROFILER_FUNCTION() ZoneScopedN(__FUNCSIG__)
 	#define MYTH_PROFILER_FUNCTION_COLOR(color) ZoneScopedNC(__FUNCSIG__, color)
 #else
 #if defined(__APPLE__)
 #define MYTH_PROFILER_FUNCTION() \
-	ZoneScopedN(__PRETTY_FUNCTION__) \
+	ZoneScopedN(__PRETTY_FUNCTION__) 
 
 #define MYTH_PROFILER_FUNCTION_COLOR(color) \
-	ZoneScopedNC(__PRETTY_FUNCTION__, color) \
+	ZoneScopedNC(__PRETTY_FUNCTION__, color) 
 
 #else
 	#define MYTH_PROFILER_FUNCTION() ZoneScopedN(__PRETTY_FUNCTION__)
@@ -93,6 +94,7 @@
 
 #else
  #define MYTH_PROFILER_FUNCTION()
+ #define MYTH_PROFILER_FUNCTION_N(name)
  #define MYTH_PROFILER_FUNCTION_COLOR(color)
  #define MYTH_PROFILER_ZONE(name, color) {
 #define MYTH_PROFILER_ZONE(name) {
@@ -112,6 +114,12 @@
 namespace mythril {
 	class CTXBuilder;
 	class CommandBuffer;
+
+	static constexpr uint32_t kMaxUserExtensions = 32;
+	static constexpr VkFormat kDefaultSwapchainFormat = VK_FORMAT_B8G8R8A8_UNORM;
+	static constexpr VkColorSpaceKHR kDefaultSwapchainColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
+	static constexpr VkPresentModeKHR kDefaultSwapchainPresentMode = VK_PRESENT_MODE_FIFO_KHR;
+
 
 	// class Sampler;
 	// class Buffer;
@@ -318,6 +326,7 @@ namespace mythril {
 		void processDeferredTasks();
 		void waitDeferredTasks();
 
+		bool isHeadless() const { return _swapchain == nullptr; }
 	private:
 		// Vulkan Members //
 		VkInstance _vkInstance = VK_NULL_HANDLE;
@@ -370,7 +379,14 @@ namespace mythril {
 		std::unique_ptr<StagingDevice> _staging = nullptr;
 
 		Texture wrappedBackBuffer;
-		SwapchainSpec lastSwapchainSpec;
+		// SwapchainSpec lastSwapchainSpec;
+		SwapchainSpec lastSwapchainSpec {
+			.width = 1280,
+			.height = 720,
+			.format = kDefaultSwapchainFormat,
+			.colorSpace = kDefaultSwapchainColorSpace,
+			.presentMode = kDefaultSwapchainPresentMode,
+		};
 
 		HandlePool<BufferHandle, AllocatedBuffer> _bufferPool;
 		HandlePool<TextureHandle, AllocatedTexture> _texturePool;
@@ -407,8 +423,6 @@ namespace mythril {
 		friend class ObjectHolder;
 
 	};
-
-
 
 #ifdef MYTH_ENABLED_IMGUI
 	// data that is stored alongside th ImGui singleton so that it can be called from anywhere

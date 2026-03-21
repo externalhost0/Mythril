@@ -12,7 +12,7 @@
 
 int main() {
 	SDL_Window* sdlWindow = BuildSDLWindow(false);
-	const auto windowSize = GetSDLWindowFramebufferSize(sdlWindow);
+	const auto [width, height] = GetSDLWindowFramebufferSize(sdlWindow);
 	{
 		auto ctx = mythril::CTXBuilder{}
 		.set_vulkan_cfg({
@@ -29,11 +29,12 @@ int main() {
 			SDL_Vulkan_DestroySurface(instance, surface_khr, nullptr);
 		})
 		.with_default_swapchain({
-			.width = windowSize.width,
-			.height = windowSize.height,
+			.width = width,
+			.height = height,
 			.presentMode = VK_PRESENT_MODE_IMMEDIATE_KHR
 		})
 		.build();
+
 
 		mythril::RenderGraph graph;
 		graph.addGraphicsPass("main")

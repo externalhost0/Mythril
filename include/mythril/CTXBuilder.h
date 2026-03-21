@@ -4,19 +4,15 @@
 
 #pragma once
 
-#include "../../lib/CTX.h"
 
 #include <string>
 #include <memory>
 #include <span>
+#include "../../lib/CTX.h"
 
 struct SDL_Window;
 
 namespace mythril {
-	static constexpr uint32_t kMaxUserExtensions = 32;
-	static constexpr VkFormat kDefaultSwapchainFormat = VK_FORMAT_B8G8R8A8_UNORM;
-	static constexpr VkColorSpaceKHR kDefaultSwapchainColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
-	static constexpr VkPresentModeKHR kDefaultSwapchainPresentMode = VK_PRESENT_MODE_FIFO_KHR;
 
 	struct Version
 	{
@@ -24,7 +20,7 @@ namespace mythril {
 		uint8_t minor = 0;
 		uint8_t patch = 0;
 		bool isPreRelease() const {
-			return major > 0;
+			return major < 1;
 		}
 		uint32_t getVKVersion() const {
 			return VK_MAKE_VERSION(major, minor, patch);

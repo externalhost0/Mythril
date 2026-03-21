@@ -17,7 +17,7 @@ It aims to provide a easy to create context and highly abstracted API for Vulkan
 ```cpp
 int main() {
 	SDL_Window* sdlWindow = BuildSDLWindow(false);
-	const auto windowSize = GetSDLWindowFramebufferSize(sdlWindow);
+	const auto [width, height] = GetSDLWindowFramebufferSize(sdlWindow);
 	{
 		auto ctx = mythril::CTXBuilder{}
 		.set_vulkan_cfg({
