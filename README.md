@@ -2,6 +2,8 @@
 Mythril is C++20 Vulkan rendering framework for Windows, Linux, and MacOS. 
 It aims to provide a easy to create context and highly abstracted API for Vulkan, aswell as some bonus features described below.
 
+#### If you want to get started using Mythril in your project, take a read through the [getting_started.md](/docs/getting_started.md)
+
 ### Features:
 * RenderGraph implementation, automatically builds and optimizes your described frame.
 * Bindless design for textures & samplers.
