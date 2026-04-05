@@ -17,11 +17,11 @@
 
 # Background!
 
-`Mythril` is intended to be used as the primary way you are interacting with Vulkan and should not be mixed alongside other frameworks.
+`Mythril` is intended to be used as the primary way you are interacting with Vulkan and should not be mixed alongside other frameworks that control or have a heavy hand in rendering.
 
-You are expected to manage the windowing system yourself, however `Mythril` is built to allow ANY vulkan
+You are expected to manage the windowing system yourself, however `Mythril` is built to allow ANY windowing system as long as you can get an instance of VkSurfaceKHR from it, the examples use SDL3 and therefore show how you might retrieve it via other similar libraries.
 
-The majority of operations you will be performing are the creation of our Vulkan objects and setting up your framegraph, and basically everything your application will do is inside the framegraph anyway.
+The majority of operations you will be performing are the creation of our Vulkan objects and setting up your framegraph, and basically everything your application will do will take place inside the framegraph callbacks.
 
 # Creation
 
