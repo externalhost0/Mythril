@@ -266,7 +266,9 @@ namespace mythril {
 #ifdef DEBUG
 		vkDestroyDebugUtilsMessengerEXT(_vkInstance, _vkDebugMessenger, nullptr);
 #endif
-		this->_surfaceDestroyFunc(_vkInstance, _vkSurfaceKHR);
+		if (this->_surfaceDestroyFunc) {
+			this->_surfaceDestroyFunc(_vkInstance, _vkSurfaceKHR);
+		}
 		vkDestroyInstance(_vkInstance, nullptr);
 	}
 
@@ -1499,7 +1501,7 @@ namespace mythril {
 			LOG_SYSTEM(LogType::Error, "Retrieved buffer is null, handle must have been invalid!");
 			return;
 		}
-		if (offset + size <= buffer->_bufferSize) {
+		if (offset + size > buffer->_bufferSize) {
 			LOG_SYSTEM(LogType::Error, "Buffer request to download is out of range!");
 			return;
 		}
@@ -1613,6 +1615,15 @@ namespace mythril {
 	// }
 	//
 void CTX::processDeferredTasks() {
+    if (isHeadless()) {
+        auto it = _deferredTasks.begin();
+        while (it != _deferredTasks.end()) {
+            if (!_imm->isReady(it->_handle, false)) break;
+            (it++)->_task();
+        }
+        _deferredTasks.erase(_deferredTasks.begin(), it);
+        return;
+    }
     const uint64_t numFramesToWait = _swapchain->getNumOfSwapchainImages();
     const uint64_t safeFrameThreshold = _currentFrameNumber > numFramesToWait
         ? _currentFrameNumber - numFramesToWait
@@ -1620,9 +1631,8 @@ void CTX::processDeferredTasks() {
 
     auto it = _deferredTasks.begin();
     while (it != _deferredTasks.end() && it->_frameNumber < safeFrameThreshold) {
-        // CRITICAL: Actually check if GPU is done (false = check fence)
         if (!_imm->isReady(it->_handle, false)) {
-            break;  // GPU not done yet
+            break;
         }
         (it++)->_task();
     }

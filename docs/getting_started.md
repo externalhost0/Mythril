@@ -74,21 +74,283 @@ ctx->createSwapchain({
 Once you have your `mythril::CTX` instance you can do anything!
 
 # Objects
-[wip]
 
-[//]: # (## Buffers)
+All objects are created through `mythril::CTX` and returned as RAII wrapper types. 
+Resources are automatically destroyed when their wrapper goes out of scope. 
+If you need early explicit cleanup, every wrapper exposes a `ctx->destroy(handle)` path but is only necessary in some edge cases and is generally reccomended to avoid using.
 
-[//]: # ()
-[//]: # (## Images)
+## Buffers
 
-[//]: # ()
-[//]: # (## Samplers)
+Buffers store arbitrary GPU data: vertex data, uniforms, indirect draw arguments, etc. Create one with `ctx->createBuffer()`.
 
-[//]: # ()
-[//]: # (## Shaders)
+```cpp
+// Device-local buffer with initial data (typical for static geometry)
+mythril::Buffer vertexBuffer = ctx->createBuffer({
+    .size      = sizeof(Vertex) * vertices.size(),
+    .usage     = mythril::BufferUsageBits_Storage,
+    .storage   = mythril::StorageType::Device,
+    .initialData = vertices.data(),
+    .debugName = "Vertex Buffer",
+});
 
-[//]: # ()
-[//]: # (## Pipelines)
+// Host-visible buffer for per-frame CPU writes (uniforms, staging)
+mythril::Buffer uniformBuffer = ctx->createBuffer({
+    .size    = sizeof(FrameUniforms),
+    .usage   = mythril::BufferUsageBits_Uniform,
+    .storage = mythril::StorageType::HostVisible,
+    .debugName = "Frame Uniforms",
+});
+```
+
+**`usage` flags** (combine with `|`):
+
+| Flag | Use |
+|---|---|
+| `BufferUsageBits_Index` | Index buffer |
+| `BufferUsageBits_Uniform` | Uniform / constant buffer |
+| `BufferUsageBits_Storage` | Shader read/write storage buffer |
+| `BufferUsageBits_Indirect` | Indirect draw/dispatch arguments |
+
+**`storage` types**:
+
+| Type | Description |
+|---|---|
+| `StorageType::Device` | GPU-only. Fastest for GPU access. Cannot be CPU-mapped. |
+| `StorageType::HostVisible` (DEFAULT) | CPU-accessible. Use for staging or frequently-updated data. |
+| `StorageType::Memoryless` | Transient on-chip memory. Tile-based GPU only. |
+
+**Good to Knows**:
+- `initialData` performs a one-time upload at creation. For later updates use `ctx->upload(buffer.handle(), data, size, offset)`.
+- `buffer.gpuAddress()` (for bindless / BDA use) is only valid on `Device` storage buffers.
+- To read data back to CPU use `ctx->download(buffer.handle(), dst, size, offset)`.
+
+---
+
+## Images
+
+Images (textures) represent 2D, 3D, or cubemap GPU images. Create one with `ctx->createTexture()`.
+
+```cpp
+// Color attachment for off-screen rendering
+mythril::Texture colorTarget = ctx->createTexture({
+    .dimension = {1280, 720, 1},
+    .format    = VK_FORMAT_R8G8B8A8_UNORM,
+    .usage     = mythril::TextureUsageBits_Attachment,
+    .debugName = "Color Target",
+});
+
+// Sampled texture loaded from data with auto-generated mipmaps
+mythril::Texture albedo = ctx->createTexture({
+    .dimension       = {512, 512, 1},
+    .format          = VK_FORMAT_R8G8B8A8_SRGB,
+    .usage           = mythril::TextureUsageBits_Sampled,
+    .numMipLevels    = 10,
+    .initialData     = pixelData,
+    .generateMipmaps = true,
+    .debugName       = "Albedo",
+});
+
+// Depth attachment
+mythril::Texture depthTarget = ctx->createTexture({
+    .dimension = {1280, 720, 1},
+    .format    = VK_FORMAT_D32_SFLOAT,
+    .usage     = mythril::TextureUsageBits_Attachment,
+    .debugName = "Depth Target",
+});
+```
+
+**`usage` flags** (combine with `|`), you must have at least one flag:
+
+| Flag | Use |
+|---|---|
+| `TextureUsageBits_Sampled` | Sample in shaders via a sampler |
+| `TextureUsageBits_Storage` | Read/write as storage image in shaders |
+| `TextureUsageBits_Attachment` | Color or depth/stencil render target |
+
+**`type` values**:
+
+| Type | Notes |
+|---|---|
+| `TextureType::Type_2D` (DEFAULT) | Standard 2D texture or array (`numLayers > 1`). |
+| `TextureType::Type_3D` | Volumetric. Set `dimension.depth > 1`. |
+| `TextureType::Type_Cube` | Cubemap. Requires `numLayers = 6`. |
+
+**Texture views** access a subresource (specific mip or layer) without creating a new texture:
+
+```cpp
+auto viewKey = texture.createView({
+    .mipLevel    = 2,
+    .numMipLevels = 1,
+    .debugName   = "Mip 2 View",
+});
+TextureHandle viewHandle = texture.handle(viewKey);
+```
+
+**Good to Knows**:
+- `generateMipmaps = true` requires `initialData != nullptr`. If no initial data is provided, mipmaps will not be generated.
+- Swapchain images are not user-owned, never call `ctx->destroy()` on a handle retrieved from the swapchain.
+- Cubemaps must set `type = TextureType::Type_Cube` **and** `numLayers = 6`. Missing either will produce incorrect results.
+- MSAA textures (`samples > X1`) used as attachments typically need a resolve step before sampling.
+
+---
+
+## Samplers
+
+Samplers describe how a shader reads from a texture; filtering, wrapping, and optional depth comparison. Create one with `ctx->createSampler()`.
+
+```cpp
+// Standard trilinear sampler
+mythril::Sampler trilinear = ctx->createSampler({
+    .magFilter = mythril::SamplerFilter::Linear,
+    .minFilter = mythril::SamplerFilter::Linear,
+    .mipMap    = mythril::SamplerMipMap::Linear,
+    .debugName = "Trilinear Sampler",
+});
+
+// Shadow map / PCF sampler
+mythril::Sampler shadowSampler = ctx->createSampler({
+    .depthCompareEnabled = true,
+    .depthCompareOp      = mythril::CompareOp::LessEqual,
+    .debugName           = "Shadow Sampler",
+});
+
+// Anisotropic sampler for surfaces at oblique angles
+mythril::Sampler aniso = ctx->createSampler({
+    .mipMap        = mythril::SamplerMipMap::Linear,
+    .anistrophic   = true,
+    .maxAnisotropic = 8,
+    .debugName      = "Anisotropic Sampler",
+});
+```
+
+All fields are optional.
+
+**Filter / mipmap**:
+
+| Option | Effect |
+|---|---|
+| `SamplerFilter::Nearest` | No interpolation |
+| `SamplerFilter::Linear` (DEFAULT) | Smooth interpolation |
+| `SamplerMipMap::Disabled` (DEFAULT) | No mipmapping |
+| `SamplerMipMap::Nearest` | Snap to nearest mip level |
+| `SamplerMipMap::Linear` | Blend between mip levels (trilinear when combined with Linear filter) |
+
+**Wrap modes** (configurable per U/V/W axis):
+
+| Mode | Description |
+|---|---|
+| `SamplerWrap::Repeat` (DEFAULT) | Tile the texture |
+| `SamplerWrap::MirrorRepeat` | Tile with mirroring |
+| `SamplerWrap::ClampEdge` | Clamp to edge texel |
+| `SamplerWrap::ClampBorder` | Clamp to border color |
+| `SamplerWrap::MirrorClampEdge` | Mirror once then clamp to edge |
+
+---
+
+## Shaders
+
+Shaders are written in [Slang](https://shader-slang.com/) and compiled to SPIR-V at load time. Create one with `ctx->createShader()`.
+
+```cpp
+mythril::Shader defaultShader = ctx->createShader({
+    .filePath  = kShaderDir / "Mesh.slang",
+    .debugName = "Mesh Shader",
+});
+```
+
+A single `.slang` file can contain both vertex and fragment entry points, there is no requirement to split them into separate files or separate `Shader` objects.
+
+**Good to Knows**:
+- Keep the `Shader` alive for as long as any pipeline that uses it exists. Destroying the shader while a pipeline still references it is undefined behavior.
+- Slang include search paths and compiler options are configured via `CTXBuilder::set_slang_cfg()` before calling `CTXBuilder::build()`.
+
+---
+
+## Pipelines
+
+Pipelines bind shaders and fixed-function state. Mythril supports graphics and compute pipelines as of now.
+
+### Graphics Pipeline
+
+```cpp
+mythril::GraphicsPipeline pipeline = ctx->createGraphicsPipeline({
+    .vertexShader   = {defaultShader},
+    .fragmentShader = {defaultShader},
+    .topology       = mythril::TopologyMode::TRIANGLE,
+    .polygon        = mythril::PolygonMode::FILL,
+    .blend          = mythril::BlendingMode::ALPHA_BLEND,
+    .cull           = mythril::CullMode::BACK,
+    .multisample    = mythril::SampleCount::X1,
+    .debugName      = "Mesh Pipeline",
+});
+```
+
+`ShaderStage` accepts a `Shader` object directly (as above) or a `ShaderHandle`. To target a specific entry point:
+
+```cpp
+.vertexShader = {defaultShader.handle(), "vertMain"},
+```
+
+**Topology**:
+
+| Mode | Use |
+|---|---|
+| `TopologyMode::TRIANGLE` (DEFAULT) | Standard filled triangles |
+| `TopologyMode::LIST` | Explicit triangle list |
+| `TopologyMode::STRIP` | Triangle strip |
+
+**Blending**:
+
+| Mode | Use |
+|---|---|
+| `BlendingMode::OFF` (DEFAULT) | No blending |
+| `BlendingMode::ALPHA_BLEND` | Standard transparency |
+| `BlendingMode::ADDITIVE` | Glow / particles |
+| `BlendingMode::MULTIPLY` | Darkening |
+| `BlendingMode::MASK` | Stencil mask |
+
+**Cull**:
+
+| Mode | Description |
+|---|---|
+| `CullMode::OFF` (DEFAULT) | No face culling |
+| `CullMode::BACK` | Cull back faces |
+| `CullMode::FRONT` | Cull front faces |
+
+**Polygon**:
+
+| Mode | Description |
+|---|---|
+| `PolygonMode::FILL` (DEFAULT) | Solid fill |
+| `PolygonMode::LINE` | Wireframe |
+
+### Compute Pipeline
+
+```cpp
+mythril::ComputePipeline compute = ctx->createComputePipeline({
+    .shader    = computeShader.handle(),
+    .debugName = "Particle Update",
+});
+```
+
+### Specialization Constants
+
+Both pipeline types support up to 16 specialization constants, which let you bake values into the SPIR-V at pipeline creation time without recompiling the shader:
+
+```cpp
+uint32_t tileSize = 16;
+mythril::GraphicsPipeline pipeline = ctx->createGraphicsPipeline({
+    .vertexShader   = {shader},
+    .fragmentShader = {shader},
+    .specConstants  = {
+        mythril::SpecializationConstantEntry{&tileSize, sizeof(tileSize), "TILE_SIZE"},
+    },
+    .debugName = "Tiled Pipeline",
+});
+```
+
+**Good to Knows**:
+- Multiple pipelines can share a single `Shader`, as there is no need to duplicate shader objects per pipeline.
 
 # Cleanup
 

@@ -96,8 +96,8 @@
  #define MYTH_PROFILER_FUNCTION()
  #define MYTH_PROFILER_FUNCTION_N(name)
  #define MYTH_PROFILER_FUNCTION_COLOR(color)
- #define MYTH_PROFILER_ZONE(name, color) {
-#define MYTH_PROFILER_ZONE(name) {
+ #define MYTH_PROFILER_ZONE_COLOR(name, color) {
+ #define MYTH_PROFILER_ZONE(name) {
  #define MYTH_PROFILER_ZONE_END() }
  #define MYTH_PROFILER_THREAD(name)
  #define MYTH_PROFILER_FRAME(name)

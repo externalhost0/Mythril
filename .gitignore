@@ -38,7 +38,7 @@ cmake-build-*
 .cache/
 # for visual studio
 out/
-build/
+build*/
 .vs/
 # for vsc
 .vscode/

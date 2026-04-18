@@ -251,7 +251,6 @@ namespace mythril {
 				attachment_info.resolveImageLayout = attachment_info.imageLayout;
 				attachment_info.resolveImageView = resolve_texture.getImageView();
 			}
-			// detect if attachment is part of swapchain
 			if (allocatedTexture.isSwapchainImage()) {
 				attachment_info.isSwapchainImage = true;
 				const auto& swapchain = rCtx._swapchain;
@@ -375,23 +374,27 @@ namespace mythril {
 			// perform batched vkCmdPipelineBarrier
 			PerformImageBarrierTransitions(cmd, pass);
 			// switch color attachment imageViews for Swapchain
-		    const uint32_t swapIdx = cmd._ctx->_swapchain->getCurrentImageIndex();
-		    for (auto& color : pass.colorAttachments) {
-		        if (color.isSwapchainImage)
-		            color.imageView = color.swapchainImageViews[swapIdx];
-		    }
-		    if (pass.depthAttachment && pass.depthAttachment->isSwapchainImage)
-				pass.depthAttachment->imageView = pass.depthAttachment->swapchainImageViews[swapIdx];
+			if (!cmd._ctx->isHeadless()) {
+			    const uint32_t swapIdx = cmd._ctx->_swapchain->getCurrentImageIndex();
+			    for (auto& color : pass.colorAttachments) {
+			        if (color.isSwapchainImage)
+			            color.imageView = color.swapchainImageViews[swapIdx];
+			    }
+			    if (pass.depthAttachment && pass.depthAttachment->isSwapchainImage)
+					pass.depthAttachment->imageView = pass.depthAttachment->swapchainImageViews[swapIdx];
+			}
 			// reset current states
 			cmd._currentPipelineInfo = nullptr;
 			cmd._currentPipelineHandle = {};
 			cmd._activePass = pass;
 			pass.executeCallback(cmd);
 		}
-		// fixme: make this cleaner im so lazy right now
-		cmd.cmdTransitionLayout(cmd._ctx->getCurrentSwapchainTexHandle(), VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
-		const vkutil::StageAccess dstMask = vkutil::GetPipelineStageAccess(VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
-		_resourceTrackers.at(cmd._ctx->getCurrentSwapchainTexHandle()).setState({}, SubresourceState{VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, dstMask});
-		cmd._ctx->access(cmd._ctx->getCurrentSwapchainTexHandle())._vkCurrentImageLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+		if (!cmd._ctx->isHeadless()) {
+			// fixme: make this cleaner im so lazy right now
+			cmd.cmdTransitionLayout(cmd._ctx->getCurrentSwapchainTexHandle(), VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+			const vkutil::StageAccess dstMask = vkutil::GetPipelineStageAccess(VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+			_resourceTrackers.at(cmd._ctx->getCurrentSwapchainTexHandle()).setState({}, SubresourceState{VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, dstMask});
+			cmd._ctx->access(cmd._ctx->getCurrentSwapchainTexHandle())._vkCurrentImageLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+		}
 	}
 }
