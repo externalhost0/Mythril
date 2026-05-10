@@ -17,9 +17,6 @@
 #include <VkBootstrap.h>
 #include <vk_mem_alloc.h>
 
-#include <SDL3/SDL.h>
-#include <SDL3/SDL_vulkan.h>
-
 namespace mythril {
 	struct VulkanInstanceInputs
 	{
@@ -80,20 +77,6 @@ namespace mythril {
 		return vkb_instance;
 	}
 
-	struct VulkanSurfaceInputs
-	{
-		VkInstance vkInstance = VK_NULL_HANDLE;
-		SDL_Window* sdlWindow = nullptr;
-	};
-	static VkSurfaceKHR CreateVulkanSurface(VulkanSurfaceInputs inputs) {
-		ASSERT(inputs.vkInstance != VK_NULL_HANDLE);
-		ASSERT(inputs.sdlWindow != nullptr);
-
-		VkSurfaceKHR surface = nullptr;
-		const bool surface_success = SDL_Vulkan_CreateSurface(inputs.sdlWindow, inputs.vkInstance, nullptr, &surface);
-		ASSERT_MSG(surface_success, "Failed to create Vulkan surface with GLFW");
-		return surface;
-	}
 	struct VulkanPhysicalDeviceInputs {
 		vkb::Instance vkbInstance = {};
 		VkSurfaceKHR vkSurface = VK_NULL_HANDLE;

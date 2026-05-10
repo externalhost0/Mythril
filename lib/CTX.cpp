@@ -15,9 +15,6 @@
 #include "Plugins.h"
 #include "mythril/Objects.h"
 
-#include <SDL3/SDL.h>
-#include <SDL3/SDL_vulkan.h>
-
 #include <slang/slang.h>
 #include <slang/slang-cpp-types.h>
 #include <slang/slang-com-ptr.h>

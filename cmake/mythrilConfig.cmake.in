@@ -1,0 +1,41 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+
+# Mythril publicly exposes Vulkan headers and links libvulkan.
+find_dependency(Vulkan REQUIRED)
+
+# Slang ships with the Vulkan SDK. We do not export an absolute path because
+# the SDK may live in a different location on the consumer's machine.
+if(NOT TARGET mythril_slang)
+    if(WIN32)
+        set(_myth_slang_hint "$ENV{VULKAN_SDK}/Lib")
+    else()
+        set(_myth_slang_hint "$ENV{VULKAN_SDK}/lib")
+    endif()
+    find_library(MYTHRIL_SLANG_LIBRARY
+            NAMES slang
+            HINTS "${_myth_slang_hint}" "${Vulkan_LIBRARY_DIR}"
+    )
+    if(NOT MYTHRIL_SLANG_LIBRARY)
+        message(FATAL_ERROR
+                "mythril requires the Slang shader compiler. "
+                "Install a Vulkan SDK that bundles Slang, or set VULKAN_SDK.")
+    endif()
+    add_library(mythril_slang SHARED IMPORTED)
+    set_target_properties(mythril_slang PROPERTIES
+            IMPORTED_LOCATION "${MYTHRIL_SLANG_LIBRARY}"
+    )
+endif()
+
+include("${CMAKE_CURRENT_LIST_DIR}/mythrilTargets.cmake")
+
+# Append slang to mythril's link interface after the targets file is loaded
+# so consumers linking mythril::mythril pick up libslang automatically.
+if(TARGET mythril::mythril)
+    set_property(TARGET mythril::mythril APPEND PROPERTY
+            INTERFACE_LINK_LIBRARIES mythril_slang
+    )
+endif()
+
+check_required_components(mythril)

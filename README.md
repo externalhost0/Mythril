@@ -76,35 +76,68 @@ int main() {
 ```
 ![Minimal Example Screenshot][basic_window_img]
 
-## Building
-* C++ 20 (Tested on clang 16.0.0 & gcc 13.3.0)
+## Requirements
+* C++20 compiler (tested with clang 16.0.0, gcc 13.3.0, MSVC v143)
 * CMake 3.28+
-* Vulkan SDK 1.4.335.0+
+* Vulkan SDK 1.4.335.0+ (must include Slang)
 
-## Installing
-You can easily include with CPM.
+The Vulkan SDK is the only external prerequisite. Slang is consumed from the
+SDK at both build and runtime, so consumers do not need to ship any extra
+shared libraries themselves.
+
+## Using Mythril in your project
+
+### Add as a subdirectory (recommended)
+Clone Mythril (e.g. as a submodule under `third_party/mythril`) and consume it
+from your own `CMakeLists.txt`:
 ```cmake
-CPMAddPackage(
-    NAME mythril
-    GITHUB_REPOSITORY "externalhost0/Mythril"
-    GIT_TAG main
-)
+add_subdirectory(third_party/mythril)
+target_link_libraries(my_app PRIVATE mythril::mythril)
 ```
-You could also clone as a submodule and add as a subdirectory.
-```cmake
-add_subdirectory(mythril)
+That's it, no manual `find_package` for transitive deps. Mythril fetches
+its dependencies via CPM and merges the private static ones (`fmt`,
+`vk-bootstrap`, `SPIRV-Reflect`) directly into `libmythril.a` as object
+files. Publicly exposed headers are `Vulkan`, `volk`, `fmt`, `VMA`, and
+(when enabled) `Tracy` — these leak through inline method bodies in the
+public API and so must be visible to consumers at compile time. ImGui is
+scoped to the build interface only.
+
+### Install + find_package (experimental)
+`MYTH_INSTALL=ON` generates `install()` rules and a `mythrilConfig.cmake`
+so consumers can use `find_package(mythril)`. This path is **experimental
+and OFF by default**: the public-API headers transitively expose `fmt` and
+`VMA` from CPM-cache paths, which are not relocatable through CMake's
+install/export mechanism. The exported targets file currently omits ImGui
+and Tracy entirely (scoped to `BUILD_INTERFACE`), so the install path is
+only useful for consumers who don't need the ImGui/Tracy plugins and who
+can supply their own `fmt`/`VMA` headers. Use `add_subdirectory` until a
+header refactor (PImpl-ing the assert/macro path out of inline bodies)
+lands.
+
+### Building the samples
+Samples are off by default. To build and run them locally:
+```bash
+cmake --preset debug
+cmake --build build/debug
 ```
+The `debug` / `release` presets enable `MYTH_BUILD_SAMPLES`,
+`MYTH_ENABLE_IMGUI_STANDARD`, and `MYTH_ENABLE_TRACY`.
 
 ### CMake Options
-| Option                       | Default | Description                                                                |
-|------------------------------|---------|----------------------------------------------------------------------------|
-| `MYTH_RUN_SAMPLES`           | `ON`    | Enables sample apps.                                                       |
-| `MYTH_ENABLE_IMGUI_STANDARD` | `OFF`   | Installs ImGui (Main Branch) and enables mythril's ImGuiPlugin             |
-| `MYTH_ENABLE_IMGUI_DOCKING`  | `OFF`   | Installs ImGui (Docking Branch) and enables mythril's ImGuiPlugin          |
-| `MYTH_ENABLE_TESTS`          | `OFF`   | Builds tests directory to be run by CMake.                                 |
-| `MYTH_ENABLE_TRACY`          | `OFF`   | Installs Tracy and enabled mythrils' TracyPlugin                           |
-| `MYTH_ENABLE_TRACY_GPU`      | `OFF`   | Requires ENABLE_TRACY to be ON, allows GPU timing (CURRENTLY EXPERIMENTAL) |
-> Note: `MYTH_ENABLE_IMGUI_STANDARD` and `MYTH_ENABLE_IMGUI_DOCKING` are mutually exclusive!
+| Option                       | Default | Description                                                            |
+|------------------------------|---------|------------------------------------------------------------------------|
+| `MYTH_BUILD_SAMPLES`         | `OFF`   | Build the sample applications under `samples/`.                        |
+| `MYTH_INSTALL`               | `OFF`   | Generate `install()` rules and `mythrilConfig.cmake` (experimental).   |
+| `MYTH_ENABLE_IMGUI_STANDARD` | `OFF`   | Fetch ImGui (main branch) and enable mythril's ImGuiPlugin.            |
+| `MYTH_ENABLE_IMGUI_DOCKING`  | `OFF`   | Fetch ImGui (docking branch) and enable mythril's ImGuiPlugin.         |
+| `MYTH_ENABLE_TRACY`          | `OFF`   | Fetch Tracy and enable mythril's TracyPlugin.                          |
+| `MYTH_ENABLE_TRACY_GPU`      | `OFF`   | Requires `MYTH_ENABLE_TRACY=ON`. GPU timing (experimental).            |
+| `MYTH_USE_LOCAL_SLANG`       | `OFF`   | Use a locally-built Slang (`MYTH_LOCAL_SLANG_DIR`) instead of the SDK. |
+
+> Note: `MYTH_ENABLE_IMGUI_STANDARD` and `MYTH_ENABLE_IMGUI_DOCKING` are mutually exclusive.
+> Samples that require an optional feature (e.g. `05_ImGui` needs
+> `MYTH_ENABLE_IMGUI_STANDARD`) are skipped with a `STATUS` log when the
+> requirement is not satisfied — they do not silently force features on.
 
 
 
