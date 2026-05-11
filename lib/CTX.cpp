@@ -755,6 +755,7 @@ namespace mythril {
 				vertStage.entryPoint = "vs_main";
 			}
 			AllocatedShader* shader = _shaderPool.get(vertStage.handle);
+			ASSERT_MSG(shader, "The vertex shader for graphics pipeline: '{}' was destroyed or moved.", spec.debugName);
 			if (shader->_specializationInfo.specializationConstants.size() > sc_count)
 				LOG_SYSTEM(LogType::Warning, "You have specialization constants used in the vertex shader '{}' that are not defined in the pipeline creation for '{}'!", shader->_debugName, spec.debugName);
 			vertSpecConstantsBundle = BuildSpecializationInfoBundle(spec.specConstants, sc_count, shader->_specializationInfo.nameToID);
@@ -768,6 +769,7 @@ namespace mythril {
 				fragStage.entryPoint = "fs_main";
 			}
 			AllocatedShader* shader = _shaderPool.get(fragStage.handle);
+			ASSERT_MSG(shader, "The fragment shader for graphics pipeline: '{}' was destroyed or moved.", spec.debugName);
 			if (shader->_specializationInfo.specializationConstants.size() > sc_count)
 				LOG_SYSTEM(LogType::Warning, "You have specialization constants used in the fragment shader '{}' that are not defined in the pipeline creation for '{}'!", shader->_debugName, spec.debugName);
 			fragSpecConstantsBundle = BuildSpecializationInfoBundle(spec.specConstants, sc_count, shader->_specializationInfo.nameToID);
@@ -1009,7 +1011,7 @@ namespace mythril {
 
 	Texture CTX::createTexture(TextureSpec spec) {
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_CREATE);
-		ASSERT_MSG(spec.usage, "You must set the usage field of '{}' TextureSpec when used for CTX::createTexture()!", spec.debugName);
+		ASSERT_MSG(spec.usage, "The usage field for TextureSpec is required, however '{}' was not given one!", spec.debugName);
 		ASSERT_MSG(!(spec.generateMipmaps && spec.initialData == nullptr), "'generateMipMaps' can only be true when 'initialData' is non-null!");
 		// resolve usage flags
 		VkImageUsageFlags usage_flags = (spec.storage == StorageType::Device) ? VK_IMAGE_USAGE_TRANSFER_DST_BIT : 0;
@@ -1036,7 +1038,7 @@ namespace mythril {
 			LOG_SYSTEM(LogType::Warning, "The number of mip levels specified must be greater than 0!");
 			spec.numMipLevels = 1;
 		}
-		uint32_t _numLevels = spec.numMipLevels;
+		const uint32_t _numLevels = spec.numMipLevels;
 		ASSERT_MSG(usage_flags != 0, "Invalid usage flags for texture creation!");
 		ASSERT_MSG(spec.type == TextureType::Type_2D || spec.type == TextureType::Type_3D || spec.type == TextureType::Type_Cube, "Only 2D, 3D and Cube textures are supported.");
 

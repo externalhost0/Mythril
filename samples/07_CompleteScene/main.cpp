@@ -699,6 +699,7 @@ int main() {
 			.debugName = "Clamp Sampler"
 		});
 
+
 		mythril::Shader fullscreenCompositeShader = ctx->createShader({
 			.filePath = kDataDir / "shaders/FullscreenComposite.slang",
 			.debugName = "Fullscreen Composite Shader"

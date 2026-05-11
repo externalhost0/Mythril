@@ -17,11 +17,13 @@
 
 # Background!
 
-`Mythril` is intended to be used as the primary way you are interacting with Vulkan and should not be mixed alongside other frameworks that control or have a heavy hand in rendering.
+`Mythril` is intended to be used as the primary way you are interacting with Vulkan and should not be mixed alongside other frameworks that control or have a heavy hand in rendering. Because it is fully bindless, you are also not given anyway to define descriptor sets and are expcted to use push constants frequently.
 
 You are expected to manage the windowing system yourself, however `Mythril` is built to allow ANY windowing system as long as you can get an instance of VkSurfaceKHR from it, the examples use SDL3 and therefore show how you might retrieve it via other similar libraries.
 
 The majority of operations you will be performing are the creation of our Vulkan objects and setting up your framegraph, and basically everything your application will do will take place inside the framegraph callbacks.
+
+Throughout this document `Mythril::CTX` and `CTX` are synonymous, and lowercase "ctx" is just an instance of it.
 
 # Creation
 
@@ -51,7 +53,7 @@ auto ctx = mythril::CTXBuilder{}
 })
 .build();
 ```
-You may notice that we also call `with_default_swapchain` with whatever width and height our window is, it is not necessary to call this function from `mythril::CTXBuilder` however it does mean less boilerplate. The above code will do the same thing if you defer swapchain creation as such:
+You may notice that we also call `with_default_swapchain` with whatever width and height our window is, it is not necessary to call this function from `mythril::CTXBuilder` however it does take care of more of the work. The above code will do the same thing if you defer swapchain creation as such:
 
 ```cpp
 auto ctx = mythril::CTXBuilder{}
@@ -77,14 +79,14 @@ Once you have your `mythril::CTX` instance you can do anything!
 
 All objects are created through `mythril::CTX` and returned as RAII wrapper types. 
 Resources are automatically destroyed when their wrapper goes out of scope. 
-If you need early explicit cleanup, every wrapper exposes a `ctx->destroy(handle)` path but is only necessary in some edge cases and is generally reccomended to avoid using.
+If you need early explicit cleanup, every wrapper exposes a `CTX::destroy(handle)` path but is only necessary in some edge cases and is generally reccomended to avoid using.
 
 ## Buffers
 
-Buffers store arbitrary GPU data: vertex data, uniforms, indirect draw arguments, etc. Create one with `ctx->createBuffer()`.
+Buffers store arbitrary GPU data: vertex data, storage buffers, indirect draw arguments, etc. Create one with `CTX::createBuffer()`.
 
 ```cpp
-// Device-local buffer with initial data (typical for static geometry)
+// Device-local buffer with initial data
 mythril::Buffer vertexBuffer = ctx->createBuffer({
     .size      = sizeof(Vertex) * vertices.size(),
     .usage     = mythril::BufferUsageBits_Storage,
@@ -93,12 +95,12 @@ mythril::Buffer vertexBuffer = ctx->createBuffer({
     .debugName = "Vertex Buffer",
 });
 
-// Host-visible buffer for per-frame CPU writes (uniforms, staging)
+// Device-local buffer for per-frame data accessible by shaders
 mythril::Buffer uniformBuffer = ctx->createBuffer({
-    .size    = sizeof(FrameUniforms),
-    .usage   = mythril::BufferUsageBits_Uniform,
-    .storage = mythril::StorageType::HostVisible,
-    .debugName = "Frame Uniforms",
+    .size    = sizeof(FrameData),
+    .usage   = mythril::BufferUsageBits_Storage,
+    .storage = mythril::StorageType::Device,
+    .debugName = "Frame Data",
 });
 ```
 
@@ -107,7 +109,6 @@ mythril::Buffer uniformBuffer = ctx->createBuffer({
 | Flag | Use |
 |---|---|
 | `BufferUsageBits_Index` | Index buffer |
-| `BufferUsageBits_Uniform` | Uniform / constant buffer |
 | `BufferUsageBits_Storage` | Shader read/write storage buffer |
 | `BufferUsageBits_Indirect` | Indirect draw/dispatch arguments |
 
@@ -117,18 +118,19 @@ mythril::Buffer uniformBuffer = ctx->createBuffer({
 |---|---|
 | `StorageType::Device` | GPU-only. Fastest for GPU access. Cannot be CPU-mapped. |
 | `StorageType::HostVisible` (DEFAULT) | CPU-accessible. Use for staging or frequently-updated data. |
-| `StorageType::Memoryless` | Transient on-chip memory. Tile-based GPU only. |
+| `StorageType::Memoryless` | Transient on-chip memory. |
 
 **Good to Knows**:
-- `initialData` performs a one-time upload at creation. For later updates use `ctx->upload(buffer.handle(), data, size, offset)`.
-- `buffer.gpuAddress()` (for bindless / BDA use) is only valid on `Device` storage buffers.
-- To read data back to CPU use `ctx->download(buffer.handle(), dst, size, offset)`.
+- `initialData` performs a one-time upload at creation. 
+- You can update buffers via both `CTX::upload()` which has no size limit and `CommandBuffer::cmdUpdateBuffer()` which has a max of 64kb.
+- `Buffer::gpuAddress()` is only valid on storage buffers with `StorageType::Device`.
+- To read data back to CPU use `CTX::download()`.
 
 ---
 
 ## Images
 
-Images (textures) represent 2D, 3D, or cubemap GPU images. Create one with `ctx->createTexture()`.
+Images (textures) represent 2D, 3D, or cubemap GPU images. Create one with `CTX::createTexture()`.
 
 ```cpp
 // Color attachment for off-screen rendering
@@ -169,11 +171,11 @@ mythril::Texture depthTarget = ctx->createTexture({
 
 **`type` values**:
 
-| Type | Notes |
-|---|---|
-| `TextureType::Type_2D` (DEFAULT) | Standard 2D texture or array (`numLayers > 1`). |
-| `TextureType::Type_3D` | Volumetric. Set `dimension.depth > 1`. |
-| `TextureType::Type_Cube` | Cubemap. Requires `numLayers = 6`. |
+| Type | Notes                                              |
+|---|----------------------------------------------------|
+| `TextureType::Type_2D` (DEFAULT) | Standard 2D texture or array when `numLayers > 1`. |
+| `TextureType::Type_3D` | Volumetric. Set `dimension.depth > 1`.             |
+| `TextureType::Type_Cube` | Cubemap. Requires `numLayers = 6`.                 |
 
 **Texture views** access a subresource (specific mip or layer) without creating a new texture:
 
@@ -188,15 +190,15 @@ TextureHandle viewHandle = texture.handle(viewKey);
 
 **Good to Knows**:
 - `generateMipmaps = true` requires `initialData != nullptr`. If no initial data is provided, mipmaps will not be generated.
-- Swapchain images are not user-owned, never call `ctx->destroy()` on a handle retrieved from the swapchain.
+- Swapchain images are not user-owned, never call `CTX::destroy()` on a handle retrieved from the swapchain.
 - Cubemaps must set `type = TextureType::Type_Cube` **and** `numLayers = 6`. Missing either will produce incorrect results.
 - MSAA textures (`samples > X1`) used as attachments typically need a resolve step before sampling.
-
+- Utilize `StorageType::Memoryless` for transient attachments, usually for MSAA targets.
 ---
 
 ## Samplers
 
-Samplers describe how a shader reads from a texture; filtering, wrapping, and optional depth comparison. Create one with `ctx->createSampler()`.
+Samplers describe how a shader reads from a texture; filtering, wrapping, and optional depth comparison. Create one with `CTX::createSampler()`.
 
 ```cpp
 // Standard trilinear sampler
@@ -227,34 +229,34 @@ All fields are optional.
 
 **Filter / mipmap**:
 
-| Option | Effect |
-|---|---|
-| `SamplerFilter::Nearest` | No interpolation |
-| `SamplerFilter::Linear` (DEFAULT) | Smooth interpolation |
-| `SamplerMipMap::Disabled` (DEFAULT) | No mipmapping |
-| `SamplerMipMap::Nearest` | Snap to nearest mip level |
-| `SamplerMipMap::Linear` | Blend between mip levels (trilinear when combined with Linear filter) |
+| Option | Vulkan Definition              |
+|---|--------------------------------|
+| `SamplerFilter::Nearest` | VK_FILTER_NEAREST              |
+| `SamplerFilter::Linear` (DEFAULT) | VK_FILTER_LINEAR               |
+| `SamplerMipMap::Disabled` (DEFAULT) | No Mipmapping!                 |
+| `SamplerMipMap::Nearest` | VK_SAMPLER_MIPMAP_MODE_NEAREST |
+| `SamplerMipMap::Linear` | VK_SAMPLER_MIPMAP_MODE_LINEAR  |
 
 **Wrap modes** (configurable per U/V/W axis):
 
-| Mode | Description |
-|---|---|
-| `SamplerWrap::Repeat` (DEFAULT) | Tile the texture |
-| `SamplerWrap::MirrorRepeat` | Tile with mirroring |
-| `SamplerWrap::ClampEdge` | Clamp to edge texel |
-| `SamplerWrap::ClampBorder` | Clamp to border color |
-| `SamplerWrap::MirrorClampEdge` | Mirror once then clamp to edge |
+| Mode | Vulkan Definition |
+|---|--|
+| `SamplerWrap::Repeat` (DEFAULT) | VK_SAMPLER_ADDRESS_MODE_REPEAT |
+| `SamplerWrap::MirrorRepeat` | VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT |
+| `SamplerWrap::ClampEdge` | VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE |
+| `SamplerWrap::ClampBorder` | VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER |
+| `SamplerWrap::MirrorClampEdge` | VK_SAMPLER_ADDRESS_MODE_MIRROR_CLAMP_TO_EDGE |
 
 ---
 
 ## Shaders
 
-Shaders are written in [Slang](https://shader-slang.com/) and compiled to SPIR-V at load time. Create one with `ctx->createShader()`.
+Shaders are written in [Slang](https://shader-slang.com/) and compiled to SPIR-V at load time. Create one with `CTX::createShader()`.
 
 ```cpp
 mythril::Shader defaultShader = ctx->createShader({
-    .filePath  = kShaderDir / "Mesh.slang",
-    .debugName = "Mesh Shader",
+    .filePath  = kShaderDir / "PBR.slang",
+    .debugName = "PBR Shader",
 });
 ```
 
@@ -262,7 +264,7 @@ A single `.slang` file can contain both vertex and fragment entry points, there 
 
 **Good to Knows**:
 - Keep the `Shader` alive for as long as any pipeline that uses it exists. Destroying the shader while a pipeline still references it is undefined behavior.
-- Slang include search paths and compiler options are configured via `CTXBuilder::set_slang_cfg()` before calling `CTXBuilder::build()`.
+- Slang include search paths and compiler options are configured via `CTXBuilder::set_slang_cfg()` before calling `CTXBuilder::build()`, use these if your shader or its imports can't be found.
 
 ---
 
@@ -293,11 +295,11 @@ mythril::GraphicsPipeline pipeline = ctx->createGraphicsPipeline({
 
 **Topology**:
 
-| Mode | Use |
-|---|---|
-| `TopologyMode::TRIANGLE` (DEFAULT) | Standard filled triangles |
-| `TopologyMode::LIST` | Explicit triangle list |
-| `TopologyMode::STRIP` | Triangle strip |
+| Mode | Vulkan Definition                   |
+|---|-------------------------------------|
+| `TopologyMode::TRIANGLE` (DEFAULT) | VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST |
+| `TopologyMode::LIST` | VK_PRIMITIVE_TOPOLOGY_LINE_LIST     |
+| `TopologyMode::STRIP` | VK_PRIMITIVE_TOPOLOGY_LINE_STRIP    |
 
 **Blending**:
 
@@ -311,18 +313,18 @@ mythril::GraphicsPipeline pipeline = ctx->createGraphicsPipeline({
 
 **Cull**:
 
-| Mode | Description |
-|---|---|
-| `CullMode::OFF` (DEFAULT) | No face culling |
-| `CullMode::BACK` | Cull back faces |
-| `CullMode::FRONT` | Cull front faces |
+| Mode | Vulkan Definition      |
+|---|------------------------|
+| `CullMode::OFF` (DEFAULT) | VK_CULL_MODE_NONE      |
+| `CullMode::BACK` | VK_CULL_MODE_BACK_BIT  |
+| `CullMode::FRONT` | VK_CULL_MODE_FRONT_BIT |
 
 **Polygon**:
 
-| Mode | Description |
-|---|---|
-| `PolygonMode::FILL` (DEFAULT) | Solid fill |
-| `PolygonMode::LINE` | Wireframe |
+| Mode | Vulkan Definition    |
+|---|----------------------|
+| `PolygonMode::FILL` (DEFAULT) | VK_POLYGON_MODE_FILL |
+| `PolygonMode::LINE` | VK_POLYGON_MODE_LINE |
 
 ### Compute Pipeline
 
@@ -338,14 +340,14 @@ mythril::ComputePipeline compute = ctx->createComputePipeline({
 Both pipeline types support up to 16 specialization constants, which let you bake values into the SPIR-V at pipeline creation time without recompiling the shader:
 
 ```cpp
-uint32_t tileSize = 16;
+uint32_t maxLights = 8;
 mythril::GraphicsPipeline pipeline = ctx->createGraphicsPipeline({
     .vertexShader   = {shader},
     .fragmentShader = {shader},
     .specConstants  = {
-        mythril::SpecializationConstantEntry{&tileSize, sizeof(tileSize), "TILE_SIZE"},
+        mythril::SpecializationConstantEntry{&maxLights, sizeof(maxLights), "MAX_LIGHTS"},
     },
-    .debugName = "Tiled Pipeline",
+    .debugName = "PBR Pipeline",
 });
 ```
 
@@ -356,4 +358,4 @@ mythril::GraphicsPipeline pipeline = ctx->createGraphicsPipeline({
 
 There is no manual cleanup necessary, as `Mythril`'s Vulkan objects will call the necessary destruction logic when their destructor is called. The same goes for `mythril::CTX` which will perform cleanup for all previously created objects if their destructors have not already been called.
 
-What you do have to do is keep the windowing system/context alive until AFTER `mythril::CTX` is destroyed, as destroying your window, ie `SDL_WINDOW*` too early will result in validation errors. This is why all the samples scope `mythril::CTX` but not the created window.
+What you do have to do is keep the windowing system/context alive until AFTER `mythril::CTX` is destroyed, as destroying your window, i.e. `SDL_WINDOW*` too early will result in validation errors. This is why all the samples scope `mythril::CTX` but not the created window.
