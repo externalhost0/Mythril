@@ -202,6 +202,7 @@ namespace mythril {
 			case VK_DESCRIPTOR_TYPE_MAX_ENUM:
 				return "VK_DESCRIPTOR_TYPE_MAX_ENUM";
 		}
+		return "Unknown";
 	}
 
 
@@ -493,13 +494,13 @@ int main() {
 		graph.addGraphicsPass("geometry")
 		.attachment({
 			.texDesc = colorTarget,
-			.clearValue = {0.2f, 0.2f, 0.2f, 1.f},
+			.clearValue = mythril::ClearValue::color(0.2f, 0.2f, 0.2f, 1.f),
 			.loadOp = mythril::LoadOp::CLEAR,
 			.storeOp = mythril::StoreOp::STORE
 		})
 		.attachment({
 			.texDesc = depthTarget,
-			.clearValue = {1.f, 0},
+			.clearValue = mythril::ClearValue::depth(1.f, 0),
 			.loadOp = mythril::LoadOp::CLEAR
 		})
 		.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
@@ -578,7 +579,7 @@ int main() {
 			ImGui::NewFrame();
 			DrawShaderInfo(standardShader.view());
 
-			ImGui::Begin("Cube Uniforms");
+			ImGui::Begin("Cube Data");
 			ImGui::Text("Original Shader design by 'nasana'.");
 			ImGui::TextLinkOpenURL("Click Here For Their Work", "https://www.shadertoy.com/view/WtdXR8");
 			ImGui::Spacing();
@@ -642,7 +643,7 @@ int main() {
 
 
 			// buffer updating must be done before rendering
-			// todo: make this part of the rendergraph
+			// should make this part of the rendergraph
 			{
 				mythril::CommandBuffer& cmd = ctx->acquireCommand(mythril::CommandBuffer::Type::General);
 				cmd.cmdUpdateBuffer(objectDataBuf, objects);

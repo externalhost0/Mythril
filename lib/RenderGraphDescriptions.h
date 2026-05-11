@@ -37,8 +37,16 @@ namespace mythril {
 
         // if the user sets no clear (have no intention of clearing) then do nothing ig
         ClearValue() {}
-        ClearValue(float r, float g, float b, float a) : clearColor{r, g, b, a} {}
-        ClearValue(float depth, uint32_t stencil) : clearDepthStencil{depth, stencil} {}
+        static ClearValue color(float r, float g, float b, float a) {
+            ClearValue v;
+            v.clearColor = { r, g, b, a};
+            return v;
+        }
+        static ClearValue depth(float depth, uint32_t stencil = 0) {
+            ClearValue v;
+            v.clearDepthStencil = { depth, stencil };
+            return v;
+        }
         VkClearValue getDepthStencilValue() const {
             return { .depthStencil = clearDepthStencil.getAsVkClearDepthStencilValue() };
         }
@@ -62,8 +70,8 @@ namespace mythril {
     struct AttachmentDesc {
         TextureDesc texDesc;
         ClearValue clearValue;
-        LoadOp loadOp = LoadOp::NO_CARE;
-        StoreOp storeOp = StoreOp::NO_CARE;
+        LoadOp loadOp = LoadOp::DONT_CARE;
+        StoreOp storeOp = StoreOp::DONT_CARE;
         std::optional<TextureDesc> resolveTexDesc;
     };
     enum class Layout : uint8_t {

@@ -180,14 +180,14 @@ int main() {
 		graph.addGraphicsPass("main")
 		.attachment({
 			.texDesc = colorTarget,
-			.clearValue = {0.2f, 0.2f, 0.2f, 1.f},
+			.clearValue = mythril::ClearValue::color(0.2f, 0.2f, 0.2f, 1.f),
 			.loadOp = mythril::LoadOp::CLEAR,
-			.storeOp = mythril::StoreOp::NO_CARE,
+			.storeOp = mythril::StoreOp::DONT_CARE,
 			.resolveTexDesc = resolveColorTarget
 		})
 		.attachment({
 			.texDesc = depthTarget,
-			.clearValue = {1.f, 0},
+			.clearValue = mythril::ClearValue::depth(1.f, 0),
 			.loadOp = mythril::LoadOp::CLEAR
 		})
 		.setExecuteCallback([&](mythril::CommandBuffer& cmd) {

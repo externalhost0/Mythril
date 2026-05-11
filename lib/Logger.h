@@ -27,9 +27,9 @@ namespace mythril {
 	constexpr uint32_t level_colors[] = {
 			0xebeae4,
 			0xfadc39,
-			(uint32_t)fmt::color::orange_red,
+			static_cast<uint32_t>(fmt::color::orange_red),
 			0xcf80ff,
-			(uint32_t)fmt::color::cadet_blue
+			static_cast<uint32_t>(fmt::color::cadet_blue)
 	};
 	inline FILE* level_channels[] = {
 		stdout,

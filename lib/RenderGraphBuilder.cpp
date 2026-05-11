@@ -302,9 +302,7 @@ namespace mythril {
 			dryCmd._ctx = &rCtx;
 			dryCmd._activePass = pass;
 			rCtx._currentCommandBuffer = dryCmd;
-#ifdef DEBUG
 			ASSERT_MSG(pass.executeCallback != nullptr, "Pass '{}' doesn't have an execute callback, something went horribly wrong!", pass.name);
-#endif
 			pass.executeCallback(dryCmd);
 		}
 		rCtx._currentCommandBuffer = {};
@@ -403,6 +401,7 @@ namespace mythril {
 			cmd._currentPipelineInfo = nullptr;
 			cmd._currentPipelineHandle = {};
 			cmd._activePass = pass;
+			// we already checked if it has an execute callback so it should be guaranteed
 			pass.executeCallback(cmd);
 		}
 		if (!cmd._ctx->isHeadless()) {

@@ -216,7 +216,7 @@ mythril::Sampler shadowSampler = ctx->createSampler({
     .debugName           = "Shadow Sampler",
 });
 
-// Anisotropic sampler for surfaces at oblique angles
+// Anisotropic sampler
 mythril::Sampler aniso = ctx->createSampler({
     .mipMap        = mythril::SamplerMipMap::Linear,
     .anistrophic   = true,

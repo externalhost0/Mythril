@@ -112,6 +112,8 @@ namespace mythril {
 		VulkanProperties& outProperties,
 		VulkanQueueOutputs& outQueues) {
 
+		// unfortunately vkb doesnt provide the flexibility we want
+		// so we use some of its features for this step
 		ASSERT(vkbPhysicalDevice.physical_device != VK_NULL_HANDLE);
 		// VALIDATE EXTENSIONS
 		{
@@ -540,8 +542,6 @@ missing_features.append("\n\t(" version ") " #feature);
 
 	std::unique_ptr<CTX> CTXBuilder::build() {
 		MYTH_PROFILER_ZONE_COLOR("CTXBuilder::build", MYTH_PROFILER_COLOR_CREATE);
-		// mythril should only provide graphics related things
-		// fixme as this means that we have no audio
 
 		const VkResult volk_result = volkInitialize();
 		ASSERT_MSG(volk_result == VK_SUCCESS, "Volk failed to initialize!");

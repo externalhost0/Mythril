@@ -62,13 +62,13 @@ namespace mythril {
 	};
 	enum class LoadOp : uint8_t {
 		NONE = 0,
-		NO_CARE,
+		DONT_CARE,
 		CLEAR,
 		LOAD
 	};
 	enum class StoreOp : uint8_t {
 		NONE = 0,
-		NO_CARE,
+		DONT_CARE,
 		STORE,
 	};
 	enum class ResolveMode : uint8_t {
@@ -95,14 +95,14 @@ namespace mythril {
 	constexpr VkAttachmentStoreOp toVulkan(StoreOp op) {
 		switch (op) {
 			case StoreOp::NONE: return VK_ATTACHMENT_STORE_OP_NONE;
-			case StoreOp::NO_CARE: return VK_ATTACHMENT_STORE_OP_DONT_CARE;
+			case StoreOp::DONT_CARE: return VK_ATTACHMENT_STORE_OP_DONT_CARE;
 			case StoreOp::STORE: return VK_ATTACHMENT_STORE_OP_STORE;
 		}
 	}
 	constexpr VkAttachmentLoadOp toVulkan(LoadOp op) {
 		switch (op) {
 			case LoadOp::NONE: return VK_ATTACHMENT_LOAD_OP_NONE;
-			case LoadOp::NO_CARE: return VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+			case LoadOp::DONT_CARE: return VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 			case LoadOp::CLEAR: return VK_ATTACHMENT_LOAD_OP_CLEAR;
 			case LoadOp::LOAD: return VK_ATTACHMENT_LOAD_OP_LOAD;
 		}

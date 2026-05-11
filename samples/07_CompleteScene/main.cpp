@@ -845,7 +845,7 @@ int main() {
 		graph.addGraphicsPass("shadow_map")
 		.attachment({
 			.texDesc = {shadowMap},
-			.clearValue = {1.f, 0},
+			.clearValue = mythril::ClearValue::depth(1.f, 0),
 			.loadOp = mythril::LoadOp::CLEAR,
 			.storeOp = mythril::StoreOp::STORE
 		})
@@ -949,7 +949,7 @@ int main() {
 			graph.addGraphicsPass(fmt::format("pointlight_shadow_{}", i).c_str())
 			.attachment({
 				.texDesc = pointLightShadowTex[i],
-				.clearValue = {1.f, 1 },
+				.clearValue = mythril::ClearValue::depth(1.f, 1),
 				.loadOp = mythril::LoadOp::CLEAR,
 				.storeOp = mythril::StoreOp::STORE,
 			})
@@ -1004,14 +1004,14 @@ int main() {
 		graph.addGraphicsPass("geometry_opaque")
 		.attachment({
 			.texDesc = msaaColorTarget,
-			.clearValue = {0.349f, 0.635f, 0.82f, 1.f},
+			.clearValue = mythril::ClearValue::color(0.349f, 0.635f, 0.82f, 1.f),
 			.loadOp = mythril::LoadOp::CLEAR,
 			.storeOp = mythril::StoreOp::STORE,
 		})
 		.attachment({
 			.texDesc = msaaDepthTarget,
 			// clear to 0, we do reverse depth buffering
-			.clearValue = {0.f, 0},
+			.clearValue = mythril::ClearValue::depth(0.f, 0),
 			.loadOp = mythril::LoadOp::CLEAR,
 			.storeOp = mythril::StoreOp::STORE,
 		})
@@ -1165,13 +1165,13 @@ int main() {
 		.attachment({
 			.texDesc = msaaColorTarget,
 			.loadOp = mythril::LoadOp::LOAD,
-			.storeOp = mythril::StoreOp::NO_CARE,
+			.storeOp = mythril::StoreOp::DONT_CARE,
 			.resolveTexDesc = offscreenColorTarget
 		})
 		.attachment({
 			.texDesc = msaaDepthTarget,
 			.loadOp = mythril::LoadOp::LOAD,
-			.storeOp = mythril::StoreOp::NO_CARE,
+			.storeOp = mythril::StoreOp::DONT_CARE,
 			.resolveTexDesc = depthTarget
 		})
 		.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
@@ -1390,7 +1390,7 @@ int main() {
 		graph.addGraphicsPass("composite")
 		.attachment({
 			.texDesc = finalColorTarget,
-			.clearValue = {0, 0, 0, 1},
+			.clearValue = mythril::ClearValue::color(0.f, 0.f, 0.f, 1.f),
 			.loadOp = mythril::LoadOp::CLEAR,
 			.storeOp = mythril::StoreOp::STORE
 		})

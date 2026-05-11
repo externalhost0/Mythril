@@ -10,6 +10,7 @@
 #include "../../lib/RenderGraphDescriptions.h"
 #include "../../lib/vkutil.h"
 #include "../../lib/Swapchain.h"
+#include "../../lib/Logger.h"
 
 
 #include <unordered_set>
@@ -254,16 +255,22 @@ namespace mythril {
         GraphicsPassBuilder() = delete;
         GraphicsPassBuilder(RenderGraph& rGraph, const char* pName)
             : base(rGraph, pName, PassDesc::Type::Graphics) {}
+#ifdef DEBUG
+        ~GraphicsPassBuilder() {
+            if (!this->base._passSource.executeCallback)
+                LOG_SYSTEM_NOSOURCE(LogType::Warning, "GraphicsPass '{}' has no execution callback!", this->base._passSource.name);
+        }
+#endif
 
-        GraphicsPassBuilder& attachment(const AttachmentDesc& desc) {
+        [[nodiscard]] GraphicsPassBuilder& attachment(const AttachmentDesc& desc) {
             this->base._passSource.attachmentOperations.push_back(desc);
             return *this;
         }
-        GraphicsPassBuilder& dependency(const TextureDesc& texDesc, const Layout layout = Layout::READ) {
+        [[nodiscard]] GraphicsPassBuilder& dependency(const TextureDesc& texDesc, const Layout layout = Layout::READ) {
             add(this->base._passSource, texDesc, layout);
             return *this;
         }
-        GraphicsPassBuilder& dependency(Texture* tex, int count, const Layout layout = Layout::READ) {
+        [[nodiscard]] GraphicsPassBuilder& dependency(Texture* tex, int count, const Layout layout = Layout::READ) {
             for (int i = 0; i < count; i++) {
                 add(this->base._passSource, tex[i], layout);
             }
@@ -282,12 +289,18 @@ namespace mythril {
         ComputePassBuilder() = delete;
         ComputePassBuilder(RenderGraph& rGraph, const char* pName)
             : base(rGraph, pName, PassDesc::Type::Compute) {}
+#ifdef DEBUG
+        ~ComputePassBuilder() {
+            if (!this->base._passSource.executeCallback)
+                LOG_SYSTEM_NOSOURCE(LogType::Warning, "ComputePass '{}' has no execution callback!", this->base._passSource.name);
+        }
+#endif
 
-        ComputePassBuilder& dependency(const TextureDesc& texDesc, const Layout layout = Layout::GENERAL) {
+        [[nodiscard]] ComputePassBuilder& dependency(const TextureDesc& texDesc, const Layout layout = Layout::GENERAL) {
                 add(this->base._passSource, texDesc, layout);
             return *this;
         }
-        ComputePassBuilder& dependency(Texture* tex, int count, const Layout layout = Layout::GENERAL) {
+        [[nodiscard]] ComputePassBuilder& dependency(Texture* tex, int count, const Layout layout = Layout::GENERAL) {
             for (int i = 0; i < count; i++) {
                 add(this->base._passSource, tex[i], layout);
             }

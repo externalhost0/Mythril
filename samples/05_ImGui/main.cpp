@@ -55,7 +55,7 @@ int main() {
 		graph.addGraphicsPass("main")
 		.attachment({
 			.texDesc = colorTarget,
-			.clearValue = {1, 0, 0, 1},
+			.clearValue = mythril::ClearValue::color(1.f, 0.f, 0.f, 1.f),
 			.loadOp = mythril::LoadOp::CLEAR,
 			.storeOp = mythril::StoreOp::STORE
 		})
