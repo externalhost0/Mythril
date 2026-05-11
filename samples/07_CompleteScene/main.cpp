@@ -649,9 +649,8 @@ int main() {
 			.g = mythril::Swizzle::Swizzle_R,
 			.b = mythril::Swizzle::Swizzle_R,
 			.a = mythril::Swizzle::Swizzle_1
-	};
-
-
+		};
+		
 		mythril::Sampler repeatSampler = ctx->createSampler({
 			.magFilter = mythril::SamplerFilter::Linear,
 			.minFilter = mythril::SamplerFilter::Linear,
