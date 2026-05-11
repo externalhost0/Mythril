@@ -296,6 +296,9 @@ namespace mythril {
 	}
 
 	void RenderGraph::performDryRun(CTX& rCtx) {
+		// preserve any in-flight command buffer (e.g. when compile() is triggered from inside
+		// execute() after acquireCommand() has installed the real cmd buffer).
+		CommandBuffer saved = rCtx._currentCommandBuffer;
 		for (const CompiledPass& pass : _compiledPasses) {
 			// by default CommandBuffer will have _isDryRun = true
 			CommandBuffer dryCmd;
@@ -305,7 +308,7 @@ namespace mythril {
 			ASSERT_MSG(pass.executeCallback != nullptr, "Pass '{}' doesn't have an execute callback, something went horribly wrong!", pass.name);
 			pass.executeCallback(dryCmd);
 		}
-		rCtx._currentCommandBuffer = {};
+		rCtx._currentCommandBuffer = saved;
 	}
 
 	void RenderGraph::compile(CTX& rCtx) {
@@ -331,6 +334,7 @@ namespace mythril {
 		}
 		performDryRun(rCtx);
 		_hasCompiled = true;
+		_compiledEpoch = rCtx._resourceEpoch;
 	}
 
 	void RenderGraph::PerformImageBarrierTransitions(CommandBuffer& cmd, const CompiledPass& compiledPass) {
@@ -383,6 +387,12 @@ namespace mythril {
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_RENDERGRAPH);
 		ASSERT_MSG(!cmd.isDrying(), "You cannot call RenderGraph::execute inside an execution callback!");
 		ASSERT_MSG(_hasCompiled, "RenderGraph must be compiled before it can be executed!");
+		// auto-recompile if any resource topology changed since last compile (texture resize,
+		// swapchain recreate/destroy). single uint64 compare on the hot path; recompile only
+		// runs when actually stale (typically window-resize frames).
+		if (_compiledEpoch != cmd._ctx->_resourceEpoch) {
+			compile(*cmd._ctx);
+		}
 
 		for (CompiledPass& pass : _compiledPasses) {
 			// perform batched vkCmdPipelineBarrier

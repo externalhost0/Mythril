@@ -570,8 +570,6 @@ int main() {
 				colorTarget.resize(applied_dimensions);
 				depthTarget.resize(applied_dimensions);
 				finalColorTarget.resize(applied_dimensions);
-				// you must recompile your framegraph in order for it to recieve texture changes
-				graph.compile(*ctx);
 			}
 
 			ImGui_ImplVulkan_NewFrame();

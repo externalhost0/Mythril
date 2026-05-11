@@ -363,6 +363,8 @@ namespace mythril {
         std::vector<CompiledPass> _compiledPasses;
 
         bool _hasCompiled = false;
+        // epoch snapshot from CTX at last compile(). execute() auto-recompiles on mismatch.
+        uint64_t _compiledEpoch = 0;
 
         friend struct BasePassBuilder;
         friend class GraphicsPassBuilder;

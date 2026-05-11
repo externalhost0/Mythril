@@ -52,6 +52,13 @@ namespace mythril {
 	}
 
 	void Texture::resize(const Dimensions& newDimensions) {
+		// CTX::resizeTexture replaces the underlying VkImage/default view, but cached
+		// subresource views in _additionalViews still point at the old image. drop them so
+		// ResolveImageView() recreates fresh views against the new image on next compile.
+		for (const auto& view : _additionalViews) {
+			_pCtx->destroy(view.second);
+		}
+		_additionalViews.clear();
 		_pCtx->resizeTexture(_handle, newDimensions);
 	}
 

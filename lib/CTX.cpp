@@ -228,6 +228,7 @@ namespace mythril {
 		VK_CHECK(vkDeviceWaitIdle(this->_vkDevice));
 		destroySwapchain();
 		createSwapchain(spec);
+		// destroy+create already each bump _resourceEpoch; no additional bump needed here.
 	}
 
 	void CTX::destroySwapchain() {
@@ -237,6 +238,7 @@ namespace mythril {
 		}
 		this->_swapchain.reset(nullptr);
 		vkDestroySemaphore(_vkDevice, this->_timelineSemaphore, nullptr);
+		++_resourceEpoch;
 	}
 
 	template<typename T>
@@ -270,6 +272,7 @@ namespace mythril {
 		// we need to store in the situation where the swapcahin is deleted and we want to use the last swapchains settings
 		lastSwapchainSpec = new_swapchain_spec;
 		wrappedBackBuffer.updateHandle(this, _swapchain->getCurrentSwapchainTextureHandle());
+		++_resourceEpoch;
 	}
 
 	void CTX::checkAndUpdateBindlessDescriptorSetImpl() {
@@ -1007,6 +1010,7 @@ namespace mythril {
 		// reset of state
 		image->_vkCurrentImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 		image->_mappedPtr = newImage._mappedPtr;
+		++_resourceEpoch;
 	}
 
 	Texture CTX::createTexture(TextureSpec spec) {

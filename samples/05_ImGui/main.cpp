@@ -87,7 +87,6 @@ int main() {
 				});
 
 				colorTarget.resize({static_cast<uint32_t>(w), static_cast<uint32_t>(h)});
-				graph.compile(*ctx);
 			}
 
 

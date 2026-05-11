@@ -355,6 +355,9 @@ namespace mythril {
 	private:
 		// my stuff //
 		uint64_t _currentFrameNumber = 0;
+		// bumped whenever graph-relevant resource topology changes (texture resize, swapchain recreate/destroy)
+		// RenderGraph snapshots this in compile() and re-checks it in execute() to auto-recompile when stale. one uint64 compare per frame.
+		uint64_t _resourceEpoch = 0;
 		std::unique_ptr<ImmediateCommands> _imm = nullptr;
 		std::unique_ptr<Swapchain> _swapchain = nullptr;
 		std::unique_ptr<StagingDevice> _staging = nullptr;

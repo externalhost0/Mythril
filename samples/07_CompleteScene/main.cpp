@@ -1543,7 +1543,6 @@ int main() {
 					offscreenTexs.resize(new_2D_dimensions);
 					new_2D_dimensions = new_2D_dimensions.divide2D(2);
 				}
-				graph.compile(*ctx);
 			}
 
 			static float yaw = 0, pitch = 0;
