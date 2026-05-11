@@ -4,12 +4,12 @@
 
 #pragma once
 
-#include "vkenums.h"
 #include "Constants.h"
 #include "Shader.h"
+#include "vkenums.h"
 
-#include <volk.h>
 #include <slang/slang.h>
+#include <volk.h>
 
 #include <variant>
 
@@ -22,12 +22,13 @@ namespace mythril {
 
 		ShaderStage() = default;
 		ShaderStage(const Shader& shader);
-		ShaderStage(ShaderHandle handle) : handle(handle) {}
-		ShaderStage(ShaderHandle handle, const char* entryPoint) : handle(handle), entryPoint(entryPoint) {}
+		ShaderStage(ShaderHandle handle) :
+		    handle(handle) {}
+		ShaderStage(ShaderHandle handle, const char* entryPoint) :
+		    handle(handle),
+		    entryPoint(entryPoint) {}
 
-		bool valid() const noexcept {
-			return handle.valid();
-		}
+		bool valid() const noexcept { return handle.valid(); }
 	};
 
 	struct SpecializationConstantEntry {
@@ -85,7 +86,11 @@ namespace mythril {
 		VkDescriptorSet _vkBindlessDescriptorSet = VK_NULL_HANDLE;
 	};
 
-	enum class PipelineType { Graphics, Compute, RayTracing };
+	enum class PipelineType {
+		Graphics,
+		Compute,
+		RayTracing
+	};
 
 	struct SharedPipelineInfo {
 		PipelineCoreData core;
@@ -95,6 +100,7 @@ namespace mythril {
 	class AllocatedRayTracingPipeline {
 	public:
 		[[nodiscard]] std::string_view getDebugName() const { return _shared.debugName; }
+
 	private:
 		RayTracingPipelineSpec _spec;
 		SharedPipelineInfo _shared;
@@ -107,6 +113,7 @@ namespace mythril {
 	class AllocatedGraphicsPipeline {
 	public:
 		[[nodiscard]] std::string_view getDebugName() const { return _shared.debugName; }
+
 	private:
 		GraphicsPipelineSpec _spec;
 		SharedPipelineInfo _shared;
@@ -119,6 +126,7 @@ namespace mythril {
 	class AllocatedComputePipeline {
 	public:
 		[[nodiscard]] std::string_view getDebugName() const { return _shared.debugName; }
+
 	private:
 		ComputePipelineSpec _spec;
 		SharedPipelineInfo _shared;
@@ -126,7 +134,6 @@ namespace mythril {
 
 		friend class CTX;
 		friend class CommandBuffer;
-
 	};
 
-}
+} // namespace mythril

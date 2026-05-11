@@ -3,12 +3,12 @@
 //
 
 #pragma once
-#include <slang/slang.h>
 #include <slang/slang-com-ptr.h>
+#include <slang/slang.h>
 
-#include <vector>
-#include <string>
 #include <filesystem>
+#include <string>
+#include <vector>
 
 namespace mythril {
 
@@ -18,6 +18,7 @@ namespace mythril {
 		slang::ProgramLayout* getSlangProgramLayout() { return _programLayout; }
 
 		explicit operator bool() const { return success; }
+
 	private:
 		Slang::ComPtr<slang::IBlob> _spirvBlob = nullptr;
 		slang::ProgramLayout* _programLayout = nullptr;
@@ -43,6 +44,7 @@ namespace mythril {
 		CompileResult compileSlangFile(const std::filesystem::path& filepath);
 
 		bool sessionExists() const { return _sessionExists; }
+
 	private:
 		void createSessionImpl();
 
@@ -52,4 +54,4 @@ namespace mythril {
 
 		std::vector<std::filesystem::path> _shaderSearchPaths = {};
 	};
-}
+} // namespace mythril

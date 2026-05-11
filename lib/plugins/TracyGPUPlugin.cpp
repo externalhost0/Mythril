@@ -26,7 +26,7 @@ namespace mythril {
 			vkGetPhysicalDeviceCalibrateableTimeDomainsEXT(vk_physical_device, &numTimeDomains, timeDomains.data());
 		}
 		const bool hasHostQuery = ctx.getPhysicalDeviceFeatures12().hostQueryReset && [&timeDomains]() -> bool {
-			for (const VkTimeDomainEXT domain : timeDomains)
+			for (const VkTimeDomainEXT domain: timeDomains)
 				if (domain == VK_TIME_DOMAIN_CLOCK_MONOTONIC_RAW_EXT || domain == VK_TIME_DOMAIN_QUERY_PERFORMANCE_COUNTER_EXT)
 					return true;
 			return false;
@@ -35,17 +35,14 @@ namespace mythril {
 			this->_tracyVkCtx = TracyVkContextHostCalibrated(vk_instance, vk_physical_device, vk_device, vkGetInstanceProcAddr, vkGetDeviceProcAddr);
 		} else {
 			const VkCommandPoolCreateInfo command_pool_ci = {
-				.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
-				.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT | VK_COMMAND_POOL_CREATE_TRANSIENT_BIT,
-				.queueFamilyIndex = ctx._graphicsQueueFamilyIndex
+			    .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+			    .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT | VK_COMMAND_POOL_CREATE_TRANSIENT_BIT,
+			    .queueFamilyIndex = ctx._graphicsQueueFamilyIndex
 			};
 			VK_CHECK(vkCreateCommandPool(vk_device, &command_pool_ci, nullptr, &this->_commandPool));
 			vkutil::SetObjectDebugName(vk_device, VK_OBJECT_TYPE_COMMAND_POOL, reinterpret_cast<uint64_t>(this->_commandPool), "TracyGPU: CommandPool");
 			const VkCommandBufferAllocateInfo command_buffer_ai = {
-				.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-				.commandPool = this->_commandPool,
-				.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-				.commandBufferCount = 1
+			    .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO, .commandPool = this->_commandPool, .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY, .commandBufferCount = 1
 			};
 			VK_CHECK(vkAllocateCommandBuffers(vk_device, &command_buffer_ai, &this->_commandBuffer));
 			vkutil::SetObjectDebugName(vk_device, VK_OBJECT_TYPE_COMMAND_BUFFER, reinterpret_cast<uint64_t>(this->_commandBuffer), "TracyGPU: CommandBuffer");
@@ -64,4 +61,4 @@ namespace mythril {
 			vkDestroyCommandPool(this->_ctx->_vkDevice, this->_commandPool, nullptr);
 		}
 	}
-}
+} // namespace mythril

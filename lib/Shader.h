@@ -4,16 +4,16 @@
 
 #pragma once
 
-#include "faststl/StackVector.h"
 #include "Constants.h"
+#include "faststl/StackVector.h"
 
 #include <optional>
 #include <string>
-#include <vector>
 #include <unordered_map>
+#include <vector>
 
-#include <volk.h>
 #include <slang/slang.h>
+#include <volk.h>
 
 namespace mythril {
 	enum class FieldKind {
@@ -127,6 +127,7 @@ namespace mythril {
 		const std::vector<PushConstantInfo>& viewPushConstants() const { return _pushConstants; }
 		const PipelineLayoutSignature& getPipelineLayoutSignature() const { return _pipelineSignature; }
 		std::string_view getDebugName() const { return _debugName; }
+
 	private:
 		// a shader defines not only the module obviously, but a pipelineLayout
 		VkShaderModule vkShaderModule;
@@ -165,4 +166,4 @@ namespace mythril {
 
 	void PatchSpecConstants(uint32_t*& code, size_t& size);
 	ReflectionResult ReflectSPIRV(const uint32_t* code, size_t size);
-}
+} // namespace mythril

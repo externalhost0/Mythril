@@ -6,8 +6,8 @@
 
 #include "vkutil.h"
 
-#include <volk.h>
 #include <vk_mem_alloc.h>
+#include <volk.h>
 
 #include "CommandBuffer.h"
 #include "Constants.h"
@@ -19,6 +19,7 @@ namespace mythril {
 	public:
 		[[nodiscard]] inline VkSampler getSampler() const { return _vkSampler; }
 		[[nodiscard]] std::string_view getDebugName() const { return _debugName; }
+
 	private:
 		VkSampler _vkSampler = VK_NULL_HANDLE;
 		char _debugName[kMaxDebugNameLength] = {0};
@@ -52,37 +53,39 @@ namespace mythril {
 		[[nodiscard]] VkFormat getFormat() const { return _vkFormat; }
 
 		[[nodiscard]] std::string_view getDebugName() const { return _debugName; }
+
 	private:
 		// general helper functions
 
 		VkExtent2D getExtentAs2D() const { return {_vkExtent.width, _vkExtent.height}; }
 		VkImageView createTextureView(
-			VkDevice vk_device,
-			VkImageViewType type,
-			VkFormat format,
-			uint32_t baseLevel,
-			uint32_t numLevels,
-			uint32_t baseLayer,
-			uint32_t numLayers,
-			VkComponentMapping componentMapping);
+		        VkDevice vk_device, VkImageViewType type, VkFormat format, uint32_t baseLevel, uint32_t numLevels, uint32_t baseLayer, uint32_t numLayers, VkComponentMapping componentMapping
+		);
 
 		void generateMipmap(VkCommandBuffer cmd);
-		void transitionLayout(VkCommandBuffer cmd, VkImageLayout newImageLayout, const VkImageSubresourceRange &subresourceRange);
+		void transitionLayout(VkCommandBuffer cmd, VkImageLayout newImageLayout, const VkImageSubresourceRange& subresourceRange);
 
 		constexpr VkSampleCountFlagBits getVkSampleCountBits() {
 			switch (_sampleCount) {
-				case 1: return VK_SAMPLE_COUNT_1_BIT;
-				case 2: return VK_SAMPLE_COUNT_2_BIT;
-				case 4: return VK_SAMPLE_COUNT_4_BIT;
-				case 8: return VK_SAMPLE_COUNT_8_BIT;
-				case 16: return VK_SAMPLE_COUNT_16_BIT;
-				case 32: return VK_SAMPLE_COUNT_32_BIT;
-				case 64: return VK_SAMPLE_COUNT_64_BIT;
-					default: ASSERT_MSG(false,
-						"Something went horribly wrong! The _sampleCount of texture '{}' is not 2^n where n is in the range of integars 1-6, its '{}'.",
-						getDebugName(), _sampleCount);
+				case 1:
+					return VK_SAMPLE_COUNT_1_BIT;
+				case 2:
+					return VK_SAMPLE_COUNT_2_BIT;
+				case 4:
+					return VK_SAMPLE_COUNT_4_BIT;
+				case 8:
+					return VK_SAMPLE_COUNT_8_BIT;
+				case 16:
+					return VK_SAMPLE_COUNT_16_BIT;
+				case 32:
+					return VK_SAMPLE_COUNT_32_BIT;
+				case 64:
+					return VK_SAMPLE_COUNT_64_BIT;
+				default:
+					ASSERT_MSG(false, "Something went horribly wrong! The _sampleCount of texture '{}' is not 2^n where n is in the range of integars 1-6, its '{}'.", getDebugName(), _sampleCount);
 			}
 		}
+
 	private:
 		VkImage _vkImage = VK_NULL_HANDLE;
 		VkImageView _vkImageView = VK_NULL_HANDLE;
@@ -120,17 +123,18 @@ namespace mythril {
 	class AllocatedBuffer {
 	public:
 		[[nodiscard]] bool isMapped() const { return _mappedPtr != nullptr; }
-		[[nodiscard]] uint8_t* getMappedPtr() const { return static_cast<uint8_t* >(_mappedPtr); }
+		[[nodiscard]] uint8_t* getMappedPtr() const { return static_cast<uint8_t*>(_mappedPtr); }
 		[[nodiscard]] bool isStorageBuffer() const { return (_vkUsageFlags & VK_BUFFER_USAGE_STORAGE_BUFFER_BIT) > 0; }
-		[[nodiscard]] bool isIndirectBuffer() const { return (_vkUsageFlags & VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT) > 0;}
+		[[nodiscard]] bool isIndirectBuffer() const { return (_vkUsageFlags & VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT) > 0; }
 		[[nodiscard]] bool isIndexBuffer() const { return (_vkUsageFlags & VK_BUFFER_USAGE_INDEX_BUFFER_BIT) > 0; }
 
 		[[nodiscard]] std::string_view getDebugName() const { return _debugName; }
+
 	private:
-		void bufferSubData(const CTX &ctx, size_t offset, size_t size, const void *data);
-		void getBufferSubData(const CTX &ctx, size_t offset, size_t size, void *data);
-		void flushMappedMemory(const CTX &ctx, VkDeviceSize offset, VkDeviceSize size) const;
-		void invalidateMappedMemory(const CTX &ctx, VkDeviceSize offset, VkDeviceSize size) const;
+		void bufferSubData(const CTX& ctx, size_t offset, size_t size, const void* data);
+		void getBufferSubData(const CTX& ctx, size_t offset, size_t size, void* data);
+		void flushMappedMemory(const CTX& ctx, VkDeviceSize offset, VkDeviceSize size) const;
+		void invalidateMappedMemory(const CTX& ctx, VkDeviceSize offset, VkDeviceSize size) const;
 
 		VkBuffer _vkBuffer = VK_NULL_HANDLE;
 		VkDeviceMemory _vkMemory = VK_NULL_HANDLE;
@@ -147,7 +151,9 @@ namespace mythril {
 
 		friend class CTX;
 		friend class CommandBuffer;
+		friend class RenderGraph;
+		friend class IntermediateBuilder;
 		friend class StagingDevice;
 		friend class Buffer;
 	};
-}
+} // namespace mythril

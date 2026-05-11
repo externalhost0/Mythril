@@ -3,34 +3,32 @@
 //
 
 #include "GraphicsPipelineBuilder.h"
-#include "vkinfo.h"
-#include "vkenums.h"
 #include "HelperMacros.h"
 #include "Logger.h"
+#include "vkenums.h"
+#include "vkinfo.h"
 #include "vkutil.h"
 
-#include <volk.h>
 #include <algorithm>
 #include <array>
-
+#include <volk.h>
 
 
 namespace mythril {
 	// some helper functions //
 	bool isIntegarFormat(VkFormat format) {
-		return (format == VK_FORMAT_R8_UINT || format == VK_FORMAT_R16_UINT || format == VK_FORMAT_R32_UINT ||
-				format == VK_FORMAT_R8G8_UINT || format == VK_FORMAT_R16G16_UINT || format == VK_FORMAT_R32G32_UINT ||
-				format == VK_FORMAT_R8G8B8_UINT || format == VK_FORMAT_R16G16B16_UINT || format == VK_FORMAT_R32G32B32_UINT ||
-				format == VK_FORMAT_R8G8B8A8_UINT || format == VK_FORMAT_R16G16B16A16_UINT || format == VK_FORMAT_R32G32B32A32_UINT);
+		return (format == VK_FORMAT_R8_UINT || format == VK_FORMAT_R16_UINT || format == VK_FORMAT_R32_UINT || format == VK_FORMAT_R8G8_UINT || format == VK_FORMAT_R16G16_UINT ||
+		        format == VK_FORMAT_R32G32_UINT || format == VK_FORMAT_R8G8B8_UINT || format == VK_FORMAT_R16G16B16_UINT || format == VK_FORMAT_R32G32B32_UINT || format == VK_FORMAT_R8G8B8A8_UINT ||
+		        format == VK_FORMAT_R16G16B16A16_UINT || format == VK_FORMAT_R32G32B32A32_UINT);
 	}
 
 	void GraphicsPipelineBuilder::Clear() {
 		// clear all of the structs we need back to 0 with their correct stype
-		_inputAssembly = { .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO };
-		_rasterizer = { .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO };
-		_multisampling = { .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO };
-		_depthStencil = { .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO };
-		_renderInfo = { .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO };
+		_inputAssembly = {.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
+		_rasterizer = {.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
+		_multisampling = {.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
+		_depthStencil = {.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
+		_renderInfo = {.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO};
 
 		_colorBlendAttachment = {};
 		// vector clears
@@ -40,14 +38,14 @@ namespace mythril {
 	// build() needs to be the last function called on the builder!
 	VkPipeline GraphicsPipelineBuilder::build(VkDevice device, VkPipelineLayout layout) {
 		// the create info for the pipeline we are building
-		VkGraphicsPipelineCreateInfo graphics_pipeline_ci = { .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO, .pNext = nullptr };
+		VkGraphicsPipelineCreateInfo graphics_pipeline_ci = {.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO, .pNext = nullptr};
 
 		// --- shaders --- //
 		graphics_pipeline_ci.stageCount = static_cast<uint32_t>(_shaderStages.size());
 		graphics_pipeline_ci.pStages = _shaderStages.data();
 
 		// ---- colorblending ---- //
-		VkPipelineColorBlendStateCreateInfo colorBlending = { .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO, .pNext = nullptr };
+		VkPipelineColorBlendStateCreateInfo colorBlending = {.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO, .pNext = nullptr};
 		colorBlending.logicOpEnable = VK_FALSE;
 		colorBlending.logicOp = VK_LOGIC_OP_COPY;
 		// copy the set blend mode into our attachments, we than do some conditional modifying
@@ -67,25 +65,25 @@ namespace mythril {
 
 		// ----- dynamic states ----- //
 		std::array<VkDynamicState, 8> states = {
-				VK_DYNAMIC_STATE_VIEWPORT,
-				VK_DYNAMIC_STATE_SCISSOR,
-				VK_DYNAMIC_STATE_DEPTH_TEST_ENABLE,
-				VK_DYNAMIC_STATE_DEPTH_WRITE_ENABLE,
-				VK_DYNAMIC_STATE_DEPTH_COMPARE_OP,
-				VK_DYNAMIC_STATE_DEPTH_BIAS,
-				VK_DYNAMIC_STATE_DEPTH_BIAS_ENABLE,
-				VK_DYNAMIC_STATE_BLEND_CONSTANTS
+		    VK_DYNAMIC_STATE_VIEWPORT,
+		    VK_DYNAMIC_STATE_SCISSOR,
+		    VK_DYNAMIC_STATE_DEPTH_TEST_ENABLE,
+		    VK_DYNAMIC_STATE_DEPTH_WRITE_ENABLE,
+		    VK_DYNAMIC_STATE_DEPTH_COMPARE_OP,
+		    VK_DYNAMIC_STATE_DEPTH_BIAS,
+		    VK_DYNAMIC_STATE_DEPTH_BIAS_ENABLE,
+		    VK_DYNAMIC_STATE_BLEND_CONSTANTS
 		};
 
 		VkPipelineDynamicStateCreateInfo dynamicInfo = vkinfo::CreatePipelineDynamicStateInfo(states.data(), states.size());
 		graphics_pipeline_ci.pDynamicState = &dynamicInfo;
 
 		// ------ vertex input ig doesnt matter because we are using (push constants + device address) ----- //
-		VkPipelineVertexInputStateCreateInfo _vertexInputInfo = { .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO, .pNext = nullptr };
+		VkPipelineVertexInputStateCreateInfo _vertexInputInfo = {.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO, .pNext = nullptr};
 		graphics_pipeline_ci.pVertexInputState = &_vertexInputInfo;
 
 		// ------ viewport state ------ //
-		VkPipelineViewportStateCreateInfo viewportState = { .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO, .pNext = nullptr };
+		VkPipelineViewportStateCreateInfo viewportState = {.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO, .pNext = nullptr};
 		viewportState.viewportCount = 1;
 		viewportState.scissorCount = 1;
 		graphics_pipeline_ci.pViewportState = &viewportState;
@@ -128,11 +126,9 @@ namespace mythril {
 		VkPrimitiveTopology topology = toVulkan(topoMode);
 		_inputAssembly.topology = topology;
 		_inputAssembly.primitiveRestartEnable = VK_TRUE;
-		if (topology == VK_PRIMITIVE_TOPOLOGY_POINT_LIST 				||
-			topology == VK_PRIMITIVE_TOPOLOGY_LINE_LIST 				||
-			topology == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST 			||
-			topology == VK_PRIMITIVE_TOPOLOGY_LINE_LIST_WITH_ADJACENCY  ||
-			topology == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST_WITH_ADJACENCY) _inputAssembly.primitiveRestartEnable = VK_FALSE;
+		if (topology == VK_PRIMITIVE_TOPOLOGY_POINT_LIST || topology == VK_PRIMITIVE_TOPOLOGY_LINE_LIST || topology == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST ||
+		    topology == VK_PRIMITIVE_TOPOLOGY_LINE_LIST_WITH_ADJACENCY || topology == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST_WITH_ADJACENCY)
+			_inputAssembly.primitiveRestartEnable = VK_FALSE;
 
 		return *this;
 	}
@@ -154,7 +150,7 @@ namespace mythril {
 	}
 	// for multiple formats
 	GraphicsPipelineBuilder& GraphicsPipelineBuilder::set_color_formats(std::span<VkFormat> formats) {
-		for (const VkFormat& format : formats) {
+		for (const VkFormat& format: formats) {
 			_colorAttachmentFormats.push_back(format);
 		}
 		_renderInfo.colorAttachmentCount = formats.size();
@@ -268,7 +264,4 @@ namespace mythril {
 		_renderInfo.viewMask = bitmask;
 		return *this;
 	}
-}
-
-
-
+} // namespace mythril

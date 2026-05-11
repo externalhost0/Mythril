@@ -7,7 +7,6 @@
 #include <volk.h>
 
 #include "mythril/CTXBuilder.h"
-#include "mythril/CTXBuilder.h"
 #ifdef MYTH_ENABLED_TRACY_GPU
 #include <tracy/TracyVulkan.hpp>
 #endif
@@ -23,6 +22,7 @@ namespace mythril {
 		void onDestroy();
 		inline bool isEnabled() const { return _isEnabeld; }
 		inline VkFormat getFormat() const { return _requestedFormat; }
+
 	private:
 		CTX* _ctx = nullptr;
 		VkDescriptorPool _descriptorPool = VK_NULL_HANDLE;
@@ -39,6 +39,7 @@ namespace mythril {
 		void onDestroy();
 		bool isEnabled() const { return _isEnabled; }
 		TracyVkCtx getTracyVkCtx() { return _tracyVkCtx; }
+
 	private:
 		CTX* _ctx = nullptr;
 		TracyVkCtx _tracyVkCtx = nullptr;
@@ -47,4 +48,4 @@ namespace mythril {
 		bool _isEnabled = false;
 	};
 #endif
-}
+} // namespace mythril

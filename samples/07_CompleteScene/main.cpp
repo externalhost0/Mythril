@@ -590,7 +590,7 @@ int main() {
 		.with_default_swapchain({
 			.width = initialWindowSize.width,
 			.height = initialWindowSize.height,
-			.presentMode = VK_PRESENT_MODE_FIFO_RELAXED_KHR
+			.presentMode = VK_PRESENT_MODE_FIFO_RELAXED_KHR,
 		})
 		.with_ImGui({
 			.format = kOffscreenFormat,
@@ -822,10 +822,16 @@ int main() {
 
 		constexpr float kMODELSCALE = 0.05f;
 		mythril::RenderGraph graph;
+		graph.trackWindowSized(msaaColorTarget);
+		graph.trackWindowSized(offscreenColorTarget);
+		graph.trackWindowSized(msaaDepthTarget);
+		graph.trackWindowSized(depthTarget);
+		graph.trackWindowSized(finalColorTarget);
 
 		GPU::LightingData lightingData = {};
 		lightingData.directionalLights.color     = {1.0f, 1.0f, 0.97f};
 		lightingData.directionalLights.intensity = 8.0f;
+		GPU::FrameData frameData{};
 
 		float near = 1.f, far = 450.f;
 		float depthBiasConstant = 1.25f, depthBiasSlope = 1.75f;
@@ -849,6 +855,9 @@ int main() {
 			.loadOp = mythril::LoadOp::CLEAR,
 			.storeOp = mythril::StoreOp::STORE
 		})
+		.dependency(opaqueSponzaVertexBuf, mythril::BufferAccess::ShaderRead)
+		.dependency(opaqueSponzaIndexBuf, mythril::BufferAccess::IndexRead)
+		.dependency(opaqueSponzaIndirectBuf, mythril::BufferAccess::IndirectRead)
 		.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdBeginRendering();
 			cmd.cmdBindGraphicsPipeline(shadowPipeline);
@@ -944,16 +953,27 @@ int main() {
 			.debugName = "Point Light Shadow Matrices Buffer"
 		});
 
+		graph.addIntermediate("per_frame_scene_uploads")
+		.update(frameDataHandle, [&] { return mythril::UploadData{&frameData, sizeof(frameData)}; })
+		.upload(pointLightShadowMatrixBuf, [&] {
+			return mythril::UploadData{&shadowMatrices[0][0], sizeof(glm::mat4) * kNumPointLights * 6};
+		})
+		.finish();
+
 		GPU::LightingData lastFramelightingData{};
 		for (int i = 0; i < kNumPointLights; i++) {
 			graph.addGraphicsPass(fmt::format("pointlight_shadow_{}", i).c_str())
-			.attachment({
-				.texDesc = pointLightShadowTex[i],
-				.clearValue = mythril::ClearValue::depth(1.f, 1),
-				.loadOp = mythril::LoadOp::CLEAR,
-				.storeOp = mythril::StoreOp::STORE,
-			})
-			.setExecuteCallback([&, i](mythril::CommandBuffer& cmd) {
+				.attachment({
+					.texDesc = pointLightShadowTex[i],
+					.clearValue = mythril::ClearValue::depth(1.f, 1),
+					.loadOp = mythril::LoadOp::CLEAR,
+					.storeOp = mythril::StoreOp::STORE,
+				})
+				.dependency(pointLightShadowMatrixBuf, mythril::BufferAccess::ShaderRead)
+				.dependency(opaqueSponzaVertexBuf, mythril::BufferAccess::ShaderRead)
+				.dependency(opaqueSponzaIndexBuf, mythril::BufferAccess::IndexRead)
+				.dependency(opaqueSponzaIndirectBuf, mythril::BufferAccess::IndirectRead)
+				.setExecuteCallback([&, i](mythril::CommandBuffer& cmd) {
 				// easy optimization
 				if (lightingData.pointLights[i].position == lastFramelightingData.pointLights[i].position) return;
 
@@ -1014,10 +1034,11 @@ int main() {
 			.clearValue = mythril::ClearValue::depth(0.f, 0),
 			.loadOp = mythril::LoadOp::CLEAR,
 			.storeOp = mythril::StoreOp::STORE,
-		})
-		.dependency(shadowMap, mythril::Layout::READ)
-		.dependency(&pointLightShadowTex[0], kNumPointLights, mythril::Layout::READ)
-		.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
+			})
+			.dependency(shadowMap, mythril::Layout::READ)
+			.dependency(&pointLightShadowTex[0], kNumPointLights, mythril::Layout::READ)
+			.dependency(frameDataHandle, mythril::BufferAccess::ShaderRead)
+			.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdBeginRendering();
 			cmd.cmdBindGraphicsPipeline(opaquePipeline);
 			cmd.cmdBindDepthState({mythril::CompareOp::Greater, true});
@@ -1074,9 +1095,10 @@ int main() {
 			.texDesc = msaaDepthTarget,
 			.loadOp = mythril::LoadOp::LOAD,
 			.storeOp = mythril::StoreOp::STORE,
-		})
-		.dependency(shadowMap, mythril::Layout::READ)
-		.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
+			})
+			.dependency(shadowMap, mythril::Layout::READ)
+			.dependency(frameDataHandle, mythril::BufferAccess::ShaderRead)
+			.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdBeginRendering();
 			cmd.cmdBindGraphicsPipeline(transparentPipeline);
 			cmd.cmdBindDepthState({mythril::CompareOp::Greater, true});
@@ -1161,6 +1183,12 @@ int main() {
 
 		float particle_emission = 0.7f;
 		float particle_speed = 4.f;
+		graph.addIntermediate("per_frame_particle_uploads")
+		.upload(particles_buffer, [&] {
+			return mythril::UploadData{particles.data(), particles.size() * sizeof(ParticleData)};
+		})
+		.finish();
+
 		graph.addGraphicsPass("Ambient Particles")
 		.attachment({
 			.texDesc = msaaColorTarget,
@@ -1174,6 +1202,10 @@ int main() {
 			.storeOp = mythril::StoreOp::DONT_CARE,
 			.resolveTexDesc = depthTarget
 		})
+		.dependency(particles_buffer, mythril::BufferAccess::ShaderRead)
+		.dependency(frameDataHandle, mythril::BufferAccess::ShaderRead)
+		.dependency(particle_vertex_buffer, mythril::BufferAccess::ShaderRead)
+		.dependency(particle_index_buffer, mythril::BufferAccess::IndexRead)
 		.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdBeginRendering();
 			cmd.cmdBindGraphicsPipeline(particle_pipeline);
@@ -1208,6 +1240,9 @@ int main() {
 				.format = kOffscreenFormat,
 				.usage = mythril::TextureUsageBits_Sampled | mythril::TextureUsageBits_Storage,
 				.debugName = namebuf
+			});
+			graph.trackWindowSized(offscreenColorTexs[i], [i](const mythril::Dimensions& dims) {
+				return dims.divide2D(1u << i);
 			});
 			colorbloomdimensions = colorbloomdimensions.divide2D(2);
 		}
@@ -1531,18 +1566,7 @@ int main() {
 					.width = width,
 					.height = height
 				});
-
-				mythril::Dimensions new_2D_dimensions = {width, height, 1};
-				msaaColorTarget.resize(new_2D_dimensions);
-				offscreenColorTarget.resize(new_2D_dimensions);
-				msaaDepthTarget.resize(new_2D_dimensions);
-				depthTarget.resize(new_2D_dimensions);
-				finalColorTarget.resize(new_2D_dimensions);
-
-				for (auto& offscreenTexs : offscreenColorTexs) {
-					offscreenTexs.resize(new_2D_dimensions);
-					new_2D_dimensions = new_2D_dimensions.divide2D(2);
-				}
+				graph.resizeTrackedWindowSized(ctx->getSwapchainDimensions());
 			}
 
 			static float yaw = 0, pitch = 0;
@@ -1752,7 +1776,7 @@ int main() {
 			}
 
 			lightingData.directionalLights.direction = sun_quaternion * glm::vec3(0, 0, -1);
-			const GPU::FrameData frameData {
+			frameData = GPU::FrameData {
 				.camera = cameraData,
 				.lighting = lightingData,
 				.time = elapsedTime,
@@ -1763,12 +1787,9 @@ int main() {
 			UpdateParticles(particles, deltaTime, particle_speed);
 			UpdatePointLightShadowMatrices(frameData.lighting, kMODELSCALE, pointlight_nearplane, pointlight_farplane, shadowMatrices);
 			MYTH_PROFILER_ZONE_END();
-			ctx->upload(particles_buffer.handle(), particles.data(), sizeof(ParticleData) * particles.size(), 0);
-			ctx->upload(pointLightShadowMatrixBuf.handle(), &shadowMatrices[0][0], sizeof(glm::mat4) * kNumPointLights * 6, 0);
 			{
 				MYTH_PROFILER_ZONE_COLOR("Main Graphics Command", MYTH_PROFILER_COLOR_RENDERPASS);
 				mythril::CommandBuffer& cmd = ctx->acquireCommand(mythril::CommandBuffer::Type::Graphics);
-				cmd.cmdUpdateBuffer(frameDataHandle, frameData);
 				graph.execute(cmd);
 				ctx->submitCommand(cmd);
 				MYTH_PROFILER_ZONE_END();

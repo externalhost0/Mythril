@@ -15,6 +15,7 @@ namespace mythril {
 	public:
 		GraphicsPipelineBuilder() { Clear(); };
 		~GraphicsPipelineBuilder() = default;
+
 	public:
 		VkPipelineInputAssemblyStateCreateInfo _inputAssembly = {};
 		VkPipelineRasterizationStateCreateInfo _rasterizer = {};
@@ -26,9 +27,11 @@ namespace mythril {
 		// max of 4 stages per pipeline
 		StackVector<VkPipelineShaderStageCreateInfo, 4> _shaderStages = {};
 		StackVector<VkFormat, 12> _colorAttachmentFormats = {};
+
 	public:
 		VkPipeline build(VkDevice device, VkPipelineLayout layout);
 		void Clear();
+
 	public:
 		// program
 		GraphicsPipelineBuilder& add_shader_module(const VkShaderModule& module, VkShaderStageFlags stageFlags, const char* entryPoint, VkSpecializationInfo* spInfo = nullptr);
@@ -44,6 +47,7 @@ namespace mythril {
 		// formats
 		GraphicsPipelineBuilder& set_color_formats(std::span<VkFormat> formats);
 		GraphicsPipelineBuilder& set_depth_format(VkFormat format);
+
 	private:
 		void _setBlendtoOff();
 		void _setBlendtoAlphaBlend();
@@ -52,4 +56,4 @@ namespace mythril {
 		void _setBlendtoPremultiplied(); // ext
 		void _setBlendtoMask(); // ext
 	};
-}
+} // namespace mythril

@@ -8,24 +8,26 @@
 #include "vkinfo.h"
 
 namespace mythril {
-	ImmediateCommands::ImmediateCommands(VkDevice device, uint32_t queueFamilyIndex) : _vkDevice(device), _queueFamilyIndex(queueFamilyIndex) {
+	ImmediateCommands::ImmediateCommands(VkDevice device, uint32_t queueFamilyIndex) :
+	    _vkDevice(device),
+	    _queueFamilyIndex(queueFamilyIndex) {
 		// just use the family index to get our queue vulkan object
 		vkGetDeviceQueue(device, queueFamilyIndex, 0, &_vkQueue);
 
 		// create command pool
 		const VkCommandPoolCreateInfo command_pool_ci = {
-				.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
-				.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT | VK_COMMAND_POOL_CREATE_TRANSIENT_BIT,
-				.queueFamilyIndex = queueFamilyIndex,
+		    .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+		    .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT | VK_COMMAND_POOL_CREATE_TRANSIENT_BIT,
+		    .queueFamilyIndex = queueFamilyIndex,
 		};
 		VK_CHECK(vkCreateCommandPool(device, &command_pool_ci, nullptr, &_vkCommandPool));
 
 		// create command buffers
 		const VkCommandBufferAllocateInfo command_buffer_ai = {
-				.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-				.commandPool = _vkCommandPool,
-				.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-				.commandBufferCount = 1,
+		    .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+		    .commandPool = _vkCommandPool,
+		    .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+		    .commandBufferCount = 1,
 		};
 
 		for (uint32_t i = 0; i != kMaxCommandBuffers; i++) {
@@ -48,7 +50,7 @@ namespace mythril {
 	}
 	ImmediateCommands::~ImmediateCommands() {
 		waitAll();
-		for (CommandBufferWrapper& buf : _buffers) {
+		for (CommandBufferWrapper& buf: _buffers) {
 			// lifetimes of all VkFence objects are managed explicitly we do not use deferredTask() for them
 			vkDestroyFence(_vkDevice, buf._fence, nullptr);
 			vkDestroySemaphore(_vkDevice, buf._semaphore, nullptr);
@@ -66,7 +68,7 @@ namespace mythril {
 		}
 		CommandBufferWrapper* current = nullptr;
 		// we are ok with any available buffer
-		for (CommandBufferWrapper& buf : _buffers) {
+		for (CommandBufferWrapper& buf: _buffers) {
 			if (buf._cmdBuf == VK_NULL_HANDLE) {
 				current = &buf;
 				break;
@@ -82,9 +84,9 @@ namespace mythril {
 		current->_cmdBuf = current->_cmdBufAllocated;
 		current->_isEncoding = true;
 		const VkCommandBufferBeginInfo bi = {
-			.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-			.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
-	};
+		    .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+		    .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+		};
 		VK_CHECK(vkBeginCommandBuffer(current->_cmdBuf, &bi));
 		_nextSubmitHandle = current->_handle;
 		return *current;
@@ -111,7 +113,7 @@ namespace mythril {
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_WAIT);
 		VkFence fences[kMaxCommandBuffers];
 		uint32_t numFences = 0;
-		for (const CommandBufferWrapper& buf : _buffers) {
+		for (const CommandBufferWrapper& buf: _buffers) {
 			if (buf._cmdBuf != VK_NULL_HANDLE && !buf._isEncoding) {
 				fences[numFences++] = buf._fence;
 			}
@@ -171,7 +173,7 @@ namespace mythril {
 		ASSERT_MSG(wrapper._isEncoding, "Command buffer must be encoding!");
 		VK_CHECK(vkEndCommandBuffer(wrapper._cmdBuf));
 
-		VkSemaphoreSubmitInfo waitSemaphores[] = {{}, {} };
+		VkSemaphoreSubmitInfo waitSemaphores[] = {{}, {}};
 		uint32_t numWaitSemaphores = 0;
 		if (_waitSemaphore.semaphore) {
 			waitSemaphores[numWaitSemaphores++] = _waitSemaphore;
@@ -180,11 +182,8 @@ namespace mythril {
 			waitSemaphores[numWaitSemaphores++] = _lastSubmitSemaphore;
 		}
 		VkSemaphoreSubmitInfo signalSemaphores[] = {
-				VkSemaphoreSubmitInfo{
-						.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
-						.semaphore = wrapper._semaphore,
-						.stageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT},
-				{},
+		    VkSemaphoreSubmitInfo{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO, .semaphore = wrapper._semaphore, .stageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT},
+		    {},
 		};
 		uint32_t numSignalSemaphores = 1;
 		if (_signalSemaphore.semaphore) {
@@ -192,17 +191,17 @@ namespace mythril {
 		}
 
 		const VkCommandBufferSubmitInfo command_buffer_si = {
-				.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
-				.commandBuffer = wrapper._cmdBuf,
+		    .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
+		    .commandBuffer = wrapper._cmdBuf,
 		};
 		const VkSubmitInfo2 si = {
-				.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
-				.waitSemaphoreInfoCount = numWaitSemaphores,
-				.pWaitSemaphoreInfos = waitSemaphores,
-				.commandBufferInfoCount = 1u,
-				.pCommandBufferInfos = &command_buffer_si,
-				.signalSemaphoreInfoCount = numSignalSemaphores,
-				.pSignalSemaphoreInfos = signalSemaphores,
+		    .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
+		    .waitSemaphoreInfoCount = numWaitSemaphores,
+		    .pWaitSemaphoreInfos = waitSemaphores,
+		    .commandBufferInfoCount = 1u,
+		    .pCommandBufferInfos = &command_buffer_si,
+		    .signalSemaphoreInfoCount = numSignalSemaphores,
+		    .pSignalSemaphoreInfos = signalSemaphores,
 		};
 		VK_CHECK(vkQueueSubmit2(_vkQueue, 1u, &si, wrapper._fence));
 
@@ -236,4 +235,4 @@ namespace mythril {
 		}
 		return _buffers[handle.bufferIndex_]._fence;
 	}
-}
+} // namespace mythril

@@ -7,7 +7,8 @@
 
 namespace mythril {
 
-	ShaderStage::ShaderStage(const Shader& shader) : handle(shader.handle()) {}
+	ShaderStage::ShaderStage(const Shader& shader) :
+	    handle(shader.handle()) {}
 
 	// individual function implementations
 	VkDeviceAddress Buffer::gpuAddress(size_t offset) {
@@ -29,7 +30,7 @@ namespace mythril {
 	Texture& Texture::operator=(Texture&& other) noexcept {
 		if (this != &other) {
 			if (_pCtx) {
-				for (const auto& view : _additionalViews) {
+				for (const auto& view: _additionalViews) {
 					_pCtx->destroy(view.second);
 				}
 			}
@@ -41,9 +42,9 @@ namespace mythril {
 	}
 
 	uint32_t Texture::index(ViewKey key) const {
-        auto it = _additionalViews.find(key);
-        ASSERT_MSG(it != _additionalViews.end(), "ViewKey not found in additional views!");
-        return it->second.index();
+		auto it = _additionalViews.find(key);
+		ASSERT_MSG(it != _additionalViews.end(), "ViewKey not found in additional views!");
+		return it->second.index();
 	}
 	TextureHandle Texture::handle(ViewKey key) const {
 		auto it = _additionalViews.find(key);
@@ -55,7 +56,7 @@ namespace mythril {
 		// CTX::resizeTexture replaces the underlying VkImage/default view, but cached
 		// subresource views in _additionalViews still point at the old image. drop them so
 		// ResolveImageView() recreates fresh views against the new image on next compile.
-		for (const auto& view : _additionalViews) {
+		for (const auto& view: _additionalViews) {
 			_pCtx->destroy(view.second);
 		}
 		_additionalViews.clear();
@@ -83,44 +84,33 @@ namespace mythril {
 		}
 
 		char data[kMaxDebugNameLength];
-		snprintf(data, sizeof(data), "%s - View (Mip: %d, NumMips: %d, Layer: %d, NumLayers: %d)",
-			texture.getDebugName().data(),
-			baseMip,
-			numMips,
-			baseLayer,
-			numLayers);
-		const TextureHandle newView = _pCtx->createTextureViewImpl(_handle, {
-			.type = viewType,
-			.mipLevel = baseMip,
-			.numMipLevels = numMips,
-			.layer = baseLayer,
-			.numLayers = numLayers,
-			.debugName = data
-		});
+		snprintf(data, sizeof(data), "%s - View (Mip: %d, NumMips: %d, Layer: %d, NumLayers: %d)", texture.getDebugName().data(), baseMip, numMips, baseLayer, numLayers);
+		const TextureHandle newView =
+		        _pCtx->createTextureViewImpl(_handle, {.type = viewType, .mipLevel = baseMip, .numMipLevels = numMips, .layer = baseLayer, .numLayers = numLayers, .debugName = data});
 		_additionalViews.emplace(key, newView);
 		return key;
 	}
 
 	// ObjectHolder implementations that needed the defined CTX
 
-    template<typename InternalHandle>
-    ObjectHolder<InternalHandle>::~ObjectHolder() {
-        if (_pCtx) {
-            _pCtx->destroy(_handle);
-        }
-    }
+	template<typename InternalHandle>
+	ObjectHolder<InternalHandle>::~ObjectHolder() {
+		if (_pCtx) {
+			_pCtx->destroy(_handle);
+		}
+	}
 	template<typename InternalHandle>
 	void ObjectHolder<InternalHandle>::reset() {
 		ASSERT(_pCtx);
-    	_pCtx->destroy(_handle);
-    	_pCtx = nullptr;
-    	_handle = InternalHandle{};
-    }
+		_pCtx->destroy(_handle);
+		_pCtx = nullptr;
+		_handle = InternalHandle{};
+	}
 
 	template<typename InternalHandle>
 	auto ObjectHolder<InternalHandle>::operator->() -> AllocatedType* {
-    	return &_pCtx->access(_handle);
-    }
+		return &_pCtx->access(_handle);
+	}
 	template<typename InternalHandle>
 	auto ObjectHolder<InternalHandle>::operator->() const -> const AllocatedType* {
 		return &_pCtx->view(_handle);
@@ -135,7 +125,6 @@ namespace mythril {
 	}
 
 
-
 	// define all types of holders so that the definitions can be pre generated
 	template class ObjectHolder<TextureHandle>;
 	template class ObjectHolder<BufferHandle>;
@@ -143,4 +132,4 @@ namespace mythril {
 	template class ObjectHolder<ShaderHandle>;
 	template class ObjectHolder<GraphicsPipelineHandle>;
 	template class ObjectHolder<ComputePipelineHandle>;
-}
+} // namespace mythril

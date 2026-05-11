@@ -12,8 +12,7 @@ namespace mythril {
 	class CTX;
 	class AllocatedTexture;
 
-	struct SwapchainSpec
-	{
+	struct SwapchainSpec {
 		uint32_t width = 0;
 		uint32_t height = 0;
 		VkFormat format = VK_FORMAT_MAX_ENUM;
@@ -30,9 +29,11 @@ namespace mythril {
 	public:
 		explicit Swapchain(CTX& ctx, SwapchainSpec args);
 		~Swapchain();
+
 	public: // actually used in the loop
 		VkSemaphore acquire();
 		void present(VkSemaphore waitSemaphore);
+
 	public:
 		uint32_t getNumOfSwapchainImages() const { return _numSwapchainImages; }
 		bool isDirty() const { return _isDirty; }
@@ -41,6 +42,7 @@ namespace mythril {
 		const TextureHandle& getCurrentSwapchainTextureHandle() const { return _swapchainTextures[_imageIndex]; }
 		const TextureHandle& getSwapchainTextureHandle(uint32_t index) const { return _swapchainTextures[index]; }
 		VkExtent2D getSwapchainExtent() const { return _vkExtent2D; }
+
 	private:
 		VkSwapchainKHR _vkSwapchain = VK_NULL_HANDLE;
 		VkExtent2D _vkExtent2D = {};
@@ -69,4 +71,4 @@ namespace mythril {
 		friend class CTX;
 		friend class CommandBuffer;
 	};
-}
+} // namespace mythril

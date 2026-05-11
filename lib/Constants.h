@@ -5,6 +5,6 @@
 #pragma once
 
 namespace mythril {
-    static constexpr int kMaxDebugNameLength = 128;
+	static constexpr int kMaxDebugNameLength = 128;
 
 }

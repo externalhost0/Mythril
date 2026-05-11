@@ -4,13 +4,13 @@
 
 #pragma once
 
-#include <cstddef>
 #include <array>
-#include <string>
+#include <cstddef>
 #include <stdexcept>
+#include <string>
 
 namespace mythril {
-	static constexpr size_t CalculateLength(const char *s) {
+	static constexpr size_t CalculateLength(const char* s) {
 		size_t len = 0;
 		while (s[len] != '\0') {
 			++len;
@@ -18,7 +18,7 @@ namespace mythril {
 		return len;
 	}
 
-	static constexpr void constexpr_memcpy(char *dest, const char *src, size_t n) {
+	static constexpr void constexpr_memcpy(char* dest, const char* src, size_t n) {
 		for (size_t i = 0; i < n; ++i) {
 			dest[i] = src[i];
 		}
@@ -31,9 +31,7 @@ namespace mythril {
 		// constructors
 		constexpr StackString() noexcept = default;
 
-		constexpr StackString(const char *s) {
-			assign(s);
-		}
+		constexpr StackString(const char* s) { assign(s); }
 
 		template<size_t N>
 		constexpr StackString(const char (&str)[N]) {
@@ -44,19 +42,15 @@ namespace mythril {
 			_length = N - 1;
 		}
 
-		constexpr StackString(const char *s, size_t len) {
-			assign(s, len);
-		}
+		constexpr StackString(const char* s, size_t len) { assign(s, len); }
 
-		explicit StackString(const std::string &str) {
-			assign(str);
-		}
+		explicit StackString(const std::string& str) { assign(str); }
 
 		constexpr ~StackString() = default;
 
 		// move and copy
-		constexpr StackString(StackString&& other) noexcept
-		: _length(other._length) {
+		constexpr StackString(StackString&& other) noexcept :
+		    _length(other._length) {
 			constexpr_memcpy(_data, other._data, _length + 1);
 			other.clear();
 		}
@@ -71,7 +65,7 @@ namespace mythril {
 
 		// basic functions
 
-		constexpr StackString &assign(const char *s) {
+		constexpr StackString& assign(const char* s) {
 			const size_t len = CalculateLength(s);
 			if (len > MaxLength)
 				throw std::overflow_error("StackString::assign has exceeded its maxlength");
@@ -81,7 +75,7 @@ namespace mythril {
 			return *this;
 		}
 
-		constexpr StackString &assign(const char *s, size_t len) {
+		constexpr StackString& assign(const char* s, size_t len) {
 			if (len > MaxLength)
 				throw std::overflow_error("StackString::assign has exceeded its maxlength");
 			constexpr_memcpy(_data, s, len);
@@ -90,7 +84,7 @@ namespace mythril {
 			return *this;
 		}
 
-		StackString &assign(const std::string &str) {
+		StackString& assign(const std::string& str) {
 			const size_t len = str.size();
 			if (len > MaxLength)
 				throw std::overflow_error("StackString::assign has exceeded its maxlength");
@@ -100,7 +94,7 @@ namespace mythril {
 			return *this;
 		}
 
-		constexpr StackString &append(const char *s) {
+		constexpr StackString& append(const char* s) {
 			const size_t len = CalculateLength(s);
 			if (_length + len > MaxLength)
 				throw std::overflow_error("StackString::append has exceeded its maxlength");
@@ -110,7 +104,7 @@ namespace mythril {
 			return *this;
 		}
 
-		constexpr StackString &append(const char *s, const size_t size) {
+		constexpr StackString& append(const char* s, const size_t size) {
 			if (_length + size > MaxLength)
 				throw std::overflow_error("StackString::append has exceeded its MaxLength");
 			constexpr_memcpy(_data + _length, s, size);
@@ -119,7 +113,7 @@ namespace mythril {
 			return *this;
 		}
 
-		StackString &append(const std::string &str) {
+		StackString& append(const std::string& str) {
 			const size_t len = str.size();
 			if (_length + len > MaxLength)
 				throw std::overflow_error("StackString::append has exceeded its MaxLength");
@@ -143,17 +137,19 @@ namespace mythril {
 			return result;
 		}
 		// addition assignment
-		constexpr void operator+=(const char *s) { append(s); }
+		constexpr void operator+=(const char* s) { append(s); }
 		template<size_t N>
-		constexpr void operator+=(const char (&s)[N]) { append(s); }
-		void operator+=(const std::string &s) { append(s); }
+		constexpr void operator+=(const char (&s)[N]) {
+			append(s);
+		}
+		void operator+=(const std::string& s) { append(s); }
 
 		// indice retrieval
-		constexpr char &operator[](size_t index) noexcept {
+		constexpr char& operator[](size_t index) noexcept {
 			static_assert(index < MaxLength, "Index is beyond MaxLength");
 			return _data[index];
 		}
-		constexpr const char &operator[](size_t index) const noexcept {
+		constexpr const char& operator[](size_t index) const noexcept {
 			static_assert(index < MaxLength, "Index is beyond MaxLength");
 			return _data[index];
 		}
@@ -171,42 +167,43 @@ namespace mythril {
 		}
 
 		template<size_t OtherMax>
-		constexpr bool operator==(const StackString<OtherMax> &other) const noexcept {
-			if (_length != other._length) return false;
+		constexpr bool operator==(const StackString<OtherMax>& other) const noexcept {
+			if (_length != other._length)
+				return false;
 			for (size_t i = 0; i < _length; ++i) {
-				if (_data[i] != other._data[i]) return false;
+				if (_data[i] != other._data[i])
+					return false;
 			}
 			return true;
 		}
 		template<size_t OtherMax>
-		constexpr bool operator!=(const StackString<OtherMax> &other) const noexcept {
+		constexpr bool operator!=(const StackString<OtherMax>& other) const noexcept {
 			return !(*this == other);
 		}
-		constexpr bool operator==(const char *s) const noexcept {
+		constexpr bool operator==(const char* s) const noexcept {
 			size_t i = 0;
 			while (i < _length && s[i] != '\0') {
-				if (_data[i] != s[i]) return false;
+				if (_data[i] != s[i])
+					return false;
 				++i;
 			}
 			return i == _length && s[i] == '\0';
 		}
-		constexpr bool operator!=(const char *s) const noexcept {
-			return !(*this == s);
-		}
-		bool operator==(const std::string &str) const noexcept {
-			if (_length != str.size()) return false;
+		constexpr bool operator!=(const char* s) const noexcept { return !(*this == s); }
+		bool operator==(const std::string& str) const noexcept {
+			if (_length != str.size())
+				return false;
 			for (size_t i = 0; i < _length; ++i) {
-				if (_data[i] != str[i]) return false;
+				if (_data[i] != str[i])
+					return false;
 			}
 			return true;
 		}
-		bool operator!=(const std::string &str) const noexcept {
-			return !(*this == str);
-		}
+		bool operator!=(const std::string& str) const noexcept { return !(*this == str); }
 
 		// helpers
-		constexpr size_t max_length() const noexcept { return MaxLength-1; }
-		constexpr size_t available() const noexcept { return MaxLength-_length; }
+		constexpr size_t max_length() const noexcept { return MaxLength - 1; }
+		constexpr size_t available() const noexcept { return MaxLength - _length; }
 		// includes null terminator
 		constexpr size_t size() const noexcept { return _length + 1; }
 		// is the actual # of characters
@@ -220,10 +217,10 @@ namespace mythril {
 
 		// retrieval
 		// const and non const overrides
-		constexpr char *data() noexcept { return _data; }
-		constexpr char *c_str() noexcept { return data(); }
-		constexpr const char *data() const noexcept { return _data; }
-		constexpr const char *c_str() const noexcept { return data(); }
+		constexpr char* data() noexcept { return _data; }
+		constexpr char* c_str() noexcept { return data(); }
+		constexpr const char* data() const noexcept { return _data; }
+		constexpr const char* c_str() const noexcept { return data(); }
 
 		// for iterators
 		constexpr char* begin() noexcept { return _data; }
@@ -235,7 +232,7 @@ namespace mythril {
 
 	private:
 		// add one for null terminator
-		char _data[MaxLength+1] = {};
+		char _data[MaxLength + 1] = {};
 		size_t _length = 0;
 	};
 
@@ -257,4 +254,4 @@ namespace mythril {
 	bool operator!=(const std::string& lhs, const StackString<MaxLength>& rhs) noexcept {
 		return rhs != lhs;
 	}
-}
+} // namespace mythril

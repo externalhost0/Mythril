@@ -4,11 +4,11 @@
 
 
 #include "CommandBuffer.h"
-#include "vkinfo.h"
 #include "CTX.h"
-#include "vkutil.h"
 #include "Logger.h"
 #include "Pipelines.h"
+#include "vkinfo.h"
+#include "vkutil.h"
 
 #include <volk.h>
 
@@ -70,16 +70,22 @@ PassSourceTypeToString(goalType));
 namespace mythril {
 	static const char* PassSourceTypeToString(PassDesc::Type type) {
 		switch (type) {
-			case PassDesc::Type::Graphics: return "Graphics";
-			case PassDesc::Type::Compute: return "Compute";
-			case PassDesc::Type::Intermediate: return "Transfer";
-			default: assert(false);
+			case PassDesc::Type::Graphics:
+				return "Graphics";
+			case PassDesc::Type::Compute:
+				return "Compute";
+			case PassDesc::Type::Intermediate:
+				return "Transfer";
+			default:
+				assert(false);
 		}
 	}
 
 	PassDesc::Type CommandBuffer::getCurrentPassType() {
-		if (std::holds_alternative<GraphicsPipelineHandle>(_currentPipelineHandle)) return PassDesc::Type::Graphics;
-		if (std::holds_alternative<ComputePipelineHandle>(_currentPipelineHandle)) return PassDesc::Type::Compute;
+		if (std::holds_alternative<GraphicsPipelineHandle>(_currentPipelineHandle))
+			return PassDesc::Type::Graphics;
+		if (std::holds_alternative<ComputePipelineHandle>(_currentPipelineHandle))
+			return PassDesc::Type::Compute;
 		assert(false);
 	}
 
@@ -89,7 +95,7 @@ namespace mythril {
 		static constexpr unsigned int kMaxWarns = 5;
 
 		bool matches = false;
-		for (const VkPushConstantRange& push : common.signature.pushes) {
+		for (const VkPushConstantRange& push: common.signature.pushes) {
 			if (push.size == cpuSize) {
 				matches = true;
 				break;
@@ -99,16 +105,19 @@ namespace mythril {
 			if (count < kMaxWarns) {
 				std::ostringstream ss;
 				bool first = true;
-				for (const VkPushConstantRange& push : common.signature.pushes) {
-					if (!first) ss << ", ";
+				for (const VkPushConstantRange& push: common.signature.pushes) {
+					if (!first)
+						ss << ", ";
 					first = false;
 					ss << push.size;
 				}
-				LOG_SYSTEM(LogType::Warning,
-					"Push constant CPU size is different than GPU size in pipeline '{}'! Your CPU structure has a size of '{}' while the shader's push constant has sizes '[{}]' respectively.",
-					pipelineName,
-					cpuSize,
-					ss.str());
+				LOG_SYSTEM(
+				        LogType::Warning,
+				        "Push constant CPU size is different than GPU size in pipeline '{}'! Your CPU structure has a size of '{}' while the shader's push constant has sizes '[{}]' respectively.",
+				        pipelineName,
+				        cpuSize,
+				        ss.str()
+				);
 			} else if (count == kMaxWarns) {
 				LOG_SYSTEM(LogType::Warning, "Push constant size mismatch for pipeline '{}' has triggered this warning >{} times and will now be silenced.", pipelineName, kMaxWarns);
 			}
@@ -119,15 +128,13 @@ namespace mythril {
 	constexpr uint16_t kMaxColorAttachments = 16;
 	// enforce that a valid CommandBuffer can only be created via this constructor
 	CommandBuffer::CommandBuffer(CTX* ctx, CommandBuffer::Type type) :
-	_ctx(ctx),
-	_wrapper(&ctx->_imm->acquire()),
-	_activePass(),
-	_cmdType(type),
-	_isDryRun(false) {}
+	    _ctx(ctx),
+	    _wrapper(&ctx->_imm->acquire()),
+	    _activePass(),
+	    _cmdType(type),
+	    _isDryRun(false) {}
 
-	CommandBuffer::~CommandBuffer() {
-		ASSERT_MSG(!_isRendering, "Please call to end rendering before destroying a Command Buffer!");
-	}
+	CommandBuffer::~CommandBuffer() { ASSERT_MSG(!_isRendering, "Please call to end rendering before destroying a Command Buffer!"); }
 	VkCommandBufferSubmitInfo CommandBuffer::requestSubmitInfo() const {
 		VkCommandBufferSubmitInfo info = {};
 		info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
@@ -182,7 +189,7 @@ namespace mythril {
 		vkCmdDrawIndexed(_wrapper->_cmdBuf, indexCount, instanceCount, firstIndex, vertexOffset, baseInstance);
 	}
 
-	void CommandBuffer::cmdDrawIndirect(const Buffer &indirectBuffer, VkDeviceSize offset, uint32_t drawCount, uint32_t stride) {
+	void CommandBuffer::cmdDrawIndirect(const Buffer& indirectBuffer, VkDeviceSize offset, uint32_t drawCount, uint32_t stride) {
 		DRY_RETURN();
 		CHECK_SHOULD_BE_RENDERING();
 		CHECK_PASS_OPERATION_MISMATCH(PassDesc::Type::Graphics);
@@ -270,18 +277,16 @@ namespace mythril {
 		if (_isRendering) {
 			VkImageView source_vkImageView = source._vkImageView;
 			VkImageView dest_vkImageView = destination._vkImageView;
-			for (const auto& color_attachment : this->_activePass.colorAttachments) {
+			for (const auto& color_attachment: this->_activePass.colorAttachments) {
 				ASSERT_MSG(
-						color_attachment.imageView != source_vkImageView &&
-						color_attachment.imageView != dest_vkImageView,
-						"You cannot {} an image currently being used by a RenderPass!", operation);
+				        color_attachment.imageView != source_vkImageView && color_attachment.imageView != dest_vkImageView, "You cannot {} an image currently being used by a RenderPass!", operation
+				);
 			}
 			if (this->_activePass.depthAttachment.has_value()) {
 				const auto& depth_attachment = this->_activePass.depthAttachment.value();
 				ASSERT_MSG(
-						depth_attachment.imageView != source_vkImageView &&
-						depth_attachment.imageView != dest_vkImageView,
-						"You cannot {} an image currently being used by a RenderPass!", operation);
+				        depth_attachment.imageView != source_vkImageView && depth_attachment.imageView != dest_vkImageView, "You cannot {} an image currently being used by a RenderPass!", operation
+				);
 			}
 		}
 	}
@@ -289,11 +294,23 @@ namespace mythril {
 		auto& sourceObject = _ctx->view(sourceHandle);
 		auto& destinationObject = _ctx->view(destinationHandle);
 		if (sourceObject.getImageLayout() != VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) {
-			LOG_SYSTEM(LogType::Info, "Automatically resolved texture ({}) to be in correct layout (VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) before {}. Was in ({})", sourceObject._debugName, operation, vkstring::VulkanImageLayoutToString(sourceObject.getImageLayout()));
+			LOG_SYSTEM(
+			        LogType::Info,
+			        "Automatically resolved texture ({}) to be in correct layout (VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) before {}. Was in ({})",
+			        sourceObject._debugName,
+			        operation,
+			        vkstring::VulkanImageLayoutToString(sourceObject.getImageLayout())
+			);
 			this->cmdTransitionLayout(sourceHandle, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
 		}
 		if (destinationObject.getImageLayout() != VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
-			LOG_SYSTEM(LogType::Info, "Automatically resolved texture ({}) to be in correct layout (VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) before {}. Was in ({})", destinationObject._debugName, operation, vkstring::VulkanImageLayoutToString(destinationObject.getImageLayout()));
+			LOG_SYSTEM(
+			        LogType::Info,
+			        "Automatically resolved texture ({}) to be in correct layout (VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) before {}. Was in ({})",
+			        destinationObject._debugName,
+			        operation,
+			        vkstring::VulkanImageLayoutToString(destinationObject.getImageLayout())
+			);
 			this->cmdTransitionLayout(destinationHandle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 		}
 	}
@@ -303,8 +320,8 @@ namespace mythril {
 		ASSERT_MSG(source.valid() && destination.valid(), "Textures must be valid handles!");
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_COMMAND);
 
-		auto &sourceTex = _ctx->view(source);
-		auto &destinationTex = _ctx->view(destination);
+		auto& sourceTex = _ctx->view(source);
+		auto& destinationTex = _ctx->view(destination);
 #ifdef DEBUG
 		// check if textures are being rendered to
 		CheckTextureRenderingUsage(sourceTex, destinationTex, "blit");
@@ -323,8 +340,8 @@ namespace mythril {
 		ASSERT_MSG(source.valid() && destination.valid(), "Textures must be valid handles!");
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_COMMAND);
 
-		auto &sourceTex = _ctx->view(source);
-		auto &destinationTex = _ctx->view(destination);
+		auto& sourceTex = _ctx->view(source);
+		auto& destinationTex = _ctx->view(destination);
 #ifdef DEBUG
 		CheckTextureRenderingUsage(sourceTex, destinationTex, "copy");
 #endif
@@ -357,8 +374,8 @@ namespace mythril {
 		ASSERT_MSG(source.valid() && destination.valid(), "Textures must be valid handles!");
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_COMMAND);
 
-		auto &sourceTex = _ctx->view(source);
-		auto &destinationTex = _ctx->view(destination);
+		auto& sourceTex = _ctx->view(source);
+		auto& destinationTex = _ctx->view(destination);
 #ifdef DEBUG
 		CheckTextureRenderingUsage(sourceTex, destinationTex, "copy");
 #endif
@@ -385,9 +402,12 @@ namespace mythril {
 		const PassDesc::Type type = getCurrentPassType();
 		const VkShaderStageFlags stages = [](const PassDesc::Type passType) -> VkShaderStageFlags {
 			switch (passType) {
-				case PassDesc::Type::Graphics: return VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-				case PassDesc::Type::Compute: return VK_SHADER_STAGE_COMPUTE_BIT;
-				default: assert(false);
+				case PassDesc::Type::Graphics:
+					return VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+				case PassDesc::Type::Compute:
+					return VK_SHADER_STAGE_COMPUTE_BIT;
+				default:
+					assert(false);
 			}
 		}(type);
 #ifdef DEBUG
@@ -405,15 +425,11 @@ namespace mythril {
 			MYTH_PROFILER_GPU_ZONE("cmdBindPipeline()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
 			vkCmdBindPipeline(_wrapper->_cmdBuf, bindPoint, common->_vkPipeline);
 		}
-		if (common->_vkBindlessDescriptorSet == VK_NULL_HANDLE) return;
+		if (common->_vkBindlessDescriptorSet == VK_NULL_HANDLE)
+			return;
 		{
 			MYTH_PROFILER_GPU_ZONE("cmdBindDescriptorSets()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
-			vkCmdBindDescriptorSets(_wrapper->_cmdBuf, bindPoint, common->_vkPipelineLayout,
-			                        0,
-			                        1,
-			                        &common->_vkBindlessDescriptorSet,
-			                        0,
-			                        nullptr);
+			vkCmdBindDescriptorSets(_wrapper->_cmdBuf, bindPoint, common->_vkPipelineLayout, 0, 1, &common->_vkBindlessDescriptorSet, 0, nullptr);
 		}
 	}
 
@@ -482,12 +498,8 @@ namespace mythril {
 		ASSERT_MSG(offset % 4 == 0, "cmdUpdateBuffer offset must be a multiple of 4 bytes.");
 		AllocatedBuffer* buf = _ctx->_bufferPool.get(handle);
 		ASSERT_MSG(buf, "cmdUpdateBuffer: handle does not resolve to a live buffer.");
-		ASSERT_MSG(offset + size <= buf->_bufferSize,
-		           "cmdUpdateBuffer: offset + size exceeds buffer '{}' size ({} > {}).",
-		           buf->_debugName, offset + size, buf->_bufferSize);
-		ASSERT_MSG(buf->_vkUsageFlags & VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-		           "cmdUpdateBuffer: buffer '{}' was not created with TRANSFER_DST usage.",
-		           buf->_debugName);
+		ASSERT_MSG(offset + size <= buf->_bufferSize, "cmdUpdateBuffer: offset + size exceeds buffer '{}' size ({} > {}).", buf->_debugName, offset + size, buf->_bufferSize);
+		ASSERT_MSG(buf->_vkUsageFlags & VK_BUFFER_USAGE_TRANSFER_DST_BIT, "cmdUpdateBuffer: buffer '{}' was not created with TRANSFER_DST usage.", buf->_debugName);
 		if (!data) {
 			LOG_SYSTEM(LogType::Warning, "You are updating buffer '{}' with empty data.", buf->_debugName);
 			return;
@@ -571,9 +583,12 @@ namespace mythril {
 		CHECK_SHOULD_BE_RENDERING();
 		CHECK_PASS_OPERATION_MISMATCH(PassDesc::Type::Graphics);
 #ifdef DEBUG
-		for (const auto& color_attachment : this->_activePass.colorAttachments) {
+		for (const auto& color_attachment: this->_activePass.colorAttachments) {
 			ASSERT_MSG(color_attachment.resolveImageView == VK_NULL_HANDLE, "Rendering of ImGui cannot be done inside a multisampled texture!");
-			ASSERT_MSG(color_attachment.imageFormat == this->_ctx->_imguiPlugin.getFormat(), "ImGui is drawing to a format that it was not given! Please pass the VkFormat of the texture which ImGui is drawing to when calling 'withImGuiPlugin()'!");
+			ASSERT_MSG(
+			        color_attachment.imageFormat == this->_ctx->_imguiPlugin.getFormat(),
+			        "ImGui is drawing to a format that it was not given! Please pass the VkFormat of the texture which ImGui is drawing to when calling 'withImGuiPlugin()'!"
+			);
 		}
 #endif
 		ImGui::Render();
@@ -581,14 +596,14 @@ namespace mythril {
 	}
 #endif
 
-// ALL INTERNALLY CALLED COMMAND BUFFER FUNCTIONS
+	// ALL INTERNALLY CALLED COMMAND BUFFER FUNCTIONS
 	void CommandBuffer::cmdBeginRenderingImpl(uint32_t layerCount, uint32_t viewMask) {
 		ASSERT_MSG(!_isRendering, "Command Buffer is already rendering!");
 		const bool hasDepth = _activePass.depthAttachment.has_value();
 		const VkRect2D renderArea = _activePass.renderArea;
 		std::vector<VkRenderingAttachmentInfo> vk_color_attachment_infos{};
 		vk_color_attachment_infos.reserve(_activePass.colorAttachments.size());
-		for (const auto& attachment_info : _activePass.colorAttachments) {
+		for (const auto& attachment_info: _activePass.colorAttachments) {
 			vk_color_attachment_infos.push_back(attachment_info.getAsVkRenderingAttachmentInfo());
 		}
 		VkRenderingAttachmentInfo vk_depth_attachment_info{};
@@ -596,16 +611,16 @@ namespace mythril {
 			vk_depth_attachment_info = _activePass.depthAttachment->getAsVkRenderingAttachmentInfo();
 		}
 		const VkRenderingInfo info = {
-			.sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
-			.pNext = nullptr,
-			.flags = 0,
-			.renderArea = renderArea,
-			.layerCount = layerCount,
-			.viewMask = viewMask,
-			.colorAttachmentCount = static_cast<uint32_t>(_activePass.colorAttachments.size()),
-			.pColorAttachments = vk_color_attachment_infos.data(),
-			.pDepthAttachment = hasDepth ? &vk_depth_attachment_info : nullptr,
-			.pStencilAttachment = nullptr
+		    .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
+		    .pNext = nullptr,
+		    .flags = 0,
+		    .renderArea = renderArea,
+		    .layerCount = layerCount,
+		    .viewMask = viewMask,
+		    .colorAttachmentCount = static_cast<uint32_t>(_activePass.colorAttachments.size()),
+		    .pColorAttachments = vk_color_attachment_infos.data(),
+		    .pDepthAttachment = hasDepth ? &vk_depth_attachment_info : nullptr,
+		    .pStencilAttachment = nullptr
 		};
 		cmdSetViewportImpl(renderArea.extent);
 		cmdSetScissorImpl(renderArea.extent);
@@ -630,16 +645,16 @@ namespace mythril {
 		auto& buf = _ctx->view(bufhandle);
 
 		VkBufferMemoryBarrier2 barrier = {
-				.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
-				.srcStageMask = srcStage,
-				.srcAccessMask = 0,
-				.dstStageMask = dstStage,
-				.dstAccessMask = 0,
-				.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-				.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-				.buffer = buf._vkBuffer,
-				.offset = 0,
-				.size = VK_WHOLE_SIZE,
+		    .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
+		    .srcStageMask = srcStage,
+		    .srcAccessMask = 0,
+		    .dstStageMask = dstStage,
+		    .dstAccessMask = 0,
+		    .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+		    .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+		    .buffer = buf._vkBuffer,
+		    .offset = 0,
+		    .size = VK_WHOLE_SIZE,
 		};
 		if (srcStage & VK_PIPELINE_STAGE_2_TRANSFER_BIT) {
 			barrier.srcAccessMask |= VK_ACCESS_2_TRANSFER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT;
@@ -658,9 +673,9 @@ namespace mythril {
 			barrier.dstAccessMask |= VK_ACCESS_2_INDEX_READ_BIT;
 		}
 		const VkDependencyInfo depInfo = {
-				.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-				.bufferMemoryBarrierCount = 1,
-				.pBufferMemoryBarriers = &barrier,
+		    .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+		    .bufferMemoryBarrierCount = 1,
+		    .pBufferMemoryBarriers = &barrier,
 		};
 		MYTH_PROFILER_GPU_ZONE("cmdPipelineBarrier2()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
 		vkCmdPipelineBarrier2(_wrapper->_cmdBuf, &depInfo);
@@ -671,13 +686,16 @@ namespace mythril {
 		ASSERT_MSG((sourceTex._vkUsageFlags & VK_IMAGE_USAGE_TRANSFER_SRC_BIT) > 0, "Source image must have VK_IMAGE_USAGE_TRANSFER_SRC_BIT!");
 		ASSERT_MSG((destinationTex._vkUsageFlags & VK_IMAGE_USAGE_TRANSFER_DST_BIT) > 0, "Destination image must have VK_IMAGE_USAGE_TRANSFER_DST_BIT!");
 		ASSERT_MSG(sourceTex._numLayers == destinationTex._numLayers, "The images being copied must have the same number of layers!");
-		ASSERT_MSG(sourceTex._vkFormat == destinationTex._vkFormat, "The images being copied must be of the same VkFormat (source is '{}' while destination is '{}')!",
-			vkstring::VulkanFormatToString(sourceTex.getFormat()),
-			vkstring::VulkanFormatToString(destinationTex.getFormat()));
+		ASSERT_MSG(
+		        sourceTex._vkFormat == destinationTex._vkFormat,
+		        "The images being copied must be of the same VkFormat (source is '{}' while destination is '{}')!",
+		        vkstring::VulkanFormatToString(sourceTex.getFormat()),
+		        vkstring::VulkanFormatToString(destinationTex.getFormat())
+		);
 		ASSERT_MSG(sourceTex._vkExtent.width == destinationTex._vkExtent.width, "The images being copied must be of the same width!");
 		ASSERT_MSG(sourceTex._vkExtent.height == destinationTex._vkExtent.height, "The images being copied must be of the same height!");
 
-		VkImageCopy2 copyRegion = { .sType = VK_STRUCTURE_TYPE_IMAGE_COPY_2, .pNext = nullptr };
+		VkImageCopy2 copyRegion = {.sType = VK_STRUCTURE_TYPE_IMAGE_COPY_2, .pNext = nullptr};
 
 		copyRegion.extent.width = static_cast<uint32_t>(size.width);
 		copyRegion.extent.height = static_cast<uint32_t>(size.height);
@@ -693,7 +711,7 @@ namespace mythril {
 		copyRegion.dstSubresource.layerCount = 1;
 		copyRegion.dstSubresource.mipLevel = 0;
 
-		VkCopyImageInfo2 copyinfo = { .sType = VK_STRUCTURE_TYPE_COPY_IMAGE_INFO_2, .pNext = nullptr };
+		VkCopyImageInfo2 copyinfo = {.sType = VK_STRUCTURE_TYPE_COPY_IMAGE_INFO_2, .pNext = nullptr};
 		copyinfo.dstImage = destinationTex._vkImage;
 		copyinfo.dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
 		copyinfo.srcImage = sourceTex._vkImage;
@@ -705,7 +723,7 @@ namespace mythril {
 		vkCmdCopyImage2(_wrapper->_cmdBuf, &copyinfo);
 	}
 	void CommandBuffer::cmdBlitImageImpl(TextureHandle source, TextureHandle destination, VkExtent2D srcSize, VkExtent2D dstSize) {
-		VkImageBlit2 blitRegion = { .sType = VK_STRUCTURE_TYPE_IMAGE_BLIT_2, .pNext = nullptr };
+		VkImageBlit2 blitRegion = {.sType = VK_STRUCTURE_TYPE_IMAGE_BLIT_2, .pNext = nullptr};
 
 		blitRegion.srcOffsets[1].x = static_cast<int32_t>(srcSize.width);
 		blitRegion.srcOffsets[1].y = static_cast<int32_t>(srcSize.height);
@@ -725,7 +743,7 @@ namespace mythril {
 		blitRegion.dstSubresource.layerCount = 1;
 		blitRegion.dstSubresource.mipLevel = 0;
 
-		VkBlitImageInfo2 blitInfo = { .sType = VK_STRUCTURE_TYPE_BLIT_IMAGE_INFO_2, .pNext = nullptr };
+		VkBlitImageInfo2 blitInfo = {.sType = VK_STRUCTURE_TYPE_BLIT_IMAGE_INFO_2, .pNext = nullptr};
 		blitInfo.srcImage = _ctx->view(source)._vkImage;
 		blitInfo.srcImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
 		blitInfo.dstImage = _ctx->view(destination)._vkImage;
@@ -746,14 +764,8 @@ namespace mythril {
 		vkutil::StageAccess srcStage = vkutil::GetPipelineStageAccess(currentLayout);
 		vkutil::StageAccess dstStage = vkutil::GetPipelineStageAccess(newLayout);
 		if (sourceTex.isSwapchainImage()) {
-			srcStage = {
-				.stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
-				.access = VK_ACCESS_2_MEMORY_WRITE_BIT
-			};
-			dstStage = {
-				.stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
-				.access = VK_ACCESS_2_MEMORY_WRITE_BIT | VK_ACCESS_2_MEMORY_READ_BIT
-			};
+			srcStage = {.stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, .access = VK_ACCESS_2_MEMORY_WRITE_BIT};
+			dstStage = {.stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, .access = VK_ACCESS_2_MEMORY_WRITE_BIT | VK_ACCESS_2_MEMORY_READ_BIT};
 		}
 		if (sourceTex._isResolveAttachment && vkutil::IsFormatDepthOrStencil(sourceTex._vkFormat)) {
 			// https://registry.khronos.org/vulkan/specs/latest/html/vkspec.html#renderpass-resolve-operations
@@ -790,23 +802,4 @@ namespace mythril {
 		vkCmdSetScissor(_wrapper->_cmdBuf, 0, 1, &scissor);
 	}
 
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+} // namespace mythril

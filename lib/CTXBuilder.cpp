@@ -7,19 +7,18 @@
 
 #include <set>
 
-#include "HelperMacros.h"
 #include "CTX.h"
-#include "vkutil.h"
+#include "HelperMacros.h"
 #include "Logger.h"
 #include "Plugins.h"
+#include "vkutil.h"
 
-#include <volk.h>
 #include <VkBootstrap.h>
 #include <vk_mem_alloc.h>
+#include <volk.h>
 
 namespace mythril {
-	struct VulkanInstanceInputs
-	{
+	struct VulkanInstanceInputs {
 		Version appVersion;
 		Version engineVersion;
 		const char* appName = nullptr;
@@ -47,30 +46,29 @@ namespace mythril {
 #if defined __APPLE__
 		static constexpr uint32_t kLogLevel = 3;
 		static constexpr VkLayerSettingEXT kMvkDebugLevel = {
-			.pLayerName = "MoltenVK",
-			.pSettingName = "MVK_CONFIG_TRACE_VULKAN_CALLS",
-			.type = VK_LAYER_SETTING_TYPE_STRING_EXT,
-			.valueCount = 1,
-			.pValues = &kLogLevel,
+		    .pLayerName = "MoltenVK",
+		    .pSettingName = "MVK_CONFIG_TRACE_VULKAN_CALLS",
+		    .type = VK_LAYER_SETTING_TYPE_STRING_EXT,
+		    .valueCount = 1,
+		    .pValues = &kLogLevel,
 		};
 #endif
-		vkb::Result<vkb::Instance> instanceResult = instanceBuilder
-				.set_app_name(inputs.appName)
-				.set_app_version(inputs.appVersion.getVKVersion())
-				.set_engine_name(inputs.engineName)
-				.set_engine_version(inputs.engineVersion.getVKVersion())
-				.require_api_version(VK_API_VERSION_1_3)
-				.set_minimum_instance_version(1, 4, 304)
-				.request_validation_layers(enableValidation)
-				.set_headless(enableHeadless)
+		vkb::Result<vkb::Instance> instanceResult = instanceBuilder.set_app_name(inputs.appName)
+		                                                    .set_app_version(inputs.appVersion.getVKVersion())
+		                                                    .set_engine_name(inputs.engineName)
+		                                                    .set_engine_version(inputs.engineVersion.getVKVersion())
+		                                                    .require_api_version(VK_API_VERSION_1_3)
+		                                                    .set_minimum_instance_version(1, 4, 304)
+		                                                    .request_validation_layers(enableValidation)
+		                                                    .set_headless(enableHeadless)
 #if defined __APPLE__
-				.add_layer_setting(kMvkDebugLevel)
+		                                                    .add_layer_setting(kMvkDebugLevel)
 #endif
 #ifdef DEBUG
-		// we dont need to worry about conditionally having this be called or not depending on enableValidation, its handled internally
-				.use_default_debug_messenger()
+		                                                    // we dont need to worry about conditionally having this be called or not depending on enableValidation, its handled internally
+		                                                    .use_default_debug_messenger()
 #endif
-				.build();
+		                                                    .build();
 		ASSERT_MSG(instanceResult.has_value(), "Failed to create Instance (VkInstance). Error: {}", instanceResult.error().message());
 		vkb::Instance vkb_instance = instanceResult.value();
 		volkLoadInstance(vkb_instance.instance);
@@ -85,15 +83,11 @@ namespace mythril {
 		ASSERT(inputs.vkbInstance.instance != VK_NULL_HANDLE);
 
 		vkb::PhysicalDeviceSelector physicalDeviceSelector{inputs.vkbInstance};
-		vkb::Result<vkb::PhysicalDevice> physicalDeviceResult = physicalDeviceSelector
-		.set_minimum_version(1, 3)
-		.set_surface(inputs.vkSurface)
-		.select();
+		vkb::Result<vkb::PhysicalDevice> physicalDeviceResult = physicalDeviceSelector.set_minimum_version(1, 3).set_surface(inputs.vkSurface).select();
 		ASSERT_MSG(physicalDeviceResult.has_value(), "Failed to select Physical Device (VkPhysicalDevice). Error: {}", physicalDeviceResult.error().message());
 		return physicalDeviceResult.value();
 	}
-	struct VulkanQueueOutputs
-	{
+	struct VulkanQueueOutputs {
 		VkQueue vkGraphicsQueue = VK_NULL_HANDLE;
 		uint32_t graphicsQueueFamilyIndex = Invalid<uint32_t>;
 		VkQueue vkPresentQueue = VK_NULL_HANDLE;
@@ -105,12 +99,13 @@ namespace mythril {
 	};
 
 	static VkDevice CreateVulkanLogicalDevice(
-		vkb::PhysicalDevice& vkbPhysicalDevice,
-		std::span<const char *> user_device_extensions,
-		void* user_device_extension_features,
-		VulkanFeatures& outFeatures,
-		VulkanProperties& outProperties,
-		VulkanQueueOutputs& outQueues) {
+	        vkb::PhysicalDevice& vkbPhysicalDevice,
+	        std::span<const char*> user_device_extensions,
+	        void* user_device_extension_features,
+	        VulkanFeatures& outFeatures,
+	        VulkanProperties& outProperties,
+	        VulkanQueueOutputs& outQueues
+	) {
 
 		// unfortunately vkb doesnt provide the flexibility we want
 		// so we use some of its features for this step
@@ -118,7 +113,7 @@ namespace mythril {
 		// VALIDATE EXTENSIONS
 		{
 			std::string missing_extensions;
-			for (const auto ext : user_device_extensions) {
+			for (const auto ext: user_device_extensions) {
 				if (!vkbPhysicalDevice.enable_extension_if_present(ext)) {
 					missing_extensions += "\n\t" + std::string(ext);
 				}
@@ -155,41 +150,41 @@ namespace mythril {
 		// the following features that are VK_TRUE are required by Mythril
 		// others can be optionally used when supported
 		VkPhysicalDeviceFeatures requiredfeatures10 = {
-			.robustBufferAccess = VK_FALSE,
-			.multiDrawIndirect = VK_TRUE,
-			.depthBiasClamp = supportedfeatures10.features.depthBiasClamp,
-			.samplerAnisotropy = supportedfeatures10.features.samplerAnisotropy,
-			.fragmentStoresAndAtomics = supportedfeatures10.features.fragmentStoresAndAtomics,
+		    .robustBufferAccess = VK_FALSE,
+		    .multiDrawIndirect = VK_TRUE,
+		    .depthBiasClamp = supportedfeatures10.features.depthBiasClamp,
+		    .samplerAnisotropy = supportedfeatures10.features.samplerAnisotropy,
+		    .fragmentStoresAndAtomics = supportedfeatures10.features.fragmentStoresAndAtomics,
 		};
 		VkPhysicalDeviceVulkan11Features requiredfeatures11 = {
-			.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
-			.pNext = user_device_extension_features != nullptr ? user_device_extension_features : nullptr,
-			.multiview = supportedfeatures11.multiview,
-			.shaderDrawParameters = VK_TRUE,
+		    .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
+		    .pNext = user_device_extension_features != nullptr ? user_device_extension_features : nullptr,
+		    .multiview = supportedfeatures11.multiview,
+		    .shaderDrawParameters = VK_TRUE,
 		};
 		VkPhysicalDeviceVulkan12Features requiredfeatures12 = {
-			.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
-			.pNext = &requiredfeatures11,
-			.shaderFloat16 = supportedfeatures12.shaderFloat16,
-			.descriptorIndexing = VK_TRUE,
-			.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE,
-			.descriptorBindingStorageImageUpdateAfterBind = VK_TRUE,
-			.descriptorBindingUpdateUnusedWhilePending = VK_TRUE,
-			.descriptorBindingPartiallyBound = VK_TRUE,
-			.runtimeDescriptorArray = VK_TRUE,
-			.scalarBlockLayout = VK_TRUE, // opt
+		    .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
+		    .pNext = &requiredfeatures11,
+		    .shaderFloat16 = supportedfeatures12.shaderFloat16,
+		    .descriptorIndexing = VK_TRUE,
+		    .descriptorBindingSampledImageUpdateAfterBind = VK_TRUE,
+		    .descriptorBindingStorageImageUpdateAfterBind = VK_TRUE,
+		    .descriptorBindingUpdateUnusedWhilePending = VK_TRUE,
+		    .descriptorBindingPartiallyBound = VK_TRUE,
+		    .runtimeDescriptorArray = VK_TRUE,
+		    .scalarBlockLayout = VK_TRUE, // opt
 #if defined MYTH_ENABLED_TRACY_GPU
-			.hostQueryReset = VK_TRUE, // for tracygpu
+		    .hostQueryReset = VK_TRUE, // for tracygpu
 #endif
-			.timelineSemaphore = VK_TRUE,
-			.bufferDeviceAddress = VK_TRUE,
+		    .timelineSemaphore = VK_TRUE,
+		    .bufferDeviceAddress = VK_TRUE,
 		};
 		VkPhysicalDeviceVulkan13Features requiredfeatures13 = {
-			.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
-			.pNext = &requiredfeatures12,
-			.computeFullSubgroups = supportedfeatures13.computeFullSubgroups,
-			.synchronization2 = VK_TRUE,
-			.dynamicRendering = VK_TRUE,
+		    .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
+		    .pNext = &requiredfeatures12,
+		    .computeFullSubgroups = supportedfeatures13.computeFullSubgroups,
+		    .synchronization2 = VK_TRUE,
+		    .dynamicRendering = VK_TRUE,
 		};
 
 		// VALIDATE FEATURES
@@ -344,20 +339,18 @@ missing_features.append("\n\t(" version ") " #feature);
 
 #ifdef VK_ENABLE_BETA_EXTENSIONS
 		VkPhysicalDevicePortabilitySubsetFeaturesKHR portability_subset_features = {
-			.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PORTABILITY_SUBSET_FEATURES_KHR,
-			.pNext = &requiredfeatures13,
-			.imageViewFormatSwizzle = VK_TRUE
+		    .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PORTABILITY_SUBSET_FEATURES_KHR, .pNext = &requiredfeatures13, .imageViewFormatSwizzle = VK_TRUE
 		};
 #endif
 
 		VkPhysicalDeviceFeatures2 features2 = {
-			.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+		    .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
 #ifdef VK_ENABLE_BETA_EXTENSIONS
-			.pNext = &portability_subset_features,
+		    .pNext = &portability_subset_features,
 #else
-			.pNext = requiredfeatures13
+		    .pNext = requiredfeatures13
 #endif
-			.features = requiredfeatures10
+		    .features = requiredfeatures10
 		};
 
 		// query queue family properties
@@ -365,7 +358,8 @@ missing_features.append("\n\t(" version ") " #feature);
 		uint32_t queueFamilyCount = 0;
 		vkGetPhysicalDeviceQueueFamilyProperties2(physical_device, &queueFamilyCount, nullptr);
 		std::vector<VkQueueFamilyProperties2> props(queueFamilyCount);
-		for (auto& p : props) p.sType = VK_STRUCTURE_TYPE_QUEUE_FAMILY_PROPERTIES_2;
+		for (auto& p: props)
+			p.sType = VK_STRUCTURE_TYPE_QUEUE_FAMILY_PROPERTIES_2;
 		vkGetPhysicalDeviceQueueFamilyProperties2(physical_device, &queueFamilyCount, props.data());
 
 		// for graphics, transfer, compute
@@ -373,8 +367,10 @@ missing_features.append("\n\t(" version ") " #feature);
 			uint32_t fallback = Invalid<uint32_t>;
 			for (uint32_t i = 0; i < static_cast<uint32_t>(props.size()); i++) {
 				const VkQueueFamilyProperties& p = props[i].queueFamilyProperties;
-				if (!p.queueCount) continue;
-				if ((p.queueFlags & requiredFlags) != requiredFlags) continue;
+				if (!p.queueCount)
+					continue;
+				if ((p.queueFlags & requiredFlags) != requiredFlags)
+					continue;
 				if ((p.queueFlags & avoidedFlags) == 0)
 					return i;
 				if (fallback == Invalid<uint32_t>)
@@ -384,16 +380,18 @@ missing_features.append("\n\t(" version ") " #feature);
 		};
 		// for present
 		auto findBestPresentFamilyIndex = [&](VkSurfaceKHR surface) -> uint32_t {
-			uint32_t fallback           = Invalid<uint32_t>;
+			uint32_t fallback = Invalid<uint32_t>;
 			uint32_t fallbackWithGraphics = Invalid<uint32_t>;
 
 			for (uint32_t i = 0; i < static_cast<uint32_t>(props.size()); i++) {
 				const VkQueueFamilyProperties& p = props[i].queueFamilyProperties;
-				if (!p.queueCount) continue;
+				if (!p.queueCount)
+					continue;
 
 				VkBool32 supported = VK_FALSE;
 				vkGetPhysicalDeviceSurfaceSupportKHR(physical_device, i, surface, &supported);
-				if (!supported) continue;
+				if (!supported)
+					continue;
 
 				const bool hasGraphics = (p.queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0;
 
@@ -409,17 +407,19 @@ missing_features.append("\n\t(" version ") " #feature);
 		};
 
 		uint32_t graphics = findBestFamilyIndex(VK_QUEUE_GRAPHICS_BIT, 0);
-		uint32_t compute  = findBestFamilyIndex(VK_QUEUE_COMPUTE_BIT,  VK_QUEUE_GRAPHICS_BIT);
+		uint32_t compute = findBestFamilyIndex(VK_QUEUE_COMPUTE_BIT, VK_QUEUE_GRAPHICS_BIT);
 		uint32_t transfer = findBestFamilyIndex(VK_QUEUE_TRANSFER_BIT, VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT);
 		uint32_t present = 0;
 		if (vkbPhysicalDevice.surface != VK_NULL_HANDLE) {
 			present = findBestPresentFamilyIndex(vkbPhysicalDevice.surface);
-			ASSERT_MSG(present  != Invalid<uint32_t>, "No present queue family found");
+			ASSERT_MSG(present != Invalid<uint32_t>, "No present queue family found");
 		}
 		ASSERT_MSG(graphics != Invalid<uint32_t>, "No graphics queue family found");
 		// if no dedicated compute/transfer family exists, share with graphics
-		if (compute  == Invalid<uint32_t>) compute  = graphics;
-		if (transfer == Invalid<uint32_t>) transfer = graphics;
+		if (compute == Invalid<uint32_t>)
+			compute = graphics;
+		if (transfer == Invalid<uint32_t>)
+			transfer = graphics;
 
 		struct QueueAllocation {
 			uint32_t familyIndex;
@@ -433,34 +433,34 @@ missing_features.append("\n\t(" version ") " #feature);
 				idx = maxQueues - 1;
 				familyNextIndex[familyIndex] = maxQueues;
 			}
-			return { familyIndex, idx };
+			return {familyIndex, idx};
 		};
-		QueueAllocation graphicsAlloc  = allocateQueue(graphics);
-		QueueAllocation computeAlloc   = allocateQueue(compute);
-		QueueAllocation transferAlloc  = allocateQueue(transfer);
-		QueueAllocation presentAlloc   = allocateQueue(present);
+		QueueAllocation graphicsAlloc = allocateQueue(graphics);
+		QueueAllocation computeAlloc = allocateQueue(compute);
+		QueueAllocation transferAlloc = allocateQueue(transfer);
+		QueueAllocation presentAlloc = allocateQueue(present);
 
 		std::vector<std::vector<float>> queuePriorities;
 		std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
 
-		for (auto& [familyIndex, allocatedCount] : familyNextIndex) {
+		for (auto& [familyIndex, allocatedCount]: familyNextIndex) {
 			queuePriorities.emplace_back(allocatedCount, 1.0f);
 			queueCreateInfos.push_back({
-				.sType            = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-				.queueFamilyIndex = familyIndex,
-				.queueCount       = allocatedCount,
-				.pQueuePriorities = queuePriorities.back().data(),
+			    .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+			    .queueFamilyIndex = familyIndex,
+			    .queueCount = allocatedCount,
+			    .pQueuePriorities = queuePriorities.back().data(),
 			});
 		}
 
 		const VkDeviceCreateInfo device_ci = {
-			.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-			.pNext = &features2,
-			.flags = 0,
-			.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size()),
-			.pQueueCreateInfos = queueCreateInfos.data(),
-			.enabledExtensionCount = static_cast<uint32_t>(enabledExtensions.size()),
-			.ppEnabledExtensionNames = enabledExtensions.data(),
+		    .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+		    .pNext = &features2,
+		    .flags = 0,
+		    .queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size()),
+		    .pQueueCreateInfos = queueCreateInfos.data(),
+		    .enabledExtensionCount = static_cast<uint32_t>(enabledExtensions.size()),
+		    .ppEnabledExtensionNames = enabledExtensions.data(),
 		};
 		VkDevice device = VK_NULL_HANDLE;
 		vkCreateDevice(physical_device, &device_ci, nullptr, &device);
@@ -481,12 +481,7 @@ missing_features.append("\n\t(" version ") " #feature);
 		outQueues.presentQueueFamilyIndex = presentAlloc.familyIndex;
 
 		{
-			const VkDeviceQueueInfo2 qi = {
-				.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_INFO_2,
-				.pNext = nullptr,
-				.queueFamilyIndex = graphicsAlloc.familyIndex,
-				.queueIndex = graphicsAlloc.queueIndex
-			};
+			const VkDeviceQueueInfo2 qi = {.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_INFO_2, .pNext = nullptr, .queueFamilyIndex = graphicsAlloc.familyIndex, .queueIndex = graphicsAlloc.queueIndex};
 			vkGetDeviceQueue2(device, &qi, &outQueues.vkGraphicsQueue);
 		}
 
@@ -516,19 +511,18 @@ missing_features.append("\n\t(" version ") " #feature);
 		return device;
 	}
 
-	struct VulkanMemoryAllocatorInputs
-	{
+	struct VulkanMemoryAllocatorInputs {
 		VkInstance vkInstance;
 		VkPhysicalDevice vkPhysicalDevice;
 		VkDevice vkDevice;
 	};
 	static VmaAllocator CreateVulkanMemoryAllocator(const VulkanMemoryAllocatorInputs& inputs) {
 		VmaAllocatorCreateInfo allocatorInfo = {
-			.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT | VMA_ALLOCATOR_CREATE_KHR_DEDICATED_ALLOCATION_BIT,
-			.physicalDevice = inputs.vkPhysicalDevice,
-			.device = inputs.vkDevice,
-			.instance = inputs.vkInstance,
-			.vulkanApiVersion = VK_API_VERSION_1_3,
+		    .flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT | VMA_ALLOCATOR_CREATE_KHR_DEDICATED_ALLOCATION_BIT,
+		    .physicalDevice = inputs.vkPhysicalDevice,
+		    .device = inputs.vkDevice,
+		    .instance = inputs.vkInstance,
+		    .vulkanApiVersion = VK_API_VERSION_1_3,
 		};
 		VmaVulkanFunctions vulkanFunctions;
 		const VkResult volkimport_result = vmaImportVulkanFunctionsFromVolk(&allocatorInfo, &vulkanFunctions);
@@ -549,22 +543,24 @@ missing_features.append("\n\t(" version ") " #feature);
 
 		// fill in user instance extensions & resolve based on cfg
 		std::vector instance_extensions(std::begin(this->_vulkanCfg.instanceExtensions), std::end(this->_vulkanCfg.instanceExtensions));
-		vkb::Instance vkb_instance = CreateVulkanInstance({
-			.appVersion = this->_vulkanCfg.app_version,
-			.engineVersion = this->_vulkanCfg.engine_version,
-			.appName = this->_vulkanCfg.app_name,
-			.engineName = this->_vulkanCfg.engine_name,
-		}, this->_vulkanCfg.enableValidation, isHeadless, instance_extensions);
+		vkb::Instance vkb_instance = CreateVulkanInstance(
+		        {
+		            .appVersion = this->_vulkanCfg.app_version,
+		            .engineVersion = this->_vulkanCfg.engine_version,
+		            .appName = this->_vulkanCfg.app_name,
+		            .engineName = this->_vulkanCfg.engine_name,
+		        },
+		        this->_vulkanCfg.enableValidation,
+		        isHeadless,
+		        instance_extensions
+		);
 		VkSurfaceKHR vk_surface = VK_NULL_HANDLE;
 		if (!isHeadless) {
 			vk_surface = this->_surfaceCreateFunc(vkb_instance.instance);
 		}
 
 		// do not pass features or extensions here, do that to the vkb::PhysicalDevice
-		vkb::PhysicalDevice vkb_physical_device = SelectVulkanPhysicalDevice({
-			.vkbInstance = vkb_instance,
-			.vkSurface = vk_surface
-		});
+		vkb::PhysicalDevice vkb_physical_device = SelectVulkanPhysicalDevice({.vkbInstance = vkb_instance, .vkSurface = vk_surface});
 
 		// fill in user device extensions & resolve based on cfg
 		std::vector device_extensions(std::begin(this->_vulkanCfg.deviceExtensions), std::end(this->_vulkanCfg.deviceExtensions));
@@ -572,18 +568,8 @@ missing_features.append("\n\t(" version ") " #feature);
 		VulkanProperties properties{};
 		VulkanQueueOutputs queues{};
 		// sets features & properties
-		VkDevice vk_device = CreateVulkanLogicalDevice(
-			vkb_physical_device,
-			device_extensions,
-			this->_vulkanCfg.deviceExtensionFeatureChain,
-			features,
-			properties,
-			queues);
-		VmaAllocator vma_allocator = CreateVulkanMemoryAllocator({
-			.vkInstance = vkb_instance.instance,
-			.vkPhysicalDevice = vkb_physical_device.physical_device,
-			.vkDevice = vk_device
-		});
+		VkDevice vk_device = CreateVulkanLogicalDevice(vkb_physical_device, device_extensions, this->_vulkanCfg.deviceExtensionFeatureChain, features, properties, queues);
+		VmaAllocator vma_allocator = CreateVulkanMemoryAllocator({.vkInstance = vkb_instance.instance, .vkPhysicalDevice = vkb_physical_device.physical_device, .vkDevice = vk_device});
 
 		// most of the setup we need to worry about is done in the constructor
 		// this is the same thing as make_unique, ignore the warning
@@ -604,7 +590,7 @@ missing_features.append("\n\t(" version ") " #feature);
 
 		// insert extensions that were properly enabeld
 		ctx->_enabledExtensionNames.clear();
-		for (const auto& ext : vkb_physical_device.get_extensions()) {
+		for (const auto& ext: vkb_physical_device.get_extensions()) {
 			ctx->_enabledExtensionNames.insert(ext);
 		}
 
@@ -620,10 +606,10 @@ missing_features.append("\n\t(" version ") " #feature);
 		ctx->construct();
 		if (this->_requestedSwapchain) {
 			if (this->_swapchainSpec.width == 0 && this->_swapchainSpec.height == 0) {
-					// swapchain must be built after default texture has been made
-					// or else the fallback texture is the swapchain's texture
-					this->_swapchainSpec.width = 1280;
-					this->_swapchainSpec.height = 720;
+				// swapchain must be built after default texture has been made
+				// or else the fallback texture is the swapchain's texture
+				this->_swapchainSpec.width = 1280;
+				this->_swapchainSpec.height = 720;
 			}
 			if (this->_swapchainSpec.format == VK_FORMAT_MAX_ENUM) {
 				this->_swapchainSpec.format = kDefaultSwapchainFormat;
@@ -637,7 +623,7 @@ missing_features.append("\n\t(" version ") " #feature);
 			ctx->createSwapchain(this->_swapchainSpec);
 		}
 
-		for (const auto& path : this->_slangCfg.searchpaths) {
+		for (const auto& path: this->_slangCfg.searchpaths) {
 			ctx->_slangCompiler.addSearchPath(path);
 		}
 		// now we can build plugins!
@@ -647,9 +633,10 @@ missing_features.append("\n\t(" version ") " #feature);
 		}
 #endif
 #ifdef MYTH_ENABLED_TRACY_GPU
-		if (_usingTracyGPU) ctx->_tracyPlugin.onInit(*ctx);
+		if (_usingTracyGPU)
+			ctx->_tracyPlugin.onInit(*ctx);
 #endif
 		return ctx;
 		MYTH_PROFILER_ZONE_END();
 	}
-}
+} // namespace mythril

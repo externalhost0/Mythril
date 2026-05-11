@@ -5,29 +5,29 @@
 #pragma once
 
 #include "HelperMacros.h"
-#include "Swapchain.h"
 #include "ImmediateCommands.h"
-#include "StagingDevice.h"
 #include "ObjectHandles.h"
+#include "StagingDevice.h"
+#include "Swapchain.h"
 
-#include "VulkanObjects.h"
 #include "Pipelines.h"
 #include "Shader.h"
+#include "VulkanObjects.h"
 
+#include "../include/mythril/Objects.h"
+#include "CommandBuffer.h"
 #include "Plugins.h"
 #include "SlangCompiler.h"
-#include "CommandBuffer.h"
 #include "Specs.h"
-#include "../include/mythril/Objects.h"
 
-#include <future>
 #include <deque>
 #include <filesystem>
+#include <future>
 #include <unordered_map>
 
-#include <volk.h>
-#include <slang/slang.h>
 #include <slang/slang-com-ptr.h>
+#include <slang/slang.h>
+#include <volk.h>
 
 
 #ifdef MYTH_ENABLED_IMGUI
@@ -40,7 +40,7 @@
 
 // colors
 // command buffer colors
-#define MYTH_PROFILER_COLOR_WAIT  0x8a89a1 // blue gray
+#define MYTH_PROFILER_COLOR_WAIT 0x8a89a1 // blue gray
 #define MYTH_PROFILER_COLOR_ACQUIRE 0x3128de // rich blue
 #define MYTH_PROFILER_COLOR_SUBMIT 0x6b28de // dark purple
 
@@ -62,27 +62,27 @@
 // macro functions
 #define MYTH_PROFILER_FUNCTION_N(name) ZoneScopedN(name)
 #if defined(_MSC_VER)
-    #define MYTH_PROFILER_FUNCTION() ZoneScopedN(__FUNCSIG__)
-	#define MYTH_PROFILER_FUNCTION_COLOR(color) ZoneScopedNC(__FUNCSIG__, color)
+#define MYTH_PROFILER_FUNCTION() ZoneScopedN(__FUNCSIG__)
+#define MYTH_PROFILER_FUNCTION_COLOR(color) ZoneScopedNC(__FUNCSIG__, color)
 #else
 #if defined(__APPLE__)
-#define MYTH_PROFILER_FUNCTION() \
-	ZoneScopedN(__PRETTY_FUNCTION__) 
+#define MYTH_PROFILER_FUNCTION() ZoneScopedN(__PRETTY_FUNCTION__)
 
-#define MYTH_PROFILER_FUNCTION_COLOR(color) \
-	ZoneScopedNC(__PRETTY_FUNCTION__, color) 
+#define MYTH_PROFILER_FUNCTION_COLOR(color) ZoneScopedNC(__PRETTY_FUNCTION__, color)
 
 #else
-	#define MYTH_PROFILER_FUNCTION() ZoneScopedN(__PRETTY_FUNCTION__)
-	#define MYTH_PROFILER_FUNCTION_COLOR(color) ZoneScopedNC(__PRETTY_FUNCTION__, color)
+#define MYTH_PROFILER_FUNCTION() ZoneScopedN(__PRETTY_FUNCTION__)
+#define MYTH_PROFILER_FUNCTION_COLOR(color) ZoneScopedNC(__PRETTY_FUNCTION__, color)
 #endif
 #endif
 
-#define MYTH_PROFILER_ZONE_COLOR(name, color) { \
-	ZoneScopedNC(name, color);
+#define MYTH_PROFILER_ZONE_COLOR(name, color)                                                                                                                                                          \
+    {                                                                                                                                                                                                  \
+        ZoneScopedNC(name, color);
 
-#define MYTH_PROFILER_ZONE(name) { \
-	ZoneScopedN(name);
+#define MYTH_PROFILER_ZONE(name)                                                                                                                                                                       \
+    {                                                                                                                                                                                                  \
+        ZoneScopedN(name);
 
 #define MYTH_PROFILER_ZONE_END() }
 
@@ -91,21 +91,21 @@
 #define MYTH_PROFILER_FRAME() FrameMark;
 
 #else
- #define MYTH_PROFILER_FUNCTION()
- #define MYTH_PROFILER_FUNCTION_N(name)
- #define MYTH_PROFILER_FUNCTION_COLOR(color)
- #define MYTH_PROFILER_ZONE_COLOR(name, color) {
- #define MYTH_PROFILER_ZONE(name) {
- #define MYTH_PROFILER_ZONE_END() }
- #define MYTH_PROFILER_THREAD(name)
- #define MYTH_PROFILER_FRAME(name)
+#define MYTH_PROFILER_FUNCTION()
+#define MYTH_PROFILER_FUNCTION_N(name)
+#define MYTH_PROFILER_FUNCTION_COLOR(color)
+#define MYTH_PROFILER_ZONE_COLOR(name, color) {
+#define MYTH_PROFILER_ZONE(name) {
+#define MYTH_PROFILER_ZONE_END() }
+#define MYTH_PROFILER_THREAD(name)
+#define MYTH_PROFILER_FRAME(name)
 #endif // MYTH_ENABLED_TRACY
 
 #if defined(MYTH_ENABLED_TRACY_GPU)
-	#include <tracy/TracyVulkan.hpp>
-	#define MYTH_PROFILER_GPU_ZONE(name, cmdBuffer, color) TracyVkZoneC(this->_ctx->_tracyPlugin.getTracyVkCtx(), cmdBuffer, name, color);
+#include <tracy/TracyVulkan.hpp>
+#define MYTH_PROFILER_GPU_ZONE(name, cmdBuffer, color) TracyVkZoneC(this->_ctx->_tracyPlugin.getTracyVkCtx(), cmdBuffer, name, color);
 #else
-	#define MYTH_PROFILER_GPU_ZONE(name, cmdBuffer, color)
+#define MYTH_PROFILER_GPU_ZONE(name, cmdBuffer, color)
 #endif // MYTH_ENABLED_TRACY_GPU
 
 
@@ -127,13 +127,16 @@ namespace mythril {
 	// class ComputePipeline;
 
 	struct DeferredTask {
-		DeferredTask(std::packaged_task<void()>&& task, SubmitHandle handle, uint64_t frameNum) : _task(std::move(task)), _handle(handle), _frameNumber(frameNum) {}
+		DeferredTask(std::packaged_task<void()>&& task, SubmitHandle handle, uint64_t frameNum) :
+		    _task(std::move(task)),
+		    _handle(handle),
+		    _frameNumber(frameNum) {}
 		std::packaged_task<void()> _task;
 		SubmitHandle _handle;
 		uint64_t _frameNumber;
 	};
 
-	//helpers
+	// helpers
 	template<typename Pool, typename Handle>
 	const auto& viewImpl(const Pool& pool, Handle handle) {
 		auto* ptr = pool.get(handle);
@@ -166,16 +169,17 @@ namespace mythril {
 		void construct();
 		// hide the default constructor to avoid user from instantiating a useless CTX
 		CTX() = default;
+
 	public:
 		~CTX();
 
-		CTX(const CTX &) = delete;
-		CTX &operator=(const CTX &) = delete;
+		CTX(const CTX&) = delete;
+		CTX& operator=(const CTX&) = delete;
 
-		CTX(CTX &&) noexcept = default;
-		CTX &operator=(CTX &&) noexcept = default;
+		CTX(CTX&&) noexcept = default;
+		CTX& operator=(CTX&&) noexcept = default;
+
 	public:
-
 		// arguements are optional as when not given we recreate with the same settings as the last swapchain
 		void createSwapchain(const SwapchainSpec& spec = {});
 		void destroySwapchain();
@@ -194,6 +198,12 @@ namespace mythril {
 			wrappedBackBuffer.updateHandle(this, _swapchain->getCurrentSwapchainTextureHandle());
 			return wrappedBackBuffer;
 		}
+		Dimensions getSwapchainDimensions() const {
+			if (!_swapchain)
+				return {lastSwapchainSpec.width, lastSwapchainSpec.height, 1};
+			const VkExtent2D extent = _swapchain->getSwapchainExtent();
+			return {extent.width, extent.height, 1};
+		}
 
 		const Texture& getNullTexture() const { return this->_dummyTexture; }
 
@@ -204,9 +214,9 @@ namespace mythril {
 		Texture createTexture(TextureSpec spec);
 		void resizeTexture(TextureHandle handle, Dimensions newDimensions);
 		Sampler createSampler(SamplerSpec spec);
-		GraphicsPipeline createGraphicsPipeline(const GraphicsPipelineSpec &spec);
-		ComputePipeline createComputePipeline(const ComputePipelineSpec &spec);
-		Shader createShader(const ShaderSpec &spec);
+		GraphicsPipeline createGraphicsPipeline(const GraphicsPipelineSpec& spec);
+		ComputePipeline createComputePipeline(const ComputePipelineSpec& spec);
+		Shader createShader(const ShaderSpec& spec);
 
 		VkDeviceAddress gpuAddress(BufferHandle handle, size_t offset = 0);
 
@@ -216,8 +226,8 @@ namespace mythril {
 		// for textures
 		void upload(TextureHandle handle, const void* data, const TexRange& range);
 		void download(TextureHandle handle, void* data, const TexRange& range);
-	public:
 
+	public:
 		const AllocatedTexture& view(TextureHandle h) const { return viewImpl(_texturePool, h); }
 		const AllocatedBuffer& view(BufferHandle h) const { return viewImpl(_bufferPool, h); }
 		const AllocatedSampler& view(SamplerHandle h) const { return viewImpl(_samplerPool, h); }
@@ -252,6 +262,7 @@ namespace mythril {
 		VkPhysicalDeviceVulkan11Properties getPhysicalDeviceProperties11() const { return _propertiesVulkan.props11; }
 		VkPhysicalDeviceVulkan12Properties getPhysicalDeviceProperties12() const { return _propertiesVulkan.props12; }
 		VkPhysicalDeviceVulkan13Properties getPhysicalDeviceProperties13() const { return _propertiesVulkan.props13; }
+
 	private:
 		// wrappers around VulkanObjects
 		// advanced functions that user will rarely need to call
@@ -271,28 +282,28 @@ namespace mythril {
 
 		// because they are big functions :(
 		AllocatedBuffer createBufferImpl(VkDeviceSize bufferSize, VkBufferUsageFlags usageFlags, VkMemoryPropertyFlags memFlags);
-		AllocatedTexture createTextureImpl(VkImageUsageFlags usageFlags,
-										   VkMemoryPropertyFlags memFlags,
-										   VkExtent3D extent3D,
-										   VkFormat format,
-										   VkImageType imageType,
-										   VkImageViewType imageViewType,
-										   uint32_t numLevels,
-										   uint32_t numLayers,
-										   VkSampleCountFlagBits sampleCountFlagBits,
-										   VkComponentMapping componentMapping,
-										   VkImageCreateFlags createFlags = 0);
+		AllocatedTexture createTextureImpl(
+		        VkImageUsageFlags usageFlags,
+		        VkMemoryPropertyFlags memFlags,
+		        VkExtent3D extent3D,
+		        VkFormat format,
+		        VkImageType imageType,
+		        VkImageViewType imageViewType,
+		        uint32_t numLevels,
+		        uint32_t numLayers,
+		        VkSampleCountFlagBits sampleCountFlagBits,
+		        VkComponentMapping componentMapping,
+		        VkImageCreateFlags createFlags = 0
+		);
 
 		void checkAndUpdateBindlessDescriptorSetImpl();
 		void growBindlessDescriptorPoolImpl(uint32_t newMaxSamplerCount, uint32_t newMaxTextureCount);
 
 		template<typename T>
 		constexpr PipelineCoreData& getPipelienCommonData(T handle) {
-			static_assert(
-					std::is_same_v<T, GraphicsPipelineHandle> ||
-					std::is_same_v<T, ComputePipelineHandle>);
+			static_assert(std::is_same_v<T, GraphicsPipelineHandle> || std::is_same_v<T, ComputePipelineHandle>);
 			if constexpr (std::is_same_v<T, GraphicsPipelineHandle>) {
-				auto* obj =_graphicsPipelinePool.get(handle);
+				auto* obj = _graphicsPipelinePool.get(handle);
 				ASSERT(obj);
 				return obj->_common;
 			} else if constexpr (std::is_same_v<T, ComputePipelineHandle>) {
@@ -309,6 +320,7 @@ namespace mythril {
 		void waitDeferredTasks();
 
 		bool isHeadless() const { return _swapchain == nullptr; }
+
 	private:
 		// Vulkan Members //
 		VkInstance _vkInstance = VK_NULL_HANDLE;
@@ -332,6 +344,7 @@ namespace mythril {
 		uint32_t _presentQueueFamilyIndex = -1;
 		VkQueue _vkComputeQueue = VK_NULL_HANDLE;
 		uint32_t _computeQueueFamilyIndex = -1;
+
 	private:
 		// not really my stuff //
 		Texture _dummyTexture;
@@ -352,6 +365,7 @@ namespace mythril {
 		VkSemaphore _timelineSemaphore = VK_NULL_HANDLE;
 
 		CommandBuffer _currentCommandBuffer;
+
 	private:
 		// my stuff //
 		uint64_t _currentFrameNumber = 0;
@@ -364,12 +378,12 @@ namespace mythril {
 
 		Texture wrappedBackBuffer;
 		// SwapchainSpec lastSwapchainSpec;
-		SwapchainSpec lastSwapchainSpec {
-			.width = 1280,
-			.height = 720,
-			.format = kDefaultSwapchainFormat,
-			.colorSpace = kDefaultSwapchainColorSpace,
-			.presentMode = kDefaultSwapchainPresentMode,
+		SwapchainSpec lastSwapchainSpec{
+		    .width = 1280,
+		    .height = 720,
+		    .format = kDefaultSwapchainFormat,
+		    .colorSpace = kDefaultSwapchainColorSpace,
+		    .presentMode = kDefaultSwapchainPresentMode,
 		};
 
 		HandlePool<BufferHandle, AllocatedBuffer> _bufferPool;
@@ -391,6 +405,7 @@ namespace mythril {
 
 		friend class RenderGraph;
 		friend class CommandBuffer;
+		friend class IntermediateBuilder;
 		friend class StagingDevice;
 		friend class Swapchain;
 		friend class CTXBuilder;
@@ -404,7 +419,6 @@ namespace mythril {
 		// basically a lvk Holder
 		template<typename T>
 		friend class ObjectHolder;
-
 	};
 
 #ifdef MYTH_ENABLED_IMGUI
@@ -415,13 +429,11 @@ namespace mythril {
 		std::unordered_map<TextureHandle, VkDescriptorSet> handleMap;
 	};
 #endif
-}
+} // namespace mythril
 #ifdef MYTH_ENABLED_IMGUI
 namespace ImGui {
-	void Image(const mythril::Texture& texture, const ImVec2 &image_size = {0, 0}, const ImVec2 &uv0 = {0, 0}, const ImVec2 &uv1 = {1, 1});
-	void Image(mythril::TextureHandle texHandle, const ImVec2 &image_size = {0, 0}, const ImVec2 &uv0 = {0, 0}, const ImVec2 &uv1 = {1, 1});
-	void Image(const mythril::Texture& texture, const mythril::Texture::ViewKey& viewKey, const ImVec2& image_size = {0, 0}, const ImVec2& uv0={0, 0}, const ImVec2& uv1={1, 1});
-}
+	void Image(const mythril::Texture& texture, const ImVec2& image_size = {0, 0}, const ImVec2& uv0 = {0, 0}, const ImVec2& uv1 = {1, 1});
+	void Image(mythril::TextureHandle texHandle, const ImVec2& image_size = {0, 0}, const ImVec2& uv0 = {0, 0}, const ImVec2& uv1 = {1, 1});
+	void Image(const mythril::Texture& texture, const mythril::Texture::ViewKey& viewKey, const ImVec2& image_size = {0, 0}, const ImVec2& uv0 = {0, 0}, const ImVec2& uv1 = {1, 1});
+} // namespace ImGui
 #endif
-
-

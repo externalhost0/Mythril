@@ -5,34 +5,38 @@
 #pragma once
 
 #include <cstdint>
-#include <vector>
 #include <stdexcept>
+#include <vector>
 
 namespace mythril {
 	// StackVector<T> is a vector implementation that requires a max size,
 	// as it essentially just wraps a c style array
 	// it is not reccomended to use large MaxSize values unless necessary as that memory is allocated immediately
-	template <typename T, size_t MaxSize>
+	template<typename T, size_t MaxSize>
 	class StackVector {
 	public:
 		// constructors
 		// two others are used to copy vector into the vector
-		constexpr StackVector() noexcept : _count(0) {}
-		StackVector(std::initializer_list<T> init) : _count(0) {
+		constexpr StackVector() noexcept :
+		    _count(0) {}
+		StackVector(std::initializer_list<T> init) :
+		    _count(0) {
 			if (init.size() > MaxSize) {
 				throw std::length_error("std::initializer_list size exceeds FastVector capacity");
 			}
 			_count = init.size();
 			std::copy(init.begin(), init.end(), _data);
 		}
-		explicit StackVector(const std::vector<T>& vec) : _count(0) {
+		explicit StackVector(const std::vector<T>& vec) :
+		    _count(0) {
 			if (vec.size() > MaxSize) {
 				throw std::length_error("std::vector size exceeds FastVector capacity");
 			}
 			_count = vec.size();
 			std::copy(vec.begin(), vec.end(), _data);
 		}
-		explicit StackVector(std::vector<T>&& vec) : _count(0) {
+		explicit StackVector(std::vector<T>&& vec) :
+		    _count(0) {
 			if (vec.size() > MaxSize) {
 				throw std::length_error("std::vector size exceeds FastVector capacity");
 			}
@@ -40,7 +44,8 @@ namespace mythril {
 			std::move(vec.begin(), vec.end(), _data);
 		}
 		// copy
-		StackVector(const StackVector& other) : _count(0) {
+		StackVector(const StackVector& other) :
+		    _count(0) {
 			if (other.size() > MaxSize) {
 				throw std::length_error("FastVector size exceeds FastVector capacity");
 			}
@@ -57,9 +62,7 @@ namespace mythril {
 		// 	other.clear();
 		// }
 		// destructor
-		~StackVector() {
-			clear();
-		}
+		~StackVector() { clear(); }
 
 		// assignment
 		// copy
@@ -96,7 +99,7 @@ namespace mythril {
 			}
 			return false;
 		}
-		template <typename... Args>
+		template<typename... Args>
 		bool emplace_back(Args&&... args) {
 			if (_count < MaxSize) {
 				_data[_count++] = T(std::forward<Args>(args)...);
@@ -144,7 +147,8 @@ namespace mythril {
 		}
 		// order preserving removal
 		void erase(size_t index) noexcept {
-			if (index >= _count) return;
+			if (index >= _count)
+				return;
 			for (size_t i = index; i < _count - 1; ++i) {
 				_data[i] = std::move(_data[i + 1]);
 			}
@@ -195,7 +199,7 @@ namespace mythril {
 		}
 
 		// iteration
-		template <typename F>
+		template<typename F>
 		void for_each(F&& func) noexcept(noexcept(func(std::declval<T&>()))) {
 			for (size_t i = 0; i < _count; ++i) {
 				func(_data[i]);
@@ -211,4 +215,4 @@ namespace mythril {
 		T _data[MaxSize];
 		size_t _count;
 	};
-}
+} // namespace mythril

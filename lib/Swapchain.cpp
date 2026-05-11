@@ -6,18 +6,18 @@
 
 #include <vector>
 
-#include "Swapchain.h"
-#include "ImmediateCommands.h"
 #include "CTX.h"
 #include "HelperMacros.h"
+#include "ImmediateCommands.h"
 #include "Logger.h"
+#include "Swapchain.h"
+#include "VulkanObjects.h"
 #include "vkinfo.h"
 #include "vkstring.h"
-#include "VulkanObjects.h"
 
 namespace mythril {
-	Swapchain::Swapchain(CTX& ctx, SwapchainSpec args)
-	: _ctx(ctx) {
+	Swapchain::Swapchain(CTX& ctx, SwapchainSpec args) :
+	    _ctx(ctx) {
 		ASSERT_MSG(args.width > 0 && args.height > 0, "Swapchain width & height must both be greater than 0!");
 		uint16_t width = args.width, height = args.height;
 
@@ -29,14 +29,14 @@ namespace mythril {
 
 		VkSurfaceFormatKHR surfaceFormat = formats[0];
 		if (args.format != VK_FORMAT_MAX_ENUM) {
-			for (const auto& f : formats) {
+			for (const auto& f: formats) {
 				if (f.format == args.format && (args.colorSpace == VK_COLOR_SPACE_MAX_ENUM_KHR || f.colorSpace == args.colorSpace)) {
 					surfaceFormat = f;
 					break;
 				}
 			}
 		} else if (args.colorSpace != VK_COLOR_SPACE_MAX_ENUM_KHR) {
-			for (const auto& f : formats) {
+			for (const auto& f: formats) {
 				if (f.colorSpace == args.colorSpace) {
 					surfaceFormat = f;
 					break;
@@ -50,9 +50,7 @@ namespace mythril {
 		VkFormatProperties2 formatProps2 = {.sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2};
 		vkGetPhysicalDeviceFormatProperties2(_ctx._vkPhysicalDevice, surfaceFormat.format, &formatProps2);
 
-		const bool storageOk =
-				(caps.supportedUsageFlags & VK_IMAGE_USAGE_STORAGE_BIT) != 0 &&
-				(formatProps2.formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT) != 0;
+		const bool storageOk = (caps.supportedUsageFlags & VK_IMAGE_USAGE_STORAGE_BIT) != 0 && (formatProps2.formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT) != 0;
 
 		VkImageUsageFlags extraImageUsage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 		if (storageOk) {
@@ -60,13 +58,12 @@ namespace mythril {
 		}
 
 		vkb::SwapchainBuilder swapchainBuilder{_ctx._vkPhysicalDevice, _ctx._vkDevice, _ctx._vkSurfaceKHR};
-		auto swapchain_result = swapchainBuilder
-			.set_desired_format(surfaceFormat)
-			.set_desired_min_image_count(kNUM_FRAMES_IN_FLIGHT)
-			.set_desired_present_mode(args.presentMode) // VERY IMPORTANT, decides framerate/buffer/sync
-			.set_desired_extent(width, height)
-			.add_image_usage_flags(extraImageUsage)
-			.build();
+		auto swapchain_result = swapchainBuilder.set_desired_format(surfaceFormat)
+		                                .set_desired_min_image_count(kNUM_FRAMES_IN_FLIGHT)
+		                                .set_desired_present_mode(args.presentMode) // VERY IMPORTANT, decides framerate/buffer/sync
+		                                .set_desired_extent(width, height)
+		                                .add_image_usage_flags(extraImageUsage)
+		                                .build();
 		ASSERT_MSG(swapchain_result.has_value(), "[VULKAN] {}", swapchain_result.error().message());
 		vkb::Swapchain& vkbswapchain = swapchain_result.value();
 		// things we assign to the class itself
@@ -80,7 +77,12 @@ namespace mythril {
 		}
 		this->_vkImageFormat = vkbswapchain.image_format;
 		if (args.format != _vkImageFormat) {
-			LOG_SYSTEM(LogType::Warning, "Requested swapchain format did not take place! \n Requested: '{}' vs Actual: '{}'", vkstring::VulkanFormatToString(args.format), vkstring::VulkanFormatToString(_vkImageFormat));
+			LOG_SYSTEM(
+			        LogType::Warning,
+			        "Requested swapchain format did not take place! \n Requested: '{}' vs Actual: '{}'",
+			        vkstring::VulkanFormatToString(args.format),
+			        vkstring::VulkanFormatToString(_vkImageFormat)
+			);
 		}
 		if (vkbswapchain.image_count > kMAX_SWAPCHAIN_IMAGES) {
 			LOG_SYSTEM(LogType::FatalError, "Swapchain image count ({}) exceeds max supported swapchain images ({})!", (int) vkbswapchain.image_count, (int) kMAX_SWAPCHAIN_IMAGES);
@@ -90,8 +92,7 @@ namespace mythril {
 		ASSERT((caps.minImageCount <= _numSwapchainImages) && (_numSwapchainImages <= caps.maxImageCount));
 
 		const VkImageUsageFlags usage_flags =
-				VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
-				(storageOk ? VK_IMAGE_USAGE_STORAGE_BIT : VkImageUsageFlags{});
+		        VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | (storageOk ? VK_IMAGE_USAGE_STORAGE_BIT : VkImageUsageFlags{});
 
 		std::vector<VkImage> images = vkbswapchain.get_images().value();
 		std::vector<VkImageView> imageviews = vkbswapchain.get_image_views().value();
@@ -103,10 +104,7 @@ namespace mythril {
 			image._isOwning = false;
 			image._vkUsageFlags = usage_flags;
 			image._vkImageType = VK_IMAGE_TYPE_2D;
-			image._vkImage = images[i],
-			image._vkImageView = imageviews[i],
-			image._vkCurrentImageLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-			image._vkExtent = { _vkExtent2D.width, _vkExtent2D.height, 1},
+			image._vkImage = images[i], image._vkImageView = imageviews[i], image._vkCurrentImageLayout = VK_IMAGE_LAYOUT_UNDEFINED, image._vkExtent = {_vkExtent2D.width, _vkExtent2D.height, 1},
 			image._vkFormat = _vkImageFormat;
 			snprintf(image._debugName, sizeof(image._debugName), "Swapchain Image %d", i);
 			vkutil::SetObjectDebugName(ctx._vkDevice, VK_OBJECT_TYPE_IMAGE, reinterpret_cast<uint64_t>(images[i]), image._debugName);
@@ -145,22 +143,15 @@ namespace mythril {
 
 		// wait for frame N - numSwapchainImages
 		const VkSemaphoreWaitInfo waitInfo = {
-			.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
-			.semaphoreCount = 1,
-			.pSemaphores = &_ctx._timelineSemaphore,
-			.pValues = &_timelineWaitValues[_frameIndex],
+		    .sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
+		    .semaphoreCount = 1,
+		    .pSemaphores = &_ctx._timelineSemaphore,
+		    .pValues = &_timelineWaitValues[_frameIndex],
 		};
 		VK_CHECK(vkWaitSemaphores(_ctx._vkDevice, &waitInfo, UINT64_MAX));
 
 		VkSemaphore vkAcquireSemaphore = _vkAcquireSemaphores[_frameIndex];
-		const VkResult result = vkAcquireNextImageKHR(
-			_ctx._vkDevice,
-			_vkSwapchain,
-			UINT64_MAX,
-			vkAcquireSemaphore,
-			VK_NULL_HANDLE,
-			&_imageIndex
-		);
+		const VkResult result = vkAcquireNextImageKHR(_ctx._vkDevice, _vkSwapchain, UINT64_MAX, vkAcquireSemaphore, VK_NULL_HANDLE, &_imageIndex);
 		if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR && result != VK_ERROR_OUT_OF_DATE_KHR) {
 			ASSERT_MSG(result, "Something went horribly wrong, vkAcquireNextImageKHR() failed!");
 		}
@@ -171,20 +162,21 @@ namespace mythril {
 	void Swapchain::present(VkSemaphore waitSemaphore) {
 		MYTH_PROFILER_FUNCTION_N("Swapchain Present");
 		const VkPresentInfoKHR present_info = {
-				.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
-				.waitSemaphoreCount = 1,
-				.pWaitSemaphores = &waitSemaphore,
-				.swapchainCount = 1,
-				.pSwapchains = &_vkSwapchain,
-				.pImageIndices = &_imageIndex,
+		    .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+		    .waitSemaphoreCount = 1,
+		    .pWaitSemaphores = &waitSemaphore,
+		    .swapchainCount = 1,
+		    .pSwapchains = &_vkSwapchain,
+		    .pImageIndices = &_imageIndex,
 		};
 		const VkResult presentResult = vkQueuePresentKHR(_ctx._vkGraphicsQueue, &present_info);
 		if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR || _isDirty) {
 			_isDirty = true;
-			if (presentResult == VK_ERROR_OUT_OF_DATE_KHR) return;
+			if (presentResult == VK_ERROR_OUT_OF_DATE_KHR)
+				return;
 		}
 		_getNextImage = true;
 		_frameIndex = (_frameIndex + 1) % kNUM_FRAMES_IN_FLIGHT;
 		MYTH_PROFILER_FRAME();
 	}
-}
+} // namespace mythril

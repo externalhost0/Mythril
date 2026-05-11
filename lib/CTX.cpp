@@ -6,37 +6,37 @@
 
 #include <iostream>
 
-#include "vkutil.h"
-#include "vkstring.h"
-#include "Logger.h"
 #include "GraphicsPipelineBuilder.h"
+#include "Logger.h"
 #include "Pipelines.h"
-#include "mythril/CTXBuilder.h"
 #include "Plugins.h"
+#include "mythril/CTXBuilder.h"
 #include "mythril/Objects.h"
+#include "vkstring.h"
+#include "vkutil.h"
 
-#include <slang/slang.h>
-#include <slang/slang-cpp-types.h>
 #include <slang/slang-com-ptr.h>
 #include <slang/slang-cpp-types-core.h>
+#include <slang/slang-cpp-types.h>
+#include <slang/slang.h>
 
 namespace mythril {
 	// https://docs.shader-slang.org/en/latest/external/slang/docs/user-guide/03-convenience-features.html#descriptorhandle-for-bindless-descriptor-access:~:text=None%20provides%20the%20following%20bindings%20for%20descriptor%20types%3A-,Enum,-Value
 	namespace BindlessSpaceIndex {
 		enum Type : uint8_t {
 			kSampler = 0,
-//			kCombinedImageSampler = 1,
+			//			kCombinedImageSampler = 1,
 			kSampledImage = 2,
 			kStorageImage = 3,
-//			kUniformTexelBuffer = 2,
-//			kStorageTexelBuffer = 2,
-//			kUniformBuffer = 2,
-//			kStorageBuffer = 2,
+			//			kUniformTexelBuffer = 2,
+			//			kStorageTexelBuffer = 2,
+			//			kUniformBuffer = 2,
+			//			kStorageBuffer = 2,
 
 			// this MUST be manually set when reusing binding indices
 			kNumOfBinds = 3
 		};
-	}
+	} // namespace BindlessSpaceIndex
 
 	static VkMemoryPropertyFlags StorageTypeToVkMemoryPropertyFlags(StorageType storage) {
 		VkMemoryPropertyFlags memFlags{0};
@@ -55,11 +55,7 @@ namespace mythril {
 	}
 
 	static bool ValidateRange(const VkExtent3D& extent3D, uint32_t numLevels, const TexRange& range) {
-		if (range.dimensions.width <= 0 ||
-			range.dimensions.height <= 0 ||
-			range.dimensions.depth <= 0 ||
-			range.numLayers <= 0 ||
-			range.numMipLevels <= 0) {
+		if (range.dimensions.width <= 0 || range.dimensions.height <= 0 || range.dimensions.depth <= 0 || range.numLayers <= 0 || range.numMipLevels <= 0) {
 			LOG_SYSTEM(LogType::Error, "Values like: width, height, depth, numLayers and mipLevel must all be at least greater than 0.");
 			return false;
 		}
@@ -71,24 +67,18 @@ namespace mythril {
 		const uint32_t texHeight = std::max(extent3D.height >> range.mipLevel, 1u);
 		const uint32_t texDepth = std::max(extent3D.depth >> range.mipLevel, 1u);
 
-		if (range.dimensions.width > texWidth ||
-			range.dimensions.height > texHeight ||
-			range.dimensions.depth > texDepth) {
+		if (range.dimensions.width > texWidth || range.dimensions.height > texHeight || range.dimensions.depth > texDepth) {
 			LOG_SYSTEM(LogType::Error, "Range dimensions exceed texture dimensions!");
 			return false;
 		}
-		if (range.offset.x > texWidth - range.dimensions.width ||
-			range.offset.y > texHeight - range.dimensions.height ||
-			range.offset.z > texDepth - range.dimensions.depth) {
+		if (range.offset.x > texWidth - range.dimensions.width || range.offset.y > texHeight - range.dimensions.height || range.offset.z > texDepth - range.dimensions.depth) {
 			LOG_SYSTEM(LogType::Error, "Range dimensions exceed texture dimensions when accounting for offsets!");
 			return false;
 		}
 		return true;
 	}
 
-	bool CTX::isExtensionEnabled(const std::string_view extension_name) const {
-		return _enabledExtensionNames.contains(std::string(extension_name));
-	}
+	bool CTX::isExtensionEnabled(const std::string_view extension_name) const { return _enabledExtensionNames.contains(std::string(extension_name)); }
 	void CTX::construct() {
 		ASSERT(this->_vkInstance != VK_NULL_HANDLE);
 		ASSERT(this->_vkPhysicalDevice != VK_NULL_HANDLE);
@@ -105,28 +95,27 @@ namespace mythril {
 			std::vector<uint32_t> pixels(texWidth * texHeight);
 			for (uint32_t y = 0; y != texHeight; y++) {
 				for (uint32_t x = 0; x != texWidth; x++) {
-					pixels[y * texWidth + x] =
-							0xFF000000 + ((x ^ y) << 16) + ((x ^ y) << 8) + (x ^ y);
+					pixels[y * texWidth + x] = 0xFF000000 + ((x ^ y) << 16) + ((x ^ y) << 8) + (x ^ y);
 				}
 			}
 			// now take the pattern and create the first texture
 			// fallback texture, index 0
-			this->_dummyTexture = this->createTexture({
-				.dimension = {texWidth, texHeight},
-				.format = VK_FORMAT_R8G8B8A8_UNORM,
-				.usage = TextureUsageBits::TextureUsageBits_Sampled | TextureUsageBits::TextureUsageBits_Storage,
-				.initialData = pixels.data(),
-				.debugName = "Dummy Texture"
-			});
+			this->_dummyTexture = this->createTexture(
+			        {.dimension = {texWidth, texHeight},
+			         .format = VK_FORMAT_R8G8B8A8_UNORM,
+			         .usage = TextureUsageBits::TextureUsageBits_Sampled | TextureUsageBits::TextureUsageBits_Storage,
+			         .initialData = pixels.data(),
+			         .debugName = "Dummy Texture"}
+			);
 			// fallback sampler, index 0
-			this->_dummyLinearSampler = this->createSampler({
-				.magFilter = SamplerFilter::Linear,
-				.minFilter = SamplerFilter::Linear,
-				.wrapU = SamplerWrap::ClampEdge,
-				.wrapV = SamplerWrap::ClampEdge,
-				.wrapW = SamplerWrap::ClampEdge,
-				.debugName = "Linear Sampler"
-			});
+			this->_dummyLinearSampler = this->createSampler(
+			        {.magFilter = SamplerFilter::Linear,
+			         .minFilter = SamplerFilter::Linear,
+			         .wrapU = SamplerWrap::ClampEdge,
+			         .wrapV = SamplerWrap::ClampEdge,
+			         .wrapW = SamplerWrap::ClampEdge,
+			         .debugName = "Linear Sampler"}
+			);
 			// initial descriptor pool creation
 			this->growBindlessDescriptorPoolImpl(this->_currentMaxTextureCount, this->_currentMaxSamplerCount);
 		}
@@ -254,11 +243,11 @@ namespace mythril {
 		}
 		SwapchainSpec new_swapchain_spec{};
 		new_swapchain_spec = {
-			.width = lastSwapchainSpec.width,
-			.height = lastSwapchainSpec.height,
-			.format = lastSwapchainSpec.format,
-			.colorSpace = lastSwapchainSpec.colorSpace,
-			.presentMode = lastSwapchainSpec.presentMode,
+		    .width = lastSwapchainSpec.width,
+		    .height = lastSwapchainSpec.height,
+		    .format = lastSwapchainSpec.format,
+		    .colorSpace = lastSwapchainSpec.colorSpace,
+		    .presentMode = lastSwapchainSpec.presentMode,
 		};
 		AssignIfValid(new_swapchain_spec.width, spec.width, static_cast<uint32_t>(0));
 		AssignIfValid(new_swapchain_spec.height, spec.height, static_cast<uint32_t>(0));
@@ -268,7 +257,7 @@ namespace mythril {
 
 		VK_CHECK(vkDeviceWaitIdle(this->_vkDevice));
 		this->_swapchain = std::make_unique<Swapchain>(*this, new_swapchain_spec);
-		this->_timelineSemaphore = vkutil::CreateTimelineSemaphore(_vkDevice, this->_swapchain->getNumOfSwapchainImages()-1);
+		this->_timelineSemaphore = vkutil::CreateTimelineSemaphore(_vkDevice, this->_swapchain->getNumOfSwapchainImages() - 1);
 		// we need to store in the situation where the swapcahin is deleted and we want to use the last swapchains settings
 		lastSwapchainSpec = new_swapchain_spec;
 		wrappedBackBuffer.updateHandle(this, _swapchain->getCurrentSwapchainTextureHandle());
@@ -298,12 +287,8 @@ namespace mythril {
 		infoSamplers.reserve(_samplerPool._objects.size());
 		// our linear sampler is the backup/resolve
 		VkSampler linearSampler = _samplerPool._objects[0]._obj._vkSampler;
-		for (const auto& obj : _samplerPool._objects) {
-			infoSamplers.push_back({
-				.sampler = obj._obj._vkSampler ? obj._obj._vkSampler : linearSampler,
-				.imageView = VK_NULL_HANDLE,
-				.imageLayout = VK_IMAGE_LAYOUT_UNDEFINED
-			});
+		for (const auto& obj: _samplerPool._objects) {
+			infoSamplers.push_back({.sampler = obj._obj._vkSampler ? obj._obj._vkSampler : linearSampler, .imageView = VK_NULL_HANDLE, .imageLayout = VK_IMAGE_LAYOUT_UNDEFINED});
 		}
 
 		// IMAGES //
@@ -314,7 +299,7 @@ namespace mythril {
 		infoStorageImages.reserve(numTextureObjects);
 		// our dummyTexture, the cross pattern, is the backup/resolve
 		VkImageView dummyImageView = _texturePool._objects[0]._obj._vkImageView;
-		for (const auto& obj : _texturePool._objects) {
+		for (const auto& obj: _texturePool._objects) {
 			const AllocatedTexture& img = obj._obj;
 			// swapchain images must not be in bindless, after present, the drawable is returned to
 			// already presenting this drawable on moltenvk
@@ -326,92 +311,96 @@ namespace mythril {
 			const bool isSampledImage = isTextureAvailable && img.isSampledImage() && !skipForBindless;
 			const bool isStorageImage = isTextureAvailable && img.isStorageImage() && !skipForBindless;
 			// sampled images have no either layout need but shader_read_only
-			infoSampledImages.push_back(VkDescriptorImageInfo{
-					.sampler = VK_NULL_HANDLE,
-					.imageView = isSampledImage ? view : dummyImageView,
-					.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-			});
+			infoSampledImages.push_back(
+			        VkDescriptorImageInfo{
+			            .sampler = VK_NULL_HANDLE,
+			            .imageView = isSampledImage ? view : dummyImageView,
+			            .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+			        }
+			);
 			ASSERT_MSG(infoSampledImages.back().imageView != VK_NULL_HANDLE, "Sampled imageView is null!");
 			// storage images could be used for anything, per in general layout
-			infoStorageImages.push_back(VkDescriptorImageInfo{
-					.sampler = VK_NULL_HANDLE,
-					.imageView = isStorageImage ? storageView : dummyImageView,
-					.imageLayout = VK_IMAGE_LAYOUT_GENERAL,
-			});
+			infoStorageImages.push_back(
+			        VkDescriptorImageInfo{
+			            .sampler = VK_NULL_HANDLE,
+			            .imageView = isStorageImage ? storageView : dummyImageView,
+			            .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
+			        }
+			);
 		}
 		// BUFFERS //
 		// currently we do not support bindless buffers, though this is pretty easy to implement
-//		std::vector<VkDescriptorBufferInfo> infoUniformBuffers;
-//		std::vector<VkDescriptorBufferInfo> infoStorageBuffers;
-//		const uint32_t numBufferObjects = _bufferPool.numObjects();
-//		for (const auto& obj : _bufferPool._objects) {
-//			const AllocatedBuffer& buf = obj._obj;
-//			// get vulkan objects we want
-//			VkBuffer buffer = obj._obj._vkBuffer;
-//			// get states we need to decide on how to add to vectors
-//			const bool isUniformBuffer = buf.isUniformBuffer();
-//			const bool isStorageBuffer = buf.isStorageBuffer();
-//			infoUniformBuffers.push_back(VkDescriptorBufferInfo{
-//				.buffer = buffer,
-//				.offset = 0,
-//				.range = isUniformBuffer ? buf._bufferSize : VK_WHOLE_SIZE
-//			});
-//			LOG_DEBUG("{} - {}", buf._debugName, _bufferPool.findObject(&obj._obj).index());
-//			ASSERT_MSG(infoUniformBuffers.back().buffer != VK_NULL_HANDLE, "Uniform VkBuffer is VK_NULL_HANDLE!");
-//			infoStorageBuffers.push_back(VkDescriptorBufferInfo{
-//				.buffer = buffer,
-//				.offset = 0,
-//				.range = isStorageBuffer ? buf._bufferSize : VK_WHOLE_SIZE
-//			});
-//		}
+		//		std::vector<VkDescriptorBufferInfo> infoUniformBuffers;
+		//		std::vector<VkDescriptorBufferInfo> infoStorageBuffers;
+		//		const uint32_t numBufferObjects = _bufferPool.numObjects();
+		//		for (const auto& obj : _bufferPool._objects) {
+		//			const AllocatedBuffer& buf = obj._obj;
+		//			// get vulkan objects we want
+		//			VkBuffer buffer = obj._obj._vkBuffer;
+		//			// get states we need to decide on how to add to vectors
+		//			const bool isUniformBuffer = buf.isUniformBuffer();
+		//			const bool isStorageBuffer = buf.isStorageBuffer();
+		//			infoUniformBuffers.push_back(VkDescriptorBufferInfo{
+		//				.buffer = buffer,
+		//				.offset = 0,
+		//				.range = isUniformBuffer ? buf._bufferSize : VK_WHOLE_SIZE
+		//			});
+		//			LOG_DEBUG("{} - {}", buf._debugName, _bufferPool.findObject(&obj._obj).index());
+		//			ASSERT_MSG(infoUniformBuffers.back().buffer != VK_NULL_HANDLE, "Uniform VkBuffer is VK_NULL_HANDLE!");
+		//			infoStorageBuffers.push_back(VkDescriptorBufferInfo{
+		//				.buffer = buffer,
+		//				.offset = 0,
+		//				.range = isStorageBuffer ? buf._bufferSize : VK_WHOLE_SIZE
+		//			});
+		//		}
 
 		VkWriteDescriptorSet write[BindlessSpaceIndex::kNumOfBinds] = {};
 		uint32_t numWrites = 0;
 		if (!infoSamplers.empty()) {
 			write[numWrites++] = VkWriteDescriptorSet{
-					.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-					.dstSet = _vkBindlessDSet,
-					.dstBinding = BindlessSpaceIndex::kSampler,
-					.dstArrayElement = 0,
-					.descriptorCount = static_cast<uint32_t>(infoSamplers.size()),
-					.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER,
-					.pImageInfo = infoSamplers.data(),
+			    .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+			    .dstSet = _vkBindlessDSet,
+			    .dstBinding = BindlessSpaceIndex::kSampler,
+			    .dstArrayElement = 0,
+			    .descriptorCount = static_cast<uint32_t>(infoSamplers.size()),
+			    .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER,
+			    .pImageInfo = infoSamplers.data(),
 			};
 		}
 
 		// currently not supported as there is no way for the user to make a combined image+sampler
-//		if (!infoSamplers.empty()) {
-//			write[numWrites++] = VkWriteDescriptorSet{
-//					.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-//					.dstSet = _vkDSet,
-//					.dstBinding = BindlessSpaceIndex::kCombinedImageSampler,
-//					.dstArrayElement = 0,
-//					.descriptorCount = static_cast<uint32_t>(infoSampledImages.size()),
-//					.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-//					.pImageInfo = infoSamplers.data(),
-//			};
-//		}
+		//		if (!infoSamplers.empty()) {
+		//			write[numWrites++] = VkWriteDescriptorSet{
+		//					.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+		//					.dstSet = _vkDSet,
+		//					.dstBinding = BindlessSpaceIndex::kCombinedImageSampler,
+		//					.dstArrayElement = 0,
+		//					.descriptorCount = static_cast<uint32_t>(infoSampledImages.size()),
+		//					.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+		//					.pImageInfo = infoSamplers.data(),
+		//			};
+		//		}
 
 		if (!infoSampledImages.empty()) {
 			write[numWrites++] = VkWriteDescriptorSet{
-					.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-					.dstSet = _vkBindlessDSet,
-					.dstBinding = BindlessSpaceIndex::kSampledImage,
-					.dstArrayElement = 0,
-					.descriptorCount = static_cast<uint32_t>(infoSampledImages.size()),
-					.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
-					.pImageInfo = infoSampledImages.data(),
+			    .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+			    .dstSet = _vkBindlessDSet,
+			    .dstBinding = BindlessSpaceIndex::kSampledImage,
+			    .dstArrayElement = 0,
+			    .descriptorCount = static_cast<uint32_t>(infoSampledImages.size()),
+			    .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
+			    .pImageInfo = infoSampledImages.data(),
 			};
 		}
 		if (!infoStorageImages.empty()) {
 			write[numWrites++] = VkWriteDescriptorSet{
-					.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-					.dstSet = _vkBindlessDSet,
-					.dstBinding = BindlessSpaceIndex::kStorageImage,
-					.dstArrayElement = 0,
-					.descriptorCount = static_cast<uint32_t>(infoStorageImages.size()),
-					.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-					.pImageInfo = infoStorageImages.data(),
+			    .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+			    .dstSet = _vkBindlessDSet,
+			    .dstBinding = BindlessSpaceIndex::kStorageImage,
+			    .dstArrayElement = 0,
+			    .descriptorCount = static_cast<uint32_t>(infoStorageImages.size()),
+			    .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+			    .pImageInfo = infoStorageImages.data(),
 			};
 		}
 		if (numWrites) {
@@ -433,81 +422,71 @@ namespace mythril {
 		ASSERT_MSG(newMaxSamplerCount <= MAX_SAMPLER_LIMIT, "Max samplers exceeded: {}, but maximum of {} is allowed!", newMaxSamplerCount, MAX_SAMPLER_LIMIT);
 
 		if (_vkBindlessDSL != VK_NULL_HANDLE) {
-			deferTask(std::packaged_task<void()>([device = _vkDevice, dsl = _vkBindlessDSL]() {
-				vkDestroyDescriptorSetLayout(device, dsl, nullptr);
-			}));
+			deferTask(std::packaged_task<void()>([device = _vkDevice, dsl = _vkBindlessDSL]() { vkDestroyDescriptorSetLayout(device, dsl, nullptr); }));
 		}
 		if (_vkBindlessDPool != VK_NULL_HANDLE) {
-			deferTask(std::packaged_task<void()>([device = _vkDevice, dp = _vkBindlessDPool]() {
-				vkDestroyDescriptorPool(device, dp, nullptr);
-			}));
+			deferTask(std::packaged_task<void()>([device = _vkDevice, dp = _vkBindlessDPool]() { vkDestroyDescriptorPool(device, dp, nullptr); }));
 		}
 
-		constexpr VkShaderStageFlags stage_flags =
-				VK_SHADER_STAGE_VERTEX_BIT |
-				VK_SHADER_STAGE_FRAGMENT_BIT |
-				VK_SHADER_STAGE_COMPUTE_BIT;
+		constexpr VkShaderStageFlags stage_flags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
 		const VkDescriptorSetLayoutBinding bindings[BindlessSpaceIndex::kNumOfBinds] = {
-				// __DynamicResource<__DynamicResourceKind.Sampler>
-				VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kSampler, VK_DESCRIPTOR_TYPE_SAMPLER, newMaxSamplerCount, stage_flags, nullptr),
-				// __DynamicResource<__DynamicResourceKind.General>
-//				VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kCombinedImageSampler, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, newMaxTextureCount, stage_flags, nullptr),
-				VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kSampledImage, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, newMaxTextureCount, stage_flags, nullptr),
-				VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kStorageImage, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, newMaxTextureCount, stage_flags, nullptr),
-//				VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kUniformTexelBuffer, VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, newMaxTextureCount, stage_flags, nullptr),
-//				VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kStorageTexelBuffer, VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, newMaxTextureCount, stage_flags, nullptr),
-//				VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kUniformBuffer, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, newMaxTextureCount, stage_flags, nullptr),
-//				VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kStorageBuffer, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, newMaxTextureCount, stage_flags, nullptr),
+		    // __DynamicResource<__DynamicResourceKind.Sampler>
+		    VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kSampler, VK_DESCRIPTOR_TYPE_SAMPLER, newMaxSamplerCount, stage_flags, nullptr),
+		    // __DynamicResource<__DynamicResourceKind.General>
+		    //				VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kCombinedImageSampler, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, newMaxTextureCount, stage_flags, nullptr),
+		    VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kSampledImage, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, newMaxTextureCount, stage_flags, nullptr),
+		    VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kStorageImage, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, newMaxTextureCount, stage_flags, nullptr),
+		    //				VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kUniformTexelBuffer, VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, newMaxTextureCount, stage_flags, nullptr),
+		    //				VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kStorageTexelBuffer, VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, newMaxTextureCount, stage_flags, nullptr),
+		    //				VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kUniformBuffer, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, newMaxTextureCount, stage_flags, nullptr),
+		    //				VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kStorageBuffer, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, newMaxTextureCount, stage_flags, nullptr),
 		};
-		constexpr uint32_t dsbinding_flags =
-				VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT |
-				VK_DESCRIPTOR_BINDING_UPDATE_UNUSED_WHILE_PENDING_BIT |
-				VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT;
+		constexpr uint32_t dsbinding_flags = VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_UNUSED_WHILE_PENDING_BIT | VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT;
 		// assign each of our descriptors the same flags
 		VkDescriptorBindingFlags bindingFlags[BindlessSpaceIndex::kNumOfBinds];
-		for (VkDescriptorBindingFlags& bindingFlag : bindingFlags) {
+		for (VkDescriptorBindingFlags& bindingFlag: bindingFlags) {
 			bindingFlag = dsbinding_flags;
 		}
 		// ReSharper disable once CppVariableCanBeMadeConstexpr
 		const VkDescriptorSetLayoutBindingFlagsCreateInfo dsl_bf_ci = {
-				.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO,
-				.bindingCount = static_cast<uint32_t>(BindlessSpaceIndex::kNumOfBinds),
-				.pBindingFlags = bindingFlags,
+		    .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO,
+		    .bindingCount = static_cast<uint32_t>(BindlessSpaceIndex::kNumOfBinds),
+		    .pBindingFlags = bindingFlags,
 		};
 		const VkDescriptorSetLayoutCreateInfo dsl_ci = {
-				.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-				.pNext = &dsl_bf_ci,
-				.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT,
-				.bindingCount = static_cast<uint32_t>(BindlessSpaceIndex::kNumOfBinds),
-				.pBindings = bindings,
+		    .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+		    .pNext = &dsl_bf_ci,
+		    .flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT,
+		    .bindingCount = static_cast<uint32_t>(BindlessSpaceIndex::kNumOfBinds),
+		    .pBindings = bindings,
 		};
 		VK_CHECK(vkCreateDescriptorSetLayout(_vkDevice, &dsl_ci, nullptr, &_vkBindlessDSL));
 		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT, reinterpret_cast<uint64_t>(_vkBindlessDSL), "Mythril's Bindless Descriptor SetLayout");
 
 		const VkDescriptorPoolSize poolSizes[BindlessSpaceIndex::kNumOfBinds]{
-			VkDescriptorPoolSize(VK_DESCRIPTOR_TYPE_SAMPLER, newMaxSamplerCount),
-//			VkDescriptorPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, newMaxTextureCount),
-			VkDescriptorPoolSize(VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, newMaxTextureCount),
-			VkDescriptorPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, newMaxTextureCount),
-//			VkDescriptorPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, newMaxTextureCount),
-//			VkDescriptorPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, newMaxTextureCount),
-//			VkDescriptorPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, newMaxTextureCount),
-//			VkDescriptorPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, newMaxTextureCount),
+		    VkDescriptorPoolSize(VK_DESCRIPTOR_TYPE_SAMPLER, newMaxSamplerCount),
+		    //			VkDescriptorPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, newMaxTextureCount),
+		    VkDescriptorPoolSize(VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, newMaxTextureCount),
+		    VkDescriptorPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, newMaxTextureCount),
+		    //			VkDescriptorPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, newMaxTextureCount),
+		    //			VkDescriptorPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, newMaxTextureCount),
+		    //			VkDescriptorPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, newMaxTextureCount),
+		    //			VkDescriptorPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, newMaxTextureCount),
 		};
 		const VkDescriptorPoolCreateInfo dp_ci = {
-				.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-				.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT,
-				.maxSets = 1,
-				.poolSizeCount = BindlessSpaceIndex::kNumOfBinds,
-				.pPoolSizes = poolSizes,
+		    .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+		    .flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT,
+		    .maxSets = 1,
+		    .poolSizeCount = BindlessSpaceIndex::kNumOfBinds,
+		    .pPoolSizes = poolSizes,
 		};
 		VK_CHECK(vkCreateDescriptorPool(_vkDevice, &dp_ci, nullptr, &_vkBindlessDPool));
 		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_DESCRIPTOR_POOL, reinterpret_cast<uint64_t>(_vkBindlessDPool), "Mythril's Bindless Descriptor Pool");
 		const VkDescriptorSetAllocateInfo ds_ai = {
-				.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-				.descriptorPool = _vkBindlessDPool,
-				.descriptorSetCount = 1,
-				.pSetLayouts = &_vkBindlessDSL,
+		    .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+		    .descriptorPool = _vkBindlessDPool,
+		    .descriptorSetCount = 1,
+		    .pSetLayouts = &_vkBindlessDSL,
 		};
 		VK_CHECK(vkAllocateDescriptorSets(_vkDevice, &ds_ai, &_vkBindlessDSet));
 		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_DESCRIPTOR_SET, reinterpret_cast<uint64_t>(_vkBindlessDSet), "Mythril's Bindless Descriptor Set");
@@ -522,11 +501,11 @@ namespace mythril {
 
 	static VkPipelineLayout BuildPipelineLayout(VkDevice device, const std::vector<VkDescriptorSetLayout>& layouts, const std::vector<VkPushConstantRange>& ranges) {
 		const VkPipelineLayoutCreateInfo pipeline_layout_info = {
-				.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-				.setLayoutCount = static_cast<uint32_t>(layouts.size()),
-				.pSetLayouts = layouts.data(),
-				.pushConstantRangeCount = static_cast<uint32_t>(ranges.size()),
-				.pPushConstantRanges =  ranges.data(),
+		    .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+		    .setLayoutCount = static_cast<uint32_t>(layouts.size()),
+		    .pSetLayouts = layouts.data(),
+		    .pushConstantRangeCount = static_cast<uint32_t>(ranges.size()),
+		    .pPushConstantRanges = ranges.data(),
 		};
 		VkPipelineLayout plLayout = VK_NULL_HANDLE;
 		VK_CHECK(vkCreatePipelineLayout(device, &pipeline_layout_info, nullptr, &plLayout));
@@ -537,24 +516,23 @@ namespace mythril {
 		PipelineLayoutSignature out;
 
 		// 1. unify the bindless set index across all stages
-		for (const PipelineLayoutSignature& sig : pipelineSignatures) {
-			if (!sig.bindlessSetIndex.has_value()) continue;
+		for (const PipelineLayoutSignature& sig: pipelineSignatures) {
+			if (!sig.bindlessSetIndex.has_value())
+				continue;
 			if (!out.bindlessSetIndex.has_value()) {
 				out.bindlessSetIndex = sig.bindlessSetIndex;
 			} else {
-				ASSERT_MSG(*out.bindlessSetIndex == *sig.bindlessSetIndex,
-						   "Pipeline stages disagree on bindless set index ({} vs {}).",
-						   *out.bindlessSetIndex, *sig.bindlessSetIndex);
+				ASSERT_MSG(*out.bindlessSetIndex == *sig.bindlessSetIndex, "Pipeline stages disagree on bindless set index ({} vs {}).", *out.bindlessSetIndex, *sig.bindlessSetIndex);
 			}
 		}
 
 		// 2. merge push constant func
 		// apply merge func to every pushes by reference
-		for (const PipelineLayoutSignature& sig : pipelineSignatures) {
-			for (const VkPushConstantRange& src : sig.pushes) {
+		for (const PipelineLayoutSignature& sig: pipelineSignatures) {
+			for (const VkPushConstantRange& src: sig.pushes) {
 				bool found = false;
 
-				for (auto& dst : out.pushes) {
+				for (auto& dst: out.pushes) {
 					// check if the block we are comparing is actually the same where it matters (size & offset)
 					if (dst.offset == src.offset && dst.size == src.size) {
 						dst.stageFlags |= src.stageFlags;
@@ -565,9 +543,8 @@ namespace mythril {
 
 				if (!found) {
 					// check for overlaps between multiple push constants, vulkan spec disallows this
-					for (const auto& dst : out.pushes) {
-						bool overlap = !(src.offset + src.size <= dst.offset ||
-										 dst.offset + dst.size <= src.offset);
+					for (const auto& dst: out.pushes) {
+						bool overlap = !(src.offset + src.size <= dst.offset || dst.offset + dst.size <= src.offset);
 						ASSERT_MSG(!overlap, "Push constant ranges overlap but differ in size or offset.");
 					}
 					out.pushes.push_back(src);
@@ -579,7 +556,8 @@ namespace mythril {
 
 	static int ResolveSpecializationConstantID(const std::variant<std::string, int>& identifier, const std::unordered_map<std::string, int>& map) {
 		bool isString = std::holds_alternative<std::string>(identifier);
-		if (!isString) return std::get<int>(identifier);
+		if (!isString)
+			return std::get<int>(identifier);
 		const auto& name = std::get<std::string>(identifier);
 		auto it = map.find(name);
 		if (it != map.end()) {
@@ -596,8 +574,10 @@ namespace mythril {
 	};
 	static std::unique_ptr<SpecializationInfoBundle> BuildSpecializationInfoBundle(SpecializationConstantEntry* pEntries, uint32_t entryCount, const std::unordered_map<std::string, int>& map) {
 		// if entryCount is 0 just save ourselves time
-		if (entryCount < 1) return nullptr;
-		if (map.empty()) return nullptr;
+		if (entryCount < 1)
+			return nullptr;
+		if (map.empty())
+			return nullptr;
 
 		auto bundle = std::make_unique<SpecializationInfoBundle>();
 		bundle->mapEntriesData.reserve(entryCount);
@@ -618,10 +598,7 @@ namespace mythril {
 		for (uint32_t i = 0; i < entryCount; i++) {
 			const SpecializationConstantEntry& spec_entry = pEntries[i];
 			size_t dstOffset = bundle->mapEntriesData[i].offset;
-			std::memcpy(
-					bundle->packedData.data() + dstOffset,
-					spec_entry.data,
-					spec_entry.size);
+			std::memcpy(bundle->packedData.data() + dstOffset, spec_entry.data, spec_entry.size);
 		}
 
 		bundle->vkInfo.mapEntryCount = bundle->mapEntriesData.size();
@@ -639,9 +616,7 @@ namespace mythril {
 			// The bindless set must live at set index 0 because Vulkan's set-layout array is
 			// positional. Slang assigns it as the highest set index by default; if the user has
 			// other (non-bindless) sets the reflection step will already have errored out.
-			ASSERT_MSG(*signature.bindlessSetIndex == 0,
-					   "Bindless set must be declared at set index 0, got {}.",
-					   *signature.bindlessSetIndex);
+			ASSERT_MSG(*signature.bindlessSetIndex == 0, "Bindless set must be declared at set index 0, got {}.", *signature.bindlessSetIndex);
 			layouts.push_back(_vkBindlessDSL);
 		}
 
@@ -664,25 +639,21 @@ namespace mythril {
 		AllocatedShader* shader = _shaderPool.get(spec.shader);
 
 		if (shader->_specializationInfo.specializationConstants.size() != sc_count)
-			LOG_SYSTEM(LogType::Warning, "You have specialization constants used in the compute shader '{}' that are not defined in the pipeline creation for '{}'!", shader->_debugName, spec.debugName);
+			LOG_SYSTEM(
+			        LogType::Warning, "You have specialization constants used in the compute shader '{}' that are not defined in the pipeline creation for '{}'!", shader->_debugName, spec.debugName
+			);
 		const std::unique_ptr<SpecializationInfoBundle> spec_constants_bundle = BuildSpecializationInfoBundle(spec.specConstants, sc_count, shader->_specializationInfo.nameToID);
 
 		VkPipelineShaderStageCreateInfo shader_stage_ci = {
-				.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-				.pNext = nullptr,
-				.flags = 0,
-				.stage = VK_SHADER_STAGE_COMPUTE_BIT,
-				.module = shader->vkShaderModule,
-				.pName = "cs_main",
-				.pSpecializationInfo = &spec_constants_bundle->vkInfo,
+		    .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+		    .pNext = nullptr,
+		    .flags = 0,
+		    .stage = VK_SHADER_STAGE_COMPUTE_BIT,
+		    .module = shader->vkShaderModule,
+		    .pName = "cs_main",
+		    .pSpecializationInfo = &spec_constants_bundle->vkInfo,
 		};
-		VkComputePipelineCreateInfo pipeline_ci = {
-				.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
-				.pNext = nullptr,
-				.flags = 0,
-				.stage = shader_stage_ci,
-				.layout = layout
-		};
+		VkComputePipelineCreateInfo pipeline_ci = {.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO, .pNext = nullptr, .flags = 0, .stage = shader_stage_ci, .layout = layout};
 
 		VkPipeline vk_pipeline = VK_NULL_HANDLE;
 		VK_CHECK(vkCreateComputePipelines(_vkDevice, nullptr, 1, &pipeline_ci, nullptr, &vk_pipeline));
@@ -707,16 +678,16 @@ namespace mythril {
 	void CTX::resolveGraphicsPipelineImpl(AllocatedGraphicsPipeline& pipeline, uint32_t viewMask) {
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_CREATE);
 		// updating descriptor layout //
-//		if (graphics_pipeline->_vkLastDescriptorSetLayout != _vkBindlessDSL) {
-//			deferTask(std::packaged_task<void()>([device = _vkDevice, pipeline = graphics_pipeline->_vkPipeline]() {
-//				vkDestroyPipeline(device, pipeline, nullptr);
-//			}));
-//			deferTask(std::packaged_task<void()>([device = _vkDevice, layout = graphics_pipeline->_vkPipelineLayout]() {
-//				vkDestroyPipelineLayout(device, layout, nullptr);
-//			}));
-//			graphics_pipeline->_vkPipeline = VK_NULL_HANDLE;
-//			graphics_pipeline->_vkLastDescriptorSetLayout = _vkBindlessDSL;
-//		}
+		//		if (graphics_pipeline->_vkLastDescriptorSetLayout != _vkBindlessDSL) {
+		//			deferTask(std::packaged_task<void()>([device = _vkDevice, pipeline = graphics_pipeline->_vkPipeline]() {
+		//				vkDestroyPipeline(device, pipeline, nullptr);
+		//			}));
+		//			deferTask(std::packaged_task<void()>([device = _vkDevice, layout = graphics_pipeline->_vkPipelineLayout]() {
+		//				vkDestroyPipelineLayout(device, layout, nullptr);
+		//			}));
+		//			graphics_pipeline->_vkPipeline = VK_NULL_HANDLE;
+		//			graphics_pipeline->_vkLastDescriptorSetLayout = _vkBindlessDSL;
+		//		}
 
 		GraphicsPipelineSpec& spec = pipeline._spec;
 
@@ -734,7 +705,7 @@ namespace mythril {
 		const CompiledPass& current_pass_info = _currentCommandBuffer._activePass;
 		std::vector<VkFormat> colorFormats;
 		colorFormats.reserve(current_pass_info.colorAttachments.size());
-		for (const AttachmentInfo& colorAttachment : current_pass_info.colorAttachments) {
+		for (const AttachmentInfo& colorAttachment: current_pass_info.colorAttachments) {
 			colorFormats.push_back(colorAttachment.imageFormat);
 		}
 		builder.set_color_formats(colorFormats);
@@ -760,7 +731,9 @@ namespace mythril {
 			AllocatedShader* shader = _shaderPool.get(vertStage.handle);
 			ASSERT_MSG(shader, "The vertex shader for graphics pipeline: '{}' was destroyed or moved.", spec.debugName);
 			if (shader->_specializationInfo.specializationConstants.size() > sc_count)
-				LOG_SYSTEM(LogType::Warning, "You have specialization constants used in the vertex shader '{}' that are not defined in the pipeline creation for '{}'!", shader->_debugName, spec.debugName);
+				LOG_SYSTEM(
+				        LogType::Warning, "You have specialization constants used in the vertex shader '{}' that are not defined in the pipeline creation for '{}'!", shader->_debugName, spec.debugName
+				);
 			vertSpecConstantsBundle = BuildSpecializationInfoBundle(spec.specConstants, sc_count, shader->_specializationInfo.nameToID);
 			builder.add_shader_module(shader->vkShaderModule, VK_SHADER_STAGE_VERTEX_BIT, vertStage.entryPoint, &vertSpecConstantsBundle->vkInfo);
 			pipeline_layout_signatures.push_back(shader->_pipelineSignature);
@@ -774,7 +747,12 @@ namespace mythril {
 			AllocatedShader* shader = _shaderPool.get(fragStage.handle);
 			ASSERT_MSG(shader, "The fragment shader for graphics pipeline: '{}' was destroyed or moved.", spec.debugName);
 			if (shader->_specializationInfo.specializationConstants.size() > sc_count)
-				LOG_SYSTEM(LogType::Warning, "You have specialization constants used in the fragment shader '{}' that are not defined in the pipeline creation for '{}'!", shader->_debugName, spec.debugName);
+				LOG_SYSTEM(
+				        LogType::Warning,
+				        "You have specialization constants used in the fragment shader '{}' that are not defined in the pipeline creation for '{}'!",
+				        shader->_debugName,
+				        spec.debugName
+				);
 			fragSpecConstantsBundle = BuildSpecializationInfoBundle(spec.specConstants, sc_count, shader->_specializationInfo.nameToID);
 			builder.add_shader_module(shader->vkShaderModule, VK_SHADER_STAGE_FRAGMENT_BIT, fragStage.entryPoint, &fragSpecConstantsBundle->vkInfo);
 			pipeline_layout_signatures.push_back(shader->_pipelineSignature);
@@ -789,8 +767,8 @@ namespace mythril {
 		// 	}
 		// 	AllocatedShader* shader = _shaderPool.get(geometryStage.handle);
 		// 	if (shader->_specializationInfo.specializationConstants.size() > sc_count)
-		// 		LOG_SYSTEM(LogType::Warning, "You have specialization constants used in the geometry shader '{}' that are not defined in the pipeline creation for '{}'!", shader->_debugName, spec.debugName);
-		// 	geomSpecConstantsBundle = BuildSpecializationInfoBundle(spec.specConstants, sc_count, shader->_specializationInfo.nameToID);
+		// 		LOG_SYSTEM(LogType::Warning, "You have specialization constants used in the geometry shader '{}' that are not defined in the pipeline creation for '{}'!", shader->_debugName,
+		// spec.debugName); 	geomSpecConstantsBundle = BuildSpecializationInfoBundle(spec.specConstants, sc_count, shader->_specializationInfo.nameToID);
 		// 	builder.add_shader_module(shader->vkShaderModule, VK_SHADER_STAGE_GEOMETRY_BIT, geometryStage.entryPoint, &geomSpecConstantsBundle->vkInfo);
 		// 	pipeline_layout_signatures.push_back(shader->_pipelineSignature);
 		// }
@@ -808,29 +786,29 @@ namespace mythril {
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_CREATE);
 		// creating sampler requires little work so we dont need an _Impl function for it
 		VkSamplerCreateInfo info = {
-				.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
-				.pNext = nullptr,
-				.flags = 0,
+		    .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+		    .pNext = nullptr,
+		    .flags = 0,
 
-				.magFilter = toVulkan(spec.magFilter),
-				.minFilter = toVulkan(spec.minFilter),
-				.mipmapMode = toVulkan(spec.mipMap),
-				.addressModeU = toVulkan(spec.wrapU),
-				.addressModeV = toVulkan(spec.wrapV),
-				.addressModeW = toVulkan(spec.wrapW),
+		    .magFilter = toVulkan(spec.magFilter),
+		    .minFilter = toVulkan(spec.minFilter),
+		    .mipmapMode = toVulkan(spec.mipMap),
+		    .addressModeU = toVulkan(spec.wrapU),
+		    .addressModeV = toVulkan(spec.wrapV),
+		    .addressModeW = toVulkan(spec.wrapW),
 
-				.mipLodBias = 0.f,
-				.anisotropyEnable = spec.anistrophic ? VK_TRUE : VK_FALSE,
-				.maxAnisotropy = static_cast<float>(spec.maxAnisotropic),
+		    .mipLodBias = 0.f,
+		    .anisotropyEnable = spec.anistrophic ? VK_TRUE : VK_FALSE,
+		    .maxAnisotropy = static_cast<float>(spec.maxAnisotropic),
 
-				.compareEnable = spec.depthCompareEnabled ? VK_TRUE : VK_FALSE,
-				.compareOp = spec.depthCompareEnabled ? toVulkan(spec.depthCompareOp) : VK_COMPARE_OP_ALWAYS,
+		    .compareEnable = spec.depthCompareEnabled ? VK_TRUE : VK_FALSE,
+		    .compareOp = spec.depthCompareEnabled ? toVulkan(spec.depthCompareOp) : VK_COMPARE_OP_ALWAYS,
 
-				.minLod = static_cast<float>(spec.mipLodMin),
-				.maxLod = (spec.mipMap == SamplerMipMap::Disabled) ? static_cast<float>(spec.mipLodMin) : static_cast<float>(spec.mipLodMax),
+		    .minLod = static_cast<float>(spec.mipLodMin),
+		    .maxLod = (spec.mipMap == SamplerMipMap::Disabled) ? static_cast<float>(spec.mipLodMin) : static_cast<float>(spec.mipLodMax),
 
-				.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK,
-				.unnormalizedCoordinates = VK_FALSE,
+		    .borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK,
+		    .unnormalizedCoordinates = VK_FALSE,
 		};
 		auto a = this->getPhysicalDeviceProperties10();
 
@@ -841,9 +819,7 @@ namespace mythril {
 			info.anisotropyEnable = spec.anistrophic ? VK_TRUE : VK_FALSE;
 			// fixme: not sure why maxAnisotropic is of type uint_
 			if (maxSamplerAnisotropy < static_cast<float>(spec.maxAnisotropic)) {
-				LOG_SYSTEM(LogType::Warning,
-						   "Supplied sampler anisotropic value greater than max supported by the device, setting to {}",
-						   static_cast<double>(maxSamplerAnisotropy));
+				LOG_SYSTEM(LogType::Warning, "Supplied sampler anisotropic value greater than max supported by the device, setting to {}", static_cast<double>(maxSamplerAnisotropy));
 			}
 			info.maxAnisotropy = std::min(static_cast<float>(maxSamplerAnisotropy), static_cast<float>(spec.maxAnisotropic));
 		}
@@ -890,22 +866,22 @@ namespace mythril {
 		obj._vkMemoryPropertyFlags = memFlags;
 
 		const VkBufferCreateInfo buffer_ci = {
-				.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-				.pNext = nullptr,
-				.flags = 0,
-				.size = bufferSize,
-				.usage = usageFlags,
-				.sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-				.queueFamilyIndexCount = 0,
-				.pQueueFamilyIndices = nullptr,
+		    .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+		    .pNext = nullptr,
+		    .flags = 0,
+		    .size = bufferSize,
+		    .usage = usageFlags,
+		    .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+		    .queueFamilyIndexCount = 0,
+		    .pQueueFamilyIndices = nullptr,
 		};
 		VmaAllocationCreateInfo vmaAllocInfo = {};
 
 		if (memFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
 			vmaAllocInfo = {
-					.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT,
-					.requiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
-					.preferredFlags = VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT,
+			    .flags = VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT,
+			    .requiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+			    .preferredFlags = VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT,
 			};
 		}
 		if (memFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
@@ -933,8 +909,8 @@ namespace mythril {
 		// shader access
 		if (usageFlags & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) {
 			const VkBufferDeviceAddressInfo buffer_device_ai = {
-					.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
-					.buffer = obj._vkBuffer,
+			    .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
+			    .buffer = obj._vkBuffer,
 			};
 			obj._vkDeviceAddress = vkGetBufferDeviceAddress(_vkDevice, &buffer_device_ai);
 			ASSERT(obj._vkDeviceAddress);
@@ -950,44 +926,37 @@ namespace mythril {
 			return;
 		}
 		// copies destroy for Texture logic
-		deferTask(std::packaged_task<void()>([device = _vkDevice, imageView = image->_vkImageView]() {
-			vkDestroyImageView(device, imageView, nullptr);
-		}));
+		deferTask(std::packaged_task<void()>([device = _vkDevice, imageView = image->_vkImageView]() { vkDestroyImageView(device, imageView, nullptr); }));
 		if (image->_vkImageViewStorage) {
-			deferTask(std::packaged_task<void()>([device = _vkDevice, imageView = image->_vkImageViewStorage]() {
-				vkDestroyImageView(device, imageView, nullptr);
-			}));
+			deferTask(std::packaged_task<void()>([device = _vkDevice, imageView = image->_vkImageViewStorage]() { vkDestroyImageView(device, imageView, nullptr); }));
 		}
 		if (image->_isOwning) {
 			if (image->_mappedPtr) {
 				vmaUnmapMemory(_vmaAllocator, image->_vmaAllocation);
 			}
-			deferTask(std::packaged_task<void()>([vma = _vmaAllocator, image = image->_vkImage, allocation = image->_vmaAllocation]() {
-				vmaDestroyImage(vma, image, allocation);
-			}));
+			deferTask(std::packaged_task<void()>([vma = _vmaAllocator, image = image->_vkImage, allocation = image->_vmaAllocation]() { vmaDestroyImage(vma, image, allocation); }));
 		}
 
 		VkImageCreateFlags createFlags = 0;
 		// resolve createFlags without having it stored
-		if (image->_vkImageViewType == VK_IMAGE_VIEW_TYPE_CUBE ||
-		image->_vkImageViewType == VK_IMAGE_VIEW_TYPE_CUBE_ARRAY) {
+		if (image->_vkImageViewType == VK_IMAGE_VIEW_TYPE_CUBE || image->_vkImageViewType == VK_IMAGE_VIEW_TYPE_CUBE_ARRAY) {
 			createFlags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
 		}
 
-		const VkExtent3D extent3D = { newDimensions.width, newDimensions.height, newDimensions.depth };
+		const VkExtent3D extent3D = {newDimensions.width, newDimensions.height, newDimensions.depth};
 		AllocatedTexture newImage = this->createTextureImpl(
-				image->_vkUsageFlags,
-				image->_vkMemoryPropertyFlags,
-				extent3D,
-				image->_vkFormat,
-				image->_vkImageType,
-				image->_vkImageViewType,
-				image->_numLevels,
-				image->_numLayers,
-				image->getVkSampleCountBits(),
-				image->_vkComponentMappings,
-				createFlags
-				);
+		        image->_vkUsageFlags,
+		        image->_vkMemoryPropertyFlags,
+		        extent3D,
+		        image->_vkFormat,
+		        image->_vkImageType,
+		        image->_vkImageViewType,
+		        image->_numLevels,
+		        image->_numLayers,
+		        image->getVkSampleCountBits(),
+		        image->_vkComponentMappings,
+		        createFlags
+		);
 		vmaSetAllocationName(_vmaAllocator, newImage._vmaAllocation, newImage._debugName);
 		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_IMAGE, reinterpret_cast<uint64_t>(newImage._vkImage), image->getDebugName().data());
 #ifdef MYTH_ENABLED_IMGUI
@@ -1051,7 +1020,7 @@ namespace mythril {
 		// resolve memory flags
 		const VkMemoryPropertyFlags mem_flags = StorageTypeToVkMemoryPropertyFlags(spec.storage);
 		// resolve extent3D
-		const VkExtent3D extent3D = { spec.dimension.width, spec.dimension.height, spec.dimension.depth };
+		const VkExtent3D extent3D = {spec.dimension.width, spec.dimension.height, spec.dimension.depth};
 
 		// resolve actions based on texture type
 		uint32_t _numLayers = spec.numLayers;
@@ -1073,7 +1042,8 @@ namespace mythril {
 				_numLayers *= 6;
 				_imageCreateFlags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
 				break;
-			default: assert(false);
+			default:
+				assert(false);
 		}
 		const VkComponentMapping component_mappings = spec.components.toVkComponentMapping();
 		AllocatedTexture obj = createTextureImpl(usage_flags, mem_flags, extent3D, spec.format, _imagetype, _imageviewtype, _numLevels, _numLayers, sample_bits, component_mappings, _imageCreateFlags);
@@ -1093,11 +1063,7 @@ namespace mythril {
 			// enforces that the number of miplevels we want to upload will be accomadated by the texture
 			ASSERT(spec.dataNumMipLevels <= spec.numMipLevels);
 			ASSERT(spec.type == TextureType::Type_2D || spec.type == TextureType::Type_Cube);
-			const TexRange range = {
-					.dimensions = extent3D,
-					.numLayers = static_cast<uint32_t>((spec.type == TextureType::Type_Cube) ? 6 : 1),
-					.numMipLevels = spec.dataNumMipLevels
-			};
+			const TexRange range = {.dimensions = extent3D, .numLayers = static_cast<uint32_t>((spec.type == TextureType::Type_Cube) ? 6 : 1), .numMipLevels = spec.dataNumMipLevels};
 			this->upload(handle, spec.initialData, range);
 			if (spec.generateMipmaps) {
 				this->generateMipmaps(handle);
@@ -1116,8 +1082,7 @@ namespace mythril {
 		AllocatedTexture copied_obj = *this->_texturePool.get(handle);
 		ASSERT_MSG(copied_obj._numLevels > spec.mipLevel, "baseMipLevel must be less then mipLevels of the original texture!");
 		if (spec.numMipLevels != VK_REMAINING_MIP_LEVELS) {
-			ASSERT_MSG(copied_obj._numLevels >= (spec.mipLevel + spec.numMipLevels),
-			           "Requested mipLevel+numMipLevels exceeds the number of mipLevels of the original texture!");
+			ASSERT_MSG(copied_obj._numLevels >= (spec.mipLevel + spec.numMipLevels), "Requested mipLevel+numMipLevels exceeds the number of mipLevels of the original texture!");
 		}
 		// very important!
 		copied_obj._isOwning = false;
@@ -1128,22 +1093,17 @@ namespace mythril {
 		const VkComponentMapping component_mappings = spec.components.toVkComponentMapping();
 		ASSERT_MSG(vkutil::GetNumImagePlanes(copied_obj._vkFormat) == 1, "Unsupported multiplanar image.");
 
-		if (spec.type == VK_IMAGE_VIEW_TYPE_MAX_ENUM) spec.type = copied_obj._vkImageViewType;
+		if (spec.type == VK_IMAGE_VIEW_TYPE_MAX_ENUM)
+			spec.type = copied_obj._vkImageViewType;
 
 		VkImageViewCreateInfo image_view_ci = {
-				.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-				.pNext = nullptr,
-				.image = copied_obj._vkImage,
-				.viewType = spec.type,
-				.format = copied_obj._vkFormat,
-				.components = component_mappings,
-				.subresourceRange = {
-						.aspectMask = texture_aspect_flags,
-						.baseMipLevel = spec.mipLevel,
-						.levelCount = spec.numMipLevels,
-						.baseArrayLayer = spec.layer,
-						.layerCount = spec.numLayers
-				},
+		    .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+		    .pNext = nullptr,
+		    .image = copied_obj._vkImage,
+		    .viewType = spec.type,
+		    .format = copied_obj._vkFormat,
+		    .components = component_mappings,
+		    .subresourceRange = {.aspectMask = texture_aspect_flags, .baseMipLevel = spec.mipLevel, .levelCount = spec.numMipLevels, .baseArrayLayer = spec.layer, .layerCount = spec.numLayers},
 		};
 		VK_CHECK(vkCreateImageView(_vkDevice, &image_view_ci, nullptr, &copied_obj._vkImageView));
 		if (copied_obj._vkUsageFlags & VK_IMAGE_USAGE_STORAGE_BIT) {
@@ -1159,17 +1119,19 @@ namespace mythril {
 		this->_awaitingCreation = true;
 		return {new_handle};
 	}
-	AllocatedTexture CTX::createTextureImpl(VkImageUsageFlags usageFlags,
-											VkMemoryPropertyFlags memFlags,
-											VkExtent3D extent3D,
-											VkFormat format,
-											VkImageType imageType,
-											VkImageViewType imageViewType,
-											uint32_t numLevels,
-											uint32_t numLayers,
-											VkSampleCountFlagBits sampleCountFlagBits,
-											VkComponentMapping componentMapping,
-											VkImageCreateFlags createFlags) {
+	AllocatedTexture CTX::createTextureImpl(
+	        VkImageUsageFlags usageFlags,
+	        VkMemoryPropertyFlags memFlags,
+	        VkExtent3D extent3D,
+	        VkFormat format,
+	        VkImageType imageType,
+	        VkImageViewType imageViewType,
+	        uint32_t numLevels,
+	        uint32_t numLayers,
+	        VkSampleCountFlagBits sampleCountFlagBits,
+	        VkComponentMapping componentMapping,
+	        VkImageCreateFlags createFlags
+	) {
 		ASSERT_MSG(numLevels > 0, "The texture must contain at least one mip-level!");
 		ASSERT_MSG(numLayers > 0, "The texture must contain at least one layer!");
 		ASSERT_MSG(extent3D.width > 0, "The texture must have a width greater than 0!");
@@ -1178,23 +1140,23 @@ namespace mythril {
 
 
 		VkImageCreateInfo image_ci = {
-				.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-				.pNext = nullptr,
+		    .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+		    .pNext = nullptr,
 
-				.flags = createFlags,
-				.imageType = imageType,
-				.format = format,
-				.extent = extent3D,
-				.mipLevels = numLevels,
-				.arrayLayers = numLayers,
-				.samples = sampleCountFlagBits,
-				.tiling = VK_IMAGE_TILING_OPTIMAL,
-				.usage = usageFlags,
-				.sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+		    .flags = createFlags,
+		    .imageType = imageType,
+		    .format = format,
+		    .extent = extent3D,
+		    .mipLevels = numLevels,
+		    .arrayLayers = numLayers,
+		    .samples = sampleCountFlagBits,
+		    .tiling = VK_IMAGE_TILING_OPTIMAL,
+		    .usage = usageFlags,
+		    .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
 
-				.queueFamilyIndexCount = 0,
-				.pQueueFamilyIndices = nullptr,
-				.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+		    .queueFamilyIndexCount = 0,
+		    .pQueueFamilyIndices = nullptr,
+		    .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
 		};
 
 		VmaAllocationCreateInfo allocation_ci = {};
@@ -1215,19 +1177,18 @@ namespace mythril {
 		obj._vkFormatProperties = format_props2.formatProperties;
 
 		const VkPhysicalDeviceImageFormatInfo2 info = {
-			.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_FORMAT_INFO_2,
-			.format = obj.getFormat(),
-			.type = obj.getType(),
-			.usage = obj._vkUsageFlags,
-			.flags = createFlags
+		    .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_FORMAT_INFO_2, .format = obj.getFormat(), .type = obj.getType(), .usage = obj._vkUsageFlags, .flags = createFlags
 		};
 		VkImageFormatProperties2 props = {
-			.sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2,
+		    .sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2,
 		};
 		VK_CHECK(vkGetPhysicalDeviceImageFormatProperties2(_vkPhysicalDevice, &info, &props));
-		ASSERT_MSG(props.imageFormatProperties.maxMipLevels >= obj._numLevels,
-			"Requested image exceeds maxMipLevels, requested '{}', cannot be greater than '{}'",
-			obj._numLevels, props.imageFormatProperties.maxMipLevels);
+		ASSERT_MSG(
+		        props.imageFormatProperties.maxMipLevels >= obj._numLevels,
+		        "Requested image exceeds maxMipLevels, requested '{}', cannot be greater than '{}'",
+		        obj._numLevels,
+		        props.imageFormatProperties.maxMipLevels
+		);
 
 
 		// if memory is manually managed on host
@@ -1237,19 +1198,13 @@ namespace mythril {
 		// create image views
 		const VkImageAspectFlags aspectMask = vkutil::AspectMaskFromFormat(obj._vkFormat);
 		VkImageViewCreateInfo image_view_ci = {
-				.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-				.flags = 0,
-				.image = obj._vkImage,
-				.viewType = obj._vkImageViewType,
-				.format = format,
-				.components = componentMapping,
-				.subresourceRange = {
-						.aspectMask = aspectMask,
-						.baseMipLevel = 0,
-						.levelCount = numLevels,
-						.baseArrayLayer = 0,
-						.layerCount = numLayers
-				},
+		    .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+		    .flags = 0,
+		    .image = obj._vkImage,
+		    .viewType = obj._vkImageViewType,
+		    .format = format,
+		    .components = componentMapping,
+		    .subresourceRange = {.aspectMask = aspectMask, .baseMipLevel = 0, .levelCount = numLevels, .baseArrayLayer = 0, .layerCount = numLayers},
 		};
 		VK_CHECK(vkCreateImageView(_vkDevice, &image_view_ci, nullptr, &obj._vkImageView));
 		if (obj._vkUsageFlags & VK_IMAGE_USAGE_STORAGE_BIT) {
@@ -1297,7 +1252,7 @@ namespace mythril {
 
 		CompileResult compile_result = _slangCompiler.compileSlangFile(spec.filePath);
 
-		auto* code = const_cast<uint32_t *>(compile_result.getSpirvCode());
+		auto* code = const_cast<uint32_t*>(compile_result.getSpirvCode());
 		size_t size = compile_result.getSpirvSize();
 		// we have to do this cause bmillsNV likes to have unpredictability in his codebase
 		// https://github.com/shader-slang/slang/issues/9338
@@ -1312,7 +1267,7 @@ namespace mythril {
 		obj._specializationInfo = std::move(reflection_result.specializationInfo);
 
 		// _vkShaderModule
-		VkShaderModuleCreateInfo create_info = { .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO, .pNext = nullptr };
+		VkShaderModuleCreateInfo create_info = {.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO, .pNext = nullptr};
 		create_info.flags = 0;
 		create_info.pCode = code;
 		create_info.codeSize = size;
@@ -1353,12 +1308,8 @@ namespace mythril {
 
 		AllocatedBuffer* buffer = _bufferPool.get(handle);
 		ASSERT_MSG(buffer, "CTX::upload: handle does not resolve to a live buffer.");
-		ASSERT_MSG(offset + size <= buffer->_bufferSize,
-		           "CTX::upload: offset + size ({}) exceeds buffer '{}' size ({}).",
-		           offset + size, buffer->_debugName, buffer->_bufferSize);
-		ASSERT_MSG(buffer->isMapped() || (buffer->_vkUsageFlags & VK_BUFFER_USAGE_TRANSFER_DST_BIT),
-		           "CTX::upload: device buffer '{}' was not created with TRANSFER_DST usage.",
-		           buffer->_debugName);
+		ASSERT_MSG(offset + size <= buffer->_bufferSize, "CTX::upload: offset + size ({}) exceeds buffer '{}' size ({}).", offset + size, buffer->_debugName, buffer->_bufferSize);
+		ASSERT_MSG(buffer->isMapped() || (buffer->_vkUsageFlags & VK_BUFFER_USAGE_TRANSFER_DST_BIT), "CTX::upload: device buffer '{}' was not created with TRANSFER_DST usage.", buffer->_debugName);
 		_staging->bufferSubData(*buffer, offset, size, data);
 	}
 	void CTX::download(BufferHandle handle, void* data, size_t size, size_t offset) {
@@ -1388,29 +1339,22 @@ namespace mythril {
 		}
 		AllocatedTexture* image = _texturePool.get(handle);
 		ASSERT_MSG(image, "Attempting to use texture via invalid handle!");
-		ASSERT_MSG(image->_vkUsageFlags & VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-		           "CTX::upload: texture '{}' was not created with TRANSFER_DST usage.",
-		           image->_debugName);
-		ASSERT_MSG(ValidateRange(image->_vkExtent, image->_numLevels, range),
-		           "CTX::upload: TexRange is out of bounds for texture '{}'.",
-		           image->_debugName);
+		ASSERT_MSG(image->_vkUsageFlags & VK_IMAGE_USAGE_TRANSFER_DST_BIT, "CTX::upload: texture '{}' was not created with TRANSFER_DST usage.", image->_debugName);
+		ASSERT_MSG(ValidateRange(image->_vkExtent, image->_numLevels, range), "CTX::upload: TexRange is out of bounds for texture '{}'.", image->_debugName);
 		// why is this here
 		if (image->_vkImageType == VK_IMAGE_TYPE_3D) {
 			_staging->imageData3D(
-					*image,
-					VkOffset3D{range.offset.x, range.offset.y, range.offset.z},
-					VkExtent3D{range.dimensions.width, range.dimensions.height, range.dimensions.depth},
-					image->_vkFormat,
-					data);
+			        *image, VkOffset3D{range.offset.x, range.offset.y, range.offset.z}, VkExtent3D{range.dimensions.width, range.dimensions.height, range.dimensions.depth}, image->_vkFormat, data
+			);
 		} else {
 			const VkRect2D image_region = {
-					.offset = {.x = range.offset.x, .y = range.offset.y},
-					.extent = {.width = range.dimensions.width, .height = range.dimensions.height},
+			    .offset = {.x = range.offset.x, .y = range.offset.y},
+			    .extent = {.width = range.dimensions.width, .height = range.dimensions.height},
 			};
 			_staging->imageData2D(*image, image_region, range.mipLevel, range.numMipLevels, range.layer, range.numLayers, image->_vkFormat, data);
 		}
 	}
-	void CTX::download(TextureHandle handle, void* data, const TexRange &range) {
+	void CTX::download(TextureHandle handle, void* data, const TexRange& range) {
 		MYTH_PROFILER_FUNCTION();
 		if (!data) {
 			LOG_SYSTEM(LogType::Warning, "Data is null.");
@@ -1425,23 +1369,26 @@ namespace mythril {
 			LOG_SYSTEM(LogType::Warning, "Image validation failed!");
 			return;
 		}
-		_staging->getImageData(*image,
-							   VkOffset3D{range.offset.x, range.offset.y, range.offset.z},
-							   VkExtent3D{range.dimensions.width, range.dimensions.height, range.dimensions.depth},
-							   VkImageSubresourceRange{
-									   .aspectMask = vkutil::AspectMaskFromFormat(image->_vkFormat),
-									   .baseMipLevel = range.mipLevel,
-									   .levelCount = range.numMipLevels,
-									   .baseArrayLayer = range.layer,
-									   .layerCount = range.numLayers,
-							   },
-							   image->_vkFormat,
-							   data);
+		_staging->getImageData(
+		        *image,
+		        VkOffset3D{range.offset.x, range.offset.y, range.offset.z},
+		        VkExtent3D{range.dimensions.width, range.dimensions.height, range.dimensions.depth},
+		        VkImageSubresourceRange{
+		            .aspectMask = vkutil::AspectMaskFromFormat(image->_vkFormat),
+		            .baseMipLevel = range.mipLevel,
+		            .levelCount = range.numMipLevels,
+		            .baseArrayLayer = range.layer,
+		            .layerCount = range.numLayers,
+		        },
+		        image->_vkFormat,
+		        data
+		);
 	}
 
 	CommandBuffer& CTX::acquireCommand(CommandBuffer::Type type) {
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_ACQUIRE);
 		ASSERT_MSG(!_currentCommandBuffer._ctx, "Cannot open more than 1 CommandBuffer simultaneously!");
+		_staging->resetPending();
 		if (type == CommandBuffer::Type::Graphics) {
 			VkSemaphore acquire_semaphore = _swapchain->acquire();
 			_imm->waitSemaphore(acquire_semaphore);
@@ -1466,6 +1413,7 @@ namespace mythril {
 			_imm->signalSemaphore(_timelineSemaphore, signalValue);
 		}
 		cmd._lastSubmitHandle = _imm->submit(*cmd._wrapper);
+		_staging->onGraphSubmit(cmd._lastSubmitHandle);
 		if (isPresenting) {
 			ASSERT(_texturePool.get(_swapchain->getCurrentSwapchainTextureHandle())->getImageLayout() == VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
 			_swapchain->present(_imm->acquireLastSubmitSemaphore());
@@ -1490,64 +1438,63 @@ namespace mythril {
 	// 	_deferredTasks.erase(_deferredTasks.begin(), it);
 	// }
 	//
-void CTX::processDeferredTasks() {
-    if (isHeadless()) {
-        auto it = _deferredTasks.begin();
-        while (it != _deferredTasks.end()) {
-            if (!_imm->isReady(it->_handle, false)) break;
-            (it++)->_task();
-        }
-        _deferredTasks.erase(_deferredTasks.begin(), it);
-        return;
-    }
-    const uint64_t numFramesToWait = _swapchain->getNumOfSwapchainImages();
-    const uint64_t safeFrameThreshold = _currentFrameNumber > numFramesToWait
-        ? _currentFrameNumber - numFramesToWait
-        : 0;
+	void CTX::processDeferredTasks() {
+		if (isHeadless()) {
+			auto it = _deferredTasks.begin();
+			while (it != _deferredTasks.end()) {
+				if (!_imm->isReady(it->_handle, false))
+					break;
+				(it++)->_task();
+			}
+			_deferredTasks.erase(_deferredTasks.begin(), it);
+			return;
+		}
+		const uint64_t numFramesToWait = _swapchain->getNumOfSwapchainImages();
+		const uint64_t safeFrameThreshold = _currentFrameNumber > numFramesToWait ? _currentFrameNumber - numFramesToWait : 0;
 
-    auto it = _deferredTasks.begin();
-    while (it != _deferredTasks.end() && it->_frameNumber < safeFrameThreshold) {
-        if (!_imm->isReady(it->_handle, false)) {
-            break;
-        }
-        (it++)->_task();
-    }
-    _deferredTasks.erase(_deferredTasks.begin(), it);
-}
+		auto it = _deferredTasks.begin();
+		while (it != _deferredTasks.end() && it->_frameNumber < safeFrameThreshold) {
+			if (!_imm->isReady(it->_handle, false)) {
+				break;
+			}
+			(it++)->_task();
+		}
+		_deferredTasks.erase(_deferredTasks.begin(), it);
+	}
 	void CTX::waitDeferredTasks() {
-		for (auto& task : _deferredTasks) {
+		for (auto& task: _deferredTasks) {
 			_imm->wait(task._handle);
 			task._task();
 		}
 		_deferredTasks.clear();
 	}
 
-// 	SubmitHandle CTX::submitCommand(CommandBuffer& cmd) {
-// 		ASSERT(cmd._ctx);
-// 		ASSERT(cmd._wrapper);
-// #ifdef MYTH_ENABLED_TRACY_GPU
-// 		if (_tracyPlugin.isEnabled())
-// 			TracyVkCollect(_tracyPlugin.getTracyVkCtx(), cmd._wrapper->_cmdBuf);
-// #endif
-// 		const bool isPresenting = cmd._cmdType == CommandBuffer::Type::Graphics;
-// 		if (isPresenting) {
-// 			const uint64_t signalValue = _swapchain->_currentFrameNum + _swapchain->getNumOfSwapchainImages();
-// 			_swapchain->_timelineWaitValues[_swapchain->_currentImageIndex] = signalValue;
-// 			_imm->signalSemaphore(_timelineSemaphore, signalValue);
-// 		}
-//
-// 		cmd._lastSubmitHandle = _imm->submit(*cmd._wrapper);
-// 		if (isPresenting) {
-// 			ASSERT(_texturePool.get(_swapchain->getCurrentSwapchainTextureHandle())->getImageLayout() == VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
-// 			_swapchain->present();
-// 		}
-// 		processDeferredTasks();
-// 		SubmitHandle handle = cmd._lastSubmitHandle;
-// 		// reset
-// 		_currentCommandBuffer = {};
-// 		// might return the submit handle no clue
-// 		return handle;
-// 	}
+	// 	SubmitHandle CTX::submitCommand(CommandBuffer& cmd) {
+	// 		ASSERT(cmd._ctx);
+	// 		ASSERT(cmd._wrapper);
+	// #ifdef MYTH_ENABLED_TRACY_GPU
+	// 		if (_tracyPlugin.isEnabled())
+	// 			TracyVkCollect(_tracyPlugin.getTracyVkCtx(), cmd._wrapper->_cmdBuf);
+	// #endif
+	// 		const bool isPresenting = cmd._cmdType == CommandBuffer::Type::Graphics;
+	// 		if (isPresenting) {
+	// 			const uint64_t signalValue = _swapchain->_currentFrameNum + _swapchain->getNumOfSwapchainImages();
+	// 			_swapchain->_timelineWaitValues[_swapchain->_currentImageIndex] = signalValue;
+	// 			_imm->signalSemaphore(_timelineSemaphore, signalValue);
+	// 		}
+	//
+	// 		cmd._lastSubmitHandle = _imm->submit(*cmd._wrapper);
+	// 		if (isPresenting) {
+	// 			ASSERT(_texturePool.get(_swapchain->getCurrentSwapchainTextureHandle())->getImageLayout() == VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+	// 			_swapchain->present();
+	// 		}
+	// 		processDeferredTasks();
+	// 		SubmitHandle handle = cmd._lastSubmitHandle;
+	// 		// reset
+	// 		_currentCommandBuffer = {};
+	// 		// might return the submit handle no clue
+	// 		return handle;
+	// 	}
 	void CTX::destroy(BufferHandle handle) {
 		AllocatedBuffer* buf = _bufferPool.get(handle);
 		if (!buf) {
@@ -1556,77 +1503,62 @@ void CTX::processDeferredTasks() {
 		if (buf->_mappedPtr) {
 			vmaUnmapMemory(_vmaAllocator, buf->_vmaAllocation);
 		}
-		deferTask(std::packaged_task<void()>([vma = _vmaAllocator, buffer = buf->_vkBuffer, allocation = buf->_vmaAllocation]() {
-			vmaDestroyBuffer(vma, buffer, allocation);
-		}));
+		deferTask(std::packaged_task<void()>([vma = _vmaAllocator, buffer = buf->_vkBuffer, allocation = buf->_vmaAllocation]() { vmaDestroyBuffer(vma, buffer, allocation); }));
 		_bufferPool.destroy(handle);
 	}
 	void CTX::destroy(TextureHandle handle) {
 		AllocatedTexture* image = _texturePool.get(handle);
-		if (!image) return;
-		deferTask(std::packaged_task<void()>([device = _vkDevice, imageView = image->_vkImageView]() {
-			vkDestroyImageView(device, imageView, nullptr);
-		}));
+		if (!image)
+			return;
+		deferTask(std::packaged_task<void()>([device = _vkDevice, imageView = image->_vkImageView]() { vkDestroyImageView(device, imageView, nullptr); }));
 		if (image->_vkImageViewStorage) {
-			deferTask(std::packaged_task<void()>([device = _vkDevice, imageView = image->_vkImageViewStorage]() {
-				vkDestroyImageView(device, imageView, nullptr);
-			}));
+			deferTask(std::packaged_task<void()>([device = _vkDevice, imageView = image->_vkImageViewStorage]() { vkDestroyImageView(device, imageView, nullptr); }));
 		}
 		// necessary for swapchain imges which swapchain is created from
 		if (image->_isOwning) {
 			if (image->_mappedPtr) {
 				vmaUnmapMemory(_vmaAllocator, image->_vmaAllocation);
 			}
-			deferTask(std::packaged_task<void()>([vma = _vmaAllocator, image = image->_vkImage, allocation = image->_vmaAllocation]() {
-				vmaDestroyImage(vma, image, allocation);
-			}));
+			deferTask(std::packaged_task<void()>([vma = _vmaAllocator, image = image->_vkImage, allocation = image->_vmaAllocation]() { vmaDestroyImage(vma, image, allocation); }));
 		}
 		_texturePool.destroy(handle);
 		_awaitingCreation = true;
 	}
 	void CTX::destroy(SamplerHandle handle) {
 		AllocatedSampler* sampler = _samplerPool.get(handle);
-		if (!sampler) return;
-		deferTask(std::packaged_task<void()>([device = _vkDevice, sampler = sampler->_vkSampler]() {
-			vkDestroySampler(device, sampler, nullptr);
-		}));
+		if (!sampler)
+			return;
+		deferTask(std::packaged_task<void()>([device = _vkDevice, sampler = sampler->_vkSampler]() { vkDestroySampler(device, sampler, nullptr); }));
 		_samplerPool.destroy(handle);
 	}
 	void CTX::destroy(ShaderHandle handle) {
 		AllocatedShader* shader = _shaderPool.get(handle);
-		if (!shader) return;
-		deferTask(std::packaged_task<void()>([device = _vkDevice, module = shader->vkShaderModule]() {
-			vkDestroyShaderModule(device, module, nullptr);
-		}));
+		if (!shader)
+			return;
+		deferTask(std::packaged_task<void()>([device = _vkDevice, module = shader->vkShaderModule]() { vkDestroyShaderModule(device, module, nullptr); }));
 		_shaderPool.destroy(handle);
 	}
 
 	void CTX::destroy(GraphicsPipelineHandle handle) {
 		AllocatedGraphicsPipeline* graphics_pipeline = _graphicsPipelinePool.get(handle);
-		if (!graphics_pipeline) return;
+		if (!graphics_pipeline)
+			return;
 		PipelineCoreData& core = graphics_pipeline->_shared.core;
 		// The bindless descriptor set layout is owned by CTX and shared across all pipelines.
-		deferTask(std::packaged_task<void()>([device = _vkDevice, pipeline = core._vkPipeline]() {
-			vkDestroyPipeline(device, pipeline, nullptr);
-		}));
-		deferTask(std::packaged_task<void()>([device = _vkDevice, layout = core._vkPipelineLayout]() {
-			vkDestroyPipelineLayout(device, layout, nullptr);
-		}));
+		deferTask(std::packaged_task<void()>([device = _vkDevice, pipeline = core._vkPipeline]() { vkDestroyPipeline(device, pipeline, nullptr); }));
+		deferTask(std::packaged_task<void()>([device = _vkDevice, layout = core._vkPipelineLayout]() { vkDestroyPipelineLayout(device, layout, nullptr); }));
 		_graphicsPipelinePool.destroy(handle);
 	}
 	void CTX::destroy(ComputePipelineHandle handle) {
 		AllocatedComputePipeline* compute_pipeline = _computePipelinePool.get(handle);
-		if (!compute_pipeline) return;
+		if (!compute_pipeline)
+			return;
 		PipelineCoreData& core = compute_pipeline->_shared.core;
-		deferTask(std::packaged_task<void()>([device = _vkDevice, pipeline = core._vkPipeline]() {
-			vkDestroyPipeline(device, pipeline, nullptr);
-		}));
-		deferTask(std::packaged_task<void()>([device = _vkDevice, layout = core._vkPipelineLayout]() {
-			vkDestroyPipelineLayout(device, layout, nullptr);
-		}));
+		deferTask(std::packaged_task<void()>([device = _vkDevice, pipeline = core._vkPipeline]() { vkDestroyPipeline(device, pipeline, nullptr); }));
+		deferTask(std::packaged_task<void()>([device = _vkDevice, layout = core._vkPipelineLayout]() { vkDestroyPipelineLayout(device, layout, nullptr); }));
 		_computePipelinePool.destroy(handle);
 	}
-}
+} // namespace mythril
 #ifdef MYTH_ENABLED_IMGUI
 namespace ImGui {
 	void Image(mythril::TextureHandle texHandle, mythril::SamplerHandle samplerHandle, const ImVec2& image_size, const ImVec2& uv0, const ImVec2& uv1) {
@@ -1635,7 +1567,7 @@ namespace ImGui {
 		ImVec2 size;
 		if (image_size.x <= 0 && image_size.y <= 0) {
 			const mythril::Dimensions dims = mydata->ctx->view(texHandle).getDimensions();
-			size = { static_cast<float>(dims.width), static_cast<float>(dims.height) };
+			size = {static_cast<float>(dims.width), static_cast<float>(dims.height)};
 		} else {
 			size = image_size;
 		}
@@ -1648,7 +1580,9 @@ namespace ImGui {
 			im_image_ds = iterator->second;
 		} else {
 			ASSERT_MSG(texture.isSampledImage(), "Texture '{}' must have sampled flag!", texture.getDebugName());
-			VkDescriptorSet ds = ImGui_ImplVulkan_AddTexture(samplerHandle.valid() ? mydata->ctx->view(samplerHandle).getSampler() : mydata->sampler, texture.getImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+			VkDescriptorSet ds = ImGui_ImplVulkan_AddTexture(
+			        samplerHandle.valid() ? mydata->ctx->view(samplerHandle).getSampler() : mydata->sampler, texture.getImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+			);
 			mydata->handleMap.insert({texHandle, ds});
 			im_image_ds = ds;
 		}
@@ -1657,12 +1591,10 @@ namespace ImGui {
 	void Image(const mythril::Texture& texture, const mythril::Texture::ViewKey& viewKey, const ImVec2& image_size, const ImVec2& uv0, const ImVec2& uv1) {
 		Image(texture.handle(viewKey), mythril::SamplerHandle{}, image_size, uv0, uv1);
 	}
-	void Image(const mythril::Texture& texture, const ImVec2& image_size, const ImVec2& uv0, const ImVec2& uv1) {
-		Image(texture.handle(), mythril::SamplerHandle{}, image_size, uv0, uv1);
-	}
+	void Image(const mythril::Texture& texture, const ImVec2& image_size, const ImVec2& uv0, const ImVec2& uv1) { Image(texture.handle(), mythril::SamplerHandle{}, image_size, uv0, uv1); }
 	void Image(const mythril::Texture& texture, const mythril::Sampler& sampler, const ImVec2& image_size, const ImVec2& uv0, const ImVec2& uv1) {
 		Image(texture.handle(), sampler.handle(), image_size, uv0, uv1);
 	}
 
-}
+} // namespace ImGui
 #endif

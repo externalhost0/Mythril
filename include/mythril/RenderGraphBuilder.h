@@ -210,6 +210,15 @@ namespace mythril {
         vkutil::StageAccess dstMask{};
         bool isSwapchain = false;
     };
+    struct CompiledBufferBarrier {
+        BufferHandle handle;
+        vkutil::StageAccess dstMask{};
+    };
+
+    struct UploadData {
+        const void* data = nullptr;
+        size_t size = 0;
+    };
 
     // hidden information that transforms the PassSource into usable info
     struct CompiledPass {
@@ -219,6 +228,7 @@ namespace mythril {
         PassDesc::Type type;
 
         std::vector<CompiledImageBarrier> imageBarriers;
+        std::vector<CompiledBufferBarrier> bufferBarriers;
         std::function<void(CommandBuffer&)> executeCallback;
 
         // new info transformed from source on compile()
@@ -249,6 +259,9 @@ namespace mythril {
     inline void add(PassDesc& passSource, const TextureDesc& desc, const Layout layout) {
         passSource.dependencyOperations.emplace_back(desc, layout);
     }
+    inline void add(PassDesc& passSource, Buffer& buffer, const BufferAccess access) {
+        passSource.bufferDependencyOperations.push_back({buffer, access});
+    }
 
     class GraphicsPassBuilder {
     public:
@@ -268,6 +281,10 @@ namespace mythril {
         }
         [[nodiscard]] GraphicsPassBuilder& dependency(const TextureDesc& texDesc, const Layout layout = Layout::READ) {
             add(this->base._passSource, texDesc, layout);
+            return *this;
+        }
+        [[nodiscard]] GraphicsPassBuilder& dependency(Buffer& buffer, const BufferAccess access) {
+            add(this->base._passSource, buffer, access);
             return *this;
         }
         [[nodiscard]] GraphicsPassBuilder& dependency(Texture* tex, int count, const Layout layout = Layout::READ) {
@@ -300,6 +317,10 @@ namespace mythril {
                 add(this->base._passSource, texDesc, layout);
             return *this;
         }
+        [[nodiscard]] ComputePassBuilder& dependency(Buffer& buffer, const BufferAccess access) {
+            add(this->base._passSource, buffer, access);
+            return *this;
+        }
         [[nodiscard]] ComputePassBuilder& dependency(Texture* tex, int count, const Layout layout = Layout::GENERAL) {
             for (int i = 0; i < count; i++) {
                 add(this->base._passSource, tex[i], layout);
@@ -324,6 +345,9 @@ namespace mythril {
         IntermediateBuilder& copy(TextureDesc src, TextureDesc dst);
         IntermediateBuilder& blit(TextureDesc src, TextureDesc dst);
         IntermediateBuilder& generateMipmaps(const Texture& texture);
+        IntermediateBuilder& dependency(Buffer& buffer, BufferAccess access);
+        IntermediateBuilder& update(Buffer& buffer, std::function<UploadData()> dataCb, size_t dstOffset = 0);
+        IntermediateBuilder& upload(Buffer& buffer, std::function<UploadData()> dataCb, size_t dstOffset = 0);
         void finish();
     private:
         BasePassBuilder base;
@@ -347,9 +371,12 @@ namespace mythril {
         void compile(CTX& rCtx);
         // called every frame
         void execute(CommandBuffer& cmd);
+        void trackWindowSized(Texture& texture);
+        void trackWindowSized(Texture& texture, std::function<Dimensions(Dimensions)> scaleFn);
+        void resizeTrackedWindowSized(const Dimensions& swapchainDimensions) const;
 
     private:
-        void PerformImageBarrierTransitions(CommandBuffer& cmd, const CompiledPass& compiledPass);
+        void PerformBarrierTransitions(CommandBuffer& cmd, const CompiledPass& compiledPass);
         static void processResourceAccess(const TextureDesc& texDesc, VkImageLayout desiredLayout, CompiledPass& outPass, std::string_view passName);
         static void processPassResources(const PassDesc& passDesc, CompiledPass& outPass);
         void processAttachments(const CTX& rCtx, const PassDesc& pass_desc, CompiledPass& outPass);
@@ -357,6 +384,12 @@ namespace mythril {
         // every texture used in the framegraph needs proper tracking to ensure its layout is correct...
         // at every pass, even more necessary for textures that request individual mips/layers
         std::unordered_map<TextureHandle, TextureStateTracker> _resourceTrackers;
+        std::unordered_map<BufferHandle, vkutil::StageAccess> _bufferTrackers;
+        struct WindowSizedTexture {
+            Texture* texture = nullptr;
+            std::function<Dimensions(Dimensions)> scaleFn;
+        };
+        std::vector<WindowSizedTexture> _windowSizedTextures;
         // data used during compilation
         std::vector<PassDesc> _passDescriptions;
         // data fetched during execution

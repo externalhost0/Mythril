@@ -7,8 +7,8 @@
 #include "Invalids.h"
 #include "SubmitHandle.h"
 
-#include <volk.h>
 #include <utility>
+#include <volk.h>
 
 namespace mythril {
 
@@ -30,6 +30,7 @@ namespace mythril {
 		// disallow copy and assignment
 		ImmediateCommands(const ImmediateCommands&) = delete;
 		ImmediateCommands& operator=(const ImmediateCommands&) = delete;
+
 	public:
 		void wait(SubmitHandle handle);
 
@@ -47,25 +48,18 @@ namespace mythril {
 		VkSemaphore acquireLastSubmitSemaphore() { return std::exchange(_lastSubmitSemaphore.semaphore, VK_NULL_HANDLE); }
 		SubmitHandle getLastSubmitHandle() const { return _lastSubmitHandle; };
 		SubmitHandle getNextSubmitHandle() const { return _nextSubmitHandle; };
+
 	private:
 		void _purge();
+
 	private:
 		VkDevice _vkDevice; // injected
 
 		VkCommandPool _vkCommandPool = VK_NULL_HANDLE;
 
-		VkSemaphoreSubmitInfo _lastSubmitSemaphore = {
-				.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
-				.stageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT
-		};
-		VkSemaphoreSubmitInfo _waitSemaphore = {
-				.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
-				.stageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT
-		};
-		VkSemaphoreSubmitInfo _signalSemaphore = {
-				.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
-				.stageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT
-		};
+		VkSemaphoreSubmitInfo _lastSubmitSemaphore = {.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO, .stageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT};
+		VkSemaphoreSubmitInfo _waitSemaphore = {.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO, .stageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT};
+		VkSemaphoreSubmitInfo _signalSemaphore = {.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO, .stageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT};
 
 		VkQueue _vkQueue = VK_NULL_HANDLE;
 		uint32_t _queueFamilyIndex = Invalid<uint32_t>;
@@ -83,4 +77,4 @@ namespace mythril {
 		friend class StagingDevice;
 	};
 
-}
+} // namespace mythril

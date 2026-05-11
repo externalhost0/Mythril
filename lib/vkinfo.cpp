@@ -40,7 +40,7 @@ namespace mythril::vkinfo {
 	}
 
 	VkRenderingAttachmentInfo CreateColorAttachmentInfo(VkImageView view, const VkClearColorValue* clear, VkImageView resolveView, VkResolveModeFlags resolveFlags) {
-		VkRenderingAttachmentInfo colorAttachment = { .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO, .pNext = nullptr };
+		VkRenderingAttachmentInfo colorAttachment = {.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO, .pNext = nullptr};
 
 		colorAttachment.imageView = view;
 		colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
@@ -60,8 +60,9 @@ namespace mythril::vkinfo {
 		}
 		return colorAttachment;
 	}
-	VkRenderingAttachmentInfo CreateColorAttachmentInfo(VkImageView view, const VkClearColorValue* clear, VkAttachmentLoadOp loadOp, VkAttachmentStoreOp storeOp, VkImageView resolveView, VkResolveModeFlags resolveMode) {
-		VkRenderingAttachmentInfo colorAttachment = { .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO, .pNext = nullptr };
+	VkRenderingAttachmentInfo
+	CreateColorAttachmentInfo(VkImageView view, const VkClearColorValue* clear, VkAttachmentLoadOp loadOp, VkAttachmentStoreOp storeOp, VkImageView resolveView, VkResolveModeFlags resolveMode) {
+		VkRenderingAttachmentInfo colorAttachment = {.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO, .pNext = nullptr};
 		colorAttachment.imageView = view;
 		colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
@@ -74,7 +75,8 @@ namespace mythril::vkinfo {
 			colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
 		}
 		if (resolveView) {
-			if (!clear) colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+			if (!clear)
+				colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
 
 			colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
 			colorAttachment.resolveImageView = resolveView;
@@ -82,7 +84,6 @@ namespace mythril::vkinfo {
 			colorAttachment.resolveMode = static_cast<VkResolveModeFlagBits>(resolveMode);
 		}
 		return colorAttachment;
-
 	}
 	VkRenderingAttachmentInfo CreateDepthAttachmentInfo(VkImageView view, const VkClearDepthStencilValue* clear) {
 		VkRenderingAttachmentInfo depthAttachment = {};
@@ -115,8 +116,10 @@ namespace mythril::vkinfo {
 		}
 		return depthAttachment;
 	}
-	VkRenderingAttachmentInfo CreateDepthStencilAttachmentInfo(VkImageView view, const VkClearDepthStencilValue* clear, VkAttachmentLoadOp loadOp, VkAttachmentStoreOp storeOp, VkImageView resolveView, VkResolveModeFlags resolveMode) {
-		VkRenderingAttachmentInfo depthAttachment = { .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO, .pNext = nullptr };
+	VkRenderingAttachmentInfo CreateDepthStencilAttachmentInfo(
+	        VkImageView view, const VkClearDepthStencilValue* clear, VkAttachmentLoadOp loadOp, VkAttachmentStoreOp storeOp, VkImageView resolveView, VkResolveModeFlags resolveMode
+	) {
+		VkRenderingAttachmentInfo depthAttachment = {.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO, .pNext = nullptr};
 		depthAttachment.imageView = view;
 		depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
@@ -148,8 +151,8 @@ namespace mythril::vkinfo {
 		info.pNext = nullptr;
 		info.flags = 0;
 		info.renderArea = {
-				.offset = { 0, 0 },
-				.extent = extent2D,
+		    .offset = {0, 0},
+		    .extent = extent2D,
 		};
 		info.layerCount = 1;
 		info.viewMask = 0;
@@ -166,8 +169,8 @@ namespace mythril::vkinfo {
 		info.pNext = nullptr;
 		info.flags = 0;
 		info.renderArea = {
-				.offset = { 0, 0 },
-				.extent = extent2D,
+		    .offset = {0, 0},
+		    .extent = extent2D,
 		};
 		info.layerCount = 1;
 		info.viewMask = 0;
@@ -353,13 +356,8 @@ namespace mythril::vkinfo {
 		info.dstStageMask = dstStage.stage;
 		info.dstAccessMask = dstStage.access;
 
-		info.subresourceRange = VkImageSubresourceRange{vkutil::AspectMaskFromFormat(format),
-			0,
-			VK_REMAINING_MIP_LEVELS,
-			0,
-			VK_REMAINING_ARRAY_LAYERS
-		};
+		info.subresourceRange = VkImageSubresourceRange{vkutil::AspectMaskFromFormat(format), 0, VK_REMAINING_MIP_LEVELS, 0, VK_REMAINING_ARRAY_LAYERS};
 
 		return info;
 	}
-}
+} // namespace mythril::vkinfo

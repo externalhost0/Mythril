@@ -4,10 +4,10 @@
 
 #pragma once
 
-#include "vkenums.h"
-#include "ObjectHandles.h"
-#include "ImmediateCommands.h"
 #include "../include/mythril/RenderGraphBuilder.h"
+#include "ImmediateCommands.h"
+#include "ObjectHandles.h"
+#include "vkenums.h"
 
 #include <volk.h>
 
@@ -23,7 +23,9 @@ namespace mythril {
 
 	// we only use it for the cmdBeginRendering command anyways
 	struct Dependencies {
-		enum { kMaxSubmitDependencies = 4 };
+		enum {
+			kMaxSubmitDependencies = 4
+		};
 		TextureHandle textures[kMaxSubmitDependencies] = {};
 		BufferHandle buffers[kMaxSubmitDependencies] = {};
 	};
@@ -47,6 +49,7 @@ namespace mythril {
 
 		VkCommandBufferSubmitInfo requestSubmitInfo() const;
 		bool isDrying() const { return _isDryRun; }
+
 	public:
 		// all possible commands user can call inside setExecuteCallback
 		// all commands in this section NEED to detect if they are being called while in a dryRun
@@ -76,7 +79,7 @@ namespace mythril {
 		void cmdPushConstants(const void* data, uint32_t size, uint32_t offset);
 		template<class Struct>
 		void cmdPushConstants(const Struct& type, uint32_t offset = 0) {
-			cmdPushConstants(&type, (uint32_t)sizeof(Struct), offset);
+			cmdPushConstants(&type, (uint32_t) sizeof(Struct), offset);
 		}
 
 		template<typename T>
@@ -85,9 +88,7 @@ namespace mythril {
 			cmdUpdateBuffer(buffer, bufferOffset, data.size() * sizeof(T), data.data());
 		}
 
-		void cmdUpdateBuffer(const Buffer& buffer, size_t offset, size_t size, const void* data) {
-			cmdUpdateBuffer(buffer.handle(), offset, size, data);
-		}
+		void cmdUpdateBuffer(const Buffer& buffer, size_t offset, size_t size, const void* data) { cmdUpdateBuffer(buffer.handle(), offset, size, data); }
 		template<typename Struct>
 		void cmdUpdateBuffer(const Buffer& buffer, const Struct& data, size_t bufferOffset = 0) {
 			static_assert(sizeof(Struct) <= 65536);
@@ -115,18 +116,17 @@ namespace mythril {
 		void cmdGenerateMipmap(TextureHandle handle);
 		void cmdGenerateMipmap(const Texture& texture) { cmdGenerateMipmap(texture.handle()); }
 
-		void cmdTransitionLayout(const Texture &source, VkImageLayout newLayout) { cmdTransitionLayout(source.handle(), newLayout);}
+		void cmdTransitionLayout(const Texture& source, VkImageLayout newLayout) { cmdTransitionLayout(source.handle(), newLayout); }
 		void cmdCopyImage(const Texture& source, const Texture& destination) { cmdCopyImage(source.handle(), destination.handle()); }
 		void cmdBlitImage(const Texture& source, const Texture& destination) { cmdBlitImage(source.handle(), destination.handle()); }
-		void cmdCopyImageToBuffer(const Texture& source, const Buffer& destination, const VkBufferImageCopy& region) {
-			cmdCopyImageToBuffer(source.handle(), destination.handle(), region);
-		}
+		void cmdCopyImageToBuffer(const Texture& source, const Buffer& destination, const VkBufferImageCopy& region) { cmdCopyImageToBuffer(source.handle(), destination.handle(), region); }
 
 		void cmdTransitionLayout(TextureHandle source, VkImageLayout newLayout, VkImageSubresourceRange range);
 		void cmdTransitionLayout(TextureHandle source, VkImageLayout newLayout);
 		void cmdCopyImage(TextureHandle source, TextureHandle destination);
 		void cmdBlitImage(TextureHandle source, TextureHandle destination);
 		void cmdCopyImageToBuffer(TextureHandle source, BufferHandle destination, const VkBufferImageCopy& region);
+
 	private:
 		void cmdBlitImageToSwapchain(TextureHandle source);
 		void cmdCopyImageToSwapchain(TextureHandle source);
@@ -151,6 +151,7 @@ namespace mythril {
 		PassDesc::Type getCurrentPassType();
 		void CheckTextureRenderingUsage(const AllocatedTexture& source, const AllocatedTexture& destination, const char* operation);
 		void CheckImageLayoutAuto(TextureHandle sourceHandle, TextureHandle destinationHandle, const char* operation);
+
 	private:
 		// pretty important members for communication to the rest of the renderer
 		CTX* _ctx = nullptr;
@@ -177,4 +178,4 @@ namespace mythril {
 		friend class IntermediateBuilder;
 	};
 
-}
+} // namespace mythril

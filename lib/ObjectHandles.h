@@ -15,28 +15,20 @@ namespace mythril {
 	public:
 		InternalObjectHandle() = default;
 
-		uint32_t index() const {
-			return _index;
-		}
+		uint32_t index() const { return _index; }
 
-		uint32_t gen() const {
-			return _generation;
-		}
+		uint32_t gen() const { return _generation; }
 
-		bool valid() const {
-			return _generation != 0;
-		}
+		bool valid() const { return _generation != 0; }
 
-		bool empty() const {
-			return _generation == 0;
-		}
+		bool empty() const { return _generation == 0; }
 
-		bool operator==(const InternalObjectHandle<Type>& other) const {
-			return this->_index == other._index && this->_generation == other._generation;
-		}
+		bool operator==(const InternalObjectHandle<Type>& other) const { return this->_index == other._index && this->_generation == other._generation; }
 
 	private:
-		InternalObjectHandle(uint32_t index, uint32_t gen) : _index(index), _generation(gen) {};
+		InternalObjectHandle(uint32_t index, uint32_t gen) :
+		    _index(index),
+		    _generation(gen) {};
 
 		template<typename HandleType, typename ActualObject>
 		friend class HandlePool;
@@ -54,15 +46,16 @@ namespace mythril {
 	using ComputePipelineHandle = InternalObjectHandle<struct ComputePipelineTag>;
 
 
-// https://github.com/corporateshark/lightweightvk/blob/87d12061688d6f69b8b2c2d9799f00143cb0ee01/lvk/Pool.h#L13
-// lightweight vk pool and handles
+	// https://github.com/corporateshark/lightweightvk/blob/87d12061688d6f69b8b2c2d9799f00143cb0ee01/lvk/Pool.h#L13
+	// lightweight vk pool and handles
 	template<typename HandleType, typename ActualObject>
 	class HandlePool {
 	private:
 		static constexpr uint32_t kListEndSentinel = Invalid<uint32_t>;
 
 		struct PoolEntry {
-			explicit PoolEntry(ActualObject &&obj) : _obj(std::move(obj)) {}
+			explicit PoolEntry(ActualObject&& obj) :
+			    _obj(std::move(obj)) {}
 
 			ActualObject _obj = {};
 			uint32_t _gen = 1;
@@ -77,8 +70,9 @@ namespace mythril {
 		// FIXME: temp fix to _objects not being public
 		friend class CTX;
 		friend class CommandBuffer;
+
 	public:
-		HandleType create(ActualObject &&obj) {
+		HandleType create(ActualObject&& obj) {
 			uint32_t idx;
 			if (_freeListHead != kListEndSentinel) {
 				idx = _freeListHead;
@@ -93,7 +87,8 @@ namespace mythril {
 		}
 
 		void destroy(HandleType handle) {
-			if (handle.empty()) return;
+			if (handle.empty())
+				return;
 
 			const uint32_t index = handle.index();
 			assert(index < _objects.size());
@@ -107,32 +102,40 @@ namespace mythril {
 		}
 
 		ActualObject* get(HandleType handle) {
-			if (handle.empty()) return nullptr;
+			if (handle.empty())
+				return nullptr;
 
 			const uint32_t index = handle.index();
-			if (index >= _objects.size()) return nullptr;
-			if (handle.gen() != _objects[index]._gen) return nullptr;
+			if (index >= _objects.size())
+				return nullptr;
+			if (handle.gen() != _objects[index]._gen)
+				return nullptr;
 
 			return &_objects[index]._obj;
 		}
 
 		const ActualObject* get(HandleType handle) const {
-			if (handle.empty()) return nullptr;
+			if (handle.empty())
+				return nullptr;
 
 			const uint32_t index = handle.index();
-			if (index >= _objects.size()) return nullptr;
-			if (handle.gen() != _objects[index]._gen) return nullptr;
+			if (index >= _objects.size())
+				return nullptr;
+			if (handle.gen() != _objects[index]._gen)
+				return nullptr;
 
 			return &_objects[index]._obj;
 		}
 
 		HandleType getHandle(uint32_t index) const {
-			if (index >= _objects.size()) return {};
+			if (index >= _objects.size())
+				return {};
 			return HandleType(index, _objects[index]._gen);
 		}
 
-		HandleType findObject(const ActualObject *obj) {
-			if (!obj) return {};
+		HandleType findObject(const ActualObject* obj) {
+			if (!obj)
+				return {};
 			for (uint32_t idx = 0; idx < _objects.size(); ++idx) {
 				if (&_objects[idx]._obj == obj) {
 					return HandleType(idx, _objects[idx]._gen);
@@ -149,11 +152,11 @@ namespace mythril {
 
 		uint32_t numObjects() const { return _numObjects; }
 	};
-}
+} // namespace mythril
 
 template<typename Type>
-struct std::hash<mythril::InternalObjectHandle < Type>> {
-	size_t operator()(const mythril::InternalObjectHandle <Type> &handle) const noexcept {
+struct std::hash<mythril::InternalObjectHandle<Type>> {
+	size_t operator()(const mythril::InternalObjectHandle<Type>& handle) const noexcept {
 		// Simple combination of index and generation
 		const uint64_t combined = (static_cast<uint64_t>(handle.index()) << 32) | handle.gen();
 		return std::hash<uint64_t>()(combined);

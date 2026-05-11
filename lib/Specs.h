@@ -17,21 +17,11 @@ namespace mythril {
 		uint32_t height = 1;
 		uint32_t depth = 1;
 
-		constexpr Dimensions divide1D(const uint32_t v) const {
-			return {.width = width / v, .height = height, .depth = depth};
-		}
-		constexpr Dimensions divide2D(const uint32_t v) const {
-			return {.width = width / v, .height = height / v, .depth = depth};
-		}
-		constexpr Dimensions divide3D(const uint32_t v) const {
-			return {.width = width / v, .height = height / v, .depth = depth / v};
-		}
-		constexpr bool operator==(const Dimensions& other) const {
-			return width == other.width && height == other.height && depth == other.depth;
-		}
-		constexpr bool operator!=(const Dimensions& other) const {
-			return !(*this==other);
-		}
+		constexpr Dimensions divide1D(const uint32_t v) const { return {.width = width / v, .height = height, .depth = depth}; }
+		constexpr Dimensions divide2D(const uint32_t v) const { return {.width = width / v, .height = height / v, .depth = depth}; }
+		constexpr Dimensions divide3D(const uint32_t v) const { return {.width = width / v, .height = height / v, .depth = depth / v}; }
+		constexpr bool operator==(const Dimensions& other) const { return width == other.width && height == other.height && depth == other.depth; }
+		constexpr bool operator!=(const Dimensions& other) const { return !(*this == other); }
 	};
 
 	// bits need to be uint8_t underlying type
@@ -68,8 +58,7 @@ namespace mythril {
 		Swizzle_A,
 	};
 
-	struct TexRange
-	{
+	struct TexRange {
 		VkOffset3D offset = {};
 		VkExtent3D dimensions = {1, 1, 1};
 
@@ -78,32 +67,23 @@ namespace mythril {
 		uint32_t mipLevel = 0;
 		uint32_t numMipLevels = 1;
 	};
-	struct ComponentMapping
-	{
+	struct ComponentMapping {
 		Swizzle r = Swizzle_Default;
 		Swizzle g = Swizzle_Default;
 		Swizzle b = Swizzle_Default;
 		Swizzle a = Swizzle_Default;
-		bool identity() const {
-			return r == Swizzle_Default && g == Swizzle_Default && b == Swizzle_Default && a == Swizzle_Default;
-		}
+		bool identity() const { return r == Swizzle_Default && g == Swizzle_Default && b == Swizzle_Default && a == Swizzle_Default; }
 		VkComponentMapping toVkComponentMapping() const {
-			return {
-				.r = static_cast<VkComponentSwizzle>(r),
-				.g = static_cast<VkComponentSwizzle>(g),
-				.b = static_cast<VkComponentSwizzle>(b),
-				.a = static_cast<VkComponentSwizzle>(a)
-			};
+			return {.r = static_cast<VkComponentSwizzle>(r), .g = static_cast<VkComponentSwizzle>(g), .b = static_cast<VkComponentSwizzle>(b), .a = static_cast<VkComponentSwizzle>(a)};
 		}
 	};
-	static_assert(mythril::Swizzle::Swizzle_Default == (uint32_t)VK_COMPONENT_SWIZZLE_IDENTITY);
-	static_assert(mythril::Swizzle::Swizzle_0 == (uint32_t)VK_COMPONENT_SWIZZLE_ZERO);
-	static_assert(mythril::Swizzle::Swizzle_1 == (uint32_t)VK_COMPONENT_SWIZZLE_ONE);
-	static_assert(mythril::Swizzle::Swizzle_R == (uint32_t)VK_COMPONENT_SWIZZLE_R);
-	static_assert(mythril::Swizzle::Swizzle_G == (uint32_t)VK_COMPONENT_SWIZZLE_G);
-	static_assert(mythril::Swizzle::Swizzle_B == (uint32_t)VK_COMPONENT_SWIZZLE_B);
-	static_assert(mythril::Swizzle::Swizzle_A == (uint32_t)VK_COMPONENT_SWIZZLE_A);
-
+	static_assert(mythril::Swizzle::Swizzle_Default == (uint32_t) VK_COMPONENT_SWIZZLE_IDENTITY);
+	static_assert(mythril::Swizzle::Swizzle_0 == (uint32_t) VK_COMPONENT_SWIZZLE_ZERO);
+	static_assert(mythril::Swizzle::Swizzle_1 == (uint32_t) VK_COMPONENT_SWIZZLE_ONE);
+	static_assert(mythril::Swizzle::Swizzle_R == (uint32_t) VK_COMPONENT_SWIZZLE_R);
+	static_assert(mythril::Swizzle::Swizzle_G == (uint32_t) VK_COMPONENT_SWIZZLE_G);
+	static_assert(mythril::Swizzle::Swizzle_B == (uint32_t) VK_COMPONENT_SWIZZLE_B);
+	static_assert(mythril::Swizzle::Swizzle_A == (uint32_t) VK_COMPONENT_SWIZZLE_A);
 
 
 	// Specs should be low level but still a thin wrapper around the info creation processes need
@@ -165,4 +145,4 @@ namespace mythril {
 		const char* debugName = "Unnamed Shader";
 	};
 
-}
+} // namespace mythril

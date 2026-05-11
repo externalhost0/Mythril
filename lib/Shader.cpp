@@ -5,15 +5,15 @@
 #include "Shader.h"
 #include "HelperMacros.h"
 #include "Logger.h"
-#include "vkstring.h"
 #include "faststl/StackString.h"
+#include "vkstring.h"
 
-#include <string>
-#include <optional>
 #include <cctype>
+#include <optional>
+#include <string>
 
-#include <slang/slang.h>
 #include <slang/slang-com-ptr.h>
+#include <slang/slang.h>
 #include <spirv_reflect.h>
 
 #include "mythril/Objects.h"
@@ -22,24 +22,38 @@ namespace mythril {
 
 	const char* FieldKindToString(FieldKind fieldKind) {
 		switch (fieldKind) {
-			case FieldKind::OpaqueHandle: return "OpaqueHandle";
-			case FieldKind::Scalar:       return "Scalar";
-			case FieldKind::Vector:       return "Vector";
-			case FieldKind::Matrix:       return "Matrix";
-			case FieldKind::Array:        return "Array";
-			case FieldKind::Struct:       return "Struct";
-			case FieldKind::Pointer:      return "Pointer";
-			case FieldKind::Unknown:      return "Unknown";
+			case FieldKind::OpaqueHandle:
+				return "OpaqueHandle";
+			case FieldKind::Scalar:
+				return "Scalar";
+			case FieldKind::Vector:
+				return "Vector";
+			case FieldKind::Matrix:
+				return "Matrix";
+			case FieldKind::Array:
+				return "Array";
+			case FieldKind::Struct:
+				return "Struct";
+			case FieldKind::Pointer:
+				return "Pointer";
+			case FieldKind::Unknown:
+				return "Unknown";
 		}
 	}
 	const char* ScalarKindToString(ScalarKind scalarKind) {
 		switch (scalarKind) {
-			case ScalarKind::None: return "None";
-			case ScalarKind::Int: return "Int";
-			case ScalarKind::UInt: return "UInt";
-			case ScalarKind::Float: return "Float";
-			case ScalarKind::Double: return "Double";
-			case ScalarKind::Bool: return "Bool";
+			case ScalarKind::None:
+				return "None";
+			case ScalarKind::Int:
+				return "Int";
+			case ScalarKind::UInt:
+				return "UInt";
+			case ScalarKind::Float:
+				return "Float";
+			case ScalarKind::Double:
+				return "Double";
+			case ScalarKind::Bool:
+				return "Bool";
 		}
 	}
 
@@ -74,7 +88,7 @@ namespace mythril {
 					cols = cols * 10 + (s[j] - '0');
 					j++;
 				}
-				return MatrixDims{ rows, cols };
+				return MatrixDims{rows, cols};
 			}
 		}
 		return std::nullopt;
@@ -125,8 +139,10 @@ namespace mythril {
 				}
 				return ScalarKind::Float;
 			}
-			case SpvOpTypeBool: return ScalarKind::Bool;
-			default: break;
+			case SpvOpTypeBool:
+				return ScalarKind::Bool;
+			default:
+				break;
 		}
 		ASSERT_MSG(false, "Something went horribly wrong, this should never happen!");
 	}
@@ -214,62 +230,62 @@ namespace mythril {
 	}
 
 
-//	void collectFieldsRecursivelyEXT(std::vector<FieldInfo>& fields, slang::TypeLayoutReflection* typeLayout) {
-//		unsigned int fieldCount = typeLayout->getFieldCount();
-//		for (unsigned int i = 0; i < fieldCount; ++i) {
-//			auto fieldVariableLayout = typeLayout->getFieldByIndex(i);
-//			auto fieldTypeLayout = fieldVariableLayout->getTypeLayout();
-//
-//			FieldInfo field;
-//			field.varName = fieldVariableLayout->getName();
-//			field.typeName = fieldTypeLayout->getName();
-//			field.kind = getFieldKind(fieldTypeLayout);
-//			field.scalarKind = getScalarType(fieldTypeLayout);
-//			field.size = fieldTypeLayout->getSize();
-//			field.offset = fieldVariableLayout->getOffset();
-//
-//			// must be take from variableReflection
-//			// TODO: remove me before merge
-//			if (const char* string = fieldVariableLayout->getVariable()->getUserAttributeByIndex(0)->getName()) {
-//				int hasMark = strcmp(string, "MarkHandle");
-//				if (hasMark == 0) {
-//					int val;
-//					fieldVariableLayout->getVariable()->getUserAttributeByIndex(0)->getArgumentValueInt(0, &val);
-//					field.opaqueKind = (OpaqueKind)val;
-//					field.kind = FieldKind::OpaqueHandle;
-//					field.scalarKind = ScalarKind::None;
-//					field.typeName = "OpaqueHandle";
-//				}
-//			}
-//
-//			auto type = fieldTypeLayout->getType();
-//
-//			// special cases of fields that need more data
-//			switch (field.kind) {
-//				case FieldKind::Vector: {
-//					field.componentCount = type->getElementCount();
-//				} break;
-//				case FieldKind::Matrix: {
-//					field.rowCount = type->getRowCount();
-//					field.columnCount = type->getColumnCount();
-//				} break;
-//				case FieldKind::Array: {
-//					field.componentCount = type->getElementCount();  // Array size
-//					// Recursively collect the array element type
-//					auto elementTypeLayout = fieldTypeLayout->getElementTypeLayout();
-//					if (elementTypeLayout && elementTypeLayout->getFieldCount() > 0) {
-//						collectFieldsRecursivelyEXT(field.fields, elementTypeLayout);
-//					}
-//				} break;
-//				case FieldKind::Struct: {
-//					collectFieldsRecursivelyEXT(field.fields, fieldTypeLayout);
-//				} break;
-//				default:
-//					LOG_DEBUG("Unaccounted field of kind '{}', type '{}', named '{}'", FieldKindToString(field.kind), field.typeName, field.varName);
-//			}
-//			fields.push_back(field);
-//		}
-//	}
+	//	void collectFieldsRecursivelyEXT(std::vector<FieldInfo>& fields, slang::TypeLayoutReflection* typeLayout) {
+	//		unsigned int fieldCount = typeLayout->getFieldCount();
+	//		for (unsigned int i = 0; i < fieldCount; ++i) {
+	//			auto fieldVariableLayout = typeLayout->getFieldByIndex(i);
+	//			auto fieldTypeLayout = fieldVariableLayout->getTypeLayout();
+	//
+	//			FieldInfo field;
+	//			field.varName = fieldVariableLayout->getName();
+	//			field.typeName = fieldTypeLayout->getName();
+	//			field.kind = getFieldKind(fieldTypeLayout);
+	//			field.scalarKind = getScalarType(fieldTypeLayout);
+	//			field.size = fieldTypeLayout->getSize();
+	//			field.offset = fieldVariableLayout->getOffset();
+	//
+	//			// must be take from variableReflection
+	//			// TODO: remove me before merge
+	//			if (const char* string = fieldVariableLayout->getVariable()->getUserAttributeByIndex(0)->getName()) {
+	//				int hasMark = strcmp(string, "MarkHandle");
+	//				if (hasMark == 0) {
+	//					int val;
+	//					fieldVariableLayout->getVariable()->getUserAttributeByIndex(0)->getArgumentValueInt(0, &val);
+	//					field.opaqueKind = (OpaqueKind)val;
+	//					field.kind = FieldKind::OpaqueHandle;
+	//					field.scalarKind = ScalarKind::None;
+	//					field.typeName = "OpaqueHandle";
+	//				}
+	//			}
+	//
+	//			auto type = fieldTypeLayout->getType();
+	//
+	//			// special cases of fields that need more data
+	//			switch (field.kind) {
+	//				case FieldKind::Vector: {
+	//					field.componentCount = type->getElementCount();
+	//				} break;
+	//				case FieldKind::Matrix: {
+	//					field.rowCount = type->getRowCount();
+	//					field.columnCount = type->getColumnCount();
+	//				} break;
+	//				case FieldKind::Array: {
+	//					field.componentCount = type->getElementCount();  // Array size
+	//					// Recursively collect the array element type
+	//					auto elementTypeLayout = fieldTypeLayout->getElementTypeLayout();
+	//					if (elementTypeLayout && elementTypeLayout->getFieldCount() > 0) {
+	//						collectFieldsRecursivelyEXT(field.fields, elementTypeLayout);
+	//					}
+	//				} break;
+	//				case FieldKind::Struct: {
+	//					collectFieldsRecursivelyEXT(field.fields, fieldTypeLayout);
+	//				} break;
+	//				default:
+	//					LOG_DEBUG("Unaccounted field of kind '{}', type '{}', named '{}'", FieldKindToString(field.kind), field.typeName, field.varName);
+	//			}
+	//			fields.push_back(field);
+	//		}
+	//	}
 
 	void PatchSpecConstants(uint32_t*& code, size_t& size) {
 		SpvReflectShaderModule spirv_module = {};
@@ -278,19 +294,22 @@ namespace mythril {
 
 		// we want to get the first descriptor set and ensure that its set index is 0
 		// if not then we shift all descriptor sets over by its set index until its at 0
-		if (spirv_module.descriptor_set_count < 1) return;
+		if (spirv_module.descriptor_set_count < 1)
+			return;
 		// we might want to check just the first SpvReflectDescriptorSet, however idk if they are ordered
 		uint32_t lowest_set_index = std::numeric_limits<uint32_t>::max();
 		for (int i = 0; i < spirv_module.descriptor_set_count; i++) {
 			const SpvReflectDescriptorSet& set = spirv_module.descriptor_sets[i];
-			if (lowest_set_index > set.set) lowest_set_index = set.set;
+			if (lowest_set_index > set.set)
+				lowest_set_index = set.set;
 		}
-		if (lowest_set_index == 0) return;
+		if (lowest_set_index == 0)
+			return;
 		// now we know we have to apply the patch
 		// we loop through every descriptor set and shift their set index down by lowest set
 		for (int i = 0; i < spirv_module.descriptor_set_count; i++) {
 			SpvReflectDescriptorSet& set = spirv_module.descriptor_sets[i];
-			spvReflectChangeDescriptorSetNumber(&spirv_module, &set, set.set-lowest_set_index);
+			spvReflectChangeDescriptorSetNumber(&spirv_module, &set, set.set - lowest_set_index);
 		}
 		size = spvReflectGetCodeSize(&spirv_module);
 		memcpy(code, spvReflectGetCode(&spirv_module), size);
@@ -314,9 +333,12 @@ namespace mythril {
 			auto vk_shader_stage_flag = static_cast<VkShaderStageFlagBits>(reflectedEntryPoint.shader_stage);
 #ifdef DEBUG
 			numOfStageEntryPoints[vk_shader_stage_flag]++;
-			ASSERT_MSG(numOfStageEntryPoints[vk_shader_stage_flag] < 2, "You cannot have more than 1 entrypoint for the same shader stage! '{}' is the second entrypoint that targets '{}'",
-					   reflectedEntryPoint.name,
-					   vkstring::VulkanShaderStageFlagBitsToString(vk_shader_stage_flag).c_str());
+			ASSERT_MSG(
+			        numOfStageEntryPoints[vk_shader_stage_flag] < 2,
+			        "You cannot have more than 1 entrypoint for the same shader stage! '{}' is the second entrypoint that targets '{}'",
+			        reflectedEntryPoint.name,
+			        vkstring::VulkanShaderStageFlagBitsToString(vk_shader_stage_flag).c_str()
+			);
 #endif
 			vkShaderStageFlags |= vk_shader_stage_flag;
 		}
@@ -330,7 +352,7 @@ namespace mythril {
 		spv_result = spvReflectEnumerateSpecializationConstants(&spirv_module, &sc_count, constants.data());
 		ASSERT_MSG(spv_result == SPV_REFLECT_RESULT_SUCCESS, "Failed to enumerate Specialization Constants for data.");
 
-		for (const SpvReflectSpecializationConstant* reflected_constant : constants) {
+		for (const SpvReflectSpecializationConstant* reflected_constant: constants) {
 			// safely derefrence
 			const SpvReflectTypeDescription& constantType = *reflected_constant->type_description;
 			SpecializationConstant info = {};
@@ -370,21 +392,26 @@ namespace mythril {
 					continue;
 				}
 
-				ASSERT_MSG(false,
-						   "Shader declares non-bindless descriptor binding '{}' at set={}, binding={}. "
-						   "Mythril is fully bindless: use Ptr<T> in push constants or DescriptorHandle<T>.",
-						   reflected_binding->name,
-						   reflected_set->set,
-						   reflected_binding->binding);
+				ASSERT_MSG(
+				        false,
+				        "Shader declares non-bindless descriptor binding '{}' at set={}, binding={}. "
+				        "Mythril is fully bindless: use Ptr<T> in push constants or DescriptorHandle<T>.",
+				        reflected_binding->name,
+				        reflected_set->set,
+				        reflected_binding->binding
+				);
 			}
 
-			ASSERT_MSG(isBindless,
-					   "Shader declares descriptor set={} with no bindless heap. "
-					   "Mythril is fully bindless: only Slang's __slang_resource_heap is permitted.",
-					   reflected_set->set);
+			ASSERT_MSG(
+			        isBindless,
+			        "Shader declares descriptor set={} with no bindless heap. "
+			        "Mythril is fully bindless: only Slang's __slang_resource_heap is permitted.",
+			        reflected_set->set
+			);
 
 			result.pipelineLayoutSignature.bindlessSetIndex = reflected_set->set;
-			if (!set_info.bindingInfos.empty()) result.retrievedDescriptorSets.push_back(set_info);
+			if (!set_info.bindingInfos.empty())
+				result.retrievedDescriptorSets.push_back(set_info);
 		}
 
 		// collect push constant info
@@ -416,201 +443,201 @@ namespace mythril {
 		return result;
 	}
 
-//	void ShaderTransformer::startBuildingDescriptorSetLayout(PipelineLayoutSignature& plSignature, DescriptorSetSignature& dslSignature) {
-//		dslSignature.setIndex = plSignature.setSignatures.size() + 1;
-//	}
-//
-//	void ShaderTransformer::finishBuildingDescriptorSetLayout(PipelineLayoutSignature& plSignature, DescriptorSetSignature& dslSignature) {
-//		if (dslSignature.bindings.empty())
-//			return;
-//		ASSERT_MSG(dslSignature.setIndex == plSignature.setSignatures.size() + 1, "Set index doesnt align with descriptor sets vector size!");
-//		plSignature.setSignatures.push_back(std::move(dslSignature));
-//	}
-//
-//	void ShaderTransformer::performReflection(Shader& shader, slang::ProgramLayout* programLayout) {
-//		printf(" ----- Entering Shader: %s ----- \n", shader._debugName);
-//		_currentShader = &shader;
-//
-//		// Clear the signature
-//		shader._pipelineSignature.setSignatures.clear();
-//		shader._pipelineSignature.pushes.clear();
-//
-//		DescriptorSetSignature dslSignature;
-//		startBuildingDescriptorSetLayout(shader._pipelineSignature, dslSignature);
-//
-//		// GLOBAL PARAMETERS
-//		_currentStageFlags = VK_SHADER_STAGE_ALL;
-//		printf(" -- Entering Global Params -- \n");
-//		addRangesForParameterBlockElement(shader._pipelineSignature, dslSignature, programLayout->getGlobalParamsTypeLayout());
-//
-//		// ENTRY POINT PARAMETERS
-////		printf(" -- Entering Entry Points -- \n");
-////		auto entryPointCount = static_cast<int>(programLayout->getEntryPointCount());
-////		for (int i = 0; i < entryPointCount; i++) {
-////			auto entryPointLayout = programLayout->getEntryPointByIndex(i);
-////			_currentStageFlags = SlangStageToVkShaderStage(entryPointLayout->getStage());
-////			addRangesForParameterBlockElement(shader._plSignature, dslSignature, entryPointLayout->getTypeLayout());
-////		}
-//
-//		finishBuildingDescriptorSetLayout(shader._pipelineSignature, dslSignature);
-//		printf("\n");
-//	}
-//
-//	void ShaderTransformer::addRangesForParameterBlockElement(PipelineLayoutSignature& plSignature,
-//															  DescriptorSetSignature& dslSignature,
-//															  slang::TypeLayoutReflection* elementTypeLayout) {
-//		if (elementTypeLayout->getSize() > 0) {
-//			addAutomaticallyIntroducedUniformBuffer(dslSignature);
-//		}
-//		addRanges(plSignature, dslSignature, elementTypeLayout);
-//	}
-//
-//	void ShaderTransformer::addAutomaticallyIntroducedUniformBuffer(DescriptorSetSignature& dslSignature) {
-//		auto vulkanBindingIndex = dslSignature.bindings.size();
-//		VkDescriptorSetLayoutBinding binding = {
-//				.binding = static_cast<uint32_t>(vulkanBindingIndex),
-//				.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-//				.descriptorCount = 1,
-//				.stageFlags = _currentStageFlags,
-//				.pImmutableSamplers = nullptr,
-//		};
-//		dslSignature.bindings.push_back(binding);
-//	}
-//
-//	void ShaderTransformer::addRanges(PipelineLayoutSignature& plSignature,
-//									  DescriptorSetSignature& dslSignature,
-//									  slang::TypeLayoutReflection* typeLayout) {
-//		printf("Adding Both Ranges - %s\n", typeLayout->getName());
-//		addDescriptorRanges(dslSignature, typeLayout);
-//		addSubRanges(plSignature, typeLayout);
-//	}
-//
-//	void ShaderTransformer::addDescriptorRanges(DescriptorSetSignature& dslSignature,
-//												slang::TypeLayoutReflection* typeLayout) {
-//		int relativeSetIndex = 0;
-//		auto rangeCount = static_cast<unsigned int>(typeLayout->getDescriptorSetDescriptorRangeCount(relativeSetIndex));
-//		printf("Adding Descriptor Range for %s with a count of %d\n", typeLayout->getName(), rangeCount);
-//		for (int rangeIndex = 0; rangeIndex < rangeCount; ++rangeIndex) {
-//			addDescriptorRange(dslSignature, typeLayout, relativeSetIndex, rangeIndex);
-//		}
-//	}
-//
-//	void ShaderTransformer::addDescriptorRange(DescriptorSetSignature& dslSignature,
-//											   slang::TypeLayoutReflection* typeLayout,
-//											   int relativeSetIndex,
-//											   int rangeIndex) {
-//		slang::BindingType bindingType = typeLayout->getDescriptorSetDescriptorRangeType(relativeSetIndex, rangeIndex);
-//		const uint32_t descriptorCount = typeLayout->getDescriptorSetDescriptorRangeDescriptorCount(relativeSetIndex, rangeIndex);
-//
-//		// avoid push constants, they cant fit in descriptors
-//		if (bindingType == slang::BindingType::PushConstant) return;
-//
-//		auto bindingIndex = dslSignature.bindings.size();
-//		VkDescriptorSetLayoutBinding binding = {
-//				.binding = static_cast<uint32_t>(bindingIndex),
-//				.descriptorType = mapToDescriptorType(bindingType),
-//				.descriptorCount = descriptorCount,
-//				.stageFlags = _currentStageFlags,
-//				.pImmutableSamplers = nullptr,
-//		};
-//		dslSignature.bindings.push_back(binding);
-//	}
-//
-//	void ShaderTransformer::addSubRanges(PipelineLayoutSignature& plSignature,
-//										 slang::TypeLayoutReflection* typeLayout) {
-//		auto subRangeCount = static_cast<unsigned int>(typeLayout->getSubObjectRangeCount());
-//		printf("SubRange Count: %d\n", subRangeCount);
-//		for (int subRangeIndex = 0; subRangeIndex < subRangeCount; ++subRangeIndex) {
-//			addSubRange(plSignature, typeLayout, subRangeIndex);
-//		}
-//	}
-//
-//	void ShaderTransformer::addSubRange(PipelineLayoutSignature& plSignature,
-//										slang::TypeLayoutReflection* typeLayout,
-//										int subRangeIndex) {
-//		auto bindingRangeIndex = static_cast<unsigned int>(typeLayout->getSubObjectRangeBindingRangeIndex(subRangeIndex));
-//		slang::BindingType bindingType = typeLayout->getBindingRangeType(bindingRangeIndex);
-//
-//		switch (bindingType) {
-//			default:
-//				ASSERT_MSG(false, "Invalid BindingTypes Detected: '{}' is not allowed, you may only have ParameterBlocks and Push Constants at top level!", BindingTypeToString(bindingType));
-//			case slang::BindingType::ParameterBlock: {
-//				auto parameterBlockTypeLayout = typeLayout->getBindingRangeLeafTypeLayout(bindingRangeIndex);
-//				auto parameterBlockVariableLayout = typeLayout->getFieldByIndex(bindingRangeIndex);
-//
-//				auto elementTypeLayout = parameterBlockTypeLayout->getElementTypeLayout();
-//
-//				Shader::DescriptorBindingInfo bindingInfo;
-//				bindingInfo.varName = parameterBlockVariableLayout->getName();
-//				bindingInfo.typeName = elementTypeLayout->getName();
-//
-//				Slang::ComPtr<slang::IBlob> nameBlob;
-//				parameterBlockTypeLayout->getType()->getFullName(nameBlob.writeRef());
-//				bindingInfo.completeSlangName = static_cast<const char*>(nameBlob->getBufferPointer());
-//
-//				bindingInfo.descriptorCount = 1;
-//				bindingInfo.usedStages = _currentStageFlags;
-//				bindingInfo.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-//
-//				collectFieldsRecursivelyEXT(bindingInfo.fields, elementTypeLayout);
-//
-//				addDescriptorSetForParameterBlock(plSignature, parameterBlockTypeLayout);
-//
-//				// get the binding index from the just added descriptor set
-//				const DescriptorSetSignature& lastSet = plSignature.setSignatures.back();
-//				unsigned int vulkanBindingIndex = lastSet.bindings.size() - 1;
-//				bindingInfo.bindingIndex = vulkanBindingIndex;
-//				bindingInfo.setIndex = parameterBlockVariableLayout->getOffset(slang::ParameterCategory::SubElementRegisterSpace);
-//
-//				_currentShader->_parameterBlocks.push_back(bindingInfo);
-//			} break;
-//
-//			case slang::BindingType::PushConstant: {
-//				auto constantBufferTypeLayout = typeLayout->getBindingRangeLeafTypeLayout(bindingRangeIndex);
-//				auto constantBufferVariableLayout = typeLayout->getFieldByIndex(bindingRangeIndex);
-//
-//				auto elementTypeLayout = constantBufferTypeLayout->getElementTypeLayout();
-//
-//				Shader::PushConstantInfo info;
-//				info.varName = constantBufferVariableLayout->getName();
-//				info.typeName = constantBufferTypeLayout->getName();
-//				Slang::ComPtr<slang::IBlob> nameBlob;
-//				constantBufferTypeLayout->getType()->getFullName(nameBlob.writeRef());
-//				info.completeSlangName = static_cast<const char*>(nameBlob->getBufferPointer());
-//				info.usedStages = _currentStageFlags;
-//				info.offset = 0;
-//				info.size = constantBufferTypeLayout->getElementTypeLayout()->getSize();
-//
-//				collectFieldsRecursivelyEXT(info.fields, elementTypeLayout);
-//
-//				_currentShader->_pushConstants.push_back(info);
-//
-//				addPushConstantRangeForConstantBuffer(plSignature, constantBufferTypeLayout);
-//			} break;
-//		}
-//	}
-//
-//	void ShaderTransformer::addDescriptorSetForParameterBlock(PipelineLayoutSignature& plSignature,
-//															  slang::TypeLayoutReflection* paramBlockTypeLayout) {
-//		printf("Adding Set for ParameterBlock\n");
-//		DescriptorSetSignature newDSSignature;
-//		startBuildingDescriptorSetLayout(plSignature, newDSSignature);
-//		addRangesForParameterBlockElement(plSignature, newDSSignature, paramBlockTypeLayout->getElementTypeLayout());
-//		finishBuildingDescriptorSetLayout(plSignature, newDSSignature);
-//	}
-//
-//	void ShaderTransformer::addPushConstantRangeForConstantBuffer(PipelineLayoutSignature& plSignature,
-//																  slang::TypeLayoutReflection* pushConstantBufferTypeLayout) {
-//		auto elementTypeLayout = pushConstantBufferTypeLayout->getElementTypeLayout();
-//		const uint32_t elementSize = elementTypeLayout->getSize();
-//
-//		if (elementSize <= 0) return;
-//
-//		VkPushConstantRange range = {
-//				.stageFlags = _currentStageFlags,
-//				.offset = 0,
-//				.size = elementSize
-//		};
-//		plSignature.pushes.push_back(range);
-//	}
-}
+	//	void ShaderTransformer::startBuildingDescriptorSetLayout(PipelineLayoutSignature& plSignature, DescriptorSetSignature& dslSignature) {
+	//		dslSignature.setIndex = plSignature.setSignatures.size() + 1;
+	//	}
+	//
+	//	void ShaderTransformer::finishBuildingDescriptorSetLayout(PipelineLayoutSignature& plSignature, DescriptorSetSignature& dslSignature) {
+	//		if (dslSignature.bindings.empty())
+	//			return;
+	//		ASSERT_MSG(dslSignature.setIndex == plSignature.setSignatures.size() + 1, "Set index doesnt align with descriptor sets vector size!");
+	//		plSignature.setSignatures.push_back(std::move(dslSignature));
+	//	}
+	//
+	//	void ShaderTransformer::performReflection(Shader& shader, slang::ProgramLayout* programLayout) {
+	//		printf(" ----- Entering Shader: %s ----- \n", shader._debugName);
+	//		_currentShader = &shader;
+	//
+	//		// Clear the signature
+	//		shader._pipelineSignature.setSignatures.clear();
+	//		shader._pipelineSignature.pushes.clear();
+	//
+	//		DescriptorSetSignature dslSignature;
+	//		startBuildingDescriptorSetLayout(shader._pipelineSignature, dslSignature);
+	//
+	//		// GLOBAL PARAMETERS
+	//		_currentStageFlags = VK_SHADER_STAGE_ALL;
+	//		printf(" -- Entering Global Params -- \n");
+	//		addRangesForParameterBlockElement(shader._pipelineSignature, dslSignature, programLayout->getGlobalParamsTypeLayout());
+	//
+	//		// ENTRY POINT PARAMETERS
+	////		printf(" -- Entering Entry Points -- \n");
+	////		auto entryPointCount = static_cast<int>(programLayout->getEntryPointCount());
+	////		for (int i = 0; i < entryPointCount; i++) {
+	////			auto entryPointLayout = programLayout->getEntryPointByIndex(i);
+	////			_currentStageFlags = SlangStageToVkShaderStage(entryPointLayout->getStage());
+	////			addRangesForParameterBlockElement(shader._plSignature, dslSignature, entryPointLayout->getTypeLayout());
+	////		}
+	//
+	//		finishBuildingDescriptorSetLayout(shader._pipelineSignature, dslSignature);
+	//		printf("\n");
+	//	}
+	//
+	//	void ShaderTransformer::addRangesForParameterBlockElement(PipelineLayoutSignature& plSignature,
+	//															  DescriptorSetSignature& dslSignature,
+	//															  slang::TypeLayoutReflection* elementTypeLayout) {
+	//		if (elementTypeLayout->getSize() > 0) {
+	//			addAutomaticallyIntroducedUniformBuffer(dslSignature);
+	//		}
+	//		addRanges(plSignature, dslSignature, elementTypeLayout);
+	//	}
+	//
+	//	void ShaderTransformer::addAutomaticallyIntroducedUniformBuffer(DescriptorSetSignature& dslSignature) {
+	//		auto vulkanBindingIndex = dslSignature.bindings.size();
+	//		VkDescriptorSetLayoutBinding binding = {
+	//				.binding = static_cast<uint32_t>(vulkanBindingIndex),
+	//				.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+	//				.descriptorCount = 1,
+	//				.stageFlags = _currentStageFlags,
+	//				.pImmutableSamplers = nullptr,
+	//		};
+	//		dslSignature.bindings.push_back(binding);
+	//	}
+	//
+	//	void ShaderTransformer::addRanges(PipelineLayoutSignature& plSignature,
+	//									  DescriptorSetSignature& dslSignature,
+	//									  slang::TypeLayoutReflection* typeLayout) {
+	//		printf("Adding Both Ranges - %s\n", typeLayout->getName());
+	//		addDescriptorRanges(dslSignature, typeLayout);
+	//		addSubRanges(plSignature, typeLayout);
+	//	}
+	//
+	//	void ShaderTransformer::addDescriptorRanges(DescriptorSetSignature& dslSignature,
+	//												slang::TypeLayoutReflection* typeLayout) {
+	//		int relativeSetIndex = 0;
+	//		auto rangeCount = static_cast<unsigned int>(typeLayout->getDescriptorSetDescriptorRangeCount(relativeSetIndex));
+	//		printf("Adding Descriptor Range for %s with a count of %d\n", typeLayout->getName(), rangeCount);
+	//		for (int rangeIndex = 0; rangeIndex < rangeCount; ++rangeIndex) {
+	//			addDescriptorRange(dslSignature, typeLayout, relativeSetIndex, rangeIndex);
+	//		}
+	//	}
+	//
+	//	void ShaderTransformer::addDescriptorRange(DescriptorSetSignature& dslSignature,
+	//											   slang::TypeLayoutReflection* typeLayout,
+	//											   int relativeSetIndex,
+	//											   int rangeIndex) {
+	//		slang::BindingType bindingType = typeLayout->getDescriptorSetDescriptorRangeType(relativeSetIndex, rangeIndex);
+	//		const uint32_t descriptorCount = typeLayout->getDescriptorSetDescriptorRangeDescriptorCount(relativeSetIndex, rangeIndex);
+	//
+	//		// avoid push constants, they cant fit in descriptors
+	//		if (bindingType == slang::BindingType::PushConstant) return;
+	//
+	//		auto bindingIndex = dslSignature.bindings.size();
+	//		VkDescriptorSetLayoutBinding binding = {
+	//				.binding = static_cast<uint32_t>(bindingIndex),
+	//				.descriptorType = mapToDescriptorType(bindingType),
+	//				.descriptorCount = descriptorCount,
+	//				.stageFlags = _currentStageFlags,
+	//				.pImmutableSamplers = nullptr,
+	//		};
+	//		dslSignature.bindings.push_back(binding);
+	//	}
+	//
+	//	void ShaderTransformer::addSubRanges(PipelineLayoutSignature& plSignature,
+	//										 slang::TypeLayoutReflection* typeLayout) {
+	//		auto subRangeCount = static_cast<unsigned int>(typeLayout->getSubObjectRangeCount());
+	//		printf("SubRange Count: %d\n", subRangeCount);
+	//		for (int subRangeIndex = 0; subRangeIndex < subRangeCount; ++subRangeIndex) {
+	//			addSubRange(plSignature, typeLayout, subRangeIndex);
+	//		}
+	//	}
+	//
+	//	void ShaderTransformer::addSubRange(PipelineLayoutSignature& plSignature,
+	//										slang::TypeLayoutReflection* typeLayout,
+	//										int subRangeIndex) {
+	//		auto bindingRangeIndex = static_cast<unsigned int>(typeLayout->getSubObjectRangeBindingRangeIndex(subRangeIndex));
+	//		slang::BindingType bindingType = typeLayout->getBindingRangeType(bindingRangeIndex);
+	//
+	//		switch (bindingType) {
+	//			default:
+	//				ASSERT_MSG(false, "Invalid BindingTypes Detected: '{}' is not allowed, you may only have ParameterBlocks and Push Constants at top level!", BindingTypeToString(bindingType));
+	//			case slang::BindingType::ParameterBlock: {
+	//				auto parameterBlockTypeLayout = typeLayout->getBindingRangeLeafTypeLayout(bindingRangeIndex);
+	//				auto parameterBlockVariableLayout = typeLayout->getFieldByIndex(bindingRangeIndex);
+	//
+	//				auto elementTypeLayout = parameterBlockTypeLayout->getElementTypeLayout();
+	//
+	//				Shader::DescriptorBindingInfo bindingInfo;
+	//				bindingInfo.varName = parameterBlockVariableLayout->getName();
+	//				bindingInfo.typeName = elementTypeLayout->getName();
+	//
+	//				Slang::ComPtr<slang::IBlob> nameBlob;
+	//				parameterBlockTypeLayout->getType()->getFullName(nameBlob.writeRef());
+	//				bindingInfo.completeSlangName = static_cast<const char*>(nameBlob->getBufferPointer());
+	//
+	//				bindingInfo.descriptorCount = 1;
+	//				bindingInfo.usedStages = _currentStageFlags;
+	//				bindingInfo.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	//
+	//				collectFieldsRecursivelyEXT(bindingInfo.fields, elementTypeLayout);
+	//
+	//				addDescriptorSetForParameterBlock(plSignature, parameterBlockTypeLayout);
+	//
+	//				// get the binding index from the just added descriptor set
+	//				const DescriptorSetSignature& lastSet = plSignature.setSignatures.back();
+	//				unsigned int vulkanBindingIndex = lastSet.bindings.size() - 1;
+	//				bindingInfo.bindingIndex = vulkanBindingIndex;
+	//				bindingInfo.setIndex = parameterBlockVariableLayout->getOffset(slang::ParameterCategory::SubElementRegisterSpace);
+	//
+	//				_currentShader->_parameterBlocks.push_back(bindingInfo);
+	//			} break;
+	//
+	//			case slang::BindingType::PushConstant: {
+	//				auto constantBufferTypeLayout = typeLayout->getBindingRangeLeafTypeLayout(bindingRangeIndex);
+	//				auto constantBufferVariableLayout = typeLayout->getFieldByIndex(bindingRangeIndex);
+	//
+	//				auto elementTypeLayout = constantBufferTypeLayout->getElementTypeLayout();
+	//
+	//				Shader::PushConstantInfo info;
+	//				info.varName = constantBufferVariableLayout->getName();
+	//				info.typeName = constantBufferTypeLayout->getName();
+	//				Slang::ComPtr<slang::IBlob> nameBlob;
+	//				constantBufferTypeLayout->getType()->getFullName(nameBlob.writeRef());
+	//				info.completeSlangName = static_cast<const char*>(nameBlob->getBufferPointer());
+	//				info.usedStages = _currentStageFlags;
+	//				info.offset = 0;
+	//				info.size = constantBufferTypeLayout->getElementTypeLayout()->getSize();
+	//
+	//				collectFieldsRecursivelyEXT(info.fields, elementTypeLayout);
+	//
+	//				_currentShader->_pushConstants.push_back(info);
+	//
+	//				addPushConstantRangeForConstantBuffer(plSignature, constantBufferTypeLayout);
+	//			} break;
+	//		}
+	//	}
+	//
+	//	void ShaderTransformer::addDescriptorSetForParameterBlock(PipelineLayoutSignature& plSignature,
+	//															  slang::TypeLayoutReflection* paramBlockTypeLayout) {
+	//		printf("Adding Set for ParameterBlock\n");
+	//		DescriptorSetSignature newDSSignature;
+	//		startBuildingDescriptorSetLayout(plSignature, newDSSignature);
+	//		addRangesForParameterBlockElement(plSignature, newDSSignature, paramBlockTypeLayout->getElementTypeLayout());
+	//		finishBuildingDescriptorSetLayout(plSignature, newDSSignature);
+	//	}
+	//
+	//	void ShaderTransformer::addPushConstantRangeForConstantBuffer(PipelineLayoutSignature& plSignature,
+	//																  slang::TypeLayoutReflection* pushConstantBufferTypeLayout) {
+	//		auto elementTypeLayout = pushConstantBufferTypeLayout->getElementTypeLayout();
+	//		const uint32_t elementSize = elementTypeLayout->getSize();
+	//
+	//		if (elementSize <= 0) return;
+	//
+	//		VkPushConstantRange range = {
+	//				.stageFlags = _currentStageFlags,
+	//				.offset = 0,
+	//				.size = elementSize
+	//		};
+	//		plSignature.pushes.push_back(range);
+	//	}
+} // namespace mythril

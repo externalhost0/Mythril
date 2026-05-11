@@ -5,10 +5,10 @@
 #include "SlangCompiler.h"
 #include "HelperMacros.h"
 
-#include <vector>
 #include <array>
-#include <fstream>
 #include <filesystem>
+#include <fstream>
+#include <vector>
 
 #include "CTX.h"
 
@@ -27,97 +27,57 @@ namespace mythril {
 		_sessionExists = false;
 	}
 
-	void SlangCompiler::addSearchPath(const std::filesystem::path& searchPath) {
-		this->_shaderSearchPaths.push_back(searchPath);
-	}
-	void SlangCompiler::clearSearchPaths() {
-		this->_shaderSearchPaths.clear();
-	}
+	void SlangCompiler::addSearchPath(const std::filesystem::path& searchPath) { this->_shaderSearchPaths.push_back(searchPath); }
+	void SlangCompiler::clearSearchPaths() { this->_shaderSearchPaths.clear(); }
 
 	void SlangCompiler::createSessionImpl() {
 		const SlangResult global_result = slang::createGlobalSession(this->_globalSlangSession.writeRef());
 		ASSERT_MSG(SLANG_SUCCEEDED(global_result), "Slang failed to create global session!");
 
 		slang::TargetDesc targetDesc = {
-			.format = SLANG_SPIRV,
-			.profile = this->_globalSlangSession->findProfile("spirv_1_6"),
+		    .format = SLANG_SPIRV,
+		    .profile = this->_globalSlangSession->findProfile("spirv_1_6"),
 		};
 		// by default emits spirv
 		std::array entries = {
-			// capabilities
-			// slang::CompilerOptionEntry{ .name = slang::CompilerOptionName::Capability,
-			// 	.value = { .kind = slang::CompilerOptionValueKind::String, .stringValue0 = "SPV_KHR_vulkan_memory_model" }
-			// },
-			// slang::CompilerOptionEntry{
-			// 	.value = { .kind = slang::CompilerOptionValueKind::String, .stringValue0 = "spvDerivativeControl" }
-			// },
-			// slang::CompilerOptionEntry{ .name = slang::CompilerOptionName::Capability,
-			// 	.value = { .kind = slang::CompilerOptionValueKind::String, .stringValue0 = "SPV_KHR_compute_shader_derivatives" }
-			// },
-			slang::CompilerOptionEntry{
-				.name = slang::CompilerOptionName::BindlessSpaceIndex,
-				.value = {
-					.kind = slang::CompilerOptionValueKind::Int,
-					.intValue0 = 0
-				}
-			},
+		    // capabilities
+		    // slang::CompilerOptionEntry{ .name = slang::CompilerOptionName::Capability,
+		    // 	.value = { .kind = slang::CompilerOptionValueKind::String, .stringValue0 = "SPV_KHR_vulkan_memory_model" }
+		    // },
+		    // slang::CompilerOptionEntry{
+		    // 	.value = { .kind = slang::CompilerOptionValueKind::String, .stringValue0 = "spvDerivativeControl" }
+		    // },
+		    // slang::CompilerOptionEntry{ .name = slang::CompilerOptionName::Capability,
+		    // 	.value = { .kind = slang::CompilerOptionValueKind::String, .stringValue0 = "SPV_KHR_compute_shader_derivatives" }
+		    // },
+		    slang::CompilerOptionEntry{.name = slang::CompilerOptionName::BindlessSpaceIndex, .value = {.kind = slang::CompilerOptionValueKind::Int, .intValue0 = 0}},
 
-			slang::CompilerOptionEntry{
-				.name = slang::CompilerOptionName::VulkanUseEntryPointName,
-				.value = {
-					.kind = slang::CompilerOptionValueKind::Int,
-					.intValue0 = true
-				}
-			},
-			slang::CompilerOptionEntry{
-				.name = slang::CompilerOptionName::Optimization,
-				.value = {
-					.kind = slang::CompilerOptionValueKind::Int,
-					.intValue0 = SLANG_OPTIMIZATION_LEVEL_DEFAULT
-				}
-			},
-			slang::CompilerOptionEntry{
-				.name = slang::CompilerOptionName::VulkanInvertY,
-				.value = {
-					.kind = slang::CompilerOptionValueKind::Int,
-					.intValue0 = true
-				}
-			},
-			slang::CompilerOptionEntry{
-				.name = slang::CompilerOptionName::DebugInformation,
-				.value = {
-					.kind = slang::CompilerOptionValueKind::Int,
-					.intValue0 = SLANG_DEBUG_INFO_LEVEL_MAXIMAL
-				}
-			},
-				// forces scalar layout which is awesome, means we can have a header file that is shared by c++ and slang
-			slang::CompilerOptionEntry{
-				.name = slang::CompilerOptionName::ForceCLayout,
-				.value = {
-					.kind = slang::CompilerOptionValueKind::Int,
-					.intValue0 = true
-				}
-			},
+		    slang::CompilerOptionEntry{.name = slang::CompilerOptionName::VulkanUseEntryPointName, .value = {.kind = slang::CompilerOptionValueKind::Int, .intValue0 = true}},
+		    slang::CompilerOptionEntry{.name = slang::CompilerOptionName::Optimization, .value = {.kind = slang::CompilerOptionValueKind::Int, .intValue0 = SLANG_OPTIMIZATION_LEVEL_DEFAULT}},
+		    slang::CompilerOptionEntry{.name = slang::CompilerOptionName::VulkanInvertY, .value = {.kind = slang::CompilerOptionValueKind::Int, .intValue0 = true}},
+		    slang::CompilerOptionEntry{.name = slang::CompilerOptionName::DebugInformation, .value = {.kind = slang::CompilerOptionValueKind::Int, .intValue0 = SLANG_DEBUG_INFO_LEVEL_MAXIMAL}},
+		    // forces scalar layout which is awesome, means we can have a header file that is shared by c++ and slang
+		    slang::CompilerOptionEntry{.name = slang::CompilerOptionName::ForceCLayout, .value = {.kind = slang::CompilerOptionValueKind::Int, .intValue0 = true}},
 		};
 
 		ASSERT_MSG(this->_shaderSearchPaths.size() <= 16, "You cannot have more than 16 searchpaths in SlangCompiler, this is arbitrary btw lol");
 		std::array<const char*, 16> sp_cstrings = {};
 		int64_t sp_count = 0;
-		for (const std::filesystem::path& path : this->_shaderSearchPaths) {
+		for (const std::filesystem::path& path: this->_shaderSearchPaths) {
 			sp_cstrings[sp_count++] = path.c_str();
 		}
 
 		const slang::SessionDesc sessionDesc = {
-				.targets = &targetDesc,
-				.targetCount = 1,
+		    .targets = &targetDesc,
+		    .targetCount = 1,
 
-				.defaultMatrixLayoutMode = SLANG_MATRIX_LAYOUT_COLUMN_MAJOR,
+		    .defaultMatrixLayoutMode = SLANG_MATRIX_LAYOUT_COLUMN_MAJOR,
 
-				.searchPaths = sp_cstrings.data(),
-				.searchPathCount = sp_count,
+		    .searchPaths = sp_cstrings.data(),
+		    .searchPathCount = sp_count,
 
-				.compilerOptionEntries = entries.data(),
-				.compilerOptionEntryCount = entries.size(),
+		    .compilerOptionEntries = entries.data(),
+		    .compilerOptionEntryCount = entries.size(),
 		};
 		const SlangResult session_result = this->_globalSlangSession->createSession(sessionDesc, this->_slangSession.writeRef());
 		ASSERT_MSG(SLANG_SUCCEEDED(session_result), "Slang failed to create session!");
@@ -128,7 +88,7 @@ namespace mythril {
 	}
 	static std::string JoinActiveSearchPathsLog(const std::vector<std::filesystem::path>& paths) {
 		std::string message;
-		for (const auto& path : paths) {
+		for (const auto& path: paths) {
 			message += "'" + path.string() + "'" + "\n";
 		}
 		return message;
@@ -141,11 +101,14 @@ namespace mythril {
 		Slang::ComPtr<slang::IModule> slang_module;
 		Slang::ComPtr<slang::IBlob> diagnostics_blob;
 		slang_module = this->_slangSession->loadModule(filepath.string().c_str(), diagnostics_blob.writeRef());
-		ASSERT_MSG(slang_module,
-			"FILE: \n'{}'\nSEARCH_PATHS: \n{}ERROR:\nSlang failed to load module, this might happen for a bunch of different reasons like filepath couldnt be found or the shader is invalid.\nDiagnostics Below:\n{}",
-			filepath.string().c_str(),
-			JoinActiveSearchPathsLog(this->_shaderSearchPaths),
-			ResolveDiagnosticsMessage(diagnostics_blob));
+		ASSERT_MSG(
+		        slang_module,
+		        "FILE: \n'{}'\nSEARCH_PATHS: \n{}ERROR:\nSlang failed to load module, this might happen for a bunch of different reasons like filepath couldnt be found or the shader is "
+		        "invalid.\nDiagnostics Below:\n{}",
+		        filepath.string().c_str(),
+		        JoinActiveSearchPathsLog(this->_shaderSearchPaths),
+		        ResolveDiagnosticsMessage(diagnostics_blob)
+		);
 		diagnostics_blob.setNull();
 
 		// 2. query entry points
@@ -163,10 +126,8 @@ namespace mythril {
 		// 3. compose module
 		Slang::ComPtr<slang::IComponentType> composed_program;
 		SlangResult module_result = this->_slangSession->createCompositeComponentType(
-				(slang::IComponentType**)componentTypes.data(),
-				(int)componentTypes.size(),
-				composed_program.writeRef(),
-				diagnostics_blob.writeRef());
+		        (slang::IComponentType**) componentTypes.data(), (int) componentTypes.size(), composed_program.writeRef(), diagnostics_blob.writeRef()
+		);
 		ASSERT_MSG(SLANG_SUCCEEDED(module_result), "Composition failed! Diagnostics Below:\n{}", ResolveDiagnosticsMessage(diagnostics_blob));
 		diagnostics_blob.setNull();
 
@@ -203,4 +164,4 @@ namespace mythril {
 		result.success = true;
 		return result;
 	}
-}
+} // namespace mythril
