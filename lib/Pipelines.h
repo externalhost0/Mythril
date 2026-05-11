@@ -79,17 +79,10 @@ namespace mythril {
 
 		// used upon resolving to build vkPipelineLayout
 		PipelineLayoutSignature signature;
-		// a managed descriptor set stores its layout per lifetime necessities
-		struct ManagedDescriptorSet {
-			VkDescriptorSet vkDescriptorSet = VK_NULL_HANDLE;
-			VkDescriptorSetLayout vkDescriptorSetLayout = VK_NULL_HANDLE;
-		};
-		// used for allocation and destruction
-		std::vector<ManagedDescriptorSet> _managedDescriptorSets;
 
-		// used for binding in cmdBind*Pipeline
-		// should only serve as refrences to descriptor sets, not tracking
-		std::vector<VkDescriptorSet> _vkBindableDescriptorSets;
+		// our managed descriptor set the pipeline can bind to, if its shader uses it
+		// VK_NULL_HANDLE means the pipeline uses no descriptor sets at all (push-constants only).
+		VkDescriptorSet _vkBindlessDescriptorSet = VK_NULL_HANDLE;
 	};
 
 	enum class PipelineType { Graphics, Compute, RayTracing };
@@ -121,7 +114,6 @@ namespace mythril {
 
 		friend class CTX;
 		friend class CommandBuffer;
-		friend class DescriptorSetWriter;
 	};
 
 	class AllocatedComputePipeline {

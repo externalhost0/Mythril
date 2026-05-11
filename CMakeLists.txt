@@ -253,8 +253,6 @@ set(MYTHRIL_SOURCES
         lib/RenderGraphBuilder.cpp
         lib/Shader.cpp
         lib/SlangCompiler.cpp
-        lib/DescriptorWriter.cpp
-        lib/DescriptorAllocatorGrowable.cpp
         lib/Objects.cpp
 )
 

@@ -18,11 +18,10 @@ struct v2f {
 struct PushConstant {
     float4x4 model;
     Ptr<Vertex> vba;
+    Ptr<FrameData> frame;
 }
 [[vk::push_constant]]
 PushConstant push;
-
-ParameterBlock<FrameData> frame;
 
 [shader("vertex")]
 v2f vs_main(VSInput input) {
@@ -31,7 +30,7 @@ v2f vs_main(VSInput input) {
     Vertex v = push.vba[input.VertexID];
 
     float3 worldpos = mul(push.model, float4(v.position, 1)).xyz;
-    output.ClipPos = mul(frame.camera.projView, float4(worldpos, 1));
+    output.ClipPos = mul(push.frame.camera.projView, float4(worldpos, 1));
 
     return output;
 }

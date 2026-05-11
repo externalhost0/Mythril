@@ -182,6 +182,7 @@ struct GeometryPushConstants
 {
     float4x4 model;
     Ptr<Vertex> vba;
+    Ptr<FrameData> frame;
     float4 tintColor;
     DescriptorHandle<Texture2D> baseColorTexture;
     DescriptorHandle<Texture2D> normalTexture;

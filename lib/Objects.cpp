@@ -7,6 +7,8 @@
 
 namespace mythril {
 
+	ShaderStage::ShaderStage(const Shader& shader) : handle(shader.handle()) {}
+
 	// individual function implementations
 	VkDeviceAddress Buffer::gpuAddress(size_t offset) {
 		const VkDeviceAddress addr = this->_pCtx->view(_handle)._vkDeviceAddress;

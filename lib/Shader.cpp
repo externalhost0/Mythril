@@ -345,7 +345,6 @@ namespace mythril {
 		}
 
 		// collect descriptor sets info
-
 		uint32_t ds_count = 0;
 		spv_result = spvReflectEnumerateDescriptorSets(&spirv_module, &ds_count, nullptr);
 		ASSERT_MSG(spv_result == SPV_REFLECT_RESULT_SUCCESS, "Failed to enumerate Descriptor Sets for count.");
@@ -354,57 +353,37 @@ namespace mythril {
 		spv_result = spvReflectEnumerateDescriptorSets(&spirv_module, &ds_count, sets.data());
 		ASSERT_MSG(spv_result == SPV_REFLECT_RESULT_SUCCESS, "Failed to enumerate Descriptor Sets for data.");
 
-		// begin collecting information for the result here
-		result.pipelineLayoutSignature.setSignatures.resize(sets.size());
-		result.retrievedDescriptorSets.reserve(sets.size()); // this reserves +1 when bindless exists
+		result.retrievedDescriptorSets.reserve(sets.size());
 
-		// lets make every shader own its descriptor sets even if they are duplicated, optimize later with a pool of a sort whe signatures match
 		for (int set_index = 0; set_index < sets.size(); set_index++) {
-			// get a set from the array we enumerated
 			const SpvReflectDescriptorSet* reflected_set = sets[set_index];
-			// modify the set signature in place
-			DescriptorSetSignature& set_signature = result.pipelineLayoutSignature.setSignatures[set_index];
-			set_signature.isBindless = false;
-			set_signature.setIndex = reflected_set->set;
-			set_signature.bindings.reserve(reflected_set->binding_count);
 
-			// for bonus reflection, as done in push constants aswell
-			// filled in later by each binding, must be done as we move across bindings in order to avoid bindless descriptor
 			AllocatedShader::DescriptorSetInfo set_info = {};
 			set_info.setIndex = reflected_set->set;
 
-			// now move through all the descriptor bindings in the set
+			bool isBindless = false;
 			for (int binding_index = 0; binding_index < reflected_set->binding_count; binding_index++) {
-				// get a binding from the set
 				const SpvReflectDescriptorBinding* reflected_binding = reflected_set->bindings[binding_index];
-				auto vk_descriptor_type = static_cast<VkDescriptorType>(reflected_binding->descriptor_type);
 
-				// resolve custom bindless status
 				if (strcmp(reflected_binding->name, "__slang_resource_heap") == 0) {
-					set_signature.isBindless = true;
+					isBindless = true;
 					continue;
 				}
-				ASSERT_MSG(
-						vk_descriptor_type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER ||
-						vk_descriptor_type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-						"VkDescriptorType '{}' not currently supported!", vkstring::VulkanDescriptorTypeToString(vk_descriptor_type));
 
-				// fill in the vk struct
-				VkDescriptorSetLayoutBinding vkds_layout_binding = {};
-				vkds_layout_binding.binding = reflected_binding->binding;
-				vkds_layout_binding.descriptorType = static_cast<VkDescriptorType>(reflected_binding->descriptor_type);
-				vkds_layout_binding.descriptorCount = reflected_binding->count;
-				vkds_layout_binding.stageFlags = vkShaderStageFlags;
-				vkds_layout_binding.pImmutableSamplers = nullptr;
-				// thats all the info for a binding
-				// this is for lookup when updating
-				set_signature.nameToBinding.insert({reflected_binding->name, reflected_binding->binding});
-
-				// bonus information for user
-				set_info.bindingInfos.emplace_back(GatherDescriptorBindingInformation(*reflected_binding));
-
-				set_signature.bindings.push_back(vkds_layout_binding);
+				ASSERT_MSG(false,
+						   "Shader declares non-bindless descriptor binding '{}' at set={}, binding={}. "
+						   "Mythril is fully bindless: use Ptr<T> in push constants or DescriptorHandle<T>.",
+						   reflected_binding->name,
+						   reflected_set->set,
+						   reflected_binding->binding);
 			}
+
+			ASSERT_MSG(isBindless,
+					   "Shader declares descriptor set={} with no bindless heap. "
+					   "Mythril is fully bindless: only Slang's __slang_resource_heap is permitted.",
+					   reflected_set->set);
+
+			result.pipelineLayoutSignature.bindlessSetIndex = reflected_set->set;
 			if (!set_info.bindingInfos.empty()) result.retrievedDescriptorSets.push_back(set_info);
 		}
 

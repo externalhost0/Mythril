@@ -686,7 +686,7 @@ int main() {
 
 		mythril::Buffer frameDataHandle = ctx->createBuffer({
 			.size = sizeof(GPU::FrameData),
-			.usage = mythril::BufferUsageBits::BufferUsageBits_Uniform,
+			.usage = mythril::BufferUsageBits::BufferUsageBits_Storage,
 			.storage = mythril::StorageType::Device,
 			.debugName = "frameData Buffer"
 		});
@@ -1032,6 +1032,7 @@ int main() {
 				const GPU::GeometryPushConstants push {
 					.model = scaledModel,
 					.vba = ctx->gpuAddress(mesh.vertexBufHandle),
+					.frame = frameDataHandle.gpuAddress(),
 					.tintColor = {1, 1, 1, 1},
 					.baseColorTexture = baseColorTex.index(),
 					.normalTexture = normalTex.index(),
@@ -1093,6 +1094,7 @@ int main() {
 				const GPU::GeometryPushConstants push {
 						.model = model,
 						.vba = ctx->gpuAddress(mesh.vertexBufHandle),
+						.frame = frameDataHandle.gpuAddress(),
 						.tintColor = {1, 1, 1, 1},
 						.baseColorTexture = baseColorTex.index(),
 						.normalTexture = normalTex.index(),
@@ -1179,11 +1181,13 @@ int main() {
 			struct PushConstant {
 				VkDeviceAddress vba;
 				VkDeviceAddress bufferAddr;
+				VkDeviceAddress frame;
 				float brightness;
 				float speed;
 			} push {
 				.vba = particle_vertex_buffer.gpuAddress(),
 				.bufferAddr = particles_buffer.gpuAddress(),
+				.frame = frameDataHandle.gpuAddress(),
 				.brightness = particle_emission,
 				.speed = particle_speed
 			};
@@ -1469,9 +1473,11 @@ int main() {
 				struct PushConstant {
 					glm::mat4 model;
 					VkDeviceAddress vba;
+					VkDeviceAddress frame;
 				} push {
 					.model = model,
-					.vba = ctx->gpuAddress(mesh.vertexBufHandle)
+					.vba = ctx->gpuAddress(mesh.vertexBufHandle),
+					.frame = frameDataHandle.gpuAddress()
 				};
 				cmd.cmdPushConstants(push);
 				cmd.cmdBindIndexBuffer(mesh.indexBufHandle);
@@ -1499,30 +1505,6 @@ int main() {
 		.blit(finalColorTarget, ctx->getBackBufferTexture())
 		.finish();
 		graph.compile(*ctx);
-
-
-		// todo: right now if a shader is used across multiple pipelines, its descriptor sets have to be updated for each one
-		{
-			mythril::DescriptorSetWriter writer = ctx->openDescriptorUpdate(opaquePipeline);
-			writer.updateBinding(frameDataHandle, "frame");
-			ctx->submitDescriptorUpdate(writer);
-		}
-		{
-			mythril::DescriptorSetWriter writer = ctx->openDescriptorUpdate(transparentPipeline);
-			writer.updateBinding(frameDataHandle, "frame");
-			ctx->submitDescriptorUpdate(writer);
-		}
-		{
-			mythril::DescriptorSetWriter writer = ctx->openDescriptorUpdate(redDebugPipeline);
-			writer.updateBinding(frameDataHandle, "frame");
-			ctx->submitDescriptorUpdate(writer);
-		}
-		{
-			mythril::DescriptorSetWriter writer = ctx->openDescriptorUpdate(particle_pipeline);
-			writer.updateBinding(frameDataHandle, "frame");
-			ctx->submitDescriptorUpdate(writer);
-		}
-
 
 		static bool focused = false;
 		SDL_SetWindowRelativeMouseMode(sdlWindow, focused);

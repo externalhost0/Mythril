@@ -1,17 +1,16 @@
 # Mythril Framework
-Mythril is C++20 Vulkan rendering framework for Windows, Linux, and MacOS. 
+Mythril is an opinionated C++20 Vulkan rendering framework for Windows, Linux, and MacOS. 
 It aims to provide a easy to create context and highly abstracted API for Vulkan, aswell as some bonus features described below.
 
 #### If you want to get started using Mythril in your project, take a read through the [getting_started.md](/docs/getting_started.md)
 
 ### Features:
 * RenderGraph implementation, automatically builds and optimizes your described frame.
-* Bindless design for textures & samplers.
+* Fully Bindless design for textures & samplers.
 * Automatic shader reflection.
-* Abstracted and easy to use resource descriptors.
 * RAII Object System, all Vulkan objects are cleaned up automatically.
 * Supported plugin system for commonly used dev tools, currently includes ImGui and Tracy.
-* Ability to use whatever window context you like with little work (SDL3/GLFW/any native api)
+* BYOW (Bring Your Own Window), you can use whatever windowing library you like easily. (SDL3/GLFW/any native api)
 
 ![Sample 07 Screenshot][sample_07_img]
 
@@ -94,25 +93,8 @@ from your own `CMakeLists.txt`:
 add_subdirectory(third_party/mythril)
 target_link_libraries(my_app PRIVATE mythril::mythril)
 ```
-That's it, no manual `find_package` for transitive deps. Mythril fetches
-its dependencies via CPM and merges the private static ones (`fmt`,
-`vk-bootstrap`, `SPIRV-Reflect`) directly into `libmythril.a` as object
-files. Publicly exposed headers are `Vulkan`, `volk`, `fmt`, `VMA`, and
-(when enabled) `Tracy` — these leak through inline method bodies in the
-public API and so must be visible to consumers at compile time. ImGui is
-scoped to the build interface only.
-
-### Install + find_package (experimental)
-`MYTH_INSTALL=ON` generates `install()` rules and a `mythrilConfig.cmake`
-so consumers can use `find_package(mythril)`. This path is **experimental
-and OFF by default**: the public-API headers transitively expose `fmt` and
-`VMA` from CPM-cache paths, which are not relocatable through CMake's
-install/export mechanism. The exported targets file currently omits ImGui
-and Tracy entirely (scoped to `BUILD_INTERFACE`), so the install path is
-only useful for consumers who don't need the ImGui/Tracy plugins and who
-can supply their own `fmt`/`VMA` headers. Use `add_subdirectory` until a
-header refactor (PImpl-ing the assert/macro path out of inline bodies)
-lands.
+Publicly exposed headers are `Vulkan`, `volk`, `fmt`, `VMA`, and
+(when enabled) `Tracy`, these will be visible to consumers at compile time. 
 
 ### Building the samples
 Samples are off by default. To build and run them locally:
@@ -136,8 +118,7 @@ The `debug` / `release` presets enable `MYTH_BUILD_SAMPLES`,
 
 > Note: `MYTH_ENABLE_IMGUI_STANDARD` and `MYTH_ENABLE_IMGUI_DOCKING` are mutually exclusive.
 > Samples that require an optional feature (e.g. `05_ImGui` needs
-> `MYTH_ENABLE_IMGUI_STANDARD`) are skipped with a `STATUS` log when the
-> requirement is not satisfied — they do not silently force features on.
+> `MYTH_ENABLE_IMGUI_STANDARD`) are skipped when the requirement is not satisfied.
 
 
 

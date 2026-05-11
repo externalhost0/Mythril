@@ -470,15 +470,15 @@ int main() {
 		});
 		mythril::Buffer perFrameDataBuffer = ctx->createBuffer({
 			.size = sizeof(GPU::GlobalData),
-			.usage = mythril::BufferUsageBits::BufferUsageBits_Uniform,
+			.usage = mythril::BufferUsageBits::BufferUsageBits_Storage,
 			.storage = mythril::StorageType::Device,
-			.debugName = "PerFrameData Uniform Buffer"
+			.debugName = "PerFrameData Storage Buffer"
 		});
 		mythril::Buffer perMaterialDataBuffer = ctx->createBuffer({
 			.size = sizeof(GPU::MaterialData),
-			.usage = mythril::BufferUsageBits::BufferUsageBits_Uniform,
+			.usage = mythril::BufferUsageBits::BufferUsageBits_Storage,
 			.storage = mythril::StorageType::Device,
-			.debugName = "PerMaterialData Uniform Buffer"
+			.debugName = "PerMaterialData Storage Buffer"
 		});
 		constexpr unsigned int kNumObjects = 50;
 		mythril::Buffer objectDataBuf = ctx->createBuffer({
@@ -513,7 +513,9 @@ int main() {
 			modelmatrix = glm::rotate(modelmatrix, time * 0.5f, glm::vec3(1.0f, 0.0f, 0.0f));
 			GPU::GeometryPushConstant push {
 				.model =  modelmatrix,
-				.vertexBufferAddress = cubeVertexBuffer.gpuAddress()
+				.vertexBufferAddress = cubeVertexBuffer.gpuAddress(),
+				.perFrame = perFrameDataBuffer.gpuAddress(),
+				.perMaterial = perMaterialDataBuffer.gpuAddress()
 			};
 			cmd.cmdPushConstants(push);
 			cmd.cmdBindIndexBuffer(cubeIndexBuffer);
@@ -538,14 +540,6 @@ int main() {
 		.finish();
 
 		graph.compile(*ctx);
-
-
-		// now we should update descriptor sets for the first & only time
-		// we can update multiple descriptor sets at the same time & in the same call
-		mythril::DescriptorSetWriter writer = ctx->openDescriptorUpdate(mainPipeline);
-		writer.updateBinding(perFrameDataBuffer, "perFrame"); // set 0, binding 0
-		writer.updateBinding(perMaterialDataBuffer, "perMaterial"); // set 1, binding 0
-		ctx->submitDescriptorUpdate(writer);
 
 		std::srand(std::time(nullptr));
 		bool quit = false;

@@ -7,6 +7,7 @@
 #include "faststl/StackVector.h"
 #include "Constants.h"
 
+#include <optional>
 #include <string>
 #include <vector>
 #include <unordered_map>
@@ -91,15 +92,10 @@ namespace mythril {
 		uint32_t id;
 	};
 
-	struct DescriptorSetSignature {
-		std::vector<VkDescriptorSetLayoutBinding> bindings;
-		std::unordered_map<std::string, uint32_t> nameToBinding;
-		uint32_t setIndex;
-		bool isBindless;
-	};
-
 	struct PipelineLayoutSignature {
-		std::vector<DescriptorSetSignature> setSignatures;
+		// this will always be the index of slang's __slang_resource_heap
+		// however it is not gauranteed to be 0 and thus should be resolved
+		std::optional<uint32_t> bindlessSetIndex;
 		std::vector<VkPushConstantRange> pushes;
 	};
 	struct SpecializationInfo {

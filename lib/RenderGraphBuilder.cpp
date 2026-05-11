@@ -94,6 +94,55 @@ namespace mythril {
 	static constexpr VkImageSubresourceRange MakeVkRange(VkFormat fmt,  SubresourceRange range) {
 		return {vkutil::AspectMaskFromFormat(fmt), range.baseMip, range.numMips, range.baseLayer, range.numLayers};
 	}
+	static SubresourceRange ResolveSubresourceRange(const TextureDesc& texDesc, const AllocatedTexture& texture, std::string_view passName) {
+		const uint32_t baseMip = texDesc.baseLevel.value_or(0);
+		const uint32_t numMips = texDesc.numLevels.value_or(texDesc.baseLevel.has_value() ? 1 : texture.getNumMips());
+		const uint32_t baseLayer = texDesc.baseLayer.value_or(0);
+		const uint32_t numLayers = texDesc.numLayers.value_or(texDesc.baseLayer.has_value() ? 1 : texture.getNumLayers());
+
+		ASSERT_MSG(baseMip < texture.getNumMips(),
+			"Pass '{}': Texture '{}' base mip {} is outside the texture's {} mip levels",
+			passName, texture.getDebugName(), baseMip, texture.getNumMips());
+		ASSERT_MSG(numMips > 0 && baseMip + numMips <= texture.getNumMips(),
+			"Pass '{}': Texture '{}' mip range [{}, {}) is outside the texture's {} mip levels",
+			passName, texture.getDebugName(), baseMip, baseMip + numMips, texture.getNumMips());
+		ASSERT_MSG(baseLayer < texture.getNumLayers(),
+			"Pass '{}': Texture '{}' base layer {} is outside the texture's {} layers",
+			passName, texture.getDebugName(), baseLayer, texture.getNumLayers());
+		ASSERT_MSG(numLayers > 0 && baseLayer + numLayers <= texture.getNumLayers(),
+			"Pass '{}': Texture '{}' layer range [{}, {}) is outside the texture's {} layers",
+			passName, texture.getDebugName(), baseLayer, baseLayer + numLayers, texture.getNumLayers());
+
+		return {baseMip, numMips, baseLayer, numLayers};
+	}
+
+	static VkImageView ResolveImageView(const CTX& rCtx, const TextureDesc& texDesc, const AllocatedTexture& allocatedTexture, std::string_view passName) {
+		const bool needsCustomView = texDesc.baseLayer.has_value() ||
+						  texDesc.baseLevel.has_value() ||
+						  texDesc.numLayers.has_value() ||
+						  texDesc.numLevels.has_value();
+		if (!needsCustomView) {
+			return allocatedTexture.getImageView();
+		}
+
+		const SubresourceRange range = ResolveSubresourceRange(texDesc, allocatedTexture, passName);
+		auto& mutableTexture = const_cast<Texture&>(texDesc.texture);
+		VkImageViewType viewType = allocatedTexture.getViewType();
+		if (range.numLayers == 1 && viewType == VK_IMAGE_VIEW_TYPE_CUBE) {
+			viewType = VK_IMAGE_VIEW_TYPE_2D;
+		}
+		Texture::ViewKey viewKey = mutableTexture.createView({
+			.type = viewType,
+			.mipLevel = range.baseMip,
+			.numMipLevels = range.numMips,
+			.layer = range.baseLayer,
+			.numLayers = range.numLayers,
+		});
+
+		TextureHandle viewHandle = mutableTexture.handle(viewKey);
+		const AllocatedTexture& viewTexture = rCtx.view(viewHandle);
+		return viewTexture.getImageView();
+	}
 	static constexpr bool NeedsBarrier(const SubresourceState& currentState, VkImageLayout desiredLayout, const vkutil::StageAccess& desiredStageAccess) {
 		if (currentState.layout != desiredLayout)
 			return true;
@@ -117,15 +166,10 @@ namespace mythril {
 		return false;
 	}
 
-	void RenderGraph::processResourceAccess(const TextureDesc& texDesc, VkImageLayout desiredLayout, CompiledPass& outPass) {
+	void RenderGraph::processResourceAccess(const TextureDesc& texDesc, VkImageLayout desiredLayout, CompiledPass& outPass, std::string_view passName) {
 		const AllocatedTexture& texture = texDesc.texture.view();
 		const bool isSwapchain = texture.isSwapchainImage();
-		const SubresourceRange range = {
-			.baseMip = texDesc.baseLevel.value_or(0),
-			.numMips = texDesc.numLevels.value_or(texture.getNumMips()),
-			.baseLayer = texDesc.baseLayer.value_or(0),
-			.numLayers = texDesc.numLayers.value_or(texture.getNumLayers())
-		};
+		const SubresourceRange range = ResolveSubresourceRange(texDesc, texture, passName);
 		const vkutil::StageAccess dstMask = vkutil::GetPipelineStageAccess(desiredLayout);
 		outPass.imageBarriers.push_back({
 			.handle = texDesc.texture.handle(),
@@ -150,12 +194,15 @@ namespace mythril {
 						default: assert(false);
 				}
 			}(dependency_desc.desiredLayout);
-			processResourceAccess(dependency_desc.texDesc, layout, outPass);
+			processResourceAccess(dependency_desc.texDesc, layout, outPass, passDesc.name);
 		}
 		for (const AttachmentDesc& attachment_desc : passDesc.attachmentOperations) {
 			const AllocatedTexture& texture = attachment_desc.texDesc.texture.view();
 			const VkImageLayout layout = texture.isDepthAttachment() ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-			processResourceAccess(attachment_desc.texDesc, layout, outPass);
+			processResourceAccess(attachment_desc.texDesc, layout, outPass, passDesc.name);
+			if (attachment_desc.resolveTexDesc.has_value()) {
+				processResourceAccess(attachment_desc.resolveTexDesc.value(), layout, outPass, passDesc.name);
+			}
 		}
 	}
 
@@ -174,41 +221,7 @@ namespace mythril {
 				           outPass.name, allocatedTexture.getDebugName());
 				hasDepthAttachment = true;
 			}
-			const bool needsCustomView = texDesc.baseLayer.has_value() ||
-							  texDesc.baseLevel.has_value() ||
-							  texDesc.numLayers.has_value() ||
-							  texDesc.numLevels.has_value();
-
-			VkImageView imageView;
-			if (needsCustomView) {
-				const uint32_t baseLayer = texDesc.baseLayer.value_or(0);
-				const uint32_t numLayers = texDesc.numLayers.value_or(
-					texDesc.baseLayer.has_value() ? 1 : allocatedTexture.getNumLayers()
-				);
-				const uint32_t baseMip = texDesc.baseLevel.value_or(0);
-				const uint32_t numMips = texDesc.numLevels.value_or(
-					texDesc.baseLevel.has_value() ? 1 : allocatedTexture.getNumMips()
-				);
-
-				auto& mutableTexture = const_cast<Texture&>(texDesc.texture);
-				VkImageViewType viewType = allocatedTexture.getViewType();
-				if (numLayers == 1 && viewType == VK_IMAGE_VIEW_TYPE_CUBE) {
-					viewType = VK_IMAGE_VIEW_TYPE_2D;
-				}
-				Texture::ViewKey viewKey = mutableTexture.createView({
-					.type = viewType,
-					.mipLevel = baseMip,
-					.numMipLevels = numMips,
-					.layer = baseLayer,
-					.numLayers = numLayers,
-				});
-
-				TextureHandle viewHandle = mutableTexture.handle(viewKey);
-				const AllocatedTexture& viewTexture = texDesc.texture._pCtx->view(viewHandle);
-				imageView = viewTexture.getImageView();
-			} else {
-				imageView = allocatedTexture.getImageView();
-			}
+			VkImageView imageView = ResolveImageView(rCtx, texDesc, allocatedTexture, pass_desc.name);
 
 			const ClearValue& clear_value = attachment_desc.clearValue;
 			AttachmentInfo attachment_info = {
@@ -249,7 +262,7 @@ namespace mythril {
 
 				// set the fields we left empty previously
 				attachment_info.resolveImageLayout = attachment_info.imageLayout;
-				attachment_info.resolveImageView = resolve_texture.getImageView();
+				attachment_info.resolveImageView = ResolveImageView(rCtx, resolve_desc, resolve_texture, pass_desc.name);
 			}
 			if (allocatedTexture.isSwapchainImage()) {
 				attachment_info.isSwapchainImage = true;
@@ -272,7 +285,7 @@ namespace mythril {
 			const uint32_t width = std::max(1u, baseDims.width >> mipLevel);
 			const uint32_t height = std::max(1u, baseDims.height >> mipLevel);
 
-			if ((max_width != baseDims.width || max_height != baseDims.height) && (max_width != 0 || max_height != 0))
+			if ((max_width != width || max_height != height) && (max_width != 0 || max_height != 0))
 				LOG_SYSTEM(LogType::Warning,
 			           "Pass '{}': You have attachments of different dimensions, this is allowed but experimental.",
 			           pass_desc.name);
@@ -303,9 +316,11 @@ namespace mythril {
 		_resourceTrackers.clear();
 		// compile works in this order
 		_compiledPasses.reserve(_passDescriptions.size());
-		for (const PassDesc& pass_desc : _passDescriptions) {
+		for (uint32_t passIndex = 0; passIndex < _passDescriptions.size(); passIndex++) {
+			const PassDesc& pass_desc = _passDescriptions[passIndex];
 			CompiledPass compiled_pass;
 			compiled_pass.name = pass_desc.name;
+			compiled_pass.passIndex = passIndex;
 			compiled_pass.type = pass_desc.type;
 			compiled_pass.executeCallback = pass_desc.executeCallback;
 
@@ -335,24 +350,25 @@ namespace mythril {
 				_resourceTrackers.emplace(activeHandle, TextureStateTracker{activeTexture.getNumMips(), activeTexture.getNumLayers()});
 			}
 			TextureStateTracker& tracker = _resourceTrackers.at(activeHandle);
-
-			if (SubresourceState currentState = tracker.getState(req.range); NeedsBarrier(currentState, req.dstLayout, req.dstMask)) {
+			const std::vector<TextureStateTracker::SubresourceEntry> currentStates = tracker.getOverlappingStates(req.range);
+			for (const auto& current : currentStates) {
+				if (!NeedsBarrier(current.state, req.dstLayout, req.dstMask)) continue;
 				vkBarriers.push_back({
 					.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-					.srcStageMask = currentState.mask.stage,
-					.srcAccessMask = currentState.mask.access,
+					.srcStageMask = current.state.mask.stage,
+					.srcAccessMask = current.state.mask.access,
 					.dstStageMask = req.dstMask.stage,
 					.dstAccessMask = req.dstMask.access,
-					.oldLayout = currentState.layout,
+					.oldLayout = current.state.layout,
 					.newLayout = req.dstLayout,
 					.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
 					.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
 					.image = activeTexture.getImage(),
-					.subresourceRange = MakeVkRange(activeTexture.getFormat(), req.range)
+					.subresourceRange = MakeVkRange(activeTexture.getFormat(), current.range)
 				});
-				tracker.setState(req.range, {req.dstLayout, req.dstMask});
-				cmd._ctx->access(activeHandle)._vkCurrentImageLayout = req.dstLayout;
 			}
+			tracker.setState(req.range, {req.dstLayout, req.dstMask});
+			cmd._ctx->access(activeHandle)._vkCurrentImageLayout = req.dstLayout;
 		}
 		if (!vkBarriers.empty()) {
 			const VkDependencyInfo dependencyInfo = {
@@ -393,8 +409,12 @@ namespace mythril {
 			// fixme: make this cleaner im so lazy right now
 			cmd.cmdTransitionLayout(cmd._ctx->getCurrentSwapchainTexHandle(), VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
 			const vkutil::StageAccess dstMask = vkutil::GetPipelineStageAccess(VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
-			_resourceTrackers.at(cmd._ctx->getCurrentSwapchainTexHandle()).setState({}, SubresourceState{VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, dstMask});
-			cmd._ctx->access(cmd._ctx->getCurrentSwapchainTexHandle())._vkCurrentImageLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+			const TextureHandle currentSwapchainHandle = cmd._ctx->getCurrentSwapchainTexHandle();
+			if (_resourceTrackers.contains(currentSwapchainHandle)) {
+				TextureStateTracker& tracker = _resourceTrackers.at(currentSwapchainHandle);
+				tracker.setState(tracker.wholeResourceRange(), SubresourceState{VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, dstMask});
+			}
+			cmd._ctx->access(currentSwapchainHandle)._vkCurrentImageLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 		}
 	}
 }

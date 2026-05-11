@@ -81,6 +81,35 @@ namespace mythril::vkutil {
     StageAccess GetPipelineStageAccess(VkImageLayout layout);
     void ImageMemoryBarrier2(VkCommandBuffer cmd, VkImage image, StageAccess src, StageAccess dst, VkImageLayout oldLayout, VkImageLayout newLayout, VkImageSubresourceRange range);
 
+    // pipeline stages that take in buffers or post transfer
+    constexpr VkPipelineStageFlags2 BufferConsumerStages2(VkBufferUsageFlags usage) {
+        VkPipelineStageFlags2 stages = 0;
+        if (usage & (VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                     VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_TEXEL_BUFFER_BIT)) {
+            stages |= VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+        }
+        if (usage & (VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)) {
+            stages |= VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT;
+        }
+        if (usage & VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT) {
+            stages |= VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT;
+        }
+        if (usage & VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR) {
+            stages |= VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR;
+        }
+        return stages ? stages : VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+    }
+    constexpr VkAccessFlags2 BufferConsumerAccess2(VkBufferUsageFlags usage) {
+        VkAccessFlags2 access = 0;
+        if (usage & VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT)        access |= VK_ACCESS_2_UNIFORM_READ_BIT;
+        if (usage & VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)        access |= VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
+        if (usage & VK_BUFFER_USAGE_INDEX_BUFFER_BIT)          access |= VK_ACCESS_2_INDEX_READ_BIT;
+        if (usage & VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)         access |= VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT;
+        if (usage & VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT)       access |= VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT;
+        if (usage & VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR) access |= VK_ACCESS_2_MEMORY_READ_BIT;
+        return access ? access : VK_ACCESS_2_MEMORY_READ_BIT;
+    }
+
     // uint32_t FindMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFilter, VkMemoryPropertyFlags properties);
 
     VkSemaphore CreateTimelineSemaphore(VkDevice device, unsigned int numImages);

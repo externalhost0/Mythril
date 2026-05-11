@@ -122,7 +122,6 @@ namespace mythril {
 		[[nodiscard]] bool isMapped() const { return _mappedPtr != nullptr; }
 		[[nodiscard]] uint8_t* getMappedPtr() const { return static_cast<uint8_t* >(_mappedPtr); }
 		[[nodiscard]] bool isStorageBuffer() const { return (_vkUsageFlags & VK_BUFFER_USAGE_STORAGE_BUFFER_BIT) > 0; }
-		[[nodiscard]] bool isUniformBuffer() const { return (_vkUsageFlags & VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT) > 0; }
 		[[nodiscard]] bool isIndirectBuffer() const { return (_vkUsageFlags & VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT) > 0;}
 		[[nodiscard]] bool isIndexBuffer() const { return (_vkUsageFlags & VK_BUFFER_USAGE_INDEX_BUFFER_BIT) > 0; }
 
@@ -149,7 +148,6 @@ namespace mythril {
 		friend class CTX;
 		friend class CommandBuffer;
 		friend class StagingDevice;
-		friend class DescriptorSetWriter;
 		friend class Buffer;
 	};
 }

@@ -37,9 +37,8 @@ namespace mythril {
 	// bits need to be uint8_t underlying type
 	enum BufferUsageBits : uint8_t {
 		BufferUsageBits_Index = 1 << 0,
-		BufferUsageBits_Uniform = 1 << 1,
-		BufferUsageBits_Storage = 1 << 2,
-		BufferUsageBits_Indirect = 1 << 3
+		BufferUsageBits_Storage = 1 << 1,
+		BufferUsageBits_Indirect = 1 << 2
 	};
 	enum TextureUsageBits : uint8_t {
 		TextureUsageBits_Sampled = 1 << 0,

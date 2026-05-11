@@ -405,13 +405,13 @@ namespace mythril {
 			MYTH_PROFILER_GPU_ZONE("cmdBindPipeline()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
 			vkCmdBindPipeline(_wrapper->_cmdBuf, bindPoint, common->_vkPipeline);
 		}
-		if (common->_vkBindableDescriptorSets.empty()) return;
+		if (common->_vkBindlessDescriptorSet == VK_NULL_HANDLE) return;
 		{
 			MYTH_PROFILER_GPU_ZONE("cmdBindDescriptorSets()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
 			vkCmdBindDescriptorSets(_wrapper->_cmdBuf, bindPoint, common->_vkPipelineLayout,
 			                        0,
-			                        common->_vkBindableDescriptorSets.size(),
-			                        common->_vkBindableDescriptorSets.data(),
+			                        1,
+			                        &common->_vkBindlessDescriptorSet,
 			                        0,
 			                        nullptr);
 		}
@@ -471,17 +471,23 @@ namespace mythril {
 		this->cmdBindPipelineImpl(&info->core, VK_PIPELINE_BIND_POINT_COMPUTE);
 	}
 
-	// current issues with host buffer
 	void CommandBuffer::cmdUpdateBuffer(BufferHandle handle, size_t offset, size_t size, const void* data) {
 		DRY_RETURN()
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_COMMAND);
 
 		ASSERT_MSG(!_isRendering, "You cannot update a buffer while rendering! Please move this command either before or after rendering.");
-		ASSERT(handle.valid());
-		ASSERT_MSG(size && size <= 65536, "You cannot call cmdUpdateBuffer with a size <= 65'536 (64kb)");
-		ASSERT(size % 4 == 0);
-		ASSERT(offset % 4 == 0);
+		ASSERT_MSG(handle.valid(), "cmdUpdateBuffer called with an invalid BufferHandle.");
+		ASSERT_MSG(size > 0 && size <= 65536, "cmdUpdateBuffer requires 0 < size <= 65'536 (64KB).");
+		ASSERT_MSG(size % 4 == 0, "cmdUpdateBuffer size must be a multiple of 4 bytes.");
+		ASSERT_MSG(offset % 4 == 0, "cmdUpdateBuffer offset must be a multiple of 4 bytes.");
 		AllocatedBuffer* buf = _ctx->_bufferPool.get(handle);
+		ASSERT_MSG(buf, "cmdUpdateBuffer: handle does not resolve to a live buffer.");
+		ASSERT_MSG(offset + size <= buf->_bufferSize,
+		           "cmdUpdateBuffer: offset + size exceeds buffer '{}' size ({} > {}).",
+		           buf->_debugName, offset + size, buf->_bufferSize);
+		ASSERT_MSG(buf->_vkUsageFlags & VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+		           "cmdUpdateBuffer: buffer '{}' was not created with TRANSFER_DST usage.",
+		           buf->_debugName);
 		if (!data) {
 			LOG_SYSTEM(LogType::Warning, "You are updating buffer '{}' with empty data.", buf->_debugName);
 			return;
@@ -492,11 +498,7 @@ namespace mythril {
 		MYTH_PROFILER_GPU_ZONE("cmdUpdateBuffer()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
 		vkCmdUpdateBuffer(_wrapper->_cmdBuf, buf->_vkBuffer, offset, size, data);
 
-		VkPipelineStageFlags2 dstStage = VK_PIPELINE_STAGE_VERTEX_SHADER_BIT;
-		if (buf->_vkUsageFlags & VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT) {
-			dstStage |= VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT;
-		}
-		bufferBarrierImpl(handle, VK_PIPELINE_STAGE_2_TRANSFER_BIT, dstStage);
+		bufferBarrierImpl(handle, VK_PIPELINE_STAGE_2_TRANSFER_BIT, vkutil::BufferConsumerStages2(buf->_vkUsageFlags));
 	}
 	void CommandBuffer::cmdCopyImageToBuffer(TextureHandle source, BufferHandle destination, const VkBufferImageCopy& region) {
 		DRY_RETURN()

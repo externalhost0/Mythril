@@ -18,8 +18,6 @@ struct v2f {
 [[vk::push_constant]]
 GeometryPushConstants push;
 
-ParameterBlock<FrameData> frame;
-
 // for transforming the shadow map correctly
 // same as: projCoords.xy = projCoords.xy * 0.5 + 0.5;
 static const float4x4 biasMat = float4x4(
@@ -36,7 +34,7 @@ v2f vs_main(VSInput input) {
 
 
     float4 worldpos = mul(push.model, float4(v.position, 1));
-    output.ClipPos = mul(frame.camera.projView, float4(worldpos.xyz, 1));
+    output.ClipPos = mul(push.frame.camera.projView, float4(worldpos.xyz, 1));
 
     output.Normal = mul(push.model, float4(v.normal, 0)).xyz;
     output.UV = float2(v.uv_x, v.uv_y);
@@ -95,18 +93,18 @@ FSOutput fs_main(v2f input) {
     brdf.roughness = roughness;
     brdf.metallic = metallic;
 
-    float3 viewDir = normalize(frame.camera.position - input.WorldPosition);
+    float3 viewDir = normalize(push.frame.camera.position - input.WorldPosition);
 
-    float3 ambient = frame.lighting.environmentLight.illuminate(input.WorldPosition, Nworld, brdf, viewDir);
-    float3 direct = frame.lighting.directionalLight.illuminate(input.WorldPosition, Nworld, brdf, viewDir);
+    float3 ambient = push.frame.lighting.environmentLight.illuminate(input.WorldPosition, Nworld, brdf, viewDir);
+    float3 direct = push.frame.lighting.directionalLight.illuminate(input.WorldPosition, Nworld, brdf, viewDir);
     float3 omni = 0.0;
     [unroll(kNumLights)]
     for (int i = 0; i < kNumLights; ++i) {
-        float3 pointLightContribution = frame.lighting.pointLights[i].illuminate(input.WorldPosition, Nworld, brdf, viewDir);
+        float3 pointLightContribution = push.frame.lighting.pointLights[i].illuminate(input.WorldPosition, Nworld, brdf, viewDir);
 
         float pointShadowFactor = PointShadowCalculation(
             input.WorldPosition,
-            frame.lighting.pointLights[i].position,
+            push.frame.lighting.pointLights[i].position,
             push.pointLightCubemaps[i],
             60 // farPlane, just hardcode for now
         );

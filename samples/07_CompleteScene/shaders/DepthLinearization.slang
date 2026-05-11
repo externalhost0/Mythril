@@ -12,12 +12,11 @@ struct FSOutput {
 struct PushConstant {
     DescriptorHandle<Texture2D> depthTexture;
     DescriptorHandle<SamplerState> sampler;
+    Ptr<FrameData> frame;
 }
 
 [[vk::push_constant]]
 PushConstant push;
-
-ParameterBlock<FrameData> frame;
 
 [shader("vertex")]
 v2f vs_main(uint VertexID : SV_VertexID) {
@@ -48,7 +47,7 @@ float3 GetViewPosition(float2 uv, float depth) {
     // 3. Perspective divide (w component)
 
     float4 clipPos = float4(uv * 2.0 - 1.0, depth, 1.0);
-    float4 viewPos = mul(frame.camera.invProj, clipPos);
+    float4 viewPos = mul(push.frame.camera.invProj, clipPos);
     return viewPos.xyz / viewPos.w;
 }
 float3 ReconstructNormalFromDepth_Samples(
@@ -103,12 +102,12 @@ float3 ReconstructNormalFromDepth_Derivatives(float2 uv, float centerDepth, floa
 
 
 float3 UVToView(float2 UV, float viewDepth) {
-    UV = frame.camera.g_f2UVToViewA * UV + frame.camera.g_f2UVToViewB;
+    UV = push.frame.camera.g_f2UVToViewA * UV + push.frame.camera.g_f2UVToViewB;
     return float3(UV * viewDepth, viewDepth);
 }
 float3 FetchFullResViewPos(float2 uv) {
     float d = push.depthTexture.SampleLevel(push.sampler, uv, 0).r;
-    float viewDepth = LinearizeDepth(d, frame.camera.near, frame.camera.far);
+    float viewDepth = LinearizeDepth(d, push.frame.camera.near, push.frame.camera.far);
     return UVToView(uv, viewDepth);
 }
 float3 MinDiff(float3 P, float3 Pr, float3 Pl) {
@@ -143,8 +142,8 @@ float4 ReconstructNormal_PS(float2 uv) {
 FSOutput fs_main(v2f input) {
     FSOutput output;
     float depth = push.depthTexture.Sample(push.sampler, input.UV).r;
-    float linearDepth = LinearizeDepthReverseZ(depth, frame.camera.near, frame.camera.far);
+    float linearDepth = LinearizeDepthReverseZ(depth, push.frame.camera.near, push.frame.camera.far);
     output.FragColor = float4(float3(linearDepth), 1);
-    output.FragNormals = float4(ReconstructNormalFromDepth_Derivatives(input.UV, depth, frame.camera.invProj), 1);
+    output.FragNormals = float4(ReconstructNormalFromDepth_Derivatives(input.UV, depth, push.frame.camera.invProj), 1);
     return output;
 }

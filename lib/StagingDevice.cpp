@@ -62,6 +62,12 @@ namespace mythril {
 				dstMask |= VK_PIPELINE_STAGE_VERTEX_INPUT_BIT;
 				barrier.dstAccessMask |= VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT;
 			}
+			if (buffer._vkUsageFlags & VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT) {
+				barrier.dstAccessMask |= VK_ACCESS_UNIFORM_READ_BIT;
+			}
+			if (buffer._vkUsageFlags & VK_BUFFER_USAGE_STORAGE_BUFFER_BIT) {
+				barrier.dstAccessMask |= VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+			}
 			if (buffer._vkUsageFlags & VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR) {
 				dstMask |= VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR;
 				barrier.dstAccessMask |= VK_ACCESS_MEMORY_READ_BIT;

@@ -16,8 +16,6 @@
 
 #include "Plugins.h"
 #include "SlangCompiler.h"
-#include "DescriptorWriter.h"
-#include "DescriptorAllocatorGrowable.h"
 #include "CommandBuffer.h"
 #include "Specs.h"
 #include "../include/mythril/Objects.h"
@@ -135,11 +133,6 @@ namespace mythril {
 		uint64_t _frameNumber;
 	};
 
-	struct LayoutBuildResult {
-		std::vector<VkDescriptorSetLayout> allLayouts; // includes specials ie bindless set
-		std::vector<VkDescriptorSetLayout> allocatableLayouts; // excludes specials
-	};
-
 	//helpers
 	template<typename Pool, typename Handle>
 	const auto& viewImpl(const Pool& pool, Handle handle) {
@@ -207,11 +200,6 @@ namespace mythril {
 		CommandBuffer& acquireCommand(CommandBuffer::Type type);
 		SubmitHandle submitCommand(CommandBuffer& cmd);
 
-		DescriptorSetWriter openDescriptorUpdate(const GraphicsPipeline& pipeline) { return openDescriptorUpdate(pipeline.handle()); }
-		DescriptorSetWriter openDescriptorUpdate(const ComputePipeline& pipeline) { return openDescriptorUpdate(pipeline.handle()); }
-
-		void submitDescriptorUpdate(DescriptorSetWriter& updater);
-
 		Buffer createBuffer(BufferSpec spec);
 		Texture createTexture(TextureSpec spec);
 		void resizeTexture(TextureHandle handle, Dimensions newDimensions);
@@ -270,10 +258,6 @@ namespace mythril {
 		void generateMipmaps(TextureHandle handle);
 		TextureHandle createTextureViewImpl(TextureHandle handle, TextureViewSpec spec);
 
-		DescriptorSetWriter openDescriptorUpdate(GraphicsPipelineHandle handle);
-		DescriptorSetWriter openDescriptorUpdate(ComputePipelineHandle handle);
-		DescriptorSetWriter openUpdateImpl(PipelineCoreData* common, std::string_view debugName);
-
 		// all things related to our pipeline constructions
 		PipelineCoreData buildPipelineCommonDataExceptVkPipelineImpl(const PipelineLayoutSignature& signature);
 
@@ -319,8 +303,6 @@ namespace mythril {
 			assert(false);
 		}
 
-		LayoutBuildResult buildDescriptorResultFromSignature(const PipelineLayoutSignature &pipelineSignature);
-		std::vector<VkDescriptorSet> allocateDescriptorSets(const std::vector<VkDescriptorSetLayout>& layouts);
 		// pack tasks
 		void deferTask(std::packaged_task<void()>&& task, SubmitHandle handle = SubmitHandle()) const;
 		void processDeferredTasks();
@@ -370,7 +352,6 @@ namespace mythril {
 		VkSemaphore _timelineSemaphore = VK_NULL_HANDLE;
 
 		CommandBuffer _currentCommandBuffer;
-		DescriptorAllocatorGrowable _descriptorAllocator;
 	private:
 		// my stuff //
 		uint64_t _currentFrameNumber = 0;
@@ -405,7 +386,6 @@ namespace mythril {
 		SlangCompiler _slangCompiler;
 		std::function<void(VkInstance, VkSurfaceKHR)> _surfaceDestroyFunc;
 
-		friend class DescriptorSetWriter;
 		friend class RenderGraph;
 		friend class CommandBuffer;
 		friend class StagingDevice;

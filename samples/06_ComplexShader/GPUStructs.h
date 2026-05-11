@@ -23,11 +23,6 @@ struct Vertex {
 #endif
 };
 
-struct GeometryPushConstant {
-	float4x4 model;
-	Ptr<Vertex> vertexBufferAddress;
-};
-
 struct CameraData {
 	float4x4 proj;
 	float4x4 view;
@@ -50,6 +45,13 @@ struct MaterialData {
 	float glowAmount;
 	float distortAmount;
     uint unint1;
+};
+
+struct GeometryPushConstant {
+	float4x4 model;
+	Ptr<Vertex> vertexBufferAddress;
+	Ptr<GlobalData> perFrame;
+	Ptr<MaterialData> perMaterial;
 };
 
 NAMESPACE_END()
