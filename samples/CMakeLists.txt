@@ -51,6 +51,7 @@ macro(ADD_SAMPLE sample_name)
             -DDST_DIR="$<TARGET_FILE_DIR:${sample_name}>/${sample_name}_data"
             -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/CopyAssets.cmake"
             COMMENT "Copying ${sample_name} assets to isolated runtime directory"
+            COMMAND_EXPAND_LISTS
     )
 
     if(FORCE_REBUILD_SAMPLES)

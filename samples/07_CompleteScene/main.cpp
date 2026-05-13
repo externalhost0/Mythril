@@ -865,8 +865,7 @@ int main() {
 			cmd.cmdSetDepthBiasEnable(true);
 			cmd.cmdSetDepthBias(depthBiasConstant, depthBiasSlope, 0.f);
 
-			glm::vec3 lightDir = sun_quaternion * glm::vec3(0, 0, -1);
-			lightDir = glm::normalize(lightDir);
+			glm::vec3 lightDir = glm::normalize(lightingData.directionalLights.direction);
 			const glm::vec3 lightPos = scene_center - lightDir * distance_from_center;
 
 			if (far < near) {
@@ -925,10 +924,10 @@ int main() {
 			.debugName = "Point Shadow Map Graphics Pipeline"
 		});
 		// we need position data
-		lightingData.pointLights[0] = { {1.0f, 0.8f, 0.7f},  10.0f, { 10.0f,  3.0f,  2.0f}, 20.f };
-		lightingData.pointLights[1] = { {0.7f, 0.8f, 1.0f},  9.0f, {-30.0f,  2.5f, -1.0f}, 50.f };
-		lightingData.pointLights[2] = { {0.7f, 1.0f, 0.7f},  12.0f, { 40.0f,  4.0f, -3.0f}, 14.f };
-		lightingData.pointLights[3] = { {1.0f, 0.0f, 0.1f},  11.0f, { -40.0f,  1.0f,  4.0f}, 25.f };
+		lightingData.pointLights[0] = { {1.0f, 0.8f, 0.7f}, 10.0f, { 10.0f,  3.0f,  2.0f}, 20.f };
+		lightingData.pointLights[1] = { {0.7f, 0.8f, 1.0f}, 9.0f, {-30.0f,  2.5f, -1.0f}, 50.f };
+		lightingData.pointLights[2] = { {0.7f, 1.0f, 0.7f}, 12.0f, { 40.0f,  4.0f, -3.0f}, 14.f };
+		lightingData.pointLights[3] = { {1.0f, 0.0f, 0.1f}, 11.0f, { -40.0f,  1.0f,  4.0f}, 25.f };
 
 		const auto scaledModel = glm::scale(glm::mat4(1.0), glm::vec3(kMODELSCALE));
 
@@ -1021,11 +1020,46 @@ int main() {
 			.multisample = mythril::SampleCount::X4,
 			.debugName = "Opaque Graphics Pipeline"
 		});
+		mythril::Shader skyShader = ctx->createShader({
+			.filePath = kDataDir / "shaders/Sky.slang",
+			.debugName = "Sky Shader"
+		});
+		mythril::GraphicsPipeline skyPipeline = ctx->createGraphicsPipeline({
+			.vertexShader   = {skyShader},
+			.fragmentShader = {skyShader},
+			.blend          = mythril::BlendingMode::OFF,
+			.cull           = mythril::CullMode::OFF,
+			.multisample    = mythril::SampleCount::X4,
+			.debugName      = "Sky Graphics Pipeline"
+		});
+		graph.addGraphicsPass("sky")
+		.attachment({
+			.texDesc   = msaaColorTarget,
+			.clearValue = mythril::ClearValue::color(0.f, 0.f, 0.f, 1.f),
+			.loadOp    = mythril::LoadOp::CLEAR,
+			.storeOp   = mythril::StoreOp::STORE,
+		})
+		.dependency(frameDataHandle, mythril::BufferAccess::ShaderRead)
+		.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
+			cmd.cmdBeginRendering();
+			cmd.cmdBindGraphicsPipeline(skyPipeline);
+			struct SkyPush {
+				VkDeviceAddress frame;
+				glm::vec3 sunDirection;
+				float _pad;
+			} push{
+				.frame = frameDataHandle.gpuAddress(),
+				.sunDirection = sun_quaternion * glm::vec3(0.f, 0.f, -1.f),
+			};
+			cmd.cmdPushConstants(push);
+			cmd.cmdDraw(3);
+			cmd.cmdEndRendering();
+		});
+
 		graph.addGraphicsPass("geometry_opaque")
 		.attachment({
 			.texDesc = msaaColorTarget,
-			.clearValue = mythril::ClearValue::color(0.349f, 0.635f, 0.82f, 1.f),
-			.loadOp = mythril::LoadOp::CLEAR,
+			.loadOp  = mythril::LoadOp::LOAD,
 			.storeOp = mythril::StoreOp::STORE,
 		})
 		.attachment({
@@ -1400,7 +1434,7 @@ int main() {
 
 
 		// should be pretty low we crrently dont handle this well
-		float bloom_strength = 0.135;
+		float bloom_strength = 0.055;
 		float exposure_final = 1.f;
 		enum class ToneMappingMode : int {
 			None = 0,
@@ -1550,6 +1584,45 @@ int main() {
 
 		lightingData.environmentLight.color     = {0.25f, 0.30f, 0.35f};
 		lightingData.environmentLight.intensity = 0.2f;
+
+		float dayTime = 0.25f;   // 0..1  (0=midnight, 0.25=sunrise, 0.5=noon, 0.75=sunset)
+		float daySpeed = 0.02f;  // cycles per second (0.02 = 50s day)
+		bool  autoDayCycle = false;
+
+		auto applyDayNightCycle = [&](float t) {
+			// orbit the sun around the east-west (X) axis
+			// direction = sun_quaternion*(0,0,-1) is the light travel vector (sun→scene),
+			// so it must have y < 0 when the sun is above — negate the angle to flip the orbit.
+			const float sunAngle = -(t - 0.25f) * glm::two_pi<float>();
+			sun_quaternion = glm::angleAxis(sunAngle, glm::vec3(1.f, 0.f, 0.f));
+
+			// sunDir is the light travel direction; -sunDir.y > 0 means sun is above the horizon
+			const glm::vec3 sunDir   = sun_quaternion * glm::vec3(0.f, 0.f, -1.f);
+			const float     sunUp    = glm::max(0.f, -sunDir.y);          // 0 below horizon
+			// sharpen orange tint near the horizon
+			const float     horizonT = glm::pow(1.f - glm::abs(sunDir.y), 6.f) * sunUp;
+
+			const glm::vec3 noonColor    = {1.00f, 0.97f, 0.90f};
+			const glm::vec3 horizonColor = {1.00f, 0.45f, 0.10f};
+			const glm::vec3 moonColor    = {0.55f, 0.62f, 0.78f};
+			const float     moonUp       = glm::max(0.f, sunDir.y);
+			const float     nightBlend   = glm::smoothstep(0.0f, 0.12f, -sunDir.y);
+
+			if (sunUp > 0.001f) {
+				lightingData.directionalLights.color     = glm::mix(noonColor, horizonColor, horizonT);
+				lightingData.directionalLights.intensity = sunUp * 10.f;
+				lightingData.directionalLights.direction = sunDir;
+			} else {
+				lightingData.directionalLights.color     = moonColor;
+				lightingData.directionalLights.intensity = moonUp * 0.35f;
+				lightingData.directionalLights.direction = -sunDir;
+			}
+
+			const glm::vec3 nightEnv = {0.02f, 0.03f, 0.09f};
+			const glm::vec3 dayEnv   = {0.22f, 0.32f, 0.52f};
+			lightingData.environmentLight.color     = glm::mix(nightEnv, dayEnv, sunUp);
+			lightingData.environmentLight.intensity = glm::mix(0.05f, 0.28f, sunUp);
+		};
 
 		auto startTime = std::chrono::steady_clock::now();
 		bool quit = false;
@@ -1736,6 +1809,12 @@ int main() {
 				} break;
 			}
 
+			ImGui::Separator();
+			ImGui::Text("Day/Night Cycle");
+			ImGui::Checkbox("Auto Cycle", &autoDayCycle);
+			ImGui::SliderFloat("Day Time", &dayTime, 0.f, 1.f);
+			if (!autoDayCycle && ImGui::Button("Apply Day Time")) applyDayNightCycle(dayTime);
+			ImGui::DragFloat("Day Speed (cycles/s)", &daySpeed, 0.001f, 0.0005f, 2.f);
 			ImGui::End();
 			DrawLightingUI(lightingData);
 			ImGui::Begin("Information");
@@ -1775,7 +1854,12 @@ int main() {
 				sun_quaternion = glm::normalize(rotation);
 			}
 
-			lightingData.directionalLights.direction = sun_quaternion * glm::vec3(0, 0, -1);
+			if (autoDayCycle) {
+				dayTime = fmod(dayTime + deltaTime * daySpeed, 1.f);
+				applyDayNightCycle(dayTime);
+			} else {
+				lightingData.directionalLights.direction = sun_quaternion * glm::vec3(0, 0, -1);
+			}
 			frameData = GPU::FrameData {
 				.camera = cameraData,
 				.lighting = lightingData,

@@ -11,6 +11,7 @@
 #include "../../lib/vkutil.h"
 #include "../../lib/Swapchain.h"
 #include "../../lib/Logger.h"
+#include "../../lib/HelperMacros.h"
 
 
 #include <unordered_set>

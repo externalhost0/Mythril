@@ -553,9 +553,8 @@ namespace mythril {
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_RENDERGRAPH);
 		ASSERT_MSG(!cmd.isDrying(), "You cannot call RenderGraph::execute inside an execution callback!");
 		ASSERT_MSG(_hasCompiled, "RenderGraph must be compiled before it can be executed!");
-		// auto-recompile if any resource topology changed since last compile (texture resize,
-		// swapchain recreate/destroy). single uint64 compare on the hot path; recompile only
-		// runs when actually stale (typically window-resize frames).
+		// auto-recompile if any resource topology changed since last compile (texture resize, swapchain recreate/destroy).
+		// single uint64 compare on the hot path; recompile only runs when actually stale (typically window-resize frames).
 		if (_compiledEpoch != cmd._ctx->_resourceEpoch) {
 			compile(*cmd._ctx);
 		}

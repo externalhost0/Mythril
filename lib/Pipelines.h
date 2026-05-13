@@ -13,9 +13,9 @@
 
 #include <variant>
 
+#include "mythril/Objects.h"
+
 namespace mythril {
-
-
 	struct ShaderStage {
 		ShaderHandle handle{};
 		const char* entryPoint = nullptr;
