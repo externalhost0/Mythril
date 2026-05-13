@@ -7,7 +7,7 @@
 
 #include <set>
 
-#include "CTX.h"
+#include "mythril/CTX.h"
 #include "HelperMacros.h"
 #include "Logger.h"
 #include "Plugins.h"
@@ -534,7 +534,11 @@ missing_features.append("\n\t(" version ") " #feature);
 		return vma_allocator;
 	}
 
-	std::unique_ptr<CTX> CTXBuilder::build() {
+	void CtxDeleter::operator()(const CTX* ctx) const noexcept {
+		delete ctx;
+	}
+
+	CtxPtr CTXBuilder::build() {
 		MYTH_PROFILER_ZONE_COLOR("CTXBuilder::build", MYTH_PROFILER_COLOR_CREATE);
 
 		const VkResult volk_result = volkInitialize();
@@ -573,7 +577,7 @@ missing_features.append("\n\t(" version ") " #feature);
 
 		// most of the setup we need to worry about is done in the constructor
 		// this is the same thing as make_unique, ignore the warning
-		auto ctx = std::unique_ptr<CTX>(new CTX());
+		auto ctx = CtxPtr(new CTX());
 		// manually transfer the values recieved previously to ctx
 
 		// important handles

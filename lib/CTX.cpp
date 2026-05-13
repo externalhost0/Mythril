@@ -2,7 +2,8 @@
 // Created by Hayden Rivas on 10/6/25.
 //
 
-#include "CTX.h"
+#include "mythril/CTX.h"
+#include "RenderGraphInternal.h"
 
 #include <iostream>
 

@@ -10,7 +10,7 @@
 #include <fstream>
 #include <vector>
 
-#include "CTX.h"
+#include "mythril/CTX.h"
 
 namespace mythril {
 	void SlangCompiler::create() {

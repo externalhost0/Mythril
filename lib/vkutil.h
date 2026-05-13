@@ -3,14 +3,13 @@
 //
 
 #pragma once
+#include "mythril/RenderGraphBuilder.h"
+
 #include <cstdint>
 #include <volk.h>
 
 namespace mythril::vkutil {
-	struct StageAccess {
-		VkPipelineStageFlags2 stage;
-		VkAccessFlags2 access;
-	};
+	using StageAccess = ::mythril::StageAccess;
 
 	VkResult SetObjectDebugName(VkDevice device, VkObjectType objectType, uint64_t handle, const char* name);
 	uint32_t GetTextureBytesPerPlane(uint32_t width, uint32_t height, VkFormat format, uint32_t plane);

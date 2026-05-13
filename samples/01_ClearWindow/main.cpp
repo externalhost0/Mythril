@@ -4,6 +4,7 @@
 #include <SDL3/SDL_vulkan.h>
 
 #include "mythril/CTXBuilder.h"
+#include "mythril/CTX.h"
 #include "mythril/Objects.h"
 #include "mythril/RenderGraphBuilder.h"
 
@@ -14,7 +15,7 @@ int main() {
 	SDL_Window* sdlWindow = BuildSDLWindow(false);
 	const auto [width, height] = GetSDLWindowFramebufferSize(sdlWindow);
 	{
-		auto ctx = mythril::CTXBuilder{}
+		const auto ctx = mythril::CTXBuilder{}
 		.set_vulkan_cfg({
 			.app_name = "Cool App Name",
 			.engine_name = "Cool Engine Name"

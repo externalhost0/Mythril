@@ -5,8 +5,8 @@
 #pragma once
 
 
-#include "../../lib/Specs.h"
-#include "../../lib/ObjectHandles.h"
+#include "Specs.h"
+#include "ObjectHandles.h"
 
 #include <volk.h>
 

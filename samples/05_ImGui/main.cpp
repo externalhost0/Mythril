@@ -4,6 +4,7 @@
 #include <SDL3/SDL_vulkan.h>
 
 #include "mythril/CTXBuilder.h"
+#include "mythril/CTX.h"
 #include "mythril/RenderGraphBuilder.h"
 
 

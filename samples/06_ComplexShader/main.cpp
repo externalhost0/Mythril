@@ -2,6 +2,7 @@
 // Created by Hayden Rivas on 10/25/25.
 //
 #include "mythril/CTXBuilder.h"
+#include "mythril/CTX.h"
 #include "mythril/RenderGraphBuilder.h"
 
 #include "glm/glm.hpp"
@@ -20,7 +21,6 @@
 
 #include "GPUStructs.h"
 #include "../SDL3Usage.h"
-#include "../../lib/vkstring.h"
 
 struct Camera {
 	glm::vec3 position;

@@ -2,7 +2,7 @@
 // Created by Hayden Rivas on 1/16/26.
 //
 
-#include "../CTX.h"
+#include "mythril/CTX.h"
 #include "../Plugins.h"
 
 #include <volk.h>

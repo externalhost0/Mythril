@@ -4,7 +4,7 @@
 
 #pragma once
 
-#include "../include/mythril/Objects.h"
+#include "Objects.h"
 
 #include <functional>
 #include <optional>

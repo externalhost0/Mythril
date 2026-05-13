@@ -4,10 +4,11 @@
 
 #pragma once
 
-#include "../include/mythril/RenderGraphBuilder.h"
+#include "mythril/RenderGraphBuilder.h"
+#include "RenderGraphInternal.h"
 #include "ImmediateCommands.h"
-#include "ObjectHandles.h"
-#include "vkenums.h"
+#include "mythril/ObjectHandles.h"
+#include "mythril/vkenums.h"
 
 #include <volk.h>
 

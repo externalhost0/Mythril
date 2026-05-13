@@ -2,6 +2,7 @@
 // Created by Hayden Rivas on 10/17/25.
 //
 #include "mythril/CTXBuilder.h"
+#include "mythril/CTX.h"
 #include "mythril/RenderGraphBuilder.h"
 
 #include <vector>

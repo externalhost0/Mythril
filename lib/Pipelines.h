@@ -6,7 +6,7 @@
 
 #include "Constants.h"
 #include "Shader.h"
-#include "vkenums.h"
+#include "mythril/vkenums.h"
 
 #include <slang/slang.h>
 #include <volk.h>

@@ -6,7 +6,7 @@
 
 #include <vector>
 
-#include "CTX.h"
+#include "mythril/CTX.h"
 #include "HelperMacros.h"
 #include "ImmediateCommands.h"
 #include "Logger.h"

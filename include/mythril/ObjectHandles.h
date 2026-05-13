@@ -95,7 +95,7 @@ namespace mythril {
 			assert(handle.gen() == _objects[index]._gen);
 
 			_objects[index]._obj = ActualObject{};
-			_objects[index]._gen++;
+			++_objects[index]._gen;
 			_objects[index]._nextFree = _freeListHead;
 			_freeListHead = index;
 			_numObjects--;

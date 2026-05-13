@@ -4,26 +4,32 @@
 
 #pragma once
 
-#include "HelperMacros.h"
-#include "ImmediateCommands.h"
+// NOTE: CTX.h is intentionally heavy — it is the implementation header for the
+// central context type. Including <mythril/CTX.h> drags in the full set of
+// internal lib/ headers below (VMA, fmt via HelperMacros, the AllocatedX
+// classes, etc.). User code that only needs to construct a CTX should include
+// <mythril/CTXBuilder.h> instead, which is internals-free.
+#include "../../lib/HelperMacros.h"
+#include "../../lib/ImmediateCommands.h"
 #include "ObjectHandles.h"
-#include "StagingDevice.h"
-#include "Swapchain.h"
+#include "../../lib/StagingDevice.h"
+#include "../../lib/Swapchain.h"
 
-#include "Pipelines.h"
-#include "Shader.h"
-#include "VulkanObjects.h"
+#include "../../lib/Pipelines.h"
+#include "../../lib/Shader.h"
+#include "../../lib/VulkanObjects.h"
 
-#include "../include/mythril/Objects.h"
-#include "CommandBuffer.h"
-#include "Plugins.h"
-#include "SlangCompiler.h"
+#include "Objects.h"
+#include "../../lib/CommandBuffer.h"
+#include "../../lib/Plugins.h"
+#include "../../lib/SlangCompiler.h"
 #include "Specs.h"
 
 #include <deque>
 #include <filesystem>
 #include <future>
 #include <unordered_map>
+#include <unordered_set>
 
 #include <slang/slang-com-ptr.h>
 #include <slang/slang.h>

@@ -3,6 +3,7 @@
 //
 
 #include "mythril/CTXBuilder.h"
+#include "mythril/CTX.h"
 #include "mythril/Objects.h"
 
 #include "SDL3/SDL_events.h"

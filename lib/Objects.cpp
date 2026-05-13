@@ -2,7 +2,7 @@
 // Created by Hayden Rivas on 1/10/26.
 //
 #include "../include/mythril/Objects.h"
-#include "CTX.h"
+#include "mythril/CTX.h"
 #include "HelperMacros.h"
 
 namespace mythril {

@@ -77,13 +77,13 @@ namespace mythril {
 			return {.r = static_cast<VkComponentSwizzle>(r), .g = static_cast<VkComponentSwizzle>(g), .b = static_cast<VkComponentSwizzle>(b), .a = static_cast<VkComponentSwizzle>(a)};
 		}
 	};
-	static_assert(mythril::Swizzle::Swizzle_Default == (uint32_t) VK_COMPONENT_SWIZZLE_IDENTITY);
-	static_assert(mythril::Swizzle::Swizzle_0 == (uint32_t) VK_COMPONENT_SWIZZLE_ZERO);
-	static_assert(mythril::Swizzle::Swizzle_1 == (uint32_t) VK_COMPONENT_SWIZZLE_ONE);
-	static_assert(mythril::Swizzle::Swizzle_R == (uint32_t) VK_COMPONENT_SWIZZLE_R);
-	static_assert(mythril::Swizzle::Swizzle_G == (uint32_t) VK_COMPONENT_SWIZZLE_G);
-	static_assert(mythril::Swizzle::Swizzle_B == (uint32_t) VK_COMPONENT_SWIZZLE_B);
-	static_assert(mythril::Swizzle::Swizzle_A == (uint32_t) VK_COMPONENT_SWIZZLE_A);
+	static_assert(Swizzle::Swizzle_Default == (uint32_t) VK_COMPONENT_SWIZZLE_IDENTITY);
+	static_assert(Swizzle::Swizzle_0 == (uint32_t) VK_COMPONENT_SWIZZLE_ZERO);
+	static_assert(Swizzle::Swizzle_1 == (uint32_t) VK_COMPONENT_SWIZZLE_ONE);
+	static_assert(Swizzle::Swizzle_R == (uint32_t) VK_COMPONENT_SWIZZLE_R);
+	static_assert(Swizzle::Swizzle_G == (uint32_t) VK_COMPONENT_SWIZZLE_G);
+	static_assert(Swizzle::Swizzle_B == (uint32_t) VK_COMPONENT_SWIZZLE_B);
+	static_assert(Swizzle::Swizzle_A == (uint32_t) VK_COMPONENT_SWIZZLE_A);
 
 
 	// Specs should be low level but still a thin wrapper around the info creation processes need

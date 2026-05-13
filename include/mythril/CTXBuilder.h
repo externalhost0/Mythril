@@ -5,14 +5,26 @@
 #pragma once
 
 
-#include <string>
+#include <functional>
 #include <memory>
 #include <span>
-#include "../../lib/CTX.h"
+#include <stdexcept>
+#include <string>
+#include <vector>
+
+#include <slang/slang.h>
+#include <volk.h>
+
+#include "SwapchainSpec.h"
 
 struct SDL_Window;
 
 namespace mythril {
+	class CTX;
+	struct CtxDeleter {
+		void operator()(const CTX* ctx) const noexcept;
+	};
+	using CtxPtr = std::unique_ptr<CTX, CtxDeleter>;
 
 	struct Version
 	{
@@ -124,7 +136,7 @@ namespace mythril {
 		}
 #endif
 
-		[[nodiscard]] std::unique_ptr<CTX> build();
+		[[nodiscard]] CtxPtr build();
 	private:
 		bool _usingImGui = false;
 		bool _usingTracyGPU = false;

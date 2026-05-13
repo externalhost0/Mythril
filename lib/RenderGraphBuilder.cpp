@@ -2,17 +2,41 @@
 // Created by Hayden Rivas on 10/11/25.
 //
 
-#include "CTX.h"
+#include "mythril/CTX.h"
 #include "CommandBuffer.h"
-#include "vkenums.h"
+#include "mythril/vkenums.h"
 
 #include "mythril/RenderGraphBuilder.h"
+#include "RenderGraphInternal.h"
 
 #include "GraphicsPipelineBuilder.h"
 #include "Logger.h"
 #include "vkstring.h"
 
 namespace mythril {
+	// Out-of-line definitions required so that RenderGraph's std::vector / std::unordered_map members
+	// see complete types only here — public RenderGraphBuilder.h keeps them forward-declared.
+	RenderGraph::RenderGraph() = default;
+	RenderGraph::~RenderGraph() = default;
+	RenderGraph::RenderGraph(RenderGraph&&) noexcept = default;
+	RenderGraph& RenderGraph::operator=(RenderGraph&&) noexcept = default;
+
+	BasePassBuilder::BasePassBuilder(RenderGraph& rGraph, const char* pName, const PassDesc::Type type)
+		: _rGraph(rGraph), _passSource(pName, type) {
+		ASSERT(!_passSource.name.empty());
+	}
+
+#ifdef DEBUG
+	GraphicsPassBuilder::~GraphicsPassBuilder() {
+		if (!this->base._passSource.executeCallback)
+			LOG_SYSTEM_NOSOURCE(LogType::Warning, "GraphicsPass '{}' has no execution callback!", this->base._passSource.name);
+	}
+	ComputePassBuilder::~ComputePassBuilder() {
+		if (!this->base._passSource.executeCallback)
+			LOG_SYSTEM_NOSOURCE(LogType::Warning, "ComputePass '{}' has no execution callback!", this->base._passSource.name);
+	}
+#endif
+
 	IntermediateBuilder& IntermediateBuilder::blit(TextureDesc src, TextureDesc dst) {
 		TextureHandle srcHandle = src.texture.handle();
 		TextureHandle dstHandle = dst.texture.handle();

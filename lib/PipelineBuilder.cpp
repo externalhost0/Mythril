@@ -5,7 +5,7 @@
 #include "GraphicsPipelineBuilder.h"
 #include "HelperMacros.h"
 #include "Logger.h"
-#include "vkenums.h"
+#include "mythril/vkenums.h"
 #include "vkinfo.h"
 #include "vkutil.h"
 
