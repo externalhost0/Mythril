@@ -129,7 +129,7 @@ namespace mythril {
 	// enforce that a valid CommandBuffer can only be created via this constructor
 	CommandBuffer::CommandBuffer(CTX* ctx, CommandBuffer::Type type) :
 	    _ctx(ctx),
-	    _wrapper(&ctx->_imm->acquire()),
+	    _wrapper(&ctx->_immGraphics->acquire()),
 	    _activePass(),
 	    _cmdType(type),
 	    _isDryRun(false) {}

@@ -7,6 +7,7 @@
 #include <SDL3/SDL_init.h>
 #include <SDL3/SDL_video.h>
 
+// these are strictly for our samples
 inline SDL_Window* BuildSDLWindow(bool isResizable) {
     const bool sdl_initialized = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO);
     assert(sdl_initialized && "SDL could not be initialized!");

@@ -6,7 +6,10 @@
 
 #include <volk.h>
 
-#include "mythril/CTXBuilder.h"
+#include "mythril/ObjectHandles.h"
+#ifdef MYTH_ENABLED_IMGUI
+#include <imgui.h>
+#endif
 #ifdef MYTH_ENABLED_TRACY_GPU
 #include <tracy/TracyVulkan.hpp>
 #endif
@@ -22,6 +25,9 @@ namespace mythril {
 		void onDestroy();
 		inline bool isEnabled() const { return _isEnabeld; }
 		inline VkFormat getFormat() const { return _requestedFormat; }
+
+		// called from ImGui::Image free functions in CTX.cpp — ImGuiPlugin is a CTX friend so it can reach private view()
+		static void renderImage(CTX& ctx, VkSampler defaultSampler, TextureHandle texHandle, SamplerHandle samplerHandle, const ImVec2& image_size, const ImVec2& uv0, const ImVec2& uv1);
 
 	private:
 		CTX* _ctx = nullptr;

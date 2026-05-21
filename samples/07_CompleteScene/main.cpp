@@ -859,8 +859,7 @@ int main() {
 		.dependency(opaqueSponzaVertexBuf, mythril::BufferAccess::ShaderRead)
 		.dependency(opaqueSponzaIndexBuf, mythril::BufferAccess::IndexRead)
 		.dependency(opaqueSponzaIndirectBuf, mythril::BufferAccess::IndirectRead)
-		.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
-			cmd.cmdBeginRendering();
+		.execute([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdBindGraphicsPipeline(shadowPipeline);
 			cmd.cmdBindDepthState({mythril::CompareOp::LessEqual, true});
 			cmd.cmdSetDepthBiasEnable(true);
@@ -898,7 +897,6 @@ int main() {
 			cmd.cmdPushConstants(push);
 			cmd.cmdBindIndexBuffer(opaqueSponzaIndexBuf);
 			cmd.cmdDrawIndexedIndirect(opaqueSponzaIndirectBuf, 0, opaqueDrawCount);
-			cmd.cmdEndRendering();
 		});
 
 		static constexpr uint32_t pointLightShadowResolution = 512;
@@ -963,21 +961,19 @@ int main() {
 		GPU::LightingData lastFramelightingData{};
 		for (int i = 0; i < kNumPointLights; i++) {
 			graph.addGraphicsPass(fmt::format("pointlight_shadow_{}", i).c_str())
-				.attachment({
-					.texDesc = pointLightShadowTex[i],
-					.clearValue = mythril::ClearValue::depth(1.f, 1),
-					.loadOp = mythril::LoadOp::CLEAR,
-					.storeOp = mythril::StoreOp::STORE,
-				})
-				.dependency(pointLightShadowMatrixBuf, mythril::BufferAccess::ShaderRead)
-				.dependency(opaqueSponzaVertexBuf, mythril::BufferAccess::ShaderRead)
-				.dependency(opaqueSponzaIndexBuf, mythril::BufferAccess::IndexRead)
-				.dependency(opaqueSponzaIndirectBuf, mythril::BufferAccess::IndirectRead)
-				.setExecuteCallback([&, i](mythril::CommandBuffer& cmd) {
-				// easy optimization
-				if (lightingData.pointLights[i].position == lastFramelightingData.pointLights[i].position) return;
-
-				cmd.cmdBeginRendering(6, 0b111111);
+			.attachment({
+				.texDesc = pointLightShadowTex[i],
+				.clearValue = mythril::ClearValue::depth(1.f, 1),
+				.loadOp = mythril::LoadOp::CLEAR,
+				.storeOp = mythril::StoreOp::STORE,
+			})
+			.multiview(6, 0b111111)
+			.condition([&, i] { return lightingData.pointLights[i].position != lastFramelightingData.pointLights[i].position; })
+			.dependency(pointLightShadowMatrixBuf, mythril::BufferAccess::ShaderRead)
+			.dependency(opaqueSponzaVertexBuf, mythril::BufferAccess::ShaderRead)
+			.dependency(opaqueSponzaIndexBuf, mythril::BufferAccess::IndexRead)
+			.dependency(opaqueSponzaIndirectBuf, mythril::BufferAccess::IndirectRead)
+			.execute([&, i](mythril::CommandBuffer& cmd) {
 				cmd.cmdBindGraphicsPipeline(pointShadowGraphicsPipeline);
 				cmd.cmdBindDepthState({mythril::CompareOp::LessEqual, true});
 				// i cant tell enough of a difference with it on or off
@@ -997,7 +993,6 @@ int main() {
 				cmd.cmdPushConstants(push);
 				cmd.cmdBindIndexBuffer(opaqueSponzaIndexBuf);
 				cmd.cmdDrawIndexedIndirect(opaqueSponzaIndirectBuf, 0, opaqueDrawCount);
-				cmd.cmdEndRendering();
 			});
 		}
 
@@ -1041,8 +1036,7 @@ int main() {
 			.storeOp   = mythril::StoreOp::STORE,
 		})
 		.dependency(frameDataHandle, mythril::BufferAccess::ShaderRead)
-		.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
-			cmd.cmdBeginRendering();
+		.execute([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdBindGraphicsPipeline(skyPipeline);
 			struct SkyPush {
 				VkDeviceAddress frame;
@@ -1054,7 +1048,6 @@ int main() {
 			};
 			cmd.cmdPushConstants(push);
 			cmd.cmdDraw(3);
-			cmd.cmdEndRendering();
 		});
 
 		graph.addGraphicsPass("geometry_opaque")
@@ -1069,12 +1062,11 @@ int main() {
 			.clearValue = mythril::ClearValue::depth(0.f, 0),
 			.loadOp = mythril::LoadOp::CLEAR,
 			.storeOp = mythril::StoreOp::STORE,
-			})
-			.dependency(shadowMap, mythril::Layout::READ)
-			.dependency(&pointLightShadowTex[0], kNumPointLights, mythril::Layout::READ)
-			.dependency(frameDataHandle, mythril::BufferAccess::ShaderRead)
-			.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
-			cmd.cmdBeginRendering();
+		})
+		.dependency(shadowMap, mythril::Layout::READ)
+		.dependency(&pointLightShadowTex[0], kNumPointLights, mythril::Layout::READ)
+		.dependency(frameDataHandle, mythril::BufferAccess::ShaderRead)
+		.execute([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdBindGraphicsPipeline(opaquePipeline);
 			cmd.cmdBindDepthState({mythril::CompareOp::Greater, true});
 			for (const MeshCompiled& mesh : sponzaCompiled.meshes) {
@@ -1108,7 +1100,6 @@ int main() {
 				cmd.cmdBindIndexBuffer(mesh.indexBufHandle);
 				cmd.cmdDrawIndexed(mesh.indexCount);
 			}
-			cmd.cmdEndRendering();
 		});
 
 		mythril::GraphicsPipeline transparentPipeline = ctx->createGraphicsPipeline({
@@ -1130,11 +1121,10 @@ int main() {
 			.texDesc = msaaDepthTarget,
 			.loadOp = mythril::LoadOp::LOAD,
 			.storeOp = mythril::StoreOp::STORE,
-			})
-			.dependency(shadowMap, mythril::Layout::READ)
-			.dependency(frameDataHandle, mythril::BufferAccess::ShaderRead)
-			.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
-			cmd.cmdBeginRendering();
+		})
+		.dependency(shadowMap, mythril::Layout::READ)
+		.dependency(frameDataHandle, mythril::BufferAccess::ShaderRead)
+		.execute([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdBindGraphicsPipeline(transparentPipeline);
 			cmd.cmdBindDepthState({mythril::CompareOp::Greater, true});
 			auto model = glm::mat4(1.0);
@@ -1165,7 +1155,6 @@ int main() {
 				cmd.cmdBindIndexBuffer(mesh.indexBufHandle);
 				cmd.cmdDrawIndexed(mesh.indexCount);
 			}
-			cmd.cmdEndRendering();
 		});
 
 		mythril::Shader particleShader = ctx->createShader({
@@ -1241,8 +1230,7 @@ int main() {
 		.dependency(frameDataHandle, mythril::BufferAccess::ShaderRead)
 		.dependency(particle_vertex_buffer, mythril::BufferAccess::ShaderRead)
 		.dependency(particle_index_buffer, mythril::BufferAccess::IndexRead)
-		.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
-			cmd.cmdBeginRendering();
+		.execute([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdBindGraphicsPipeline(particle_pipeline);
 			cmd.cmdBindDepthState({mythril::CompareOp::Greater, true});
 			struct PushConstant {
@@ -1261,7 +1249,6 @@ int main() {
 			cmd.cmdPushConstants(push);
 			cmd.cmdBindIndexBuffer(particle_index_buffer);
 			cmd.cmdDrawIndexed(Primitives::kHexIndices.size(), particles.size());
-			cmd.cmdEndRendering();
 		});
 
 		constexpr unsigned int kNumColorMips = 8;
@@ -1295,7 +1282,7 @@ int main() {
 
 		graph.addComputePass("Downsampling")
 		.dependency(&offscreenColorTexs[0], kNumColorMips, mythril::Layout::GENERAL)
-		.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
+		.execute([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdBindComputePipeline(downsampleComputePipeline);
 			for (int i = 0; i < kNumColorMips-1; i++) {
 				struct PushConstants {
@@ -1338,7 +1325,7 @@ int main() {
 		graph.addComputePass("convert into current lum")
 		.dependency(offscreenColorTexs[7], mythril::Layout::READ)
 		.dependency(currentLuminanceTex, mythril::Layout::GENERAL)
-		.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
+		.execute([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdBindComputePipeline(conversionLuminancePipeline);
 			struct PushConstant {
 				uint64_t lowResColorTex;
@@ -1369,7 +1356,7 @@ int main() {
 		float blend = 1.f;
 		graph.addComputePass("Upsampling")
 		.dependency(&offscreenColorTexs[0], kNumColorMips)
-		.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
+		.execute([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdBindComputePipeline(upsampleComputePipeline);
 			for (int i = kNumColorMips-1; i > 0; i--) {
 				mythril::Dimensions outdims = offscreenColorTexs[i-1]->getDimensions();
@@ -1412,7 +1399,7 @@ int main() {
 		.dependency(currentLuminanceTex, mythril::Layout::GENERAL)
 		.dependency(adaptedLuminanceTextures[0], mythril::Layout::GENERAL)
 		.dependency(adaptedLuminanceTextures[1], mythril::Layout::GENERAL)
-		.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
+		.execute([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdBindComputePipeline(adaptationComputePipeline);
 			const auto ct = std::chrono::steady_clock::now();
 			const float dt = std::chrono::duration<float>(ct - st).count();
@@ -1467,8 +1454,7 @@ int main() {
 		.dependency(offscreenColorTarget, mythril::Layout::READ)
 		.dependency(offscreenColorTexs[0], mythril::Layout::READ)
 		.dependency(adaptedLuminanceTextures[1], mythril::Layout::READ)
-		.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
-			cmd.cmdBeginRendering();
+		.execute([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdBindGraphicsPipeline(fullscreenCompositePipeline);
 			struct PushConstant { // 32 + 48 = 80 bytes total
 				uint64_t colorTex; // 32 bytes
@@ -1520,7 +1506,6 @@ int main() {
 			};
 			cmd.cmdPushConstants(push);
 			cmd.cmdDraw(3);
-			cmd.cmdEndRendering();
 		});
 
 		graph.addGraphicsPass("shadow_pos_debug")
@@ -1529,8 +1514,7 @@ int main() {
 			.loadOp = mythril::LoadOp::LOAD,
 			.storeOp = mythril::StoreOp::STORE
 		})
-		.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
-			cmd.cmdBeginRendering();
+		.execute([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdBindGraphicsPipeline(redDebugPipeline);
 			cmd.cmdBindDepthState({mythril::CompareOp::Less, true});
 
@@ -1553,7 +1537,6 @@ int main() {
 				cmd.cmdBindIndexBuffer(mesh.indexBufHandle);
 				cmd.cmdDrawIndexed(mesh.indexCount);
 			}
-			cmd.cmdEndRendering();
 		});
 
 		graph.addGraphicsPass("gui")
@@ -1565,10 +1548,8 @@ int main() {
 		.dependency(shadowMap, mythril::Layout::READ)
 		.dependency(adaptedLuminanceTextures[0], mythril::Layout::READ)
 		.dependency(&offscreenColorTexs[0], kNumColorMips, mythril::Layout::READ)
-		.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
-			cmd.cmdBeginRendering();
+		.execute([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdDrawImGui();
-			cmd.cmdEndRendering();
 		});
 
 		graph.addIntermediate("present")
@@ -1873,10 +1854,8 @@ int main() {
 			UpdatePointLightShadowMatrices(frameData.lighting, kMODELSCALE, pointlight_nearplane, pointlight_farplane, shadowMatrices);
 			MYTH_PROFILER_ZONE_END();
 			{
-				MYTH_PROFILER_ZONE_COLOR("Main Graphics Command", MYTH_PROFILER_COLOR_RENDERPASS);
-				mythril::CommandBuffer& cmd = ctx->acquireCommand(mythril::CommandBuffer::Type::Graphics);
-				graph.execute(cmd);
-				ctx->submitCommand(cmd);
+				MYTH_PROFILER_ZONE_COLOR("Execution", MYTH_PROFILER_COLOR_RENDERPASS);
+				graph.execute(*ctx);
 				MYTH_PROFILER_ZONE_END();
 			}
 			lastFramelightingData = lightingData;

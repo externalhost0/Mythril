@@ -10,9 +10,22 @@
 #include <fstream>
 #include <vector>
 
+#include <slang/slang.h>
+
 #include "mythril/CTX.h"
+#include "mythril/CTXBuilder.h"
 
 namespace mythril {
+	SlangMatrixLayoutMode SlangMatrixModeFromMythrilMatrixMode(SlangCfg::MatrixMode matrix_mode) {
+		switch (matrix_mode) {
+			case SlangCfg::MatrixMode::ColMajor:
+				return SlangMatrixLayoutMode::SLANG_MATRIX_LAYOUT_COLUMN_MAJOR;
+			case SlangCfg::MatrixMode::RowMajor:
+				return SlangMatrixLayoutMode::SLANG_MATRIX_LAYOUT_ROW_MAJOR;
+		}
+		ASSERT_MSG(false, "If this happens something went horribly wrong.");
+	}
+
 	void SlangCompiler::create() {
 		if (this->_sessionExists)
 			return;

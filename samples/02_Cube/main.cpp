@@ -182,8 +182,7 @@ int main() {
 			.clearValue = mythril::ClearValue::depth(1.f, 0),
 			.loadOp = mythril::LoadOp::CLEAR,
 		})
-		.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
-			cmd.cmdBeginRendering();
+		.execute([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdBindGraphicsPipeline(mainPipeline.handle());
 
 			auto frameWindowSize = GetSDLWindowFramebufferSize(sdlWindow);
@@ -208,7 +207,6 @@ int main() {
 			cmd.cmdPushConstants(constants);
 			cmd.cmdBindIndexBuffer(cubeIndexBuffer.handle());
 			cmd.cmdDrawIndexed(cubeIndices.size());
-			cmd.cmdEndRendering();
 		});
 		graph.addIntermediate("present")
 		.blit(colorTarget, ctx->getBackBufferTexture())

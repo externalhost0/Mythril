@@ -4,14 +4,13 @@
 
 #pragma once
 
-#include "mythril/Invalids.h"
+#include "HelperMacros.h"
 #include "SubmitHandle.h"
 
 #include <utility>
 #include <volk.h>
 
 namespace mythril {
-
 	class ImmediateCommands final {
 	public:
 		static constexpr uint32_t kMaxCommandBuffers = 64; // overkill lvk
@@ -24,7 +23,7 @@ namespace mythril {
 			bool _isEncoding = false;
 		};
 
-		ImmediateCommands(VkDevice device, uint32_t queueFamilyIndex);
+		ImmediateCommands(VkDevice device, uint32_t queueFamilyIndex, VkQueue vk_queue = VK_NULL_HANDLE);
 		~ImmediateCommands();
 
 		// disallow copy and assignment
@@ -62,7 +61,7 @@ namespace mythril {
 		VkSemaphoreSubmitInfo _signalSemaphore = {.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO, .stageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT};
 
 		VkQueue _vkQueue = VK_NULL_HANDLE;
-		uint32_t _queueFamilyIndex = Invalid<uint32_t>;
+		uint32_t _queueFamilyIndex = MYTHRIL_INVALID_U32;
 
 		CommandBufferWrapper _buffers[kMaxCommandBuffers];
 

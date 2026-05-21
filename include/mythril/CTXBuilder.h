@@ -12,12 +12,12 @@
 #include <string>
 #include <vector>
 
-#include <slang/slang.h>
-#include <volk.h>
 
 #include "SwapchainSpec.h"
 
-struct SDL_Window;
+namespace slang {
+	struct CompilerOptionEntry;
+}
 
 namespace mythril {
 	class CTX;
@@ -57,11 +57,17 @@ namespace mythril {
 		// device extension feautures, will not be handled if unsupported!
 		void* deviceExtensionFeatureChain = {};
 	};
+
 	struct SlangCfg
 	{
-		SlangMatrixLayoutMode matrixLayoutMode = SLANG_MATRIX_LAYOUT_COLUMN_MAJOR;
+		enum class MatrixMode {
+			RowMajor,
+			ColMajor
+		};
+		MatrixMode matrixLayoutMode = MatrixMode::ColMajor;
 		std::vector<std::string> searchpaths = {};
-		std::span<slang::CompilerOptionEntry> compilerOptions = {};
+		slang::CompilerOptionEntry* compilerOptionsData = nullptr;
+		size_t compilerOptionsCount = 0;
 	};
 
 	struct VulkanInfoSpec {

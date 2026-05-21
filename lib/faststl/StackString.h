@@ -18,7 +18,7 @@ namespace mythril {
 		return len;
 	}
 
-	static constexpr void constexpr_memcpy(char* dest, const char* src, size_t n) {
+	static constexpr void constexpr_memcpy(char* dest, const char* src, const size_t n) {
 		for (size_t i = 0; i < n; ++i) {
 			dest[i] = src[i];
 		}
@@ -202,7 +202,7 @@ namespace mythril {
 		bool operator!=(const std::string& str) const noexcept { return !(*this == str); }
 
 		// helpers
-		constexpr size_t max_length() const noexcept { return MaxLength - 1; }
+		static constexpr size_t max_length() noexcept { return MaxLength - 1; }
 		constexpr size_t available() const noexcept { return MaxLength - _length; }
 		// includes null terminator
 		constexpr size_t size() const noexcept { return _length + 1; }

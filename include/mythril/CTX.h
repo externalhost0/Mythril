@@ -4,6 +4,22 @@
 
 #pragma once
 
+// ┌─────────────────────────────────────────────────────────────────────┐
+// │  Why view() and access() are NOT on the public CTX API              │
+// │                                                                     │
+// │  view() and access() return Allocated* types (AllocatedTexture,     │
+// │  AllocatedBuffer, etc.) which are internal Vulkan implementation    │
+// │  details — they carry raw VkImage/VkBuffer handles, VMA state,      │
+// │  and layout tracking. Exposing them on CTX forces every file that   │
+// │  includes CTX.h to also drag in VulkanObjects.h, Pipelines.h, and   │
+// │  Shader.h, defeating the encapsulation that CtxPtr provides.        │
+// │                                                                     │
+// │  Internal library code (CommandBuffer, RenderGraph, StagingDevice)  │
+// │  reaches these methods as CTX friends. User code that holds a       │
+// │  resource (Buffer, Texture, etc.) gets the same data through the    │
+// │  ObjectHolder wrapper's operator-> and view()/access() methods.     │
+// └─────────────────────────────────────────────────────────────────────┘
+
 // NOTE: CTX.h is intentionally heavy — it is the implementation header for the
 // central context type. Including <mythril/CTX.h> drags in the full set of
 // internal lib/ headers below (VMA, fmt via HelperMacros, the AllocatedX
@@ -30,11 +46,6 @@
 #include <future>
 #include <unordered_map>
 #include <unordered_set>
-
-#include <slang/slang-com-ptr.h>
-#include <slang/slang.h>
-#include <volk.h>
-
 
 #ifdef MYTH_ENABLED_IMGUI
 #include <imgui.h>
@@ -213,9 +224,6 @@ namespace mythril {
 
 		const Texture& getNullTexture() const { return this->_dummyTexture; }
 
-		CommandBuffer& acquireCommand(CommandBuffer::Type type);
-		SubmitHandle submitCommand(CommandBuffer& cmd);
-
 		Buffer createBuffer(BufferSpec spec);
 		Texture createTexture(TextureSpec spec);
 		void resizeTexture(TextureHandle handle, Dimensions newDimensions);
@@ -231,23 +239,9 @@ namespace mythril {
 		void download(BufferHandle handle, void* data, size_t size, size_t offset);
 		// for textures
 		void upload(TextureHandle handle, const void* data, const TexRange& range);
-		void download(TextureHandle handle, void* data, const TexRange& range);
+		void download(TextureHandle handle, void* data, const TexRange& range);CommandBuffer createActiveCommand(CommandBuffer::Type type);SubmitHandle submitActiveCommand(CommandBuffer&cmd);
 
 	public:
-		const AllocatedTexture& view(TextureHandle h) const { return viewImpl(_texturePool, h); }
-		const AllocatedBuffer& view(BufferHandle h) const { return viewImpl(_bufferPool, h); }
-		const AllocatedSampler& view(SamplerHandle h) const { return viewImpl(_samplerPool, h); }
-		const AllocatedShader& view(ShaderHandle h) const { return viewImpl(_shaderPool, h); }
-		const AllocatedGraphicsPipeline& view(GraphicsPipelineHandle h) const { return viewImpl(_graphicsPipelinePool, h); }
-		const AllocatedComputePipeline& view(ComputePipelineHandle h) const { return viewImpl(_computePipelinePool, h); }
-
-		AllocatedTexture& access(TextureHandle h) { return accessImpl(_texturePool, h); }
-		AllocatedBuffer& access(BufferHandle h) { return accessImpl(_bufferPool, h); }
-		AllocatedSampler& access(SamplerHandle h) { return accessImpl(_samplerPool, h); }
-		AllocatedShader& access(ShaderHandle h) { return accessImpl(_shaderPool, h); }
-		AllocatedGraphicsPipeline& access(GraphicsPipelineHandle h) { return accessImpl(_graphicsPipelinePool, h); }
-		AllocatedComputePipeline& access(ComputePipelineHandle h) { return accessImpl(_computePipelinePool, h); }
-
 		// for automatic cleanup of resources
 		void destroy(BufferHandle handle);
 		void destroy(TextureHandle handle);
@@ -269,7 +263,26 @@ namespace mythril {
 		VkPhysicalDeviceVulkan12Properties getPhysicalDeviceProperties12() const { return _propertiesVulkan.props12; }
 		VkPhysicalDeviceVulkan13Properties getPhysicalDeviceProperties13() const { return _propertiesVulkan.props13; }
 
+		// temp for now, for samples
+		[[nodiscard]] CommandBuffer& acquireCommand(CommandBuffer::Type type);
+		SubmitHandle submitCommand(CommandBuffer& cmd);
 	private:
+
+		// internal accessors, not public API; use ObjectHolder::view()/access() or operator-> from user code
+		const AllocatedTexture& view(TextureHandle h) const { return viewImpl(_texturePool, h); }
+		const AllocatedBuffer& view(BufferHandle h) const { return viewImpl(_bufferPool, h); }
+		const AllocatedSampler& view(SamplerHandle h) const { return viewImpl(_samplerPool, h); }
+		const AllocatedShader& view(ShaderHandle h) const { return viewImpl(_shaderPool, h); }
+		const AllocatedGraphicsPipeline& view(GraphicsPipelineHandle h) const { return viewImpl(_graphicsPipelinePool, h); }
+		const AllocatedComputePipeline& view(ComputePipelineHandle h) const { return viewImpl(_computePipelinePool, h); }
+
+		AllocatedTexture& access(TextureHandle h) { return accessImpl(_texturePool, h); }
+		AllocatedBuffer& access(BufferHandle h) { return accessImpl(_bufferPool, h); }
+		AllocatedSampler& access(SamplerHandle h) { return accessImpl(_samplerPool, h); }
+		AllocatedShader& access(ShaderHandle h) { return accessImpl(_shaderPool, h); }
+		AllocatedGraphicsPipeline& access(GraphicsPipelineHandle h) { return accessImpl(_graphicsPipelinePool, h); }
+		AllocatedComputePipeline& access(ComputePipelineHandle h) { return accessImpl(_computePipelinePool, h); }
+
 		// wrappers around VulkanObjects
 		// advanced functions that user will rarely need to call
 		void generateMipmaps(TextureHandle handle);
@@ -327,6 +340,28 @@ namespace mythril {
 
 		bool isHeadless() const { return _swapchain == nullptr; }
 
+		ImmediateCommands* getQueue(QueueAffinity type) const {
+			// first two can be nullptr
+			switch (type) {
+				case QueueAffinity::AsyncCompute:  return _immAsyncCompute.get();
+				case QueueAffinity::AsyncTransfer: return _immAsyncTransfer.get();
+				default: return _immGraphics.get();
+			}
+		}
+		ImmediateCommands* getQueueOrFallback(QueueAffinity type) const {
+			ImmediateCommands* q = getQueue(type);
+			return q ? q : _immGraphics.get();
+		}
+		uint32_t getQueueFamilyIndex(QueueAffinity type) const {
+			switch (type) {
+				case QueueAffinity::AsyncCompute:
+					return (_immAsyncCompute) ? _computeQueueFamilyIndex : _graphicsQueueFamilyIndex;
+				case QueueAffinity::AsyncTransfer:
+					return (_immAsyncTransfer) ? _transferQueueFamilyIndex : _graphicsQueueFamilyIndex;
+				default:
+					return _graphicsQueueFamilyIndex;
+			}
+		}
 	private:
 		// Vulkan Members //
 		VkInstance _vkInstance = VK_NULL_HANDLE;
@@ -346,11 +381,12 @@ namespace mythril {
 		VkQueue _vkGraphicsQueue = VK_NULL_HANDLE;
 		uint32_t _graphicsQueueFamilyIndex = -1;
 		// optional queues
-		VkQueue _vkPresentQueue = VK_NULL_HANDLE;
-		uint32_t _presentQueueFamilyIndex = -1;
 		VkQueue _vkComputeQueue = VK_NULL_HANDLE;
 		uint32_t _computeQueueFamilyIndex = -1;
-
+		VkQueue _vkTransferQueue = VK_NULL_HANDLE;
+		uint32_t _transferQueueFamilyIndex = -1;
+		VkQueue _vkPresentQueue = VK_NULL_HANDLE;
+		uint32_t _presentQueueFamilyIndex = -1;
 	private:
 		// not really my stuff //
 		Texture _dummyTexture;
@@ -378,7 +414,11 @@ namespace mythril {
 		// bumped whenever graph-relevant resource topology changes (texture resize, swapchain recreate/destroy)
 		// RenderGraph snapshots this in compile() and re-checks it in execute() to auto-recompile when stale. one uint64 compare per frame.
 		uint64_t _resourceEpoch = 0;
-		std::unique_ptr<ImmediateCommands> _imm = nullptr;
+		std::unique_ptr<ImmediateCommands> _immGraphics = nullptr;
+		// both are nullptr when we fail to get a distinct family during setup
+		std::unique_ptr<ImmediateCommands> _immAsyncCompute = nullptr;
+		std::unique_ptr<ImmediateCommands> _immAsyncTransfer = nullptr;
+
 		std::unique_ptr<Swapchain> _swapchain = nullptr;
 		std::unique_ptr<StagingDevice> _staging = nullptr;
 

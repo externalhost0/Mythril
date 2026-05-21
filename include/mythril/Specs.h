@@ -5,7 +5,6 @@
 #pragma once
 
 #include "vkenums.h"
-
 #include <filesystem>
 
 #include <volk.h>

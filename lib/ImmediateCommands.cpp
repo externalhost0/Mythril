@@ -8,11 +8,14 @@
 #include "vkinfo.h"
 
 namespace mythril {
-	ImmediateCommands::ImmediateCommands(VkDevice device, uint32_t queueFamilyIndex) :
+	ImmediateCommands::ImmediateCommands(VkDevice device, uint32_t queueFamilyIndex, VkQueue vk_queue) :
 	    _vkDevice(device),
 	    _queueFamilyIndex(queueFamilyIndex) {
 		// just use the family index to get our queue vulkan object
-		vkGetDeviceQueue(device, queueFamilyIndex, 0, &_vkQueue);
+		if (!vk_queue)
+			vkGetDeviceQueue(device, queueFamilyIndex, 0, &_vkQueue);
+		else
+			_vkQueue = vk_queue;
 
 		// create command pool
 		const VkCommandPoolCreateInfo command_pool_ci = {
@@ -103,7 +106,8 @@ namespace mythril {
 			return;
 		}
 		if (_buffers[handle.bufferIndex_]._isEncoding) {
-			// we are waiting for a buffer which has not been submitted - this is probably a logic error somewhere in the calling code
+			// we are waiting for a buffer which has not been submitted
+			// this is probably a logic error somewhere in the calling code
 			return;
 		}
 		VK_CHECK(vkWaitForFences(_vkDevice, 1, &_buffers[handle.bufferIndex_]._fence, VK_TRUE, UINT64_MAX));

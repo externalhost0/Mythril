@@ -42,3 +42,5 @@ build*/
 .vs/
 # for vsc
 .vscode/
+# traces
+traces/

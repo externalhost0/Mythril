@@ -38,7 +38,7 @@ namespace mythril {
 			    .size = chunkSize,
 			};
 
-			const ImmediateCommands::CommandBufferWrapper& wrapper = _ctx._imm->acquire();
+			const ImmediateCommands::CommandBufferWrapper& wrapper = _ctx._immGraphics->acquire();
 			vkCmdCopyBuffer(wrapper._cmdBuf, stagingBuffer->_vkBuffer, buffer._vkBuffer, 1, &copy);
 			VkBufferMemoryBarrier barrier = {
 			    .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
@@ -74,7 +74,7 @@ namespace mythril {
 				barrier.dstAccessMask |= VK_ACCESS_MEMORY_READ_BIT;
 			}
 			vkCmdPipelineBarrier(wrapper._cmdBuf, VK_PIPELINE_STAGE_TRANSFER_BIT, dstMask, VkDependencyFlags{}, 0, nullptr, 1, &barrier, 0, nullptr);
-			desc.handle_ = _ctx._imm->submit(wrapper);
+			desc.handle_ = _ctx._immGraphics->submit(wrapper);
 			desc.state_ = MemoryRegionDesc::State::Busy;
 			_regions.push_back(desc);
 
@@ -194,7 +194,7 @@ namespace mythril {
 		// 1. Copy the pixel data into the host visible staging buffer
 		stagingBuffer->bufferSubData(_ctx, desc.offset_, storageSize, data);
 
-		const ImmediateCommands::CommandBufferWrapper& wrapper = _ctx._imm->acquire();
+		const ImmediateCommands::CommandBufferWrapper& wrapper = _ctx._immGraphics->acquire();
 
 		// 1. Transition initial image layout into TRANSFER_DST_OPTIMAL
 		vkutil::ImageMemoryBarrier2(
@@ -231,7 +231,7 @@ namespace mythril {
 
 		image._vkCurrentImageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-		desc.handle_ = _ctx._imm->submit(wrapper);
+		desc.handle_ = _ctx._immGraphics->submit(wrapper);
 		desc.state_ = MemoryRegionDesc::State::Busy;
 		_regions.push_back(desc);
 	}
@@ -272,7 +272,7 @@ namespace mythril {
 		}
 		ASSERT(desc.size_ >= storageSize);
 
-		const ImmediateCommands::CommandBufferWrapper& wrapper = _ctx._imm->acquire();
+		const ImmediateCommands::CommandBufferWrapper& wrapper = _ctx._immGraphics->acquire();
 
 		AllocatedBuffer* stagingBuffer = _ctx._bufferPool.get(_stagingBuffer);
 		stagingBuffer->bufferSubData(_ctx, desc.offset_, storageSize, data);
@@ -354,7 +354,7 @@ namespace mythril {
 		}
 		image._vkCurrentImageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-		desc.handle_ = _ctx._imm->submit(wrapper);
+		desc.handle_ = _ctx._immGraphics->submit(wrapper);
 		desc.state_ = MemoryRegionDesc::State::Busy;
 		_regions.push_back(desc);
 	}
@@ -382,7 +382,7 @@ namespace mythril {
 
 		AllocatedBuffer* stagingBuffer = _ctx._bufferPool.get(_stagingBuffer);
 
-		const ImmediateCommands::CommandBufferWrapper& wrapper1 = _ctx._imm->acquire();
+		const ImmediateCommands::CommandBufferWrapper& wrapper1 = _ctx._immGraphics->acquire();
 
 		// 1. Transition to VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL
 		vkutil::ImageMemoryBarrier2(
@@ -412,7 +412,7 @@ namespace mythril {
 		};
 		vkCmdCopyImageToBuffer(wrapper1._cmdBuf, image._vkImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, stagingBuffer->_vkBuffer, 1, &copy);
 
-		desc.handle_ = _ctx._imm->submit(wrapper1);
+		desc.handle_ = _ctx._immGraphics->submit(wrapper1);
 		desc.state_ = MemoryRegionDesc::State::Busy;
 		_regions.push_back(desc);
 
@@ -426,7 +426,7 @@ namespace mythril {
 		memcpy(outData, stagingBuffer->getMappedPtr() + desc.offset_, storageSize);
 
 		// 4. Transition back to the initial image layout
-		const ImmediateCommands::CommandBufferWrapper& wrapper2 = _ctx._imm->acquire();
+		const ImmediateCommands::CommandBufferWrapper& wrapper2 = _ctx._immGraphics->acquire();
 
 		vkutil::ImageMemoryBarrier2(
 		        wrapper2._cmdBuf,
@@ -438,7 +438,7 @@ namespace mythril {
 		        range
 		);
 
-		_ctx._imm->wait(_ctx._imm->submit(wrapper2));
+		_ctx._immGraphics->wait(_ctx._immGraphics->submit(wrapper2));
 	}
 
 	void StagingDevice::ensureStagingBufferSize(uint32_t sizeNeeded) {
@@ -479,7 +479,7 @@ namespace mythril {
 	bool StagingDevice::isRegionFree(const MemoryRegionDesc& region) const {
 		if (region.state_ == MemoryRegionDesc::State::Free)
 			return true;
-		if (region.state_ == MemoryRegionDesc::State::Busy && _ctx._imm->isReady(region.handle_))
+		if (region.state_ == MemoryRegionDesc::State::Busy && _ctx._immGraphics->isReady(region.handle_))
 			return true;
 		return false;
 	}
@@ -553,7 +553,7 @@ namespace mythril {
 		for (const MemoryRegionDesc& r: _regions) {
 			ASSERT_MSG(r.state_ != MemoryRegionDesc::State::Pending, "Cannot reset the staging ring while graph upload regions are pending. Submit or abandon the command buffer first.");
 			if (r.state_ == MemoryRegionDesc::State::Busy) {
-				_ctx._imm->wait(r.handle_);
+				_ctx._immGraphics->wait(r.handle_);
 			}
 		}
 		_regions.clear();

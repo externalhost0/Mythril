@@ -223,11 +223,15 @@ namespace mythril {
         std::vector<CompiledImageBarrier> imageBarriers;
         std::vector<CompiledBufferBarrier> bufferBarriers;
         std::function<void(CommandBuffer&)> executeCallback;
+        std::function<bool()> conditionCallback;
 
         // new info transformed from source on compile()
         std::vector<AttachmentInfo> colorAttachments;
         std::optional<AttachmentInfo> depthAttachment;
         VkRect2D renderArea;
+        uint32_t layerCount = 1;
+        uint32_t viewMask = 0;
+    	QueueAffinity queue = QueueAffinity::Graphics;
     };
 
 } // namespace mythril

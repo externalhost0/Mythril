@@ -7,6 +7,12 @@
 #include "mythril/vkenums.h"
 
 #include "mythril/RenderGraphBuilder.h"
+
+#include <array>
+#include <cstdlib>
+#include <fstream>
+#include <queue>
+
 #include "RenderGraphInternal.h"
 
 #include "GraphicsPipelineBuilder.h"
@@ -14,8 +20,6 @@
 #include "vkstring.h"
 
 namespace mythril {
-	// Out-of-line definitions required so that RenderGraph's std::vector / std::unordered_map members
-	// see complete types only here — public RenderGraphBuilder.h keeps them forward-declared.
 	RenderGraph::RenderGraph() = default;
 	RenderGraph::~RenderGraph() = default;
 	RenderGraph::RenderGraph(RenderGraph&&) noexcept = default;
@@ -24,6 +28,12 @@ namespace mythril {
 	BasePassBuilder::BasePassBuilder(RenderGraph& rGraph, const char* pName, const PassDesc::Type type)
 		: _rGraph(rGraph), _passSource(pName, type) {
 		ASSERT(!_passSource.name.empty());
+		// set default queue solely based on type, will change during compile
+		switch (type) {
+			case PassDesc::Type::Graphics:     _passSource.queue = QueueAffinity::Graphics;      break;
+			case PassDesc::Type::Compute:      _passSource.queue = QueueAffinity::Graphics;      break;
+			case PassDesc::Type::Intermediate: _passSource.queue = QueueAffinity::AsyncTransfer; break;
+		}
 	}
 
 #ifdef DEBUG
@@ -154,7 +164,8 @@ namespace mythril {
 		};
 		return *this;
 	}
-	void IntermediateBuilder::finish() {
+
+	void IntermediateBuilder::finish() const {
 		this->base._rGraph._passDescriptions.push_back(base._passSource);
 		this->base._rGraph._hasCompiled = false;
 	}
@@ -212,7 +223,7 @@ namespace mythril {
 		return {baseMip, numMips, baseLayer, numLayers};
 	}
 
-	static VkImageView ResolveImageView(const CTX& rCtx, const TextureDesc& texDesc, const AllocatedTexture& allocatedTexture, std::string_view passName) {
+	static VkImageView ResolveImageView(const TextureDesc& texDesc, const AllocatedTexture& allocatedTexture, std::string_view passName) {
 		const bool needsCustomView = texDesc.baseLayer.has_value() || texDesc.baseLevel.has_value() || texDesc.numLayers.has_value() || texDesc.numLevels.has_value();
 		if (!needsCustomView) {
 			return allocatedTexture.getImageView();
@@ -224,17 +235,14 @@ namespace mythril {
 		if (range.numLayers == 1 && viewType == VK_IMAGE_VIEW_TYPE_CUBE) {
 			viewType = VK_IMAGE_VIEW_TYPE_2D;
 		}
-		Texture::ViewKey viewKey = mutableTexture.createView({
+		const Texture::ViewKey viewKey = mutableTexture.createView({
 		    .type = viewType,
 		    .mipLevel = range.baseMip,
 		    .numMipLevels = range.numMips,
 		    .layer = range.baseLayer,
 		    .numLayers = range.numLayers,
 		});
-
-		TextureHandle viewHandle = mutableTexture.handle(viewKey);
-		const AllocatedTexture& viewTexture = rCtx.view(viewHandle);
-		return viewTexture.getImageView();
+		return mutableTexture.getImageViewForKey(viewKey);
 	}
 
 	static constexpr bool NeedsBarrier(const SubresourceState& currentState, VkImageLayout desiredLayout, const vkutil::StageAccess& desiredStageAccess) {
@@ -278,7 +286,6 @@ namespace mythril {
 				case PassDesc::Type::Compute:
 					return VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
 				case PassDesc::Type::Intermediate:
-				case PassDesc::Type::Presentation:
 					return VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
 			}
 			return VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
@@ -313,9 +320,9 @@ namespace mythril {
 
 	void RenderGraph::processPassResources(const PassDesc& passDesc, CompiledPass& outPass) {
 		// we expect to use a max of this
-		outPass.imageBarriers.reserve(passDesc.dependencyOperations.size() + passDesc.attachmentOperations.size());
+		outPass.imageBarriers.reserve(passDesc.textureDependencyOperations.size() + passDesc.attachmentOperations.size());
 		outPass.bufferBarriers.reserve(passDesc.bufferDependencyOperations.size());
-		for (const DependencyDesc& dependency_desc: passDesc.dependencyOperations) {
+		for (const TextureDependencyDesc& dependency_desc: passDesc.textureDependencyOperations) {
 			const VkImageLayout layout = [](const Layout simpleLayout) {
 				switch (simpleLayout) {
 					case Layout::GENERAL:
@@ -362,7 +369,7 @@ namespace mythril {
 				ASSERT_MSG(!hasDepthAttachment, "Pass '{}': Multiple depth attachments not allowed (found '{}' to be a second depth attachment)", outPass.name, allocatedTexture.getDebugName());
 				hasDepthAttachment = true;
 			}
-			VkImageView imageView = ResolveImageView(rCtx, texDesc, allocatedTexture, pass_desc.name);
+			VkImageView imageView = ResolveImageView(texDesc, allocatedTexture, pass_desc.name);
 
 			const ClearValue& clear_value = attachment_desc.clearValue;
 			AttachmentInfo attachment_info = {
@@ -409,7 +416,7 @@ namespace mythril {
 
 				// set the fields we left empty previously
 				attachment_info.resolveImageLayout = attachment_info.imageLayout;
-				attachment_info.resolveImageView = ResolveImageView(rCtx, resolve_desc, resolve_texture, pass_desc.name);
+				attachment_info.resolveImageView = ResolveImageView(resolve_desc, resolve_texture, pass_desc.name);
 			}
 			if (allocatedTexture.isSwapchainImage()) {
 				attachment_info.isSwapchainImage = true;
@@ -451,6 +458,7 @@ namespace mythril {
 			CommandBuffer dryCmd;
 			dryCmd._ctx = &rCtx;
 			dryCmd._activePass = pass;
+			dryCmd._viewMask = pass.viewMask;
 			rCtx._currentCommandBuffer = dryCmd;
 			ASSERT_MSG(pass.executeCallback != nullptr, "Pass '{}' doesn't have an execute callback, something went horribly wrong!", pass.name);
 			pass.executeCallback(dryCmd);
@@ -458,31 +466,508 @@ namespace mythril {
 		rCtx._currentCommandBuffer = saved;
 	}
 
+	bool isWrite(Layout layout) {
+		return layout == Layout::GENERAL || layout == Layout::TRANSFER_DST;
+	}
+	bool isWrite(BufferAccess access) {
+		return access == BufferAccess::ShaderReadWrite || access == BufferAccess::ShaderWrite || access == BufferAccess::TransferWrite;
+	}
+
+
+	// unweighted, directed
+	// fixed vertex amount
+	template<size_t Vertices>
+	struct AdjacencyMatrix {
+		void addEdge(size_t x, size_t y) {
+			if (x >= Vertices || y >= Vertices) return;
+			size_t bitIndex = (y * Vertices) + x;
+			data.set(bitIndex);
+		}
+		void removeEdge(size_t x, size_t y) {
+			if (x >= Vertices || y >= Vertices) return;
+			size_t bitIndex = (y * Vertices) + x;
+			data.reset(bitIndex);
+		}
+		bool hasEdge(size_t x, size_t y) {
+			if (x >= Vertices || y >= Vertices) return false;
+			return data.test((y * Vertices) + x);
+		}
+		std::bitset<Vertices * Vertices> data;
+	};
+
+	struct DirectedGraph {
+		size_t nodeCount;
+		// indicies represent original pass index
+		// predecessors[2] = {0, 1} represents the third pass that must wait until first and second run
+		// will always be same size vector as the # of passes
+		std::vector<std::unordered_set<uint32_t>> predecessors;
+		std::vector<std::vector<uint32_t>> successors;
+		std::vector<uint32_t> inDegree;
+
+		explicit DirectedGraph(uint32_t vertexCount) : nodeCount(vertexCount), predecessors(vertexCount), successors(vertexCount), inDegree(vertexCount) {}
+
+		void addEdge(uint32_t from, uint32_t to) {
+			if (from == to) return;
+			predecessors.at(to).insert(from);
+		}
+
+		std::optional<std::vector<uint32_t>> topologicalSort() const {
+			std::vector<uint32_t> local_in_degrees = inDegree;
+			std::queue<uint32_t> ready;
+			std::vector<uint32_t> sorted_order;
+			sorted_order.reserve(this->nodeCount);
+
+			// get root nodes, aka a node with no degrees incoming
+			for (uint32_t i = 0; i < nodeCount; ++i) {
+				if (local_in_degrees[i] == 0)
+					ready.push(i);
+			}
+			// process from root nodes
+			while (!ready.empty()) {
+				uint32_t node = ready.front(); ready.pop();
+				sorted_order.push_back(node);
+				for (uint32_t successor : successors[node]) {
+					if (--local_in_degrees[successor] == 0)
+						ready.push(successor);
+				}
+			}
+			// if size is not the same than cycles exist, thus cant be topo sorted
+			if (sorted_order.size() != nodeCount) return std::nullopt;
+			return sorted_order;
+		}
+	};
+
+	DirectedGraph build_directed_graph(const std::vector<PassDesc>& pass_descs) {
+		const size_t pass_desc_count = pass_descs.size();
+
+		auto collectTexAccess = [](const PassDesc& desc) {
+			std::vector<std::pair<TextureHandle, bool>> result;
+			result.reserve(desc.textureDependencyOperations.size() + desc.attachmentOperations.size());
+			for (const auto& texDep : desc.textureDependencyOperations) {
+				result.emplace_back(texDep.texDesc.texture.handle(), isWrite(texDep.desiredLayout));
+			}
+			for (const auto& attachDep : desc.attachmentOperations) {
+				// an attachment is always written to
+				result.emplace_back(attachDep.texDesc.texture.handle(), true);
+				if (attachDep.resolveTexDesc.has_value())
+					result.emplace_back(attachDep.resolveTexDesc->texture.handle(), true);
+			}
+			return result;
+		};
+		auto collectBufAccess = [](const PassDesc& desc) {
+			std::vector<std::pair<BufferHandle, bool>> result;
+			result.reserve(desc.bufferDependencyOperations.size());
+			for (const auto& bufDep : desc.bufferDependencyOperations) {
+				result.emplace_back(bufDep.buffer.handle(), isWrite(bufDep.access));
+			}
+			return result;
+		};
+
+		// build our tracking vars
+		// where a handle represents a resource, the integar represents its pass_id
+		std::unordered_map<TextureHandle, uint32_t> lastTexWriter;
+		std::unordered_map<TextureHandle, std::vector<uint32_t>> lastTexReaders;
+
+		std::unordered_map<BufferHandle, uint32_t> lastBufWriter;
+		std::unordered_map<BufferHandle, std::vector<uint32_t>> lastBufReaders;
+
+		DirectedGraph result(pass_desc_count);
+		// first collect all edges from the graph sequentially
+		for (int i = 0; i < pass_desc_count; i++) {
+			const PassDesc& desc = pass_descs[i];
+			// h = handle
+			// go through textures
+			for (const auto& [h, isWrite] : collectTexAccess(desc)) {
+				// if the resource isnt added already
+				if (auto it = lastTexWriter.find(h); it != lastTexWriter.end())
+					result.addEdge(it->second, i);
+
+				if (isWrite) {
+					// WAW
+					for (const uint32_t reader : lastTexReaders[h])
+						result.addEdge(reader, i);
+					lastTexWriter[h] = i;
+					lastTexReaders[h].clear();
+				} else {
+					// WAR
+					lastTexReaders[h].push_back(i);
+				}
+			}
+			// go through buffers
+			for (const auto& [h, isWrite] : collectBufAccess(desc)) {
+				if (auto it = lastBufWriter.find(h); it != lastBufWriter.end())
+					result.addEdge(it->second, i);
+				if (isWrite) {
+					for (const uint32_t reader : lastBufReaders[h])
+						result.addEdge(reader, i);
+					lastBufWriter[h] = i;
+					lastBufReaders[h].clear();
+				} else {
+					lastBufReaders[h].push_back(i);
+				}
+			}
+		}
+		return result;
+	}
+
+	void report_cycle_and_assert(const DirectedGraph& graph, const std::vector<PassDesc>& pass_descs) {
+		const size_t node_count = graph.nodeCount;
+		// copy this
+		std::vector<uint32_t> local_in_degree = graph.inDegree;
+		std::queue<uint32_t> ready;
+		std::vector<bool> resolved(node_count, false);
+		size_t resolved_count = 0;
+
+		for (uint32_t i = 0; i < node_count; ++i) {
+			if (local_in_degree[i] == 0) {
+				ready.push(i);
+			}
+		}
+		while (!ready.empty()) {
+			const uint32_t node = ready.front();
+			ready.pop();
+			resolved[node] = true;
+			resolved_count++;
+
+			for (uint32_t succ : graph.successors[node]) {
+				if (--local_in_degree[succ] == 0) {
+					ready.push(succ);
+				}
+			}
+		}
+		// this should never happen :p
+		if (resolved_count == node_count) return;
+		// actually perform reporting now
+		std::string report_string;
+		for (uint32_t i = 0; i < node_count; ++i) {
+			if (!resolved[i]) {
+				report_string += fmt::format("\n- '{}' is stuck waiting on:", pass_descs[i].name);
+				for (uint32_t pred : graph.predecessors[i]) {
+					if (!resolved[pred]) {
+						report_string += fmt::format(" '{}'", pass_descs[pred].name);
+					}
+				}
+			}
+		}
+		ASSERT_MSG(false, "RenderGraph has a cycle ({} passes unresolved): {}", (node_count - resolved_count), report_string);
+	}
+
+	std::vector<uint32_t> cull_unused_passes(
+		const std::vector<uint32_t>& topo_sorted_order,
+		const std::vector<std::unordered_set<uint32_t>>& predecessors,
+		const std::vector<PassDesc>& pass_descs) {
+
+		const size_t node_count = topo_sorted_order.size();
+		// now that sortedOrder is topologically sorted, we can perform culling from the swapchain pass
+		// todo: this only walks back from a swapchain image, headless will mean everything is culled
+		std::unordered_set<uint32_t> sinkPasses;
+		for (uint32_t i = 0; i < node_count; i++) {
+			const PassDesc& pass_desc = pass_descs[i];
+			for (const auto& attachDesc : pass_desc.attachmentOperations) {
+				if (attachDesc.texDesc.texture->isSwapchainImage()) {
+					sinkPasses.insert(i);
+					break;
+				}
+			}
+			// verify that it is a write to swapchain not a read for some reason
+			for (const auto& texDesc : pass_desc.textureDependencyOperations) {
+				if (texDesc.texDesc.texture->isSwapchainImage() && isWrite(texDesc.desiredLayout)) {
+					sinkPasses.insert(i);
+					break;
+				}
+			}
+		}
+		// now reverse BFS
+		std::unordered_set<uint32_t> reachablePasses;
+		std::queue<uint32_t> worklist;
+		for (uint32_t sink : sinkPasses) {
+			worklist.push(sink);
+			reachablePasses.insert(sink);
+		}
+		while (!worklist.empty()) {
+			const uint32_t node = worklist.front(); worklist.pop();
+			for (uint32_t pred : predecessors[node]) {
+				if (reachablePasses.insert(pred).second)
+					worklist.push(pred);
+			}
+		}
+		// filter sortedOrder while preserving order
+		std::vector<uint32_t> result;
+		result.reserve(reachablePasses.size());
+		for (uint32_t passIdx : topo_sorted_order) {
+			if (reachablePasses.contains(passIdx))
+				result.push_back(passIdx);
+		}
+		return result;
+	}
+
+	ExecutionSchedule calculate_execution_schedule(const std::vector<uint32_t>& culled_order, const std::vector<std::unordered_set<uint32_t>>& predecessors) {
+		ExecutionSchedule result;
+		uint32_t max_depth = 0;
+		// find the depth for every active (culled) pass
+		for (const uint32_t pass_idx : culled_order) {
+			uint32_t current_depth = 0;
+			for (uint32_t pred : predecessors[pass_idx]) {
+				// only get predecessors that arent culled
+				if (auto it = result.pass_depths.find(pred); it != result.pass_depths.end()) {
+					current_depth = std::max(current_depth, it->second + 1);
+				}
+			}
+			result.pass_depths[pass_idx] = current_depth;
+			// update max if necessary
+			max_depth = std::max(max_depth, current_depth);
+		}
+		// group passes into layers
+		result.layers.resize(max_depth + 1);
+		for (const uint32_t pass_idx : culled_order) {
+			const uint32_t depth = result.pass_depths[pass_idx];
+			result.layers[depth].push_back(pass_idx);
+		}
+		return result;
+	}
+
+	// purely for development purposes
+	static void DumpRenderGraphDot(
+		const std::vector<CompiledPass>& compiledPasses,
+		const std::vector<std::unordered_set<uint32_t>>& predecessors,
+		const ExecutionSchedule& schedule
+	) {
+		const char* path = std::getenv("MYTHRIL_DUMP_RG");
+		if (!path || !*path) return;
+
+		std::ofstream out(path);
+		if (!out) {
+			LOG_SYSTEM(LogType::Warning, "MYTHRIL_DUMP_RG set but failed to open '{}' for writing.", path);
+			return;
+		}
+
+		auto queueColor = [](QueueAffinity q) {
+			switch (q) {
+				case QueueAffinity::Graphics:      return "lightblue";
+				case QueueAffinity::AsyncCompute:  return "palegreen";
+				case QueueAffinity::AsyncTransfer: return "lightyellow";
+			}
+			return "white";
+		};
+		auto typeLabel = [](PassDesc::Type t) {
+			switch (t) {
+				case PassDesc::Type::Graphics:     return "G";
+				case PassDesc::Type::Compute:      return "C";
+				case PassDesc::Type::Intermediate: return "I";
+			}
+			return "?";
+		};
+
+		std::unordered_map<uint32_t, const CompiledPass*> byPassIdx;
+		byPassIdx.reserve(compiledPasses.size());
+		for (const CompiledPass& p : compiledPasses)
+			byPassIdx[p.passIndex] = &p;
+
+		out << "digraph RenderGraph {\n";
+		out << "  rankdir=LR;\n";
+		out << "  node [shape=box, style=\"filled,rounded\", fontname=\"Helvetica\"];\n";
+		out << "  edge [color=\"#555555\"];\n";
+
+		for (size_t depth = 0; depth < schedule.layers.size(); ++depth) {
+			out << "  subgraph cluster_d" << depth << " {\n";
+			out << "    label=\"depth " << depth << "\"; style=dashed; color=\"#999999\";\n";
+			out << "    { rank=same;\n";
+			for (uint32_t passIdx : schedule.layers[depth]) {
+				auto it = byPassIdx.find(passIdx);
+				if (it == byPassIdx.end()) continue;
+				const CompiledPass* p = it->second;
+				out << "      p" << passIdx
+				    << " [label=\"" << p->name << "\\n[" << typeLabel(p->type) << "]\""
+				    << ", fillcolor=" << queueColor(p->queue) << "];\n";
+			}
+			out << "    }\n";
+			out << "  }\n";
+		}
+
+		for (const CompiledPass& p : compiledPasses) {
+			for (uint32_t pred : predecessors[p.passIndex]) {
+				if (byPassIdx.count(pred))
+					out << "  p" << pred << " -> p" << p.passIndex << ";\n";
+			}
+		}
+		out << "}\n";
+		LOG_SYSTEM(LogType::Info, "RenderGraph DOT written to '{}'.", path);
+
+		// flamegraph-style SVG: queues as rows, depth layers as columns
+		const std::string flamePath = std::string(path) + ".flame.svg";
+		std::ofstream svg(flamePath);
+		if (!svg) {
+			LOG_SYSTEM(LogType::Warning, "Failed to open '{}' for writing flame SVG.", flamePath);
+			return;
+		}
+
+		struct Lane { QueueAffinity q; const char* label; const char* color; };
+		const Lane lanes[] = {
+			{QueueAffinity::Graphics,      "Graphics",      "#7eb6ff"},
+			{QueueAffinity::AsyncCompute,  "AsyncCompute",  "#9be39b"},
+			{QueueAffinity::AsyncTransfer, "AsyncTransfer", "#f5e189"},
+		};
+		constexpr int blockH = 24;       // min block height (~text + padding)
+		constexpr int rowGap = 6;
+		constexpr int colW = 180;
+		constexpr int padL = 140;
+		constexpr int padT = 40;
+		const int numLayers = static_cast<int>(schedule.layers.size());
+
+		// per-lane height = max passes in any column for that lane
+		std::array<int, std::size(lanes)> laneMaxPasses{};
+		std::vector<std::array<std::vector<const CompiledPass*>, std::size(lanes)>> grid(numLayers);
+		for (int d = 0; d < numLayers; ++d) {
+			for (uint32_t passIdx : schedule.layers[d]) {
+				auto it = byPassIdx.find(passIdx);
+				if (it == byPassIdx.end()) continue;
+				for (size_t li = 0; li < std::size(lanes); ++li) {
+					if (lanes[li].q == it->second->queue) {
+						grid[d][li].push_back(it->second);
+						laneMaxPasses[li] = std::max(laneMaxPasses[li], static_cast<int>(grid[d][li].size()));
+						break;
+					}
+				}
+			}
+		}
+		std::array<int, std::size(lanes)> laneH{};
+		std::array<int, std::size(lanes)> laneY{};
+		int cursor = padT;
+		for (size_t li = 0; li < std::size(lanes); ++li) {
+			const int n = std::max(1, laneMaxPasses[li]);
+			laneH[li] = n * blockH + (n + 1) * rowGap;
+			laneY[li] = cursor;
+			cursor += laneH[li];
+		}
+		const int width = padL + colW * std::max(1, numLayers) + 20;
+		const int height = cursor + 30;
+
+		svg << "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"" << width << "\" height=\"" << height
+		    << "\" font-family=\"Helvetica, Arial, sans-serif\" font-size=\"12\">\n";
+		svg << "  <rect width=\"100%\" height=\"100%\" fill=\"#1e1e22\"/>\n";
+
+		// depth column headers + vertical guides
+		for (int d = 0; d < numLayers; ++d) {
+			const int x = padL + d * colW;
+			svg << "  <text x=\"" << (x + colW / 2) << "\" y=\"" << (padT - 14)
+			    << "\" fill=\"#cccccc\" text-anchor=\"middle\">depth " << d << "</text>\n";
+			svg << "  <line x1=\"" << x << "\" y1=\"" << padT << "\" x2=\"" << x
+			    << "\" y2=\"" << cursor << "\" stroke=\"#333\"/>\n";
+		}
+
+		// lane backgrounds + labels
+		for (size_t li = 0; li < std::size(lanes); ++li) {
+			svg << "  <rect x=\"0\" y=\"" << laneY[li] << "\" width=\"" << width << "\" height=\"" << laneH[li]
+			    << "\" fill=\"" << (li % 2 ? "#26262c" : "#222226") << "\"/>\n";
+			svg << "  <text x=\"" << (padL - 10) << "\" y=\"" << (laneY[li] + laneH[li] / 2 + 4)
+			    << "\" fill=\"#dddddd\" text-anchor=\"end\">" << lanes[li].label << "</text>\n";
+		}
+
+		// passes
+		for (int d = 0; d < numLayers; ++d) {
+			for (size_t li = 0; li < std::size(lanes); ++li) {
+				const auto& passes = grid[d][li];
+				for (size_t i = 0; i < passes.size(); ++i) {
+					const int x = padL + d * colW + 6;
+					const int y = laneY[li] + rowGap + static_cast<int>(i) * (blockH + rowGap);
+					const int w = colW - 12;
+					svg << "    <rect x=\"" << x << "\" y=\"" << y << "\" width=\"" << w << "\" height=\"" << blockH
+					    << "\" rx=\"4\" fill=\"" << lanes[li].color << "\" stroke=\"#111\"/>\n";
+					svg << "    <text x=\"" << (x + 8) << "\" y=\"" << (y + blockH / 2 + 4)
+					    << "\" fill=\"#111\">" << passes[i]->name << "</text>\n";
+				}
+			}
+		}
+
+		svg << "</svg>\n";
+		LOG_SYSTEM(LogType::Info, "RenderGraph flame SVG written to '{}'.", flamePath);
+	}
+
 	void RenderGraph::compile(CTX& rCtx) {
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_RENDERGRAPH);
-		_compiledPasses.clear();
-		_resourceTrackers.clear();
-		_bufferTrackers.clear();
+		this->_compiledPasses.clear();
+		this->_resourceTrackers.clear();
+		this->_bufferTrackers.clear();
+
+		const DirectedGraph directed_graph = build_directed_graph(this->_passDescriptions);
+
+		// yeah i know this is doing more work then necessary but its way better to understand
+		const std::vector<std::unordered_set<uint32_t>>& passPredecessors = directed_graph.predecessors;
+		const std::optional<std::vector<uint32_t>>& sorted_order_opt = directed_graph.topologicalSort();
+		if (!sorted_order_opt) {
+			// who cares about the recalculation overhead
+			report_cycle_and_assert(directed_graph, this->_passDescriptions);
+		}
+		const std::vector<uint32_t>& culled_order = cull_unused_passes(sorted_order_opt.value(), passPredecessors, _passDescriptions);
+
+		const ExecutionSchedule schedule = calculate_execution_schedule(culled_order, passPredecessors);
+		this->_schedule = schedule;
+
+		// map from passDescription to _compiledPasses, reversed basically
+		std::unordered_map<uint32_t, uint32_t> passToCompiled;
+		passToCompiled.reserve(culled_order.size());
+		for (uint32_t i = 0; i < static_cast<uint32_t>(culled_order.size()); ++i)
+			passToCompiled[culled_order[i]] = i;
+
+		// assign and warn queues for each pass
+		const bool canUseAC = rCtx._immAsyncCompute != nullptr;
+		const bool canUseAT = rCtx._immAsyncTransfer != nullptr;
+		auto sanitizeQueue = [canUseAC, canUseAT](const QueueAffinity requested_queue, const std::string& pass_name) {
+			// demote passes that request a queue but we dont have access to
+			if (requested_queue == QueueAffinity::AsyncCompute && !canUseAC) {
+				LOG_SYSTEM_NOSOURCE(LogType::Warning, "Pass '{}' demoted to graphics: No async compute family available.", pass_name);
+				return QueueAffinity::AsyncTransfer;
+			}
+			if (requested_queue == QueueAffinity::AsyncTransfer && !canUseAT) {
+				if (canUseAC) {
+					LOG_SYSTEM_NOSOURCE(LogType::Info, "Pass '{}' routed to async compute: No dedicated transfer family.", pass_name);
+					return QueueAffinity::AsyncCompute;
+				}
+				LOG_SYSTEM_NOSOURCE(LogType::Warning, "Pass '{}' demoted to graphics: No async family available.", pass_name);
+				return QueueAffinity::Graphics;
+			}
+			return requested_queue;
+		};
+
 		// compile works in this order
-		_compiledPasses.reserve(_passDescriptions.size());
-		for (uint32_t passIndex = 0; passIndex < _passDescriptions.size(); passIndex++) {
-			const PassDesc& pass_desc = _passDescriptions[passIndex];
+		this->_compiledPasses.reserve(culled_order.size());
+		for (const uint32_t pass_idx : culled_order) {
+			const PassDesc& pass_desc = this->_passDescriptions[pass_idx];
 			CompiledPass compiled_pass;
 			compiled_pass.name = pass_desc.name;
-			compiled_pass.passIndex = passIndex;
+			compiled_pass.passIndex = pass_idx;
+			compiled_pass.queue = sanitizeQueue(pass_desc.queue, pass_desc.name);
 			compiled_pass.type = pass_desc.type;
 			compiled_pass.executeCallback = pass_desc.executeCallback;
+			compiled_pass.layerCount = pass_desc.layerCount;
+			compiled_pass.viewMask = pass_desc.viewMask;
+			compiled_pass.conditionCallback = pass_desc.conditionCallback;
 
 			// do not worry about the return value,
 			// every type of process should run for every pass
 			processPassResources(pass_desc, compiled_pass);
 			processAttachments(rCtx, pass_desc, compiled_pass);
 
-			_compiledPasses.push_back(std::move(compiled_pass));
+			this->_compiledPasses.push_back(std::move(compiled_pass));
+		}
+
+
+		// build _layerByQueue from post cleaned _compiledPassses
+		// requires that correct queues have already been selected
+		this->_layerByQueue.assign(schedule.layers.size(), {});
+		for (size_t depth = 0; depth < schedule.layers.size(); ++depth) {
+			for (const uint32_t pass_idx : schedule.layers[depth]) {
+				const uint32_t compiled_idx = passToCompiled[pass_idx];
+				const auto q = static_cast<size_t>(_compiledPasses[compiled_idx].queue);
+				this->_layerByQueue[depth][q].push_back(compiled_idx);
+			}
 		}
 		performDryRun(rCtx);
-		_hasCompiled = true;
-		_compiledEpoch = rCtx._resourceEpoch;
+		this->_hasCompiled = true;
+		this->_compiledEpoch = rCtx._resourceEpoch;
+#ifdef DEBUG
+		DumpRenderGraphDot(this->_compiledPasses, passPredecessors, schedule);
+#endif
 	}
 
 	void RenderGraph::trackWindowSized(Texture& texture) {
@@ -545,17 +1030,17 @@ namespace mythril {
 			const AllocatedBuffer& buffer = cmd._ctx->view(req.handle);
 			const vkutil::StageAccess currentState = _bufferTrackers.contains(req.handle) ? _bufferTrackers.at(req.handle) : vkutil::StageAccess{};
 			if (NeedsBufferBarrier(currentState, req.dstMask)) {
-				vkBufferBarriers.push_back(
-				        {.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
-				         .srcStageMask = currentState.stage,
-				         .srcAccessMask = currentState.access,
-				         .dstStageMask = req.dstMask.stage,
-				         .dstAccessMask = req.dstMask.access,
-				         .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-				         .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-				         .buffer = buffer._vkBuffer,
-				         .offset = 0,
-				         .size = VK_WHOLE_SIZE}
+				vkBufferBarriers.push_back({
+					.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
+					.srcStageMask = currentState.stage,
+					.srcAccessMask = currentState.access,
+					.dstStageMask = req.dstMask.stage,
+					.dstAccessMask = req.dstMask.access,
+					.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+					.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+					.buffer = buffer._vkBuffer,
+					.offset = 0,
+					.size = VK_WHOLE_SIZE}
 				);
 			}
 			_bufferTrackers[req.handle] = req.dstMask;
@@ -573,6 +1058,25 @@ namespace mythril {
 		}
 	}
 
+	// will be the only execute but left for now
+	void RenderGraph::execute(CTX& rCtx) {
+		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_RENDERGRAPH);
+		ASSERT_MSG(_hasCompiled, "A RenderGraph must be compiled before it can be executed!");
+
+		ASSERT_MSG(!rCtx.isHeadless(), "headless is currently not supported");
+
+		// auto-recompile if any resource topology changed since last compile
+		// (texture resize, swapchain recreate/destroy).
+		if (_compiledEpoch != rCtx._resourceEpoch) {
+			LOG_SYSTEM(LogType::Info, "Performing recompile on RenderGraph!");
+			compile(rCtx);
+		}
+
+		CommandBuffer cmd = rCtx.acquireCommand(CommandBuffer::Type::Graphics);
+		this->execute(cmd);
+		rCtx.submitCommand(cmd);
+	}
+
 	void RenderGraph::execute(CommandBuffer& cmd) {
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_RENDERGRAPH);
 		ASSERT_MSG(!cmd.isDrying(), "You cannot call RenderGraph::execute inside an execution callback!");
@@ -584,6 +1088,9 @@ namespace mythril {
 		}
 
 		for (CompiledPass& pass: _compiledPasses) {
+			if (pass.conditionCallback && !pass.conditionCallback())
+				continue;
+			const bool isGraphics = pass.type == PassDesc::Type::Graphics;
 			// perform batched vkCmdPipelineBarrier
 			PerformBarrierTransitions(cmd, pass);
 			// switch color attachment imageViews for Swapchain
@@ -601,7 +1108,9 @@ namespace mythril {
 			cmd._currentPipelineHandle = {};
 			cmd._activePass = pass;
 			// we already checked if it has an execute callback so it should be guaranteed
+			if (isGraphics) cmd.cmdBeginRendering(pass.layerCount, pass.viewMask);
 			pass.executeCallback(cmd);
+			if (isGraphics) cmd.cmdEndRendering();
 		}
 		if (!cmd._ctx->isHeadless()) {
 			// fixme: make this cleaner im so lazy right now

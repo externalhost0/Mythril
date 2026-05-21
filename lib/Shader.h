@@ -12,7 +12,6 @@
 #include <unordered_map>
 #include <vector>
 
-#include <slang/slang.h>
 #include <volk.h>
 
 namespace mythril {

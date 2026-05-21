@@ -5,6 +5,8 @@
 #pragma once
 
 #include <volk.h>
+#include <stdexcept>
+
 namespace mythril {
 	// ENUMS //
 	enum class BlendingMode {
@@ -28,29 +30,29 @@ namespace mythril {
 		LIST,
 		STRIP
 	};
-	enum class SampleCount : uint8_t {
+	enum class SampleCount {
 		X1 = 0,
 		X2,
 		X4,
 		X8
 	};
-	enum class SamplerFilter : uint8_t {
+	enum class SamplerFilter {
 		Nearest,
 		Linear
 	};
-	enum class SamplerMipMap : uint8_t {
+	enum class SamplerMipMap {
 		Disabled,
 		Nearest,
 		Linear
 	};
-	enum class SamplerWrap : uint8_t {
+	enum class SamplerWrap {
 		Repeat,
 		MirrorRepeat,
 		ClampEdge,
 		ClampBorder,
 		MirrorClampEdge
 	};
-	enum class CompareOp : uint8_t {
+	enum class CompareOp {
 		NeverPass,
 		Less,
 		LessEqual,
@@ -60,18 +62,18 @@ namespace mythril {
 		GreaterEqual,
 		AlwaysPass
 	};
-	enum class LoadOp : uint8_t {
+	enum class LoadOp {
 		NONE = 0,
 		DONT_CARE,
 		CLEAR,
 		LOAD
 	};
-	enum class StoreOp : uint8_t {
+	enum class StoreOp {
 		NONE = 0,
 		DONT_CARE,
 		STORE,
 	};
-	enum class ResolveMode : uint8_t {
+	enum class ResolveMode {
 		AVERAGE = 0,
 		MIN,
 		MAX,
@@ -90,7 +92,6 @@ namespace mythril {
 	// FUNCTIONS //
 	// our own to vulkan helpers
 
-
 	// FIXME change how we handle multisampled images
 	constexpr VkAttachmentStoreOp toVulkan(StoreOp op) {
 		switch (op) {
@@ -100,6 +101,8 @@ namespace mythril {
 				return VK_ATTACHMENT_STORE_OP_DONT_CARE;
 			case StoreOp::STORE:
 				return VK_ATTACHMENT_STORE_OP_STORE;
+			default:
+				throw std::invalid_argument("Invalid mythril::StoreOp value!");
 		}
 	}
 	constexpr VkAttachmentLoadOp toVulkan(LoadOp op) {
@@ -112,6 +115,8 @@ namespace mythril {
 				return VK_ATTACHMENT_LOAD_OP_CLEAR;
 			case LoadOp::LOAD:
 				return VK_ATTACHMENT_LOAD_OP_LOAD;
+			default:
+				throw std::invalid_argument("Invalid mythril::LoadOp value!");
 		}
 	}
 	constexpr VkResolveModeFlagBits toVulkan(ResolveMode mode) {
@@ -124,6 +129,8 @@ namespace mythril {
 				return VK_RESOLVE_MODE_AVERAGE_BIT;
 			case ResolveMode::SAMPLE_ZERO:
 				return VK_RESOLVE_MODE_SAMPLE_ZERO_BIT;
+			default:
+				throw std::invalid_argument("Invalid mythril::ResolveMode value!");
 		}
 	}
 	constexpr VkCullModeFlagBits toVulkan(CullMode mode) {
@@ -134,6 +141,8 @@ namespace mythril {
 				return VK_CULL_MODE_BACK_BIT;
 			case CullMode::FRONT:
 				return VK_CULL_MODE_FRONT_BIT;
+			default:
+				throw std::invalid_argument("Invalid mythril::CullMode value!");
 		}
 	}
 	constexpr VkPolygonMode toVulkan(PolygonMode mode) {
@@ -142,6 +151,8 @@ namespace mythril {
 				return VK_POLYGON_MODE_FILL;
 			case PolygonMode::LINE:
 				return VK_POLYGON_MODE_LINE;
+			default:
+				throw std::invalid_argument("invalid mythril::PolygonMode value!");
 		}
 	}
 	constexpr VkPrimitiveTopology toVulkan(TopologyMode mode) {
@@ -152,6 +163,8 @@ namespace mythril {
 				return VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
 			case TopologyMode::STRIP:
 				return VK_PRIMITIVE_TOPOLOGY_LINE_STRIP;
+			default:
+				throw std::invalid_argument("invalid mythril::TopologyMode value!");
 		}
 	}
 	constexpr VkSampleCountFlagBits toVulkan(SampleCount count) {
@@ -164,6 +177,8 @@ namespace mythril {
 				return VK_SAMPLE_COUNT_4_BIT;
 			case SampleCount::X8:
 				return VK_SAMPLE_COUNT_8_BIT;
+			default:
+				throw std::invalid_argument("invalid mythril::SampleCount value!");
 		}
 	}
 	constexpr VkFilter toVulkan(SamplerFilter filter) {
@@ -172,6 +187,8 @@ namespace mythril {
 				return VK_FILTER_NEAREST;
 			case SamplerFilter::Linear:
 				return VK_FILTER_LINEAR;
+			default:
+				throw std::invalid_argument("invalid mythril::SamplerFilter value!");
 		}
 	}
 	constexpr VkSamplerAddressMode toVulkan(SamplerWrap wrap) {
@@ -186,6 +203,8 @@ namespace mythril {
 				return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
 			case SamplerWrap::MirrorClampEdge:
 				return VK_SAMPLER_ADDRESS_MODE_MIRROR_CLAMP_TO_EDGE;
+			default:
+				throw std::invalid_argument("invalid mythril::SamplerWrap value!");
 		}
 	}
 	constexpr VkSamplerMipmapMode toVulkan(SamplerMipMap mip) {
@@ -195,6 +214,8 @@ namespace mythril {
 				return VK_SAMPLER_MIPMAP_MODE_NEAREST;
 			case SamplerMipMap::Linear:
 				return VK_SAMPLER_MIPMAP_MODE_LINEAR;
+			default:
+				throw std::invalid_argument("invalid mythril::MipMap value!");
 		}
 	}
 	constexpr VkCompareOp toVulkan(CompareOp op) {
@@ -215,6 +236,8 @@ namespace mythril {
 				return VK_COMPARE_OP_ALWAYS;
 			case CompareOp::NotEqual:
 				return VK_COMPARE_OP_NOT_EQUAL;
+			default:
+				throw std::invalid_argument("invalid mythril::CompareOp value!");
 		}
 	}
 	constexpr VkShaderStageFlagBits toVulkan(ShaderStages stage) {
@@ -231,6 +254,8 @@ namespace mythril {
 				return VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
 			case ShaderStages::TesselationEvaluation:
 				return VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
+			default:
+				throw std::invalid_argument("invalid mythril::ShaderStages value!");
 		}
 	}
 

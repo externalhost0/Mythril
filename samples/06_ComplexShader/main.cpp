@@ -503,8 +503,7 @@ int main() {
 			.clearValue = mythril::ClearValue::depth(1.f, 0),
 			.loadOp = mythril::LoadOp::CLEAR
 		})
-		.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
-			cmd.cmdBeginRendering();
+		.execute([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdBindGraphicsPipeline(mainPipeline);
 
 			const auto currentTime = std::chrono::high_resolution_clock::now();
@@ -521,7 +520,6 @@ int main() {
 			cmd.cmdPushConstants(push);
 			cmd.cmdBindIndexBuffer(cubeIndexBuffer);
 			cmd.cmdDrawIndexed(cubeIndices.size());
-			cmd.cmdEndRendering();
 		});
 
 		graph.addGraphicsPass("gui")
@@ -530,10 +528,8 @@ int main() {
 			.loadOp = mythril::LoadOp::LOAD,
 			.storeOp = mythril::StoreOp::STORE
 		})
-		.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
-			cmd.cmdBeginRendering();
+		.execute([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdDrawImGui();
-			cmd.cmdEndRendering();
 		});
 
 		graph.addIntermediate("presentation")

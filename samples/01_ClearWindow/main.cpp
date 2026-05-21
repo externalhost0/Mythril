@@ -45,10 +45,8 @@ int main() {
 			.loadOp = mythril::LoadOp::CLEAR,
 			.storeOp = mythril::StoreOp::STORE
 		})
-		.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
+		.execute([&](mythril::CommandBuffer& cmd) {
 			// do absolutely nothing, just begin and end a pass
-			cmd.cmdBeginRendering();
-			cmd.cmdEndRendering();
 		});
 
 		graph.compile(*ctx);

@@ -4,9 +4,8 @@
 
 #pragma once
 
-#include "Invalids.h"
-
 #include <cassert>
+#include <cstdint>
 #include <vector>
 
 namespace mythril {
@@ -51,7 +50,7 @@ namespace mythril {
 	template<typename HandleType, typename ActualObject>
 	class HandlePool {
 	private:
-		static constexpr uint32_t kListEndSentinel = Invalid<uint32_t>;
+		static constexpr uint32_t kListEndSentinel = 0xFFFFFFFFu;
 
 		struct PoolEntry {
 			explicit PoolEntry(ActualObject&& obj) :

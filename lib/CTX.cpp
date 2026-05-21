@@ -21,6 +21,8 @@
 #include <slang/slang-cpp-types.h>
 #include <slang/slang.h>
 
+#include "CommandBuffer.h"
+
 namespace mythril {
 	// https://docs.shader-slang.org/en/latest/external/slang/docs/user-guide/03-convenience-features.html#descriptorhandle-for-bindless-descriptor-access:~:text=None%20provides%20the%20following%20bindings%20for%20descriptor%20types%3A-,Enum,-Value
 	namespace BindlessSpaceIndex {
@@ -86,7 +88,13 @@ namespace mythril {
 		ASSERT(this->_vkDevice != VK_NULL_HANDLE);
 
 		// ACTUAL INIT
-		this->_imm = std::make_unique<ImmediateCommands>(this->_vkDevice, this->_graphicsQueueFamilyIndex);
+		this->_immGraphics = std::make_unique<ImmediateCommands>(this->_vkDevice, this->_graphicsQueueFamilyIndex, this->_vkGraphicsQueue);
+		if (_computeQueueFamilyIndex != _graphicsQueueFamilyIndex && _vkComputeQueue)
+			this->_immAsyncCompute = std::make_unique<ImmediateCommands>(this->_vkDevice, this->_computeQueueFamilyIndex, this->_vkComputeQueue);
+		if (_transferQueueFamilyIndex != _graphicsQueueFamilyIndex &&
+			_transferQueueFamilyIndex != _computeQueueFamilyIndex && _vkTransferQueue)
+			this->_immAsyncTransfer = std::make_unique<ImmediateCommands>(this->_vkDevice, this->_transferQueueFamilyIndex, this->_vkTransferQueue);
+
 		this->_staging = std::make_unique<StagingDevice>(*this);
 		// DEFAULT VULKAN OBJECTS
 		{
@@ -193,7 +201,9 @@ namespace mythril {
 		_computePipelinePool.clear();
 		// make sure imm tasks are complete
 		waitDeferredTasks();
-		_imm.reset(nullptr);
+		_immAsyncTransfer.reset(nullptr);
+		_immAsyncCompute.reset(nullptr);
+		_immGraphics.reset(nullptr);
 
 		// destroy slang compiler
 		_slangCompiler.destroy();
@@ -405,7 +415,7 @@ namespace mythril {
 			};
 		}
 		if (numWrites) {
-			_imm->wait(_imm->getLastSubmitHandle());
+			_immGraphics->wait(_immGraphics->getLastSubmitHandle());
 			vkUpdateDescriptorSets(_vkDevice, numWrites, write, 0, nullptr);
 		}
 		_awaitingCreation = false;
@@ -1294,9 +1304,9 @@ namespace mythril {
 			return;
 		}
 		ASSERT(image->_vkCurrentImageLayout != VK_IMAGE_LAYOUT_UNDEFINED);
-		const ImmediateCommands::CommandBufferWrapper& wrapper = _imm->acquire();
+		const ImmediateCommands::CommandBufferWrapper& wrapper = _immGraphics->acquire();
 		image->generateMipmap(wrapper._cmdBuf);
-		_imm->submit(wrapper);
+		_immGraphics->submit(wrapper);
 	}
 	void CTX::upload(BufferHandle handle, const void* data, size_t size, size_t offset) {
 		MYTH_PROFILER_FUNCTION();
@@ -1386,13 +1396,30 @@ namespace mythril {
 		);
 	}
 
+
+	CommandBuffer CTX::createActiveCommand(CommandBuffer::Type type) {
+		_staging->resetPending();
+		if (type == CommandBuffer::Type::Graphics) {
+			const VkSemaphore acquire_semaphore = _swapchain->acquire();
+			_immGraphics->waitSemaphore(acquire_semaphore);
+			wrappedBackBuffer.updateHandle(this, _swapchain->getCurrentSwapchainTextureHandle());
+		}
+		return CommandBuffer{this, type};
+	}
+	SubmitHandle CTX::submitActiveCommand(CommandBuffer& cmd) {
+		ASSERT(cmd._ctx);
+		ASSERT(cmd._wrapper);
+
+
+	}
+
 	CommandBuffer& CTX::acquireCommand(CommandBuffer::Type type) {
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_ACQUIRE);
 		ASSERT_MSG(!_currentCommandBuffer._ctx, "Cannot open more than 1 CommandBuffer simultaneously!");
 		_staging->resetPending();
 		if (type == CommandBuffer::Type::Graphics) {
 			VkSemaphore acquire_semaphore = _swapchain->acquire();
-			_imm->waitSemaphore(acquire_semaphore);
+			_immGraphics->waitSemaphore(acquire_semaphore);
 			wrappedBackBuffer.updateHandle(this, _swapchain->getCurrentSwapchainTextureHandle());
 		}
 		_currentCommandBuffer = CommandBuffer(this, type);
@@ -1411,13 +1438,13 @@ namespace mythril {
 			const uint32_t frameIndex = _swapchain->getCurrentFrameIndex();
 			const uint64_t signalValue = _currentFrameNumber + _swapchain->getNumOfSwapchainImages();
 			_swapchain->_timelineWaitValues[frameIndex] = signalValue;
-			_imm->signalSemaphore(_timelineSemaphore, signalValue);
+			_immGraphics->signalSemaphore(_timelineSemaphore, signalValue);
 		}
-		cmd._lastSubmitHandle = _imm->submit(*cmd._wrapper);
+		cmd._lastSubmitHandle = _immGraphics->submit(*cmd._wrapper);
 		_staging->onGraphSubmit(cmd._lastSubmitHandle);
 		if (isPresenting) {
 			ASSERT(_texturePool.get(_swapchain->getCurrentSwapchainTextureHandle())->getImageLayout() == VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
-			_swapchain->present(_imm->acquireLastSubmitSemaphore());
+			_swapchain->present(_immGraphics->acquireLastSubmitSemaphore());
 		}
 		_currentFrameNumber++;
 		processDeferredTasks();
@@ -1427,7 +1454,7 @@ namespace mythril {
 	}
 	void CTX::deferTask(std::packaged_task<void()>&& task, SubmitHandle handle) const {
 		if (handle.empty()) {
-			handle = _imm->getNextSubmitHandle();
+			handle = _immGraphics->getNextSubmitHandle();
 		}
 		_deferredTasks.emplace_back(std::move(task), handle, _currentFrameNumber);
 	}
@@ -1443,7 +1470,7 @@ namespace mythril {
 		if (isHeadless()) {
 			auto it = _deferredTasks.begin();
 			while (it != _deferredTasks.end()) {
-				if (!_imm->isReady(it->_handle, false))
+				if (!_immGraphics->isReady(it->_handle, false))
 					break;
 				(it++)->_task();
 			}
@@ -1455,7 +1482,7 @@ namespace mythril {
 
 		auto it = _deferredTasks.begin();
 		while (it != _deferredTasks.end() && it->_frameNumber < safeFrameThreshold) {
-			if (!_imm->isReady(it->_handle, false)) {
+			if (!_immGraphics->isReady(it->_handle, false)) {
 				break;
 			}
 			(it++)->_task();
@@ -1464,7 +1491,7 @@ namespace mythril {
 	}
 	void CTX::waitDeferredTasks() {
 		for (auto& task: _deferredTasks) {
-			_imm->wait(task._handle);
+			_immGraphics->wait(task._handle);
 			task._task();
 		}
 		_deferredTasks.clear();
@@ -1561,33 +1588,38 @@ namespace mythril {
 	}
 } // namespace mythril
 #ifdef MYTH_ENABLED_IMGUI
-namespace ImGui {
-	void Image(mythril::TextureHandle texHandle, mythril::SamplerHandle samplerHandle, const ImVec2& image_size, const ImVec2& uv0, const ImVec2& uv1) {
+namespace mythril {
+	void ImGuiPlugin::renderImage(CTX& ctx, VkSampler defaultSampler, TextureHandle texHandle, SamplerHandle samplerHandle, const ImVec2& image_size, const ImVec2& uv0, const ImVec2& uv1) {
 		ASSERT_MSG(texHandle.valid(), "Texture handle is invalid!");
-		auto mydata = static_cast<mythril::MyUserData*>(ImGui::GetIO().UserData);
+		auto mydata = static_cast<MyUserData*>(ImGui::GetIO().UserData);
+
 		ImVec2 size;
 		if (image_size.x <= 0 && image_size.y <= 0) {
-			const mythril::Dimensions dims = mydata->ctx->view(texHandle).getDimensions();
+			const Dimensions dims = ctx.view(texHandle).getDimensions();
 			size = {static_cast<float>(dims.width), static_cast<float>(dims.height)};
 		} else {
 			size = image_size;
 		}
-		const mythril::AllocatedTexture& texture = mydata->ctx->view(texHandle);
+		const AllocatedTexture& texture = ctx.view(texHandle);
 
-		// will always be set
 		VkDescriptorSet im_image_ds;
-		// when a handle has expired or is no longer valid, we need to recreate it in place
 		if (const auto iterator = mydata->handleMap.find(texHandle); iterator != mydata->handleMap.end()) {
 			im_image_ds = iterator->second;
 		} else {
 			ASSERT_MSG(texture.isSampledImage(), "Texture '{}' must have sampled flag!", texture.getDebugName());
 			VkDescriptorSet ds = ImGui_ImplVulkan_AddTexture(
-			        samplerHandle.valid() ? mydata->ctx->view(samplerHandle).getSampler() : mydata->sampler, texture.getImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+			        samplerHandle.valid() ? ctx.view(samplerHandle).getSampler() : defaultSampler, texture.getImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
 			);
 			mydata->handleMap.insert({texHandle, ds});
 			im_image_ds = ds;
 		}
 		ImGui::Image(reinterpret_cast<ImTextureID>(im_image_ds), size, uv0, uv1);
+	}
+} // namespace mythril
+namespace ImGui {
+	void Image(mythril::TextureHandle texHandle, mythril::SamplerHandle samplerHandle, const ImVec2& image_size, const ImVec2& uv0, const ImVec2& uv1) {
+		auto mydata = static_cast<mythril::MyUserData*>(ImGui::GetIO().UserData);
+		mythril::ImGuiPlugin::renderImage(*mydata->ctx, mydata->sampler, texHandle, samplerHandle, image_size, uv0, uv1);
 	}
 	void Image(const mythril::Texture& texture, const mythril::Texture::ViewKey& viewKey, const ImVec2& image_size, const ImVec2& uv0, const ImVec2& uv1) {
 		Image(texture.handle(viewKey), mythril::SamplerHandle{}, image_size, uv0, uv1);

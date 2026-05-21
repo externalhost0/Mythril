@@ -60,10 +60,8 @@ int main() {
 			.loadOp = mythril::LoadOp::CLEAR,
 			.storeOp = mythril::StoreOp::STORE
 		})
-		.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
-			cmd.cmdBeginRendering();
+		.execute([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdDrawImGui();
-			cmd.cmdEndRendering();
 		});
 		graph.addIntermediate("present")
 		.blit(colorTarget, ctx->getBackBufferTexture())

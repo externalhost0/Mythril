@@ -11,9 +11,17 @@
 #include <vector>
 #include <volk.h>
 
+// stuff declared here is read easily compared to RenderGraphInternal.h
 namespace mythril {
 	struct BasePassBuilder;
 	class CommandBuffer;
+	// possible queues used by a pass
+	enum class QueueAffinity {
+		Graphics,
+		AsyncCompute,
+		AsyncTransfer,
+	};
+	static constexpr int kQueueCount = 3;
 
 	struct ClearColor {
 		float r, g, b, a;
@@ -92,7 +100,7 @@ namespace mythril {
 		TransferWrite,
 	};
 	// not actually passed directly to dependency calls right now
-	struct DependencyDesc {
+	struct TextureDependencyDesc {
 		TextureDesc texDesc;
 		Layout desiredLayout = Layout::READ;
 	};
@@ -107,14 +115,17 @@ namespace mythril {
 			Graphics,
 			Compute,
 			Intermediate,
-			Presentation
 		};
 		// these first three members are sent straight over to PassCompiled
 		std::string name;
 		Type type;
 		std::function<void(CommandBuffer&)> executeCallback{};
 		std::vector<AttachmentDesc> attachmentOperations;
-		std::vector<DependencyDesc> dependencyOperations;
+		std::vector<TextureDependencyDesc> textureDependencyOperations;
 		std::vector<BufferDependencyDesc> bufferDependencyOperations;
+		uint32_t layerCount = 1;
+		uint32_t viewMask = 0;
+		std::function<bool()> conditionCallback{};
+    	QueueAffinity queue;
 	};
 } // namespace mythril

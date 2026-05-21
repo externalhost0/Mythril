@@ -4,8 +4,8 @@
 
 #pragma once
 
-#include <volk.h>
 #include <cstdint>
+#include <volk.h>
 
 namespace mythril {
 	struct SwapchainSpec {

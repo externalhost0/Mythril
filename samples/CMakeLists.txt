@@ -3,24 +3,19 @@ project(mythril_samples LANGUAGES C CXX)
 
 option(FORCE_REBUILD_SAMPLES "Always recompile samples" ON)
 
-# Samples use SDL3 directly. The library no longer leaks SDL3 publicly, so we
-# fetch it here. If a parent (e.g. the ImGui plugin path) already declared
-# SDL3, we reuse that target instead of double-fetching.
-if(NOT TARGET SDL3::SDL3)
-    CPMAddPackage(
-            NAME SDL3
-            GITHUB_REPOSITORY "libsdl-org/SDL"
-            GIT_TAG release-3.4.0
-            OPTIONS
-            "SDL_SHARED ON"
-            "SDL_STATIC OFF"
-            "SDL_TEST_LIBRARY OFF"
-            "SDL_TESTS OFF"
-            "SDL_DISABLE_INSTALL ON"
-            "SDL_DISABLE_INSTALL_DOCS ON"
-            "SDL_INSTALL_TESTS OFF"
-    )
-endif()
+CPMAddPackage(
+        NAME SDL3
+        GITHUB_REPOSITORY "libsdl-org/SDL"
+        GIT_TAG release-3.4.0
+        OPTIONS
+        "SDL_SHARED ON"
+        "SDL_STATIC OFF"
+        "SDL_TEST_LIBRARY OFF"
+        "SDL_TESTS OFF"
+        "SDL_DISABLE_INSTALL ON"
+        "SDL_DISABLE_INSTALL_DOCS ON"
+        "SDL_INSTALL_TESTS OFF"
+)
 
 # ==================== Sample Creation Macro ====================
 macro(ADD_SAMPLE sample_name)
@@ -96,6 +91,13 @@ CPMAddPackage(
         GIT_TAG master
         DOWNLOAD_ONLY True
 )
+if(MYTH_ENABLE_IMGUI_STANDARD OR MYTH_ENABLE_IMGUI_DOCKING)
+    add_library(imgui_sdl3_backend STATIC
+            ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp
+    )
+    target_link_libraries(imgui_sdl3_backend PUBLIC imgui SDL3::SDL3)
+endif()
+
 if(imguizmo_ADDED AND (MYTH_ENABLE_IMGUI_STANDARD OR MYTH_ENABLE_IMGUI_DOCKING))
     file(GLOB IMGUIZMO_SOURCES ${imguizmo_SOURCE_DIR}/*.cpp)
     file(GLOB IMGUIZMO_HEADERS ${imguizmo_SOURCE_DIR}/*.h)
@@ -111,9 +113,9 @@ set(_sample_args_01_ClearWindow        "")
 set(_sample_args_02_Cube               "LIBS;glm")
 set(_sample_args_03_CubeMSAA           "LIBS;glm")
 set(_sample_args_04_PostProcessingCube "LIBS;glm")
-set(_sample_args_05_ImGui              "")
-set(_sample_args_06_ComplexShader      "LIBS;glm")
-set(_sample_args_07_CompleteScene      "LIBS;glm;fastgltf;stb_image;imguizmo")
+set(_sample_args_05_ImGui              "LIBS;imgui_sdl3_backend")
+set(_sample_args_06_ComplexShader      "LIBS;glm;imgui_sdl3_backend")
+set(_sample_args_07_CompleteScene      "LIBS;glm;fastgltf;stb_image;imguizmo;imgui_sdl3_backend")
 
 foreach(sample IN LISTS MYTH_SAMPLES_TO_BUILD)
     ADD_SAMPLE(${sample} ${_sample_args_${sample}})

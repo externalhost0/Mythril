@@ -21,12 +21,16 @@ namespace mythril {
 		ASSERT_MSG(args.width > 0 && args.height > 0, "Swapchain width & height must both be greater than 0!");
 		uint16_t width = args.width, height = args.height;
 
-		uint32_t formatCount = 0;
-		VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(_ctx._vkPhysicalDevice, _ctx._vkSurfaceKHR, &formatCount, nullptr));
-		ASSERT_MSG(formatCount > 0, "No surface formats available for swapchain!");
-		std::vector<VkSurfaceFormatKHR> formats(formatCount);
-		VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(_ctx._vkPhysicalDevice, _ctx._vkSurfaceKHR, &formatCount, formats.data()));
+		std::vector<VkSurfaceFormatKHR> formats = [](VkPhysicalDevice vk_physical_device, VkSurfaceKHR vk_surface_khr) {
+			uint32_t formatCount = 0;
+			VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(vk_physical_device, vk_surface_khr, &formatCount, nullptr));
+			ASSERT_MSG(formatCount > 0, "No surface formats available for swapchain!");
+			std::vector<VkSurfaceFormatKHR> result(formatCount);
+			VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(vk_physical_device, vk_surface_khr, &formatCount, result.data()));
+			return result;
+		}(_ctx._vkPhysicalDevice, _ctx._vkSurfaceKHR);
 
+		// get the correct colorspace and surface format
 		VkSurfaceFormatKHR surfaceFormat = formats[0];
 		if (args.format != VK_FORMAT_MAX_ENUM) {
 			for (const auto& f: formats) {
@@ -47,11 +51,13 @@ namespace mythril {
 		VkSurfaceCapabilitiesKHR caps = {};
 		VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(_ctx._vkPhysicalDevice, _ctx._vkSurfaceKHR, &caps));
 
-		VkFormatProperties2 formatProps2 = {.sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2};
-		vkGetPhysicalDeviceFormatProperties2(_ctx._vkPhysicalDevice, surfaceFormat.format, &formatProps2);
+		const bool storageOk = [](VkPhysicalDevice vk_physical_device, VkFormat format, VkImageUsageFlags supported_usage_flags) {
+			VkFormatProperties2 formatProps2 = {.sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2};
+			vkGetPhysicalDeviceFormatProperties2(vk_physical_device, format, &formatProps2);
+			return (supported_usage_flags & VK_IMAGE_USAGE_STORAGE_BIT) != 0 && (formatProps2.formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT) != 0;
+		}(_ctx._vkPhysicalDevice, surfaceFormat.format, caps.supportedUsageFlags);
 
-		const bool storageOk = (caps.supportedUsageFlags & VK_IMAGE_USAGE_STORAGE_BIT) != 0 && (formatProps2.formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT) != 0;
-
+		// the swapchain needs TRANSFER_DST
 		VkImageUsageFlags extraImageUsage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 		if (storageOk) {
 			extraImageUsage |= VK_IMAGE_USAGE_STORAGE_BIT;
@@ -92,7 +98,10 @@ namespace mythril {
 		ASSERT((caps.minImageCount <= _numSwapchainImages) && (_numSwapchainImages <= caps.maxImageCount));
 
 		const VkImageUsageFlags usage_flags =
-		        VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | (storageOk ? VK_IMAGE_USAGE_STORAGE_BIT : VkImageUsageFlags{});
+			VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+				VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+					VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+						(storageOk ? VK_IMAGE_USAGE_STORAGE_BIT : VkImageUsageFlags{});
 
 		std::vector<VkImage> images = vkbswapchain.get_images().value();
 		std::vector<VkImageView> imageviews = vkbswapchain.get_image_views().value();

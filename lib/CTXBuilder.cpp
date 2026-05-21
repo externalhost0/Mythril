@@ -16,6 +16,7 @@
 #include <VkBootstrap.h>
 #include <vk_mem_alloc.h>
 #include <volk.h>
+#include <slang/slang.h>
 
 namespace mythril {
 	struct VulkanInstanceInputs {
@@ -53,22 +54,24 @@ namespace mythril {
 		    .pValues = &kLogLevel,
 		};
 #endif
-		vkb::Result<vkb::Instance> instanceResult = instanceBuilder.set_app_name(inputs.appName)
-		                                                    .set_app_version(inputs.appVersion.getVKVersion())
-		                                                    .set_engine_name(inputs.engineName)
-		                                                    .set_engine_version(inputs.engineVersion.getVKVersion())
-		                                                    .require_api_version(VK_API_VERSION_1_3)
-		                                                    .set_minimum_instance_version(1, 4, 304)
-		                                                    .request_validation_layers(enableValidation)
-		                                                    .set_headless(enableHeadless)
+		vkb::Result<vkb::Instance> instanceResult = instanceBuilder
+			.set_app_name(inputs.appName)
+			.set_app_version(inputs.appVersion.getVKVersion())
+			.set_engine_name(inputs.engineName)
+			.set_engine_version(inputs.engineVersion.getVKVersion())
+			.require_api_version(VK_API_VERSION_1_3)
+			.set_minimum_instance_version(1, 4, 335)
+			.request_validation_layers(enableValidation)
+			.set_headless(enableHeadless)
 #if defined __APPLE__
-		                                                    .add_layer_setting(kMvkDebugLevel)
+			.add_layer_setting(kMvkDebugLevel)
 #endif
 #ifdef DEBUG
-		                                                    // we dont need to worry about conditionally having this be called or not depending on enableValidation, its handled internally
-		                                                    .use_default_debug_messenger()
+		// we dont need to worry about conditionally having this be called or not depending on enableValidation, its handled internally
+			.use_default_debug_messenger()
 #endif
-		                                                    .build();
+		.build();
+
 		ASSERT_MSG(instanceResult.has_value(), "Failed to create Instance (VkInstance). Error: {}", instanceResult.error().message());
 		vkb::Instance vkb_instance = instanceResult.value();
 		volkLoadInstance(vkb_instance.instance);
@@ -83,19 +86,22 @@ namespace mythril {
 		ASSERT(inputs.vkbInstance.instance != VK_NULL_HANDLE);
 
 		vkb::PhysicalDeviceSelector physicalDeviceSelector{inputs.vkbInstance};
-		vkb::Result<vkb::PhysicalDevice> physicalDeviceResult = physicalDeviceSelector.set_minimum_version(1, 3).set_surface(inputs.vkSurface).select();
+		vkb::Result<vkb::PhysicalDevice> physicalDeviceResult = physicalDeviceSelector
+		.set_minimum_version(1, 3)
+		.set_surface(inputs.vkSurface)
+		.select();
 		ASSERT_MSG(physicalDeviceResult.has_value(), "Failed to select Physical Device (VkPhysicalDevice). Error: {}", physicalDeviceResult.error().message());
 		return physicalDeviceResult.value();
 	}
 	struct VulkanQueueOutputs {
 		VkQueue vkGraphicsQueue = VK_NULL_HANDLE;
-		uint32_t graphicsQueueFamilyIndex = Invalid<uint32_t>;
+		uint32_t graphicsQueueFamilyIndex = -1;
 		VkQueue vkPresentQueue = VK_NULL_HANDLE;
-		uint32_t presentQueueFamilyIndex = Invalid<uint32_t>;
+		uint32_t presentQueueFamilyIndex = -1;
 		VkQueue vkComputeQueue = VK_NULL_HANDLE;
-		uint32_t computeQueueFamilyIndex = Invalid<uint32_t>;
+		uint32_t computeQueueFamilyIndex = -1;
 		VkQueue vkTransferQueue = VK_NULL_HANDLE;
-		uint32_t transferQueueFamilyIndex = Invalid<uint32_t>;
+		uint32_t transferQueueFamilyIndex = -1;
 	};
 
 	static VkDevice CreateVulkanLogicalDevice(
@@ -362,9 +368,25 @@ missing_features.append("\n\t(" version ") " #feature);
 			p.sType = VK_STRUCTURE_TYPE_QUEUE_FAMILY_PROPERTIES_2;
 		vkGetPhysicalDeviceQueueFamilyProperties2(physical_device, &queueFamilyCount, props.data());
 
+		// log available queue families
+		//for (uint32_t i = 0; i < queueFamilyCount; i++) {
+		//	const VkQueueFamilyProperties& p = props[i].queueFamilyProperties;
+		//	LOG_SYSTEM_NOSOURCE(LogType::Info,
+		//		"Queue Family [{}]: count={} flags={}{}{}{}{}",
+		//		i,
+		//		p.queueCount,
+		//		(p.queueFlags & VK_QUEUE_GRAPHICS_BIT)       ? "GRAPHICS "  : "",
+		//		(p.queueFlags & VK_QUEUE_COMPUTE_BIT)         ? "COMPUTE "   : "",
+		//		(p.queueFlags & VK_QUEUE_TRANSFER_BIT)        ? "TRANSFER "  : "",
+		//		(p.queueFlags & VK_QUEUE_SPARSE_BINDING_BIT)  ? "SPARSE "    : "",
+		//		(p.queueFlags & VK_QUEUE_PROTECTED_BIT)       ? "PROTECTED " : ""
+		//	);
+		//}
+
+		// now we make decisions for what queues we want
 		// for graphics, transfer, compute
 		auto findBestFamilyIndex = [&props](VkQueueFlags requiredFlags, VkQueueFlags avoidedFlags) -> uint32_t {
-			uint32_t fallback = Invalid<uint32_t>;
+			uint32_t fallback = MYTHRIL_INVALID_U32;
 			for (uint32_t i = 0; i < static_cast<uint32_t>(props.size()); i++) {
 				const VkQueueFamilyProperties& p = props[i].queueFamilyProperties;
 				if (!p.queueCount)
@@ -373,15 +395,15 @@ missing_features.append("\n\t(" version ") " #feature);
 					continue;
 				if ((p.queueFlags & avoidedFlags) == 0)
 					return i;
-				if (fallback == Invalid<uint32_t>)
+				if (fallback == MYTHRIL_INVALID_U32)
 					fallback = i;
 			}
 			return fallback; // might still be Invalid<>
 		};
 		// for present
 		auto findBestPresentFamilyIndex = [&](VkSurfaceKHR surface) -> uint32_t {
-			uint32_t fallback = Invalid<uint32_t>;
-			uint32_t fallbackWithGraphics = Invalid<uint32_t>;
+			uint32_t fallback = MYTHRIL_INVALID_U32;
+			uint32_t fallbackWithGraphics = MYTHRIL_INVALID_U32;
 
 			for (uint32_t i = 0; i < static_cast<uint32_t>(props.size()); i++) {
 				const VkQueueFamilyProperties& p = props[i].queueFamilyProperties;
@@ -397,13 +419,13 @@ missing_features.append("\n\t(" version ") " #feature);
 
 				if (p.queueFlags == 0)
 					return i;
-				if (hasGraphics && fallbackWithGraphics == Invalid<uint32_t>)
+				if (hasGraphics && fallbackWithGraphics == MYTHRIL_INVALID_U32)
 					fallbackWithGraphics = i;
-				else if (fallback == Invalid<uint32_t>)
+				else if (fallback == MYTHRIL_INVALID_U32)
 					fallback = i;
 			}
 			// prefer presentation family that supports graphics rather than just graphics queue family
-			return fallbackWithGraphics != Invalid<uint32_t> ? fallbackWithGraphics : fallback;
+			return fallbackWithGraphics != MYTHRIL_INVALID_U32 ? fallbackWithGraphics : fallback;
 		};
 
 		uint32_t graphics = findBestFamilyIndex(VK_QUEUE_GRAPHICS_BIT, 0);
@@ -412,13 +434,13 @@ missing_features.append("\n\t(" version ") " #feature);
 		uint32_t present = 0;
 		if (vkbPhysicalDevice.surface != VK_NULL_HANDLE) {
 			present = findBestPresentFamilyIndex(vkbPhysicalDevice.surface);
-			ASSERT_MSG(present != Invalid<uint32_t>, "No present queue family found");
+			ASSERT_MSG(present != MYTHRIL_INVALID_U32, "No present queue family found");
 		}
-		ASSERT_MSG(graphics != Invalid<uint32_t>, "No graphics queue family found");
+		ASSERT_MSG(graphics != MYTHRIL_INVALID_U32, "No graphics queue family found");
 		// if no dedicated compute/transfer family exists, share with graphics
-		if (compute == Invalid<uint32_t>)
+		if (compute == MYTHRIL_INVALID_U32)
 			compute = graphics;
-		if (transfer == Invalid<uint32_t>)
+		if (transfer == MYTHRIL_INVALID_U32)
 			transfer = graphics;
 
 		struct QueueAllocation {
@@ -439,6 +461,15 @@ missing_features.append("\n\t(" version ") " #feature);
 		QueueAllocation computeAlloc = allocateQueue(compute);
 		QueueAllocation transferAlloc = allocateQueue(transfer);
 		QueueAllocation presentAlloc = allocateQueue(present);
+
+		// check what queue families are actually used
+		//LOG_SYSTEM_NOSOURCE(LogType::Info,
+		//	"Queue Assignments — Graphics: family={} idx={} | Compute: family={} idx={} | Transfer: family={} idx={} | Present: family={} idx={}",
+		//	graphicsAlloc.familyIndex, graphicsAlloc.queueIndex,
+		//	computeAlloc.familyIndex,  computeAlloc.queueIndex,
+		//	transferAlloc.familyIndex, transferAlloc.queueIndex,
+		//	presentAlloc.familyIndex,  presentAlloc.queueIndex
+		//);
 
 		std::vector<std::vector<float>> queuePriorities;
 		std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
@@ -598,13 +629,15 @@ missing_features.append("\n\t(" version ") " #feature);
 			ctx->_enabledExtensionNames.insert(ext);
 		}
 
-		// queues
+		// queues, required + optional
 		ctx->_vkGraphicsQueue = queues.vkGraphicsQueue;
 		ctx->_graphicsQueueFamilyIndex = queues.graphicsQueueFamilyIndex;
-		ctx->_vkPresentQueue = queues.vkPresentQueue;
-		ctx->_presentQueueFamilyIndex = queues.presentQueueFamilyIndex;
 		ctx->_vkComputeQueue = queues.vkComputeQueue;
 		ctx->_computeQueueFamilyIndex = queues.computeQueueFamilyIndex;
+		ctx->_vkTransferQueue = queues.vkTransferQueue;
+		ctx->_transferQueueFamilyIndex = queues.transferQueueFamilyIndex;
+		ctx->_vkPresentQueue = queues.vkPresentQueue;
+		ctx->_presentQueueFamilyIndex = queues.presentQueueFamilyIndex;
 
 		// defered initialization of the CTX instance
 		ctx->construct();

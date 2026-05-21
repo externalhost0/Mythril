@@ -16,13 +16,9 @@
 #include <unordered_map>
 #include <vector>
 
-
 namespace mythril {
-    struct DependencyDesc;
-    struct AttachmentDesc;
-    class CommandBuffer;
-    class CTX;
     class RenderGraph;
+
 
     // GPU pipeline stage/access pair tracked per buffer in the render graph.
     struct StageAccess {
@@ -57,41 +53,69 @@ namespace mythril {
 
 
     inline void add(PassDesc& passSource, const TextureDesc& desc, const Layout layout) {
-        passSource.dependencyOperations.emplace_back(desc, layout);
+        passSource.textureDependencyOperations.emplace_back(desc, layout);
     }
     inline void add(PassDesc& passSource, Buffer& buffer, const BufferAccess access) {
         passSource.bufferDependencyOperations.push_back({buffer, access});
+    }
+    inline void add(PassDesc& passSource, const AttachmentDesc& desc) {
+        passSource.attachmentOperations.push_back(desc);
     }
 
     class GraphicsPassBuilder {
     public:
         GraphicsPassBuilder() = delete;
         GraphicsPassBuilder(RenderGraph& rGraph, const char* pName)
-            : base(rGraph, pName, PassDesc::Type::Graphics) {}
+    	: base(rGraph, pName, PassDesc::Type::Graphics) {}
 #ifdef DEBUG
         ~GraphicsPassBuilder();
 #endif
 
         [[nodiscard]] GraphicsPassBuilder& attachment(const AttachmentDesc& desc) {
-            this->base._passSource.attachmentOperations.push_back(desc);
+            add(this->base._passSource, desc);
             return *this;
         }
+    	// dependency for texture
         [[nodiscard]] GraphicsPassBuilder& dependency(const TextureDesc& texDesc, const Layout layout = Layout::READ) {
             add(this->base._passSource, texDesc, layout);
             return *this;
         }
+    	// dependency for buffer
         [[nodiscard]] GraphicsPassBuilder& dependency(Buffer& buffer, const BufferAccess access) {
             add(this->base._passSource, buffer, access);
             return *this;
         }
+    	// c style overload
         [[nodiscard]] GraphicsPassBuilder& dependency(Texture* tex, int count, const Layout layout = Layout::READ) {
             for (int i = 0; i < count; i++) {
                 add(this->base._passSource, tex[i], layout);
             }
             return *this;
         }
+    	// span overload
+    	[[nodiscard]] GraphicsPassBuilder& dependency(std::span<Texture* const> textures, const Layout layout = Layout::READ) {
+            for (auto* tex : textures)
+                add(this->base._passSource, *tex, layout);
+	        return *this;
+        }
+    	// span overload
+        [[nodiscard]] GraphicsPassBuilder& attachments(const std::span<const AttachmentDesc> descs) {
+            for (const auto& desc : descs)
+                add(this->base._passSource, desc);
+            return *this;
+        }
 
-        void setExecuteCallback(const std::function<void(CommandBuffer& cmd)>& callback) {
+        [[nodiscard]] GraphicsPassBuilder& condition(std::function<bool()> fn) {
+            this->base._passSource.conditionCallback = std::move(fn);
+            return *this;
+        }
+    	[[nodiscard]] GraphicsPassBuilder& multiview(uint32_t layerCount, uint32_t viewMask) {
+            this->base._passSource.layerCount = layerCount;
+            this->base._passSource.viewMask = viewMask;
+	        return *this;
+        }
+
+        void execute(const std::function<void(CommandBuffer& cmd)>& callback) {
             base.setExecuteCallback(callback);
         }
     private:
@@ -115,14 +139,26 @@ namespace mythril {
             add(this->base._passSource, buffer, access);
             return *this;
         }
+    	// c style overload
         [[nodiscard]] ComputePassBuilder& dependency(Texture* tex, int count, const Layout layout = Layout::GENERAL) {
             for (int i = 0; i < count; i++) {
                 add(this->base._passSource, tex[i], layout);
             }
             return *this;
         }
+    	// span overload
+        [[nodiscard]] ComputePassBuilder& dependency(const std::span<Texture* const> textures, const Layout layout = Layout::GENERAL) {
+            for (auto* tex : textures)
+                add(this->base._passSource, *tex, layout);
+            return *this;
+        }
 
-        void setExecuteCallback(const std::function<void(CommandBuffer& cmd)>& callback) {
+    	[[nodiscard]] ComputePassBuilder& async() {
+        	this->base._passSource.queue = QueueAffinity::AsyncCompute;
+	        return *this;
+        }
+
+        void execute(const std::function<void(CommandBuffer& cmd)>& callback) {
             base.setExecuteCallback(callback);
         }
     private:
@@ -142,11 +178,21 @@ namespace mythril {
         IntermediateBuilder& dependency(Buffer& buffer, BufferAccess access);
         IntermediateBuilder& update(Buffer& buffer, std::function<UploadData()> dataCb, size_t dstOffset = 0);
         IntermediateBuilder& upload(Buffer& buffer, std::function<UploadData()> dataCb, size_t dstOffset = 0);
-        void finish();
+        void finish() const;
     private:
         BasePassBuilder base;
     };
 
+	// placeholder for Phase 3 timeline-semaphore cross-queue sync data
+	struct CrossQueueSync {};
+
+	struct ExecutionSchedule {
+		// maps a pass index to its depth level: passDepth[passIdx] = depth
+		std::unordered_map<uint32_t, uint32_t> pass_depths;
+		// groups pass indices together by layer, indices are of _compiledPasses:
+		// layers[0] = { passA, passB }
+		std::vector<std::vector<uint32_t>> layers;
+	};
     class RenderGraph {
     public:
         RenderGraph();
@@ -171,16 +217,17 @@ namespace mythril {
         // called sparingly, perhaps once
         void compile(CTX& rCtx);
         // called every frame
-        void execute(CommandBuffer& cmd);
+    	void execute(CTX& rCtx);
+    	void execute(CommandBuffer& cmd);
         void trackWindowSized(Texture& texture);
         void trackWindowSized(Texture& texture, std::function<Dimensions(Dimensions)> scaleFn);
         void resizeTrackedWindowSized(const Dimensions& swapchainDimensions) const;
-
     private:
         void PerformBarrierTransitions(CommandBuffer& cmd, const CompiledPass& compiledPass);
         static void processResourceAccess(const TextureDesc& texDesc, VkImageLayout desiredLayout, CompiledPass& outPass, std::string_view passName);
         static void processPassResources(const PassDesc& passDesc, CompiledPass& outPass);
-        void processAttachments(const CTX& rCtx, const PassDesc& pass_desc, CompiledPass& outPass);
+		static void processAttachments(const CTX& rCtx, const PassDesc& pass_desc, CompiledPass& outPass);
+    	// this should not be const lol
         void performDryRun(CTX& rCtx);
         // every texture used in the framegraph needs proper tracking to ensure its layout is correct...
         // at every pass, even more necessary for textures that request individual mips/layers
@@ -199,6 +246,12 @@ namespace mythril {
         bool _hasCompiled = false;
         // epoch snapshot from CTX at last compile(). execute() auto-recompiles on mismatch.
         uint64_t _compiledEpoch = 0;
+
+    	ExecutionSchedule _schedule;
+    	// per-layer, per-queue: which compiled-pass indices to record
+    	std::vector<std::array<std::vector<uint32_t>, kQueueCount>> _layerByQueue;
+    	// per-layer-boundary: which queues must wait on which producer queues' timelines
+    	std::vector<CrossQueueSync> _layerSyncs;
 
         friend struct BasePassBuilder;
         friend class GraphicsPassBuilder;

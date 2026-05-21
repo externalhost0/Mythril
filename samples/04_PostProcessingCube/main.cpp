@@ -207,8 +207,7 @@ int main() {
 			.clearValue = mythril::ClearValue::depth(1.f, 0),
 			.loadOp = mythril::LoadOp::CLEAR
 		})
-		.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
-			cmd.cmdBeginRendering();
+		.execute([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdBindGraphicsPipeline(mainPipeline);
 
 			auto frameWindowSize = GetSDLWindowFramebufferSize(sdlWindow);
@@ -233,7 +232,6 @@ int main() {
 			cmd.cmdPushConstants(push);
 			cmd.cmdBindIndexBuffer(cubeIndexBuffer);
 			cmd.cmdDrawIndexed(cubeIndices.size());
-			cmd.cmdEndRendering();
 		});
 		graph.addGraphicsPass("post_processing")
 		.attachment({
@@ -242,8 +240,7 @@ int main() {
 			.storeOp = mythril::StoreOp::STORE
 		})
 		.dependency(resolveColorTarget, mythril::Layout::READ)
-		.setExecuteCallback([&](mythril::CommandBuffer& cmd) {
-			cmd.cmdBeginRendering();
+		.execute([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdBindGraphicsPipeline(postPipeline);
 
 			auto currentTime = std::chrono::high_resolution_clock::now();
@@ -255,7 +252,6 @@ int main() {
 			};
 			cmd.cmdPushConstants(push);
 			cmd.cmdDraw(3);
-			cmd.cmdEndRendering();
 		});
 		graph.addIntermediate("present")
 		.blit(postColorTarget, ctx->getBackBufferTexture())

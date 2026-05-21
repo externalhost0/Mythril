@@ -65,4 +65,5 @@ BinPackArguments: false
 BinPackParameters: false
 AlignAfterOpenBracket: BlockIndent
 BracedInitializerIndentWidth: 4
+BreakBeforeMemberCall: true
 ...

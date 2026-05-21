@@ -6,11 +6,9 @@
 
 #ifdef __cplusplus // when this header is processed in cpp
 #include <glm/glm.hpp>
-#include <slang/slang-cpp-types.h>
 
 #define NAMESPACE_BEGIN() namespace GPU {
 #define NAMESPACE_END() }
-
 
 NAMESPACE_BEGIN()
 

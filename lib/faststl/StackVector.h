@@ -134,7 +134,6 @@ namespace mythril {
 		void pop_back() {
 			if (_count > 0) {
 				--_count;
-				return;
 			}
 		}
 
@@ -189,7 +188,7 @@ namespace mythril {
 
 		// helpers
 		size_t size() const noexcept { return _count; }
-		constexpr size_t capacity() const noexcept { return MaxSize; }
+		static constexpr size_t capacity() noexcept { return MaxSize; }
 		bool empty() const noexcept { return _count == 0; }
 		void clear() noexcept { _count = 0; }
 		void swap(size_t first_index, size_t second_index) noexcept {
@@ -198,13 +197,6 @@ namespace mythril {
 			_data[second_index] = temp;
 		}
 
-		// iteration
-		template<typename F>
-		void for_each(F&& func) noexcept(noexcept(func(std::declval<T&>()))) {
-			for (size_t i = 0; i < _count; ++i) {
-				func(_data[i]);
-			}
-		}
 		// iterators
 		T* begin() { return _data; }
 		T* end() { return _data + _count; }

@@ -12,7 +12,7 @@ namespace mythril {
 
 	// individual function implementations
 	VkDeviceAddress Buffer::gpuAddress(size_t offset) {
-		const VkDeviceAddress addr = this->_pCtx->view(_handle)._vkDeviceAddress;
+		const VkDeviceAddress addr = this->view()._vkDeviceAddress;
 		ASSERT_MSG(addr, "Buffer doesnt have a valid device address!");
 		return addr + offset;
 	}
@@ -61,6 +61,12 @@ namespace mythril {
 		}
 		_additionalViews.clear();
 		_pCtx->resizeTexture(_handle, newDimensions);
+	}
+
+	VkImageView Texture::getImageViewForKey(ViewKey key) const {
+		auto it = _additionalViews.find(key);
+		ASSERT_MSG(it != _additionalViews.end(), "ViewKey not found in Texture!");
+		return _pCtx->view(it->second).getImageView();
 	}
 
 	Texture::ViewKey Texture::createView(const TextureViewSpec& spec) {

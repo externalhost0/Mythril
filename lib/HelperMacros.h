@@ -58,6 +58,11 @@
 #endif
 
 
+#define MYTHRIL_INVALID_U8  ((uint8_t)0xFFu)
+#define MYTHRIL_INVALID_U16 ((uint16_t)0xFFFFu)
+#define MYTHRIL_INVALID_U32 0xFFFFFFFFu
+#define MYTHRIL_INVALID_U64 0xFFFFFFFFFFFFFFFFull
+
 #ifdef DEBUG
 #define ASSERT(ERROR) do { \
     if (!static_cast<bool>(ERROR)) [[unlikely]] {        \
