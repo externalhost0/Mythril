@@ -266,6 +266,9 @@ namespace mythril {
 		// temp for now, for samples
 		[[nodiscard]] CommandBuffer& acquireCommand(CommandBuffer::Type type);
 		SubmitHandle submitCommand(CommandBuffer& cmd);
+
+		// literally just for our node editor for now, experimental
+		void switchShader(GraphicsPipeline& graphics_pipeline, Shader& newShader, ShaderStages stage);
 	private:
 
 		// internal accessors, not public API; use ObjectHolder::view()/access() or operator-> from user code

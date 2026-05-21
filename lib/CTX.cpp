@@ -621,7 +621,8 @@ namespace mythril {
 	}
 
 	PipelineCoreData CTX::buildPipelineCommonDataExceptVkPipelineImpl(const PipelineLayoutSignature& signature) {
-		// Mythril is fully bindless: at most one descriptor set (the bindless one) is ever bound.
+		// because we are fully bindless, we have at most one descriptor set (the bindless one) is ever bound
+		// however i want to leave this legacy code in here :)
 		std::vector<VkDescriptorSetLayout> layouts;
 		if (signature.bindlessSetIndex.has_value()) {
 			// The bindless set must live at set index 0 because Vulkan's set-layout array is
@@ -789,8 +790,18 @@ namespace mythril {
 		PipelineCoreData common = buildPipelineCommonDataExceptVkPipelineImpl(merged_pl_signature);
 		pipeline._shared.core = common;
 		pipeline._shared.core._vkPipeline = builder.build(_vkDevice, common._vkPipelineLayout);
+		// 0 represents the first compile of a pipeline
 		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_PIPELINE, reinterpret_cast<uint64_t>(pipeline._shared.core._vkPipeline), pipeline.getDebugName().data());
 		// good to go, maybe later you could return it
+	}
+
+	void CTX::switchShader(GraphicsPipeline& graphics_pipeline, Shader& newShader, ShaderStages stage){
+		graphics_pipeline->_shared.needsRecompile = true;
+		switch (stage) {
+			case ShaderStages::Vertex: graphics_pipeline->_spec.vertexShader = newShader;
+			case ShaderStages::Fragment: graphics_pipeline->_spec.fragmentShader = newShader;
+			default: return;
+		}
 	}
 
 	Sampler CTX::createSampler(SamplerSpec spec) {

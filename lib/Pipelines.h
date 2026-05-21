@@ -94,6 +94,7 @@ namespace mythril {
 
 	struct SharedPipelineInfo {
 		PipelineCoreData core;
+		bool needsRecompile = false;
 		char debugName[kMaxDebugNameLength] = {0};
 	};
 

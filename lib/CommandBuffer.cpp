@@ -442,7 +442,7 @@ namespace mythril {
 		}
 		AllocatedGraphicsPipeline* pipeline = _ctx->_graphicsPipelinePool.get(handle);
 		this->_ctx->checkAndUpdateBindlessDescriptorSetImpl();
-		if (_isDryRun) {
+		if (_isDryRun || pipeline->_shared.needsRecompile) {
 			if (pipeline->_shared.core._vkPipeline != VK_NULL_HANDLE) {
 				// LOG_SYSTEM(LogType::Error, "Dry run attempting to resolve Pipeline '{}' that has already been built!", pipeline->_debugName);
 				return;
