@@ -443,8 +443,8 @@ namespace mythril {
 		AllocatedGraphicsPipeline* pipeline = _ctx->_graphicsPipelinePool.get(handle);
 		this->_ctx->checkAndUpdateBindlessDescriptorSetImpl();
 		if (_isDryRun || pipeline->_shared.needsRecompile) {
-			if (pipeline->_shared.core._vkPipeline != VK_NULL_HANDLE) {
-				// LOG_SYSTEM(LogType::Error, "Dry run attempting to resolve Pipeline '{}' that has already been built!", pipeline->_debugName);
+			if (pipeline->_shared.core._vkPipeline != VK_NULL_HANDLE && !pipeline->_shared.needsRecompile) {
+				 LOG_SYSTEM(LogType::Error, "Dry run attempting to resolve Pipeline '{}' that has already been built!", pipeline->getDebugName());
 				return;
 			}
 			// we perform construction inside our dry run for all pipelines, which is when we compile the RenderGraph
