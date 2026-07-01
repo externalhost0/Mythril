@@ -155,7 +155,7 @@ int main() {
 		});
 
 		mythril::Shader standardShader = ctx->createShader({
-			.filePath = kDataDir / "BasicRed.slang",
+			.source = kDataDir / "BasicRed.slang",
 			.debugName = "Red Object Shader"
 		});
 		mythril::GraphicsPipeline mainPipeline = ctx->createGraphicsPipeline({
@@ -166,7 +166,7 @@ int main() {
 			.debugName = "Main Pipeline"
 		});
 		mythril::Shader postProcessingShader = ctx->createShader({
-			.filePath = kDataDir / "FullscreenPost.slang",
+			.source = kDataDir / "FullscreenPost.slang",
 			.debugName = "Fullscreen Shader"
 		});
 		mythril::GraphicsPipeline postPipeline = ctx->createGraphicsPipeline({

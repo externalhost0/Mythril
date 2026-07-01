@@ -138,7 +138,7 @@ int main() {
 		});
 
 		mythril::Shader standardShader = ctx->createShader({
-			.filePath = kDataDir / "BasicRed.slang",
+			.source = kDataDir / "BasicRed.slang",
 			.debugName = "Red Object Shader"
 		});
 		mythril::GraphicsPipeline mainPipeline = ctx->createGraphicsPipeline({

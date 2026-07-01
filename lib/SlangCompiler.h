@@ -41,11 +41,13 @@ namespace mythril {
 		void addSearchPath(const std::filesystem::path& searchPath);
 		void clearSearchPaths();
 
-		CompileResult compileSlangFile(const std::filesystem::path& filepath);
+		CompileResult compileSlangFromDisk(const std::filesystem::path& filepath);
+		CompileResult compileSlangFromSourceString(const std::string& code);
 
 		bool sessionExists() const { return _sessionExists; }
 
 	private:
+		CompileResult compileSlangImpl(Slang::ComPtr<slang::IModule>& slang_module, Slang::ComPtr<slang::IBlob>& diagnostics_blob) const;
 		void createSessionImpl();
 
 		Slang::ComPtr<slang::ISession> _slangSession = nullptr;

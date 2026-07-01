@@ -65,22 +65,15 @@ namespace mythril {
 		void generateMipmap(VkCommandBuffer cmd);
 		void transitionLayout(VkCommandBuffer cmd, VkImageLayout newImageLayout, const VkImageSubresourceRange& subresourceRange);
 
-		constexpr VkSampleCountFlagBits getVkSampleCountBits() {
+		constexpr VkSampleCountFlagBits getVkSampleCountBits() const {
 			switch (_sampleCount) {
-				case 1:
-					return VK_SAMPLE_COUNT_1_BIT;
-				case 2:
-					return VK_SAMPLE_COUNT_2_BIT;
-				case 4:
-					return VK_SAMPLE_COUNT_4_BIT;
-				case 8:
-					return VK_SAMPLE_COUNT_8_BIT;
-				case 16:
-					return VK_SAMPLE_COUNT_16_BIT;
-				case 32:
-					return VK_SAMPLE_COUNT_32_BIT;
-				case 64:
-					return VK_SAMPLE_COUNT_64_BIT;
+				case 1: return VK_SAMPLE_COUNT_1_BIT;
+				case 2: return VK_SAMPLE_COUNT_2_BIT;
+				case 4: return VK_SAMPLE_COUNT_4_BIT;
+				case 8: return VK_SAMPLE_COUNT_8_BIT;
+				case 16: return VK_SAMPLE_COUNT_16_BIT;
+				case 32: return VK_SAMPLE_COUNT_32_BIT;
+				case 64: return VK_SAMPLE_COUNT_64_BIT;
 				default:
 					ASSERT_MSG(false, "Something went horribly wrong! The _sampleCount of texture '{}' is not 2^n where n is in the range of integars 1-6, its '{}'.", getDebugName(), _sampleCount);
 			}

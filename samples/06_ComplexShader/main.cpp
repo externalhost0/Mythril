@@ -440,7 +440,7 @@ int main() {
 		});
 
 		mythril::Shader standardShader = ctx->createShader({
-			.filePath = kDataDir / "Marble.slang",
+			.source = kDataDir / "Marble.slang",
 			.debugName = "Example Shader"
 		});
 

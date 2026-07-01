@@ -63,6 +63,7 @@ struct MeshCompiled {
 	uint32_t indexCount;
 	int materialIndex;
 };
+
 struct MaterialData {
 	glm::vec4 baseColorFactor = glm::vec4(1);
 	size_t baseColorTextureIndex = -1;
@@ -663,7 +664,7 @@ int main() {
 		});
 
 		mythril::Shader shadowShader = ctx->createShader({
-			.filePath = kDataDir / "shaders/DirectionalShadow.slang",
+			.source = kDataDir / "shaders/DirectionalShadow.slang",
 			.debugName = "Shadow Shader"
 		});
 
@@ -675,7 +676,7 @@ int main() {
 		});
 
 		mythril::Shader redDebugShader = ctx->createShader({
-			.filePath = kDataDir / "shaders/RedDebug.slang",
+			.source = kDataDir / "shaders/RedDebug.slang",
 			.debugName = "Red Shader"
 		});
 		mythril::GraphicsPipeline redDebugPipeline = ctx->createGraphicsPipeline({
@@ -701,7 +702,7 @@ int main() {
 
 
 		mythril::Shader fullscreenCompositeShader = ctx->createShader({
-			.filePath = kDataDir / "shaders/FullscreenComposite.slang",
+			.source = kDataDir / "shaders/FullscreenComposite.slang",
 			.debugName = "Fullscreen Composite Shader"
 		});
 		mythril::GraphicsPipeline fullscreenCompositePipeline = ctx->createGraphicsPipeline({
@@ -913,7 +914,7 @@ int main() {
 			});
 		}
 		mythril::Shader pointshadowShader = ctx->createShader({
-			.filePath = kDataDir / "shaders/PointShadow.slang",
+			.source = kDataDir / "shaders/PointShadow.slang",
 			.debugName = "Point Shadow Map Shader"
 		});
 		mythril::GraphicsPipeline pointShadowGraphicsPipeline = ctx->createGraphicsPipeline({
@@ -1005,7 +1006,7 @@ int main() {
 		});
 
 		mythril::Shader standardShader = ctx->createShader({
-			.filePath = kDataDir / "shaders/Standard.slang",
+			.source = kDataDir / "shaders/Standard.slang",
 			.debugName = "Standard Shader"
 		});
 		mythril::GraphicsPipeline opaquePipeline = ctx->createGraphicsPipeline({
@@ -1017,7 +1018,7 @@ int main() {
 			.debugName = "Opaque Graphics Pipeline"
 		});
 		mythril::Shader skyShader = ctx->createShader({
-			.filePath = kDataDir / "shaders/Sky.slang",
+			.source = kDataDir / "shaders/Sky.slang",
 			.debugName = "Sky Shader"
 		});
 		mythril::GraphicsPipeline skyPipeline = ctx->createGraphicsPipeline({
@@ -1158,7 +1159,7 @@ int main() {
 		});
 
 		mythril::Shader particleShader = ctx->createShader({
-			.filePath = kDataDir / "shaders/Particles.slang",
+			.source = kDataDir / "shaders/Particles.slang",
 			.debugName = "Ambient Particle Shader"
 		});
 		mythril::GraphicsPipeline particle_pipeline = ctx->createGraphicsPipeline({
@@ -1269,7 +1270,7 @@ int main() {
 			colorbloomdimensions = colorbloomdimensions.divide2D(2);
 		}
 		mythril::Shader downsampleComputeShader = ctx->createShader({
-			.filePath = kDataDir / "shaders/Downsample.slang",
+			.source = kDataDir / "shaders/Downsample.slang",
 			.debugName = "Downsample Compute Shader"
 		});
 		mythril::ComputePipeline downsampleComputePipeline = ctx->createComputePipeline({
@@ -1308,7 +1309,7 @@ int main() {
 		});
 
 		mythril::Shader luminanceConversionShader = ctx->createShader({
-			.filePath = kDataDir /  "shaders/ConversionLuminance.slang",
+			.source = kDataDir /  "shaders/ConversionLuminance.slang",
 			.debugName = "Luminance Conversion Compute Shader"
 		});
 		mythril::ComputePipeline conversionLuminancePipeline = ctx->createComputePipeline({
@@ -1345,7 +1346,7 @@ int main() {
 		});
 
 		mythril::Shader upsampleComputeShader = ctx->createShader({
-			.filePath = kDataDir / "shaders/Upsample.slang",
+			.source = kDataDir / "shaders/Upsample.slang",
 			.debugName = "Upsample Compute Shader"
 		});
 		mythril::ComputePipeline upsampleComputePipeline = ctx->createComputePipeline({
@@ -1385,7 +1386,7 @@ int main() {
 		});
 
 		mythril::Shader adaptationShader = ctx->createShader({
-			.filePath = kDataDir / "shaders/Adaptation.slang",
+			.source = kDataDir / "shaders/Adaptation.slang",
 			.debugName = "Adaptation Compute Shader"
 		});
 		mythril::ComputePipeline adaptationComputePipeline = ctx->createComputePipeline({
@@ -1855,7 +1856,7 @@ int main() {
 			MYTH_PROFILER_ZONE_END();
 			{
 				MYTH_PROFILER_ZONE_COLOR("Execution", MYTH_PROFILER_COLOR_RENDERPASS);
-				graph.execute(*ctx);
+				graph.executeEXT(*ctx);
 				MYTH_PROFILER_ZONE_END();
 			}
 			lastFramelightingData = lightingData;

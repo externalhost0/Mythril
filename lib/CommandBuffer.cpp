@@ -454,6 +454,7 @@ namespace mythril {
 		}
 		if (pipeline->_shared.needsRecompile) {
 			_ctx->resolveGraphicsPipelineImpl(*pipeline, _viewMask);
+			pipeline->_shared.needsRecompile = false;
 		}
 		this->_currentPipelineHandle = handle;
 		this->_currentPipelineInfo = &pipeline->_shared;

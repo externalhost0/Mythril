@@ -140,7 +140,7 @@ namespace mythril {
 		const char* debugName = "Unnamed Texture View";
 	};
 	struct ShaderSpec {
-		std::filesystem::path filePath;
+		std::variant<std::filesystem::path, std::string> source;
 		const char* debugName = "Unnamed Shader";
 	};
 

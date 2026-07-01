@@ -114,7 +114,7 @@ namespace mythril {
 			         .format = VK_FORMAT_R8G8B8A8_UNORM,
 			         .usage = TextureUsageBits::TextureUsageBits_Sampled | TextureUsageBits::TextureUsageBits_Storage,
 			         .initialData = pixels.data(),
-			         .debugName = "Dummy Texture"}
+			         .debugName = "Internal_Dummy_Texture"}
 			);
 			// fallback sampler, index 0
 			this->_dummyLinearSampler = this->createSampler(
@@ -123,7 +123,7 @@ namespace mythril {
 			         .wrapU = SamplerWrap::ClampEdge,
 			         .wrapV = SamplerWrap::ClampEdge,
 			         .wrapW = SamplerWrap::ClampEdge,
-			         .debugName = "Linear Sampler"}
+			         .debugName = "Internal_Linear_Sampler"}
 			);
 			// initial descriptor pool creation
 			this->growBindlessDescriptorPoolImpl(this->_currentMaxTextureCount, this->_currentMaxSamplerCount);
@@ -795,12 +795,29 @@ namespace mythril {
 		// good to go, maybe later you could return it
 	}
 
-	void CTX::switchShader(GraphicsPipeline& graphics_pipeline, Shader& newShader, ShaderStages stage){
+	void CTX::switchShader(GraphicsPipeline& graphics_pipeline, Shader& newShader, ShaderStages stage) {
+		AllocatedGraphicsPipeline* graphics_pipeline_obj = this->_graphicsPipelinePool.get(graphics_pipeline.handle());
+		if (!graphics_pipeline_obj) {
+			LOG_SYSTEM(LogType::Warning, "'switchShader' called on null/invalid graphics_pipeline!");
+			return;
+		}
+		GraphicsPipelineSpec current_spec = graphics_pipeline->_spec;
+		PipelineCoreData& core = graphics_pipeline->_shared.core;
+		//VkShaderModule currentVkShaderModule = current_spec.vertexShader;
+
+		// same thing as destroying the pipeline
+		deferTask(std::packaged_task<void()>([device = _vkDevice, pipeline = core._vkPipeline]() { vkDestroyPipeline(device, pipeline, nullptr); }));
+		deferTask(std::packaged_task<void()>([device = _vkDevice, layout = core._vkPipelineLayout]() { vkDestroyPipelineLayout(device, layout, nullptr); }));
+
 		graphics_pipeline->_shared.needsRecompile = true;
 		switch (stage) {
-			case ShaderStages::Vertex: graphics_pipeline->_spec.vertexShader = newShader;
-			case ShaderStages::Fragment: graphics_pipeline->_spec.fragmentShader = newShader;
-			default: return;
+			case ShaderStages::Vertex: {
+				graphics_pipeline->_spec.vertexShader = newShader;
+			} break;
+			case ShaderStages::Fragment: {
+				graphics_pipeline->_spec.fragmentShader = newShader;
+			} break;
+			default: ASSERT_MSG(false, "Currently only ShaderStages:: Vertex & Fragment are supported!");
 		}
 	}
 
@@ -940,6 +957,38 @@ namespace mythril {
 		return obj;
 	}
 
+	void CTX::resizeBuffer(BufferHandle handle, size_t newSize) {
+		MYTH_PROFILER_FUNCTION();
+		AllocatedBuffer* buffer = _bufferPool.get(handle);
+		if (!buffer) {
+			LOG_SYSTEM(LogType::Warning, "'resizeBuffer' called on invalid handle!");
+			return;
+		}
+		if (newSize <= buffer->_bufferSize) {
+			LOG_SYSTEM(LogType::Warning, "'resizeBuffer' called with a smaller size then it already has has.");
+		}
+
+		// unmap before destroying
+		if (buffer->_mappedPtr) {
+			vmaUnmapMemory(_vmaAllocator, buffer->_vmaAllocation);
+		}
+		deferTask(std::packaged_task<void()>([vma = _vmaAllocator, vkBuf = buffer->_vkBuffer, allocation = buffer->_vmaAllocation]() {
+			vmaDestroyBuffer(vma, vkBuf, allocation);
+		}));
+
+		AllocatedBuffer newBuf = this->createBufferImpl(newSize, buffer->_vkUsageFlags, buffer->_vkMemoryPropertyFlags);
+		vmaSetAllocationName(_vmaAllocator, newBuf._vmaAllocation, buffer->_debugName);
+		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_BUFFER, reinterpret_cast<uint64_t>(newBuf._vkBuffer), buffer->getDebugName().data());
+
+		buffer->_vkBuffer = newBuf._vkBuffer;
+		buffer->_vmaAllocation = newBuf._vmaAllocation;
+		buffer->_bufferSize = newBuf._bufferSize;
+		buffer->_vkDeviceAddress = newBuf._vkDeviceAddress;
+		buffer->_mappedPtr = newBuf._mappedPtr;
+		buffer->_isCoherentMemory = newBuf._isCoherentMemory;
+		// we dont need an epoch (framegraph doesnt need to recompile)
+	}
+
 	void CTX::resizeTexture(TextureHandle handle, Dimensions newDimensions) {
 		MYTH_PROFILER_FUNCTION();
 		AllocatedTexture* image = _texturePool.get(handle);
@@ -982,11 +1031,8 @@ namespace mythril {
 		vmaSetAllocationName(_vmaAllocator, newImage._vmaAllocation, newImage._debugName);
 		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_IMAGE, reinterpret_cast<uint64_t>(newImage._vkImage), image->getDebugName().data());
 #ifdef MYTH_ENABLED_IMGUI
-		if (auto* mydata = static_cast<mythril::MyUserData*>(ImGui::GetIO().UserData)) {
-			if (auto it = mydata->handleMap.find(handle); it != mydata->handleMap.end()) {
-				ImGui_ImplVulkan_RemoveTexture(it->second);
-				mydata->handleMap.erase(it);
-			}
+		if (_imguiPlugin.isEnabled()) {
+			_imguiPlugin.removeImageDescriptor(handle);
 		}
 #endif
 
@@ -1261,18 +1307,27 @@ namespace mythril {
 
 	Shader CTX::createShader(const ShaderSpec& spec) {
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_CREATE);
-		ASSERT_MSG(std::filesystem::exists(spec.filePath), "Shader filepath '{}' does not exist.", spec.filePath.string());
 		// lazily create slang session & slang global session
 		if (!_slangCompiler.sessionExists()) {
 			_slangCompiler.create();
 		}
+
+		CompileResult compile_result;
+		if (std::holds_alternative<std::filesystem::path>(spec.source)) {
+			const auto& filepath = std::get<std::filesystem::path>(spec.source);
+			ASSERT_MSG(std::filesystem::exists(filepath), "Shader filepath '{}' does not exist.", filepath.string());
+			compile_result = _slangCompiler.compileSlangFromDisk(filepath);
+		} else if (std::holds_alternative<std::string>(spec.source)) {
+			const auto& code = std::get<std::string>(spec.source);
+			ASSERT_MSG(!code.empty(), "Shader source code is empty.", code);
+			compile_result = _slangCompiler.compileSlangFromSourceString(code);
+		}
+		ASSERT(compile_result.getSpirvCode());
 		// TODO: this is some of the worst code i have ever written in my life, i am so sorry future me who will come back here and have to clean it
 		// thank you past me you were right but now it should be alot better
 		AllocatedShader obj{};
 		// _debugName
 		snprintf(obj._debugName, sizeof(obj._debugName), "%s", spec.debugName);
-
-		CompileResult compile_result = _slangCompiler.compileSlangFile(spec.filePath);
 
 		auto* code = const_cast<uint32_t*>(compile_result.getSpirvCode());
 		size_t size = compile_result.getSpirvSize();
@@ -1421,7 +1476,7 @@ namespace mythril {
 		ASSERT(cmd._ctx);
 		ASSERT(cmd._wrapper);
 
-
+		return {};
 	}
 
 	CommandBuffer& CTX::acquireCommand(CommandBuffer::Type type) {
@@ -1549,6 +1604,11 @@ namespace mythril {
 		AllocatedTexture* image = _texturePool.get(handle);
 		if (!image)
 			return;
+#ifdef MYTH_ENABLED_IMGUI
+		if (_imguiPlugin.isEnabled()) {
+			_imguiPlugin.removeImageDescriptor(handle);
+		}
+#endif
 		deferTask(std::packaged_task<void()>([device = _vkDevice, imageView = image->_vkImageView]() { vkDestroyImageView(device, imageView, nullptr); }));
 		if (image->_vkImageViewStorage) {
 			deferTask(std::packaged_task<void()>([device = _vkDevice, imageView = image->_vkImageViewStorage]() { vkDestroyImageView(device, imageView, nullptr); }));
@@ -1567,6 +1627,11 @@ namespace mythril {
 		AllocatedSampler* sampler = _samplerPool.get(handle);
 		if (!sampler)
 			return;
+#ifdef MYTH_ENABLED_IMGUI
+		if (_imguiPlugin.isEnabled()) {
+			_imguiPlugin.removeImageDescriptors(handle);
+		}
+#endif
 		deferTask(std::packaged_task<void()>([device = _vkDevice, sampler = sampler->_vkSampler]() { vkDestroySampler(device, sampler, nullptr); }));
 		_samplerPool.destroy(handle);
 	}
@@ -1600,42 +1665,125 @@ namespace mythril {
 } // namespace mythril
 #ifdef MYTH_ENABLED_IMGUI
 namespace mythril {
-	void ImGuiPlugin::renderImage(CTX& ctx, VkSampler defaultSampler, TextureHandle texHandle, SamplerHandle samplerHandle, const ImVec2& image_size, const ImVec2& uv0, const ImVec2& uv1) {
+	namespace {
+		class ScopedImGuiContext {
+		public:
+			explicit ScopedImGuiContext(ImGuiContext* next) :
+			    _previous(ImGui::GetCurrentContext()) {
+				ASSERT_MSG(next, "Cannot switch to a null ImGui context.");
+				if (_previous != next) {
+					ImGui::SetCurrentContext(next);
+				}
+			}
+
+			~ScopedImGuiContext() {
+				if (ImGui::GetCurrentContext() != _previous) {
+					ImGui::SetCurrentContext(_previous);
+				}
+			}
+
+		private:
+			ImGuiContext* _previous = nullptr;
+		};
+	} // namespace
+
+	VkDescriptorSet ImGuiPlugin::getOrCreateImageDescriptor(TextureHandle texHandle, SamplerHandle samplerHandle) {
+		ImageDescriptorKey key{
+		    .texture = texHandle,
+		    .sampler = samplerHandle,
+		};
+		if (const auto iterator = _imageDescriptors.find(key); iterator != _imageDescriptors.end()) {
+			return iterator->second;
+		}
+
+		ASSERT_MSG(_ctx, "Mythril ImGui plugin is missing its CTX.");
+		const AllocatedTexture& texture = _ctx->view(texHandle);
+		ASSERT_MSG(texture.isSampledImage(), "Texture '{}' must have sampled flag!", texture.getDebugName());
+
+		const VkSampler sampler = samplerHandle.valid() ? _ctx->view(samplerHandle).getSampler() : _defaultSampler;
+		ScopedImGuiContext context(_backendContext);
+		VkDescriptorSet ds = ImGui_ImplVulkan_AddTexture(sampler, texture.getImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+		_imageDescriptors.insert({key, ds});
+		return ds;
+	}
+
+	void ImGuiPlugin::removeImageDescriptor(TextureHandle texHandle) {
+		std::vector<VkDescriptorSet> descriptors;
+		for (auto it = _imageDescriptors.begin(); it != _imageDescriptors.end();) {
+			if (it->first.texture == texHandle) {
+				descriptors.push_back(it->second);
+				it = _imageDescriptors.erase(it);
+			} else {
+				++it;
+			}
+		}
+		deferImageDescriptorRemoval(std::move(descriptors));
+	}
+
+	void ImGuiPlugin::removeImageDescriptors(SamplerHandle samplerHandle) {
+		std::vector<VkDescriptorSet> descriptors;
+		for (auto it = _imageDescriptors.begin(); it != _imageDescriptors.end();) {
+			if (it->first.sampler == samplerHandle) {
+				descriptors.push_back(it->second);
+				it = _imageDescriptors.erase(it);
+			} else {
+				++it;
+			}
+		}
+		deferImageDescriptorRemoval(std::move(descriptors));
+	}
+
+	void ImGuiPlugin::deferImageDescriptorRemoval(std::vector<VkDescriptorSet> descriptors) {
+		if (descriptors.empty()) {
+			return;
+		}
+		ASSERT_MSG(_ctx, "Mythril ImGui plugin is missing its CTX.");
+		_ctx->deferTask(std::packaged_task<void()>([this, descriptors = std::move(descriptors)]() {
+			ScopedImGuiContext context(_backendContext);
+			for (VkDescriptorSet descriptor: descriptors) {
+				ImGui_ImplVulkan_RemoveTexture(descriptor);
+			}
+		}));
+	}
+
+	void ImGuiPlugin::clearImageDescriptors() {
+		ScopedImGuiContext context(_backendContext);
+		for (const auto& [key, descriptor]: _imageDescriptors) {
+			ImGui_ImplVulkan_RemoveTexture(descriptor);
+		}
+		_imageDescriptors.clear();
+	}
+
+	void ImGuiPlugin::renderImage(TextureHandle texHandle, SamplerHandle samplerHandle, const ImVec2& image_size, const ImVec2& uv0, const ImVec2& uv1) {
 		ASSERT_MSG(texHandle.valid(), "Texture handle is invalid!");
-		auto mydata = static_cast<MyUserData*>(ImGui::GetIO().UserData);
+		ImGuiPlugin* plugin = _activePlugin;
+		ASSERT_MSG(plugin && plugin->_ctx && plugin->_isEnabeld, "No active Mythril ImGui plugin is available for ImGui::Image(TextureHandle).");
 
 		ImVec2 size;
 		if (image_size.x <= 0 && image_size.y <= 0) {
-			const Dimensions dims = ctx.view(texHandle).getDimensions();
+			const Dimensions dims = plugin->_ctx->view(texHandle).getDimensions();
 			size = {static_cast<float>(dims.width), static_cast<float>(dims.height)};
 		} else {
 			size = image_size;
 		}
-		const AllocatedTexture& texture = ctx.view(texHandle);
 
-		VkDescriptorSet im_image_ds;
-		if (const auto iterator = mydata->handleMap.find(texHandle); iterator != mydata->handleMap.end()) {
-			im_image_ds = iterator->second;
-		} else {
-			ASSERT_MSG(texture.isSampledImage(), "Texture '{}' must have sampled flag!", texture.getDebugName());
-			VkDescriptorSet ds = ImGui_ImplVulkan_AddTexture(
-			        samplerHandle.valid() ? ctx.view(samplerHandle).getSampler() : defaultSampler, texture.getImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-			);
-			mydata->handleMap.insert({texHandle, ds});
-			im_image_ds = ds;
-		}
+		VkDescriptorSet im_image_ds = plugin->getOrCreateImageDescriptor(texHandle, samplerHandle);
 		ImGui::Image(reinterpret_cast<ImTextureID>(im_image_ds), size, uv0, uv1);
 	}
 } // namespace mythril
 namespace ImGui {
 	void Image(mythril::TextureHandle texHandle, mythril::SamplerHandle samplerHandle, const ImVec2& image_size, const ImVec2& uv0, const ImVec2& uv1) {
-		auto mydata = static_cast<mythril::MyUserData*>(ImGui::GetIO().UserData);
-		mythril::ImGuiPlugin::renderImage(*mydata->ctx, mydata->sampler, texHandle, samplerHandle, image_size, uv0, uv1);
+		mythril::ImGuiPlugin::renderImage(texHandle, samplerHandle, image_size, uv0, uv1);
+	}
+	void Image(mythril::TextureHandle texHandle, const ImVec2& image_size, const ImVec2& uv0, const ImVec2& uv1) {
+		Image(texHandle, mythril::SamplerHandle{}, image_size, uv0, uv1);
 	}
 	void Image(const mythril::Texture& texture, const mythril::Texture::ViewKey& viewKey, const ImVec2& image_size, const ImVec2& uv0, const ImVec2& uv1) {
 		Image(texture.handle(viewKey), mythril::SamplerHandle{}, image_size, uv0, uv1);
 	}
-	void Image(const mythril::Texture& texture, const ImVec2& image_size, const ImVec2& uv0, const ImVec2& uv1) { Image(texture.handle(), mythril::SamplerHandle{}, image_size, uv0, uv1); }
+	void Image(const mythril::Texture& texture, const ImVec2& image_size, const ImVec2& uv0, const ImVec2& uv1) {
+		Image(texture.handle(), mythril::SamplerHandle{}, image_size, uv0, uv1);
+	}
 	void Image(const mythril::Texture& texture, const mythril::Sampler& sampler, const ImVec2& image_size, const ImVec2& uv0, const ImVec2& uv1) {
 		Image(texture.handle(), sampler.handle(), image_size, uv0, uv1);
 	}
