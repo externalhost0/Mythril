@@ -68,6 +68,7 @@ PassSourceTypeToString(goalType));
 
 
 namespace mythril {
+	using namespace detail;
 	static const char* PassSourceTypeToString(PassDesc::Type type) {
 		switch (type) {
 			case PassDesc::Type::Graphics:
@@ -144,8 +145,8 @@ namespace mythril {
 		return info;
 	}
 
-	// ALL PUBLIC COMMANDS AVAILBLE TO USER //
-	void CommandBuffer::cmdBeginRendering(uint32_t layerCount, uint32_t viewMask) {
+	// currently should not be called as begin/end rendering is managed by the rendergraph instead
+	void CommandBuffer::cmdBeginRenderingEXT(uint32_t layerCount, uint32_t viewMask) {
 		// view mask needs to be stored, as it is used during resolve
 		_viewMask = viewMask;
 		DRY_RETURN();
@@ -162,7 +163,7 @@ namespace mythril {
 		this->cmdBeginRenderingImpl(layerCount, viewMask);
 	}
 
-	void CommandBuffer::cmdEndRendering() {
+	void CommandBuffer::cmdEndRenderingEXT() {
 		DRY_RETURN();
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_COMMAND);
 		MYTH_PROFILER_GPU_ZONE("cmdEndRendering()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
@@ -170,6 +171,7 @@ namespace mythril {
 		this->cmdEndRenderingImpl();
 	}
 
+	// ALL PUBLIC COMMANDS AVAILBLE TO USER //
 	void CommandBuffer::cmdDraw(uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstInstance) {
 		DRY_RETURN();
 		CHECK_SHOULD_BE_RENDERING();
@@ -193,22 +195,24 @@ namespace mythril {
 		DRY_RETURN();
 		CHECK_SHOULD_BE_RENDERING();
 		CHECK_PASS_OPERATION_MISMATCH(PassDesc::Type::Graphics);
-		ASSERT_MSG(indirectBuffer->isIndirectBuffer(), "Buffer '{}' is not an indirect buffer, please have its usage include 'BufferUsageBits_Indirect'!", indirectBuffer->getDebugName());
+		const AllocatedBuffer& buf = _ctx->view(indirectBuffer.handle());
+		ASSERT_MSG(buf.isIndirectBuffer(), "Buffer '{}' is not an indirect buffer, please have its usage include 'BufferUsageBits_Indirect'!", buf.getDebugName());
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_COMMAND);
 		MYTH_PROFILER_GPU_ZONE("cmdDrawIndirect()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
 
-		vkCmdDrawIndirect(_wrapper->_cmdBuf, indirectBuffer->_vkBuffer, offset, drawCount, stride ? stride : sizeof(VkDrawIndirectCommand));
+		vkCmdDrawIndirect(_wrapper->_cmdBuf, buf._vkBuffer, offset, drawCount, stride ? stride : sizeof(VkDrawIndirectCommand));
 	}
 
 	void CommandBuffer::cmdDrawIndexedIndirect(const Buffer& indirectBuffer, VkDeviceSize offset, uint32_t drawCount, uint32_t stride) {
 		DRY_RETURN();
 		CHECK_SHOULD_BE_RENDERING();
 		CHECK_PASS_OPERATION_MISMATCH(PassDesc::Type::Graphics);
-		ASSERT_MSG(indirectBuffer->isIndirectBuffer(), "Buffer '{}' is not an indirect buffer, please have its usage include 'BufferUsageBits_Indirect'!", indirectBuffer->getDebugName());
+		const AllocatedBuffer& buf = _ctx->view(indirectBuffer.handle());
+		ASSERT_MSG(buf.isIndirectBuffer(), "Buffer '{}' is not an indirect buffer, please have its usage include 'BufferUsageBits_Indirect'!", buf.getDebugName());
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_COMMAND);
 		MYTH_PROFILER_GPU_ZONE("cmdDrawIndexedIndirect()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
 
-		vkCmdDrawIndexedIndirect(_wrapper->_cmdBuf, indirectBuffer->_vkBuffer, offset, drawCount, stride ? stride : sizeof(VkDrawIndexedIndirectCommand));
+		vkCmdDrawIndexedIndirect(_wrapper->_cmdBuf, buf._vkBuffer, offset, drawCount, stride ? stride : sizeof(VkDrawIndexedIndirectCommand));
 	}
 
 	void CommandBuffer::cmdBindIndexBuffer(BufferHandle handle) {
@@ -219,6 +223,7 @@ namespace mythril {
 		MYTH_PROFILER_GPU_ZONE("cmdBindIndexBuffer()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
 
 		const AllocatedBuffer& buffer = _ctx->view(handle);
+		// ensure that all index buffers created are of type VK_INDEX_TYPE_UINT32
 		vkCmdBindIndexBuffer(_wrapper->_cmdBuf, buffer._vkBuffer, 0, VK_INDEX_TYPE_UINT32);
 	}
 
@@ -489,6 +494,30 @@ namespace mythril {
 		CHECK_PIPELINE_REBIND(&info->core, _lastBoundvkPipeline, info->debugName);
 		CHECK_PASS_OPERATION_MISMATCH(PassDesc::Type::Compute);
 		this->cmdBindPipelineImpl(&info->core, VK_PIPELINE_BIND_POINT_COMPUTE);
+	}
+	void CommandBuffer::cmdBindRaytracingPipeline(RaytracingPipelineHandle handle) {
+		ASSERT(this->_ctx);
+		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_COMMAND);
+		if (handle.empty()) {
+			LOG_SYSTEM(LogType::Warning, "Binded raytracing pipeline was invalid/empty!");
+			return;
+		}
+		AllocatedRaytracingPipeline* pipeline = _ctx->_raytracingPipelinePool.get(handle);
+		this->_ctx->checkAndUpdateBindlessDescriptorSetImpl();
+		if (_isDryRun) {
+			if (pipeline->_shared.core._vkPipeline != VK_NULL_HANDLE) {
+				// LOG_SYSTEM(LogType::Error, "Dry run attempting to resolve Pipeline '{}' that has already been built!", pipeline->getDebugName());
+				return;
+			}
+			_ctx->resolveRaytracingPipelineImpl(*pipeline);
+			return;
+		}
+		this->_currentPipelineHandle = handle;
+		this->_currentPipelineInfo = &pipeline->_shared;
+		const SharedPipelineInfo* info = this->_currentPipelineInfo;
+		CHECK_PIPELINE_REBIND(&info->core, _lastBoundvkPipeline, info->debugName);
+		CHECK_PASS_OPERATION_MISMATCH(PassDesc::Type::Raytracing);
+		this->cmdBindPipelineImpl(&info->core, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR);
 	}
 
 	void CommandBuffer::cmdUpdateBuffer(BufferHandle handle, size_t offset, size_t size, const void* data) {

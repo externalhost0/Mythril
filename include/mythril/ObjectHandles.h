@@ -37,12 +37,15 @@ namespace mythril {
 	};
 
 
+
 	using BufferHandle = InternalObjectHandle<struct BufferTag>;
 	using TextureHandle = InternalObjectHandle<struct TextureTag>;
 	using SamplerHandle = InternalObjectHandle<struct SamplerTag>;
 	using ShaderHandle = InternalObjectHandle<struct ShaderTag>;
 	using GraphicsPipelineHandle = InternalObjectHandle<struct GraphicsPipelineTag>;
 	using ComputePipelineHandle = InternalObjectHandle<struct ComputePipelineTag>;
+	using RaytracingPipelineHandle = InternalObjectHandle<struct RaytracingPipelineTag>;
+	using AccelerationStructureHandle = InternalObjectHandle<struct AccelerationStructureTag>;
 
 
 	// https://github.com/corporateshark/lightweightvk/blob/87d12061688d6f69b8b2c2d9799f00143cb0ee01/lvk/Pool.h#L13
@@ -156,7 +159,6 @@ namespace mythril {
 template<typename Type>
 struct std::hash<mythril::InternalObjectHandle<Type>> {
 	size_t operator()(const mythril::InternalObjectHandle<Type>& handle) const noexcept {
-		// Simple combination of index and generation
 		const uint64_t combined = (static_cast<uint64_t>(handle.index()) << 32) | handle.gen();
 		return std::hash<uint64_t>()(combined);
 	}

@@ -165,6 +165,7 @@ namespace mythril {
 
 	// experimental, cant be imported into other files rn
 	// NOLINT(readability-make-member-function-const)
+	// ReSharper disable once CppMemberFunctionMayBeConst
 	CompileResult SlangCompiler::compileSlangFromSourceString(const std::string& code) {
 		MYTH_PROFILER_FUNCTION();
 		Slang::ComPtr<slang::IModule> slang_module;
@@ -173,7 +174,7 @@ namespace mythril {
 		slang_module = this->_slangSession->loadModuleFromSourceString(module_name.c_str(), nullptr, code.c_str(), diagnostics_blob.writeRef());
 		ASSERT_MSG(
 			slang_module,
-			"SEARCH_PATHS: \n{}ERROR:\nSlang failed to load module, this might happen for a bunch of different reasons like the shader is ill-formatted or invalid.\n"
+			"-------------------------- SEARCH_PATHS: -------------------------- \n{} -------------------------- ERROR: -------------------------- \nSlang failed to load module, this might happen for a bunch of different reasons like the shader is ill-formatted or invalid.\n"
 			"Diagnostics Below:\n{}",
 			JoinActiveSearchPathsLog(this->_shaderSearchPaths),
 			ResolveDiagnosticsMessage(diagnostics_blob)
@@ -185,6 +186,7 @@ namespace mythril {
 
 	// this isnt const, loadModule
 	// NOLINT(readability-make-member-function-const)
+	// ReSharper disable once CppMemberFunctionMayBeConst
 	CompileResult SlangCompiler::compileSlangFromDisk(const std::filesystem::path& filepath) {
 		MYTH_PROFILER_FUNCTION();
 		ASSERT(exists(filepath));
@@ -194,7 +196,7 @@ namespace mythril {
 		slang_module = this->_slangSession->loadModule(filepath.string().c_str(), diagnostics_blob.writeRef());
 		ASSERT_MSG(
 		        slang_module,
-		        "FILE: \n'{}'\nSEARCH_PATHS: \n{}ERROR:\nSlang failed to load module, this might happen for a bunch of different reasons like filepath couldnt be found or the shader is "
+		        "--------------------------- FILE: -------------------------- \n'{}'\n -------------------------- SEARCH_PATHS: -------------------------- \n{} -------------------------- ERROR: -------------------------- \nSlang failed to load module, this might happen for a bunch of different reasons like filepath couldnt be found or the shader is "
 		        "invalid.\nDiagnostics Below:\n{}",
 		        filepath.string().c_str(),
 		        JoinActiveSearchPathsLog(this->_shaderSearchPaths),

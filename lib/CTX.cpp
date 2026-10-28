@@ -6,6 +6,7 @@
 #include "RenderGraphInternal.h"
 
 #include <iostream>
+#include <ranges>
 
 #include "GraphicsPipelineBuilder.h"
 #include "Logger.h"
@@ -21,9 +22,11 @@
 #include <slang/slang-cpp-types.h>
 #include <slang/slang.h>
 
+#include "AccelerationStructure.h"
 #include "CommandBuffer.h"
 
 namespace mythril {
+	using namespace detail;
 	// https://docs.shader-slang.org/en/latest/external/slang/docs/user-guide/03-convenience-features.html#descriptorhandle-for-bindless-descriptor-access:~:text=None%20provides%20the%20following%20bindings%20for%20descriptor%20types%3A-,Enum,-Value
 	namespace BindlessSpaceIndex {
 		enum Type : uint8_t {
@@ -199,6 +202,8 @@ namespace mythril {
 		_shaderPool.clear();
 		_graphicsPipelinePool.clear();
 		_computePipelinePool.clear();
+		_raytracingPipelinePool.clear();
+		_accelerationStructurePool.clear();
 		// make sure imm tasks are complete
 		waitDeferredTasks();
 		_immAsyncTransfer.reset(nullptr);
@@ -271,7 +276,7 @@ namespace mythril {
 		this->_timelineSemaphore = vkutil::CreateTimelineSemaphore(_vkDevice, this->_swapchain->getNumOfSwapchainImages() - 1);
 		// we need to store in the situation where the swapcahin is deleted and we want to use the last swapchains settings
 		lastSwapchainSpec = new_swapchain_spec;
-		wrappedBackBuffer.updateHandle(this, _swapchain->getCurrentSwapchainTextureHandle());
+		wrappedBackBuffer.updateHandle(*this, _swapchain->getCurrentSwapchainTextureHandle());
 		++_resourceEpoch;
 	}
 
@@ -649,11 +654,7 @@ namespace mythril {
 		}
 		// a compute pipeline only has one shader anyways
 		AllocatedShader* shader = _shaderPool.get(spec.shader);
-
-		if (shader->_specializationInfo.specializationConstants.size() != sc_count)
-			LOG_SYSTEM(
-			        LogType::Warning, "You have specialization constants used in the compute shader '{}' that are not defined in the pipeline creation for '{}'!", shader->_debugName, spec.debugName
-			);
+		CheckSpecializationConstants(*shader, sc_count, "compute", spec.debugName, false);
 		const std::unique_ptr<SpecializationInfoBundle> spec_constants_bundle = BuildSpecializationInfoBundle(spec.specConstants, sc_count, shader->_specializationInfo.nameToID);
 
 		VkPipelineShaderStageCreateInfo shader_stage_ci = {
@@ -672,19 +673,72 @@ namespace mythril {
 		return vk_pipeline;
 	}
 
+	void CTX::CheckSpecializationConstants(const AllocatedShader& shader, unsigned int expectedSpecConstantscount, const char* shaderStageName, const char* pipelineDebugName, bool hasMultipleStages) {
+		// calculated from reflection of shader
+		const unsigned int calculatedcount = shader._specializationInfo.specializationConstants.size();
+
+		if (calculatedcount > expectedSpecConstantscount)
+			LOG_SYSTEM(
+					LogType::Warning, "You have specialization constants used in the {} shader '{}' that are not defined in the pipeline creation for '{}'!", shaderStageName, shader._debugName, pipelineDebugName
+			);
+		if (hasMultipleStages) return;
+		// basically the opposite, and less common since the user instinctively wouldnt be including specialization constants in the construction of their pipline without planning how it would look in the shader
+		if (calculatedcount < expectedSpecConstantscount)
+			LOG_SYSTEM(
+					LogType::Warning, "You have specialization constants defined in the pipeline creation for '{}' but do not exist in the {} shader '{}'!", pipelineDebugName, shaderStageName, shader._debugName
+			);
+	}
+
+	VkPipeline CTX::buildRayTracingPipelineImpl(VkPipelineLayout layout, RaytracingPipelineSpec spec) {
+		uint32_t sc_count = 0;
+		while (sc_count < 16 && spec.specConstants[sc_count].size) {
+			sc_count++;
+		}
+
+		AllocatedShader* ray_gen_shader = _shaderPool.get(spec.rayGenShader.handle);
+		CheckSpecializationConstants(*ray_gen_shader, sc_count, "ray generatioon", spec.debugName, true);
+		AllocatedShader* hit_shader = _shaderPool.get(spec.hitShader.handle);
+		CheckSpecializationConstants(*hit_shader, sc_count, "closest hit", spec.debugName, true);
+		AllocatedShader* miss_shader = _shaderPool.get(spec.missShader.handle);
+		CheckSpecializationConstants(*miss_shader, sc_count, "miss", spec.debugName, true);
+
+		VkRayTracingPipelineCreateInfoKHR pipeline_ci = {
+			.sType = VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR,
+			.pNext = nullptr,
+			.flags = 0,
+			//.stageCount = ,
+			//.pStages = ,
+		};
+		VkPipeline vk_pipeline = VK_NULL_HANDLE;
+		VK_CHECK(vkCreateRayTracingPipelinesKHR(_vkDevice, nullptr, nullptr, 1, &pipeline_ci, nullptr, &vk_pipeline));
+		return vk_pipeline;
+	}
+
 	void CTX::resolveComputePipelineImpl(AllocatedComputePipeline& pipeline) {
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_CREATE);
 		// aliases
 		ComputePipelineSpec& spec = pipeline._spec;
 		AllocatedShader* shader = _shaderPool.get(spec.shader);
 
-		// resolvement &
-		// assignment
+		// resolvement and assignment
 		PipelineCoreData common = this->buildPipelineCommonDataExceptVkPipelineImpl(shader->_pipelineSignature);
 		pipeline._shared.core = common;
 		pipeline._shared.core._vkPipeline = this->buildComputePipelineImpl(common._vkPipelineLayout, spec);
 		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_PIPELINE, reinterpret_cast<uint64_t>(pipeline._shared.core._vkPipeline), pipeline.getDebugName().data());
 		// good to go, maybe later you could return it
+	}
+	void CTX::resolveRaytracingPipelineImpl(AllocatedRaytracingPipeline& pipeline) {
+		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_CREATE);
+		// aliases
+		RaytracingPipelineSpec& spec = pipeline._spec;
+		AllocatedShader* ray_gen_shader = _shaderPool.get(spec.rayGenShader.handle);
+		AllocatedShader* hit_shader = _shaderPool.get(spec.hitShader.handle);
+		AllocatedShader* miss_shader = _shaderPool.get(spec.missShader.handle);
+		// resolvement and assignment
+		//PipelineCoreData common = this->buildPipelineCommonDataExceptVkPipelineImpl(shader->_pipelineSignature);
+		//pipeline._shared.core = common;
+		//pipeline._shared.core._vkPipeline = this->buildRaytracingPipelineImpl(common._vkPipelineLayout, spec);
+		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_PIPELINE, reinterpret_cast<uint64_t>(pipeline._shared.core._vkPipeline), pipeline.getDebugName().data());
 	}
 
 	void CTX::resolveGraphicsPipelineImpl(AllocatedGraphicsPipeline& pipeline, uint32_t viewMask) {
@@ -742,10 +796,7 @@ namespace mythril {
 			}
 			AllocatedShader* shader = _shaderPool.get(vertStage.handle);
 			ASSERT_MSG(shader, "The vertex shader for graphics pipeline: '{}' was destroyed or moved.", spec.debugName);
-			if (shader->_specializationInfo.specializationConstants.size() > sc_count)
-				LOG_SYSTEM(
-				        LogType::Warning, "You have specialization constants used in the vertex shader '{}' that are not defined in the pipeline creation for '{}'!", shader->_debugName, spec.debugName
-				);
+			CheckSpecializationConstants(*shader, sc_count, "vertex", spec.debugName, true);
 			vertSpecConstantsBundle = BuildSpecializationInfoBundle(spec.specConstants, sc_count, shader->_specializationInfo.nameToID);
 			builder.add_shader_module(shader->vkShaderModule, VK_SHADER_STAGE_VERTEX_BIT, vertStage.entryPoint, &vertSpecConstantsBundle->vkInfo);
 			pipeline_layout_signatures.push_back(shader->_pipelineSignature);
@@ -758,13 +809,7 @@ namespace mythril {
 			}
 			AllocatedShader* shader = _shaderPool.get(fragStage.handle);
 			ASSERT_MSG(shader, "The fragment shader for graphics pipeline: '{}' was destroyed or moved.", spec.debugName);
-			if (shader->_specializationInfo.specializationConstants.size() > sc_count)
-				LOG_SYSTEM(
-				        LogType::Warning,
-				        "You have specialization constants used in the fragment shader '{}' that are not defined in the pipeline creation for '{}'!",
-				        shader->_debugName,
-				        spec.debugName
-				);
+			CheckSpecializationConstants(*shader, sc_count, "fragment", spec.debugName, true);
 			fragSpecConstantsBundle = BuildSpecializationInfoBundle(spec.specConstants, sc_count, shader->_specializationInfo.nameToID);
 			builder.add_shader_module(shader->vkShaderModule, VK_SHADER_STAGE_FRAGMENT_BIT, fragStage.entryPoint, &fragSpecConstantsBundle->vkInfo);
 			pipeline_layout_signatures.push_back(shader->_pipelineSignature);
@@ -801,21 +846,21 @@ namespace mythril {
 			LOG_SYSTEM(LogType::Warning, "'switchShader' called on null/invalid graphics_pipeline!");
 			return;
 		}
-		GraphicsPipelineSpec current_spec = graphics_pipeline->_spec;
-		PipelineCoreData& core = graphics_pipeline->_shared.core;
+		GraphicsPipelineSpec current_spec = graphics_pipeline_obj->_spec;
+		PipelineCoreData& core = graphics_pipeline_obj->_shared.core;
 		//VkShaderModule currentVkShaderModule = current_spec.vertexShader;
 
 		// same thing as destroying the pipeline
 		deferTask(std::packaged_task<void()>([device = _vkDevice, pipeline = core._vkPipeline]() { vkDestroyPipeline(device, pipeline, nullptr); }));
 		deferTask(std::packaged_task<void()>([device = _vkDevice, layout = core._vkPipelineLayout]() { vkDestroyPipelineLayout(device, layout, nullptr); }));
 
-		graphics_pipeline->_shared.needsRecompile = true;
+		graphics_pipeline_obj->_shared.needsRecompile = true;
 		switch (stage) {
 			case ShaderStages::Vertex: {
-				graphics_pipeline->_spec.vertexShader = newShader;
+				graphics_pipeline_obj->_spec.vertexShader = newShader;
 			} break;
 			case ShaderStages::Fragment: {
-				graphics_pipeline->_spec.fragmentShader = newShader;
+				graphics_pipeline_obj->_spec.fragmentShader = newShader;
 			} break;
 			default: ASSERT_MSG(false, "Currently only ShaderStages:: Vertex & Fragment are supported!");
 		}
@@ -881,6 +926,12 @@ namespace mythril {
 			usage_flags |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
 		if (spec.usage & BufferUsageBits::BufferUsageBits_Indirect)
 			usage_flags |= VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+		if (spec.usage & BufferUsageBits::BufferUsageBits_AccelerationStructureInput)
+			usage_flags |= VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+		if (spec.usage & BufferUsageBits::BufferUsageBits_AccelerationStructureStorage)
+			usage_flags |= VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+		if (spec.usage & BufferUsageBits::BufferUsageBits_ShaderBindingTable)
+			usage_flags |= VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
 
 		ASSERT_MSG(usage_flags, "Invalid buffer creation specification!");
 		const VkMemoryPropertyFlags mem_flags = StorageTypeToVkMemoryPropertyFlags(spec.storage);
@@ -1148,6 +1199,8 @@ namespace mythril {
 		}
 		// make a copy of the allocated texture object
 		AllocatedTexture copied_obj = *this->_texturePool.get(handle);
+		// view is its own resource, don't inherit the parent's cached views
+		copied_obj._additionalViews.clear();
 		ASSERT_MSG(copied_obj._numLevels > spec.mipLevel, "baseMipLevel must be less then mipLevels of the original texture!");
 		if (spec.numMipLevels != VK_REMAINING_MIP_LEVELS) {
 			ASSERT_MSG(copied_obj._numLevels >= (spec.mipLevel + spec.numMipLevels), "Requested mipLevel+numMipLevels exceeds the number of mipLevels of the original texture!");
@@ -1304,6 +1357,15 @@ namespace mythril {
 		ComputePipelineHandle handle = _computePipelinePool.create(std::move(obj));
 		return {this, handle};
 	}
+	// fixme: ensure correctness
+	RaytracingPipeline CTX::createRaytracingPipeline(const RaytracingPipelineSpec& spec) {
+		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_CREATE);
+		AllocatedRaytracingPipeline obj = {};
+		obj._spec = spec;
+		snprintf(obj._shared.debugName, sizeof(obj._shared.debugName), "%s", spec.debugName);
+		RaytracingPipelineHandle handle = _raytracingPipelinePool.create(std::move(obj));
+		return { this, handle };
+	}
 
 	Shader CTX::createShader(const ShaderSpec& spec) {
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_CREATE);
@@ -1356,6 +1418,65 @@ namespace mythril {
 
 		ShaderHandle handle = _shaderPool.create(std::move(obj));
 		return {this, handle};
+	}
+
+	VkAccelerationStructureKHR CTX::createVkTLAS(const AccelerationStructureSpec& spec) {
+		ASSERT_MSG(spec.type == AccelerationStructureSpec::Type::TLAS, "Really why are you calling this (createTLAS) when the type isnt even TLAS");
+		const VkAccelerationStructureCreateInfoKHR create_info = {
+			.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR,
+			.pNext = nullptr,
+			.createFlags = 0,
+			.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR,
+			//.buffer = ,
+			//.size =
+		};
+
+		VkAccelerationStructureKHR acceleration_structure = VK_NULL_HANDLE;
+		VK_CHECK(vkCreateAccelerationStructureKHR(_vkDevice, &create_info, nullptr, &acceleration_structure));
+		return acceleration_structure;
+	}
+	VkAccelerationStructureKHR CTX::createVkBLAS(const AccelerationStructureSpec& spec) {
+		ASSERT_MSG(spec.type == AccelerationStructureSpec::Type::BLAS, "Really why are you calling this (createBLAS) when the type isnt even BLAS");
+
+		//VkAccelerationStructureGeometryKHR geometry = getBuildInfoGeometry(spec);
+		const VkAccelerationStructureCreateInfoKHR create_info = {
+			.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR,
+			.pNext = nullptr,
+			.createFlags = 0,
+			.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR,
+			//.buffer = ,
+			//.size =
+		};
+
+		VkAccelerationStructureKHR acceleration_structure = VK_NULL_HANDLE;
+		VK_CHECK(vkCreateAccelerationStructureKHR(_vkDevice, &create_info, nullptr, &acceleration_structure));
+		return acceleration_structure;
+	}
+
+	AccelerationStructure CTX::createAccelerationStructure(const AccelerationStructureSpec& spec) {
+		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_CREATE);
+
+		ASSERT_MSG(isExtensionEnabled(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME), "VK_KHR_acceleration_structure is not enabled!");
+		ASSERT_MSG(spec.indexType == VK_INDEX_TYPE_UINT16 || spec.indexType == VK_INDEX_TYPE_UINT32 || spec.indexType == VK_INDEX_TYPE_NONE_KHR, "Invalid indexType attribute, must be VK_INDEX_TYPE_UINT16, VK_INDEX_TYPE_UINT32, or VK_INDEX_TYPE_NONE_KHR.");
+
+
+		AllocatedAccelerationStructure obj{};
+		// _debugName
+		snprintf(obj._debugName, sizeof(obj._debugName), "%s", spec.debugName);
+
+		VkAccelerationStructureKHR vk_accel{};
+		switch (spec.type) {
+			case AccelerationStructureSpec::Type::BLAS:
+				vk_accel = createVkBLAS(spec);
+			case AccelerationStructureSpec::Type::TLAS:
+				vk_accel = createVkTLAS(spec);
+			default:
+				ASSERT_MSG(false, "Invalid acceleration structure type choosen!");
+		}
+
+		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR, reinterpret_cast<uint64_t>(vk_accel), obj.getDebugName().data());
+		const AccelerationStructureHandle handle = _accelerationStructurePool.create(std::move(obj));
+		return { this, handle };
 	}
 
 	// functions that wrap around existing functions for AllocatedObjects
@@ -1462,23 +1583,6 @@ namespace mythril {
 		);
 	}
 
-
-	CommandBuffer CTX::createActiveCommand(CommandBuffer::Type type) {
-		_staging->resetPending();
-		if (type == CommandBuffer::Type::Graphics) {
-			const VkSemaphore acquire_semaphore = _swapchain->acquire();
-			_immGraphics->waitSemaphore(acquire_semaphore);
-			wrappedBackBuffer.updateHandle(this, _swapchain->getCurrentSwapchainTextureHandle());
-		}
-		return CommandBuffer{this, type};
-	}
-	SubmitHandle CTX::submitActiveCommand(CommandBuffer& cmd) {
-		ASSERT(cmd._ctx);
-		ASSERT(cmd._wrapper);
-
-		return {};
-	}
-
 	CommandBuffer& CTX::acquireCommand(CommandBuffer::Type type) {
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_ACQUIRE);
 		ASSERT_MSG(!_currentCommandBuffer._ctx, "Cannot open more than 1 CommandBuffer simultaneously!");
@@ -1486,7 +1590,7 @@ namespace mythril {
 		if (type == CommandBuffer::Type::Graphics) {
 			VkSemaphore acquire_semaphore = _swapchain->acquire();
 			_immGraphics->waitSemaphore(acquire_semaphore);
-			wrappedBackBuffer.updateHandle(this, _swapchain->getCurrentSwapchainTextureHandle());
+			wrappedBackBuffer.updateHandle(*this, _swapchain->getCurrentSwapchainTextureHandle());
 		}
 		_currentCommandBuffer = CommandBuffer(this, type);
 		return _currentCommandBuffer;
@@ -1589,6 +1693,51 @@ namespace mythril {
 	// 		// might return the submit handle no clue
 	// 		return handle;
 	// 	}
+
+	VkAccelerationStructureBuildSizesInfoKHR CTX::getBLASBuildInfo(const BottomLevelBuildSpec& spec) {
+		if (!this->isExtensionEnabled(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME))
+			LOG_SYSTEM(LogType::Warning, "VK_KHR_ACCELERATION_STRUCTURE is not an enabled extension, why are you calling 'getBLASBuildInfo()' then.");
+
+		VkAccelerationStructureGeometryDataKHR geometryData;
+		switch (spec.geometryType) {
+			case VK_GEOMETRY_TYPE_TRIANGLES_KHR: {
+				VkAccelerationStructureGeometryTrianglesDataKHR geometry_triangles = {
+					.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR,
+					.vertexFormat = spec.geometry.vertexFormat,
+					.vertexData = { .deviceAddress = this->gpuAddress(spec.geometry.vertexBuffer) },
+					.vertexStride = spec.geometry.vertexStride,
+					.maxVertex = spec.geometry.numVertices,
+					.indexType = spec.geometry.indexType,
+					.indexData = { .deviceAddress = this->gpuAddress(spec.geometry.indexBuffer) }
+				};
+				geometryData = VkAccelerationStructureGeometryDataKHR(geometry_triangles);
+			} break;
+			case VK_GEOMETRY_TYPE_AABBS_KHR:
+			case VK_GEOMETRY_TYPE_INSTANCES_KHR:
+			default:
+				ASSERT_MSG(false, "Geometry type not supported yet!");
+		}
+
+		VkAccelerationStructureGeometryKHR geometry = {
+			.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR,
+			.geometryType = spec.geometryType,
+			.geometry = geometryData,
+			.flags = spec.geometryFlags,
+		};
+		VkAccelerationStructureBuildGeometryInfoKHR buildGeometryInfo = {
+			.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR,
+			.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR,
+			.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR,
+			.geometryCount = 1,// not sure yet
+			.pGeometries = &geometry,
+		};
+
+		// hardcoded build_type for
+		VkAccelerationStructureBuildSizesInfoKHR buildSizes;
+		vkGetAccelerationStructureBuildSizesKHR(_vkDevice, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildGeometryInfo, &buildGeometryInfo.geometryCount, &buildSizes);
+		return buildSizes;
+	}
+
 	void CTX::destroy(BufferHandle handle) {
 		AllocatedBuffer* buf = _bufferPool.get(handle);
 		if (!buf) {
@@ -1609,6 +1758,10 @@ namespace mythril {
 			_imguiPlugin.removeImageDescriptor(handle);
 		}
 #endif
+		for (const auto& viewHandle : image->_additionalViews | std::views::values) {
+			destroy(viewHandle);
+		}
+		image->_additionalViews.clear();
 		deferTask(std::packaged_task<void()>([device = _vkDevice, imageView = image->_vkImageView]() { vkDestroyImageView(device, imageView, nullptr); }));
 		if (image->_vkImageViewStorage) {
 			deferTask(std::packaged_task<void()>([device = _vkDevice, imageView = image->_vkImageViewStorage]() { vkDestroyImageView(device, imageView, nullptr); }));
@@ -1661,6 +1814,59 @@ namespace mythril {
 		deferTask(std::packaged_task<void()>([device = _vkDevice, pipeline = core._vkPipeline]() { vkDestroyPipeline(device, pipeline, nullptr); }));
 		deferTask(std::packaged_task<void()>([device = _vkDevice, layout = core._vkPipelineLayout]() { vkDestroyPipelineLayout(device, layout, nullptr); }));
 		_computePipelinePool.destroy(handle);
+	}
+	void CTX::destroy(RaytracingPipelineHandle handle) {
+		AllocatedRaytracingPipeline* raytracing_pipeline = _raytracingPipelinePool.get(handle);
+		if (!raytracing_pipeline)
+			return;
+		PipelineCoreData& core = raytracing_pipeline->_shared.core;
+		deferTask(std::packaged_task<void()>([device = _vkDevice, pipeline = core._vkPipeline]() { vkDestroyPipeline(device, pipeline, nullptr); }));
+		deferTask(std::packaged_task<void()>([device = _vkDevice, layout = core._vkPipelineLayout]() { vkDestroyPipelineLayout(device, layout, nullptr); }));
+		_raytracingPipelinePool.destroy(handle);
+	}
+	void CTX::destroy(AccelerationStructureHandle handle) {
+		AllocatedAccelerationStructure* acceleration_structure = _accelerationStructurePool.get(handle);
+		if (!acceleration_structure)
+			return;
+
+		deferTask(std::packaged_task<void()>([device = _vkDevice, accel_struct = acceleration_structure->_vkAccelerationStructure]() { vkDestroyAccelerationStructureKHR(device, accel_struct, nullptr); }));
+		_accelerationStructurePool.destroy(handle);
+	}
+
+	// ---- texture subresource views ----
+	Dimensions CTX::getTextureDimensions(TextureHandle handle) const {
+		return view(handle).getDimensions();
+	}
+	TextureViewKey CTX::createTextureView(TextureHandle handle, const TextureViewSpec& spec) {
+		const TextureViewKey key = detail::packTextureViewKey(spec.mipLevel, spec.numMipLevels, spec.layer, spec.numLayers);
+		AllocatedTexture& tex = access(handle);
+		if (tex._additionalViews.find(key) != tex._additionalViews.end()) {
+			return key; // already cached
+		}
+		VkImageViewType viewType = spec.type != VK_IMAGE_VIEW_TYPE_MAX_ENUM ? spec.type : tex.getViewType();
+		if (spec.numLayers == 1 && viewType == VK_IMAGE_VIEW_TYPE_CUBE) {
+			viewType = VK_IMAGE_VIEW_TYPE_2D;
+		}
+		char data[kMaxDebugNameLength];
+		snprintf(data, sizeof(data), "%s - View (Mip: %d, NumMips: %d, Layer: %d, NumLayers: %d)", tex.getDebugName().data(), spec.mipLevel, spec.numMipLevels, spec.layer, spec.numLayers);
+		TextureViewSpec resolvedSpec = spec;
+		resolvedSpec.type = viewType;
+		resolvedSpec.debugName = data;
+		const TextureHandle newView = createTextureViewImpl(handle, resolvedSpec);
+		access(handle)._additionalViews.emplace(key, newView);
+		return key;
+	}
+	VkImageView CTX::getTextureView(TextureHandle handle, TextureViewKey key) const {
+		const AllocatedTexture& tex = view(handle);
+		auto it = tex._additionalViews.find(key);
+		ASSERT_MSG(it != tex._additionalViews.end(), "TextureViewKey not found in texture!");
+		return view(it->second).getImageView();
+	}
+	TextureHandle CTX::getTextureViewHandle(TextureHandle handle, TextureViewKey key) const {
+		const AllocatedTexture& tex = view(handle);
+		auto it = tex._additionalViews.find(key);
+		ASSERT_MSG(it != tex._additionalViews.end(), "TextureViewKey not found in texture!");
+		return it->second;
 	}
 } // namespace mythril
 #ifdef MYTH_ENABLED_IMGUI
@@ -1778,8 +1984,9 @@ namespace ImGui {
 	void Image(mythril::TextureHandle texHandle, const ImVec2& image_size, const ImVec2& uv0, const ImVec2& uv1) {
 		Image(texHandle, mythril::SamplerHandle{}, image_size, uv0, uv1);
 	}
-	void Image(const mythril::Texture& texture, const mythril::Texture::ViewKey& viewKey, const ImVec2& image_size, const ImVec2& uv0, const ImVec2& uv1) {
-		Image(texture.handle(viewKey), mythril::SamplerHandle{}, image_size, uv0, uv1);
+	void Image(const mythril::Texture& texture, mythril::TextureViewKey viewKey, const ImVec2& image_size, const ImVec2& uv0, const ImVec2& uv1) {
+		const mythril::TextureHandle viewHandle = texture.getContext()->getTextureViewHandle(texture.handle(), viewKey);
+		Image(viewHandle, mythril::SamplerHandle{}, image_size, uv0, uv1);
 	}
 	void Image(const mythril::Texture& texture, const ImVec2& image_size, const ImVec2& uv0, const ImVec2& uv1) {
 		Image(texture.handle(), mythril::SamplerHandle{}, image_size, uv0, uv1);

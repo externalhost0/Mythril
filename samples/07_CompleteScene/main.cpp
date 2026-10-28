@@ -893,7 +893,7 @@ int main() {
 				VkDeviceAddress vba;
 			} push{
 				.mvp = lightSpaceMatrix * model,
-				.vba = opaqueSponzaVertexBuf.gpuAddress()
+				.vba = ctx->gpuAddress(opaqueSponzaVertexBuf.handle())
 			};
 			cmd.cmdPushConstants(push);
 			cmd.cmdBindIndexBuffer(opaqueSponzaIndexBuf);
@@ -985,8 +985,8 @@ int main() {
 					uint32_t nLight;
 					glm::vec3 lightPos;
 				} push {
-					.shadowMVPs = pointLightShadowMatrixBuf.gpuAddress(),
-					.vba = opaqueSponzaVertexBuf.gpuAddress(),
+					.shadowMVPs = ctx->gpuAddress(pointLightShadowMatrixBuf.handle()),
+					.vba = ctx->gpuAddress(opaqueSponzaVertexBuf.handle()),
 					.model = scaledModel,
 					.nLight = static_cast<uint32_t>(i),
 					.lightPos = lightingData.pointLights[i].position,
@@ -1044,7 +1044,7 @@ int main() {
 				glm::vec3 sunDirection;
 				float _pad;
 			} push{
-				.frame = frameDataHandle.gpuAddress(),
+				.frame = ctx->gpuAddress(frameDataHandle.handle()),
 				.sunDirection = sun_quaternion * glm::vec3(0.f, 0.f, -1.f),
 			};
 			cmd.cmdPushConstants(push);
@@ -1081,7 +1081,7 @@ int main() {
 				const GPU::GeometryPushConstants push {
 					.model = scaledModel,
 					.vba = ctx->gpuAddress(mesh.vertexBufHandle),
-					.frame = frameDataHandle.gpuAddress(),
+					.frame = ctx->gpuAddress(frameDataHandle.handle()),
 					.tintColor = {1, 1, 1, 1},
 					.baseColorTexture = baseColorTex.index(),
 					.normalTexture = normalTex.index(),
@@ -1142,7 +1142,7 @@ int main() {
 				const GPU::GeometryPushConstants push {
 						.model = model,
 						.vba = ctx->gpuAddress(mesh.vertexBufHandle),
-						.frame = frameDataHandle.gpuAddress(),
+						.frame = ctx->gpuAddress(frameDataHandle.handle()),
 						.tintColor = {1, 1, 1, 1},
 						.baseColorTexture = baseColorTex.index(),
 						.normalTexture = normalTex.index(),
@@ -1241,9 +1241,9 @@ int main() {
 				float brightness;
 				float speed;
 			} push {
-				.vba = particle_vertex_buffer.gpuAddress(),
-				.bufferAddr = particles_buffer.gpuAddress(),
-				.frame = frameDataHandle.gpuAddress(),
+				.vba = ctx->gpuAddress(particle_vertex_buffer.handle()),
+				.bufferAddr = ctx->gpuAddress(particles_buffer.handle()),
+				.frame = ctx->gpuAddress(frameDataHandle.handle()),
 				.brightness = particle_emission,
 				.speed = particle_speed
 			};
@@ -1254,7 +1254,7 @@ int main() {
 
 		constexpr unsigned int kNumColorMips = 8;
 		mythril::Texture offscreenColorTexs[kNumColorMips];
-		mythril::Dimensions colorbloomdimensions = offscreenColorTarget->getDimensions();
+		mythril::Dimensions colorbloomdimensions = ctx->getTextureDimensions(offscreenColorTarget.handle());
 		for (int i = 0; i < kNumColorMips; i++) {
 			char namebuf[64];
 			snprintf(namebuf, sizeof(namebuf), "Color Bloom Tex %i", i);
@@ -1299,7 +1299,7 @@ int main() {
 				};
 				cmd.cmdPushConstants(push);
 				static constexpr uint32_t threadNum = 8;
-				const mythril::Dimensions texDims = offscreenColorTexs[i+1]->getDimensions();
+				const mythril::Dimensions texDims = ctx->getTextureDimensions(offscreenColorTexs[i+1].handle());
 				const mythril::Dimensions roundedDims = {
 					(texDims.width + threadNum - 1) / threadNum,
 					(texDims.height + threadNum - 1) / threadNum,
@@ -1338,7 +1338,7 @@ int main() {
 				.sampler = 0
 			};
 			cmd.cmdPushConstants(push);
-			const mythril::Dimensions texDims = offscreenColorTexs[7]->getDimensions();
+			const mythril::Dimensions texDims = ctx->getTextureDimensions(offscreenColorTexs[7].handle());
 			constexpr glm::vec2 threadsPerGroup = {16, 16};
 			const auto groupX = static_cast<uint32_t>((texDims.width + threadsPerGroup.x - 1) / threadsPerGroup.x);
 			const auto groupY = static_cast<uint32_t>((texDims.height + threadsPerGroup.y - 1) / threadsPerGroup.y);
@@ -1360,7 +1360,7 @@ int main() {
 		.execute([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdBindComputePipeline(upsampleComputePipeline);
 			for (int i = kNumColorMips-1; i > 0; i--) {
-				mythril::Dimensions outdims = offscreenColorTexs[i-1]->getDimensions();
+				mythril::Dimensions outdims = ctx->getTextureDimensions(offscreenColorTexs[i-1].handle());
 				struct PushConstants {
 					uint64_t inTex;
 					uint64_t outTex;
@@ -1376,7 +1376,7 @@ int main() {
 				};
 				cmd.cmdPushConstants(push);
 				static constexpr uint32_t threadNum = 8;
-				const mythril::Dimensions texDims = offscreenColorTexs[i-1]->getDimensions();
+				const mythril::Dimensions texDims = ctx->getTextureDimensions(offscreenColorTexs[i-1].handle());
 				const mythril::Dimensions roundedDims = {
 					(texDims.width + threadNum - 1) / threadNum,
 					(texDims.height + threadNum - 1) / threadNum,
@@ -1532,7 +1532,7 @@ int main() {
 				} push {
 					.model = model,
 					.vba = ctx->gpuAddress(mesh.vertexBufHandle),
-					.frame = frameDataHandle.gpuAddress()
+					.frame = ctx->gpuAddress(frameDataHandle.handle())
 				};
 				cmd.cmdPushConstants(push);
 				cmd.cmdBindIndexBuffer(mesh.indexBufHandle);
@@ -1568,28 +1568,22 @@ int main() {
 		lightingData.environmentLight.color     = {0.25f, 0.30f, 0.35f};
 		lightingData.environmentLight.intensity = 0.2f;
 
-		float dayTime = 0.25f;   // 0..1  (0=midnight, 0.25=sunrise, 0.5=noon, 0.75=sunset)
-		float daySpeed = 0.02f;  // cycles per second (0.02 = 50s day)
+		float dayTime = 0.25f; // 0..1 (0=midnight, 0.25=sunrise, 0.5=noon, 0.75=sunset)
+		float daySpeed = 0.02f; // cycles per second (0.02 = 50s day)
 		bool  autoDayCycle = false;
 
 		auto applyDayNightCycle = [&](float t) {
-			// orbit the sun around the east-west (X) axis
-			// direction = sun_quaternion*(0,0,-1) is the light travel vector (sun→scene),
-			// so it must have y < 0 when the sun is above — negate the angle to flip the orbit.
 			const float sunAngle = -(t - 0.25f) * glm::two_pi<float>();
 			sun_quaternion = glm::angleAxis(sunAngle, glm::vec3(1.f, 0.f, 0.f));
 
-			// sunDir is the light travel direction; -sunDir.y > 0 means sun is above the horizon
-			const glm::vec3 sunDir   = sun_quaternion * glm::vec3(0.f, 0.f, -1.f);
-			const float     sunUp    = glm::max(0.f, -sunDir.y);          // 0 below horizon
-			// sharpen orange tint near the horizon
-			const float     horizonT = glm::pow(1.f - glm::abs(sunDir.y), 6.f) * sunUp;
-
-			const glm::vec3 noonColor    = {1.00f, 0.97f, 0.90f};
+			const glm::vec3 sunDir = sun_quaternion * glm::vec3(0.f, 0.f, -1.f);
+			const float sunUp = glm::max(0.f, -sunDir.y);
+			const float horizonT = glm::pow(1.f - glm::abs(sunDir.y), 6.f) * sunUp;
+			const glm::vec3 noonColor = {1.00f, 0.97f, 0.90f};
 			const glm::vec3 horizonColor = {1.00f, 0.45f, 0.10f};
-			const glm::vec3 moonColor    = {0.55f, 0.62f, 0.78f};
-			const float     moonUp       = glm::max(0.f, sunDir.y);
-			const float     nightBlend   = glm::smoothstep(0.0f, 0.12f, -sunDir.y);
+			const glm::vec3 moonColor = {0.55f, 0.62f, 0.78f};
+			const float moonUp = glm::max(0.f, sunDir.y);
+			const float nightBlend = glm::smoothstep(0.0f, 0.12f, -sunDir.y);
 
 			if (sunUp > 0.001f) {
 				lightingData.directionalLights.color     = glm::mix(noonColor, horizonColor, horizonT);

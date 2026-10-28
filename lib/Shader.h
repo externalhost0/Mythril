@@ -15,6 +15,9 @@
 #include <volk.h>
 
 namespace mythril {
+	class CTX;
+	class CommandBuffer;
+
 	enum class FieldKind {
 		// special cases, can have their own kinds
 		OpaqueHandle,
@@ -102,6 +105,7 @@ namespace mythril {
 		std::unordered_map<std::string, int> nameToID;
 	};
 
+	namespace detail {
 	class AllocatedShader {
 	public:
 		struct DescriptorBindingInfo : IParameterInfo {
@@ -140,9 +144,10 @@ namespace mythril {
 
 		char _debugName[kMaxDebugNameLength] = {0};
 
-		friend class CTX;
-		friend class CommandBuffer;
+		friend class ::mythril::CTX;
+		friend class ::mythril::CommandBuffer;
 	};
+	} // namespace detail
 
 
 	struct ReflectionResult {
@@ -159,8 +164,9 @@ namespace mythril {
 		SpecializationInfo specializationInfo;
 
 		// optional information for user-created reflection systems
-		std::vector<AllocatedShader::DescriptorSetInfo> retrievedDescriptorSets;
-		std::vector<AllocatedShader::PushConstantInfo> retrivedPushConstants;
+		// ie extra memory usage
+		std::vector<detail::AllocatedShader::DescriptorSetInfo> retrievedDescriptorSets;
+		std::vector<detail::AllocatedShader::PushConstantInfo> retrivedPushConstants;
 	};
 
 	void PatchSpecConstants(uint32_t*& code, size_t& size);

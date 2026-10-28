@@ -10,6 +10,7 @@
 
 #include <cstring>
 namespace mythril {
+	namespace detail {
 	void AllocatedBuffer::bufferSubData(const CTX& ctx, size_t offset, size_t size, const void* data) {
 		// only host-visible buffers can be uploaded this way
 		if (!_mappedPtr) {
@@ -181,4 +182,5 @@ namespace mythril {
 		ASSERT(image_view != VK_NULL_HANDLE);
 		return image_view;
 	}
+	} // namespace detail
 } // namespace mythril

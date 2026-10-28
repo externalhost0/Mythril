@@ -202,7 +202,7 @@ int main() {
 			model = glm::rotate(model, time * 0.5f, glm::vec3(1.0f, 0.0f, 0.0f));
 			GPU::PushConstant constants = {
 					.mvp = calculateProjectionMatrix(camera) * calculateViewMatrix(camera) * model,
-					.vertexBufferAddress = cubeVertexBuffer.gpuAddress()
+					.vertexBufferAddress = ctx->gpuAddress(cubeVertexBuffer.handle())
 			};
 			cmd.cmdPushConstants(constants);
 			cmd.cmdBindIndexBuffer(cubeIndexBuffer.handle());

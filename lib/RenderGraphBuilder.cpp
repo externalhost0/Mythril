@@ -20,6 +20,7 @@
 #include "vkstring.h"
 
 namespace mythril {
+	using namespace detail;
 	RenderGraph::RenderGraph() = default;
 	RenderGraph::~RenderGraph() = default;
 	RenderGraph::RenderGraph(RenderGraph&&) noexcept = default;
@@ -29,11 +30,18 @@ namespace mythril {
 		: _rGraph(rGraph), _passSource(pName, type) {
 		ASSERT(!_passSource.name.empty());
 		// set default queue solely based on type, will change during compile
-		switch (type) {
-			case PassDesc::Type::Graphics:     _passSource.queue = QueueAffinity::Graphics;      break;
-			case PassDesc::Type::Compute:      _passSource.queue = QueueAffinity::Graphics;      break;
-			case PassDesc::Type::Intermediate: _passSource.queue = QueueAffinity::AsyncTransfer; break;
-		}
+		_passSource.queue = [](PassDesc::Type type) {
+			switch (type) {
+				case PassDesc::Type::Graphics:
+					return QueueAffinity::Graphics;
+				case PassDesc::Type::Compute:
+					return QueueAffinity::Graphics;
+				case PassDesc::Type::Intermediate:
+					return QueueAffinity::AsyncTransfer;
+				default:
+					return QueueAffinity::Graphics;
+			}
+		}(type);
 	}
 
 #ifdef DEBUG
@@ -55,7 +63,7 @@ namespace mythril {
 		add(base._passSource, dst, Layout::TRANSFER_DST);
 
 		auto oldCallback = base._passSource.executeCallback;
-		if (dst.texture->isSwapchainImage()) {
+		if (dst.texture.getContext()->view(dst.texture.handle()).isSwapchainImage()) {
 			base._passSource.executeCallback = [oldCallback, srcHandle](CommandBuffer& cmd) {
 				if (oldCallback)
 					oldCallback(cmd);
@@ -78,7 +86,7 @@ namespace mythril {
 		add(base._passSource, dst, Layout::TRANSFER_DST);
 
 		auto oldCallback = base._passSource.executeCallback;
-		if (dst.texture->isSwapchainImage()) {
+		if (dst.texture.getContext()->view(dst.texture.handle()).isSwapchainImage()) {
 			base._passSource.executeCallback = [oldCallback, srcHandle](CommandBuffer& cmd) {
 				if (oldCallback)
 					oldCallback(cmd);
@@ -230,19 +238,19 @@ namespace mythril {
 		}
 
 		const SubresourceRange range = ResolveSubresourceRange(texDesc, allocatedTexture, passName);
-		auto& mutableTexture = const_cast<Texture&>(texDesc.texture);
 		VkImageViewType viewType = allocatedTexture.getViewType();
 		if (range.numLayers == 1 && viewType == VK_IMAGE_VIEW_TYPE_CUBE) {
 			viewType = VK_IMAGE_VIEW_TYPE_2D;
 		}
-		const Texture::ViewKey viewKey = mutableTexture.createView({
+		CTX* ctx = texDesc.texture.getContext();
+		const TextureViewKey viewKey = ctx->createTextureView(texDesc.texture.handle(), {
 		    .type = viewType,
 		    .mipLevel = range.baseMip,
 		    .numMipLevels = range.numMips,
 		    .layer = range.baseLayer,
 		    .numLayers = range.numLayers,
 		});
-		return mutableTexture.getImageViewForKey(viewKey);
+		return ctx->getTextureView(texDesc.texture.handle(), viewKey);
 	}
 
 	static constexpr bool NeedsBarrier(const SubresourceState& currentState, VkImageLayout desiredLayout, const vkutil::StageAccess& desiredStageAccess) {
@@ -311,7 +319,7 @@ namespace mythril {
 	}
 
 	void RenderGraph::processResourceAccess(const TextureDesc& texDesc, VkImageLayout desiredLayout, CompiledPass& outPass, std::string_view passName) {
-		const AllocatedTexture& texture = texDesc.texture.view();
+		const AllocatedTexture& texture = texDesc.texture.getContext()->view(texDesc.texture.handle());
 		const bool isSwapchain = texture.isSwapchainImage();
 		const SubresourceRange range = ResolveSubresourceRange(texDesc, texture, passName);
 		const vkutil::StageAccess dstMask = vkutil::GetPipelineStageAccess(desiredLayout);
@@ -342,7 +350,7 @@ namespace mythril {
 			processResourceAccess(dependency_desc.texDesc, layout, outPass, passDesc.name);
 		}
 		for (const AttachmentDesc& attachment_desc: passDesc.attachmentOperations) {
-			const AllocatedTexture& texture = attachment_desc.texDesc.texture.view();
+			const AllocatedTexture& texture = attachment_desc.texDesc.texture.getContext()->view(attachment_desc.texDesc.texture.handle());
 			const VkImageLayout layout = texture.isDepthAttachment() ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 			processResourceAccess(attachment_desc.texDesc, layout, outPass, passDesc.name);
 
@@ -362,7 +370,7 @@ namespace mythril {
 		bool hasDepthAttachment = false;
 		for (const AttachmentDesc& attachment_desc: pass_desc.attachmentOperations) {
 			const TextureDesc& texDesc = attachment_desc.texDesc;
-			const AllocatedTexture& allocatedTexture = attachment_desc.texDesc.texture.view();
+			const AllocatedTexture& allocatedTexture = attachment_desc.texDesc.texture.getContext()->view(attachment_desc.texDesc.texture.handle());
 
 			const bool isDepthAttachment = vkutil::IsFormatDepth(allocatedTexture.getFormat());
 			if (isDepthAttachment) {
@@ -386,7 +394,7 @@ namespace mythril {
 			};
 			if (attachment_desc.resolveTexDesc.has_value()) {
 				const TextureDesc& resolve_desc = attachment_desc.resolveTexDesc.value();
-				const AllocatedTexture resolve_texture = resolve_desc.texture.view();
+				const AllocatedTexture resolve_texture = resolve_desc.texture.getContext()->view(resolve_desc.texture.handle());
 				ASSERT_MSG(
 				        resolve_texture.getSampleCount() == VK_SAMPLE_COUNT_1_BIT,
 				        "Pass '{}': Resolve Texture must have a sample count of 1 (found '{}' to be of a greater sample count)",
@@ -615,7 +623,7 @@ namespace mythril {
 		// copy this
 		std::vector<uint32_t> local_in_degree = graph.inDegree;
 		std::queue<uint32_t> ready;
-		std::vector<bool> resolved(node_count, false);
+		std::vector resolved(node_count, false);
 		size_t resolved_count = 0;
 
 		for (uint32_t i = 0; i < node_count; ++i) {
@@ -664,14 +672,14 @@ namespace mythril {
 		for (uint32_t i = 0; i < node_count; i++) {
 			const PassDesc& pass_desc = pass_descs[i];
 			for (const auto& attachDesc : pass_desc.attachmentOperations) {
-				if (attachDesc.texDesc.texture->isSwapchainImage()) {
+				if (attachDesc.texDesc.texture.getContext()->isSwapchainTexture(attachDesc.texDesc.texture.handle())) {
 					sinkPasses.insert(i);
 					break;
 				}
 			}
 			// verify that it is a write to swapchain not a read for some reason
 			for (const auto& texDesc : pass_desc.textureDependencyOperations) {
-				if (texDesc.texDesc.texture->isSwapchainImage() && isWrite(texDesc.desiredLayout)) {
+				if (texDesc.texDesc.texture.getContext()->isSwapchainTexture(texDesc.texDesc.texture.handle()) && isWrite(texDesc.desiredLayout)) {
 					sinkPasses.insert(i);
 					break;
 				}
@@ -724,163 +732,6 @@ namespace mythril {
 			result.layers[depth].push_back(pass_idx);
 		}
 		return result;
-	}
-
-	// purely for development purposes
-	static void DumpRenderGraphDot(
-		const std::vector<CompiledPass>& compiledPasses,
-		const std::vector<std::unordered_set<uint32_t>>& predecessors,
-		const ExecutionSchedule& schedule
-	) {
-		const char* path = std::getenv("MYTHRIL_DUMP_RG");
-		if (!path || !*path) return;
-
-		std::ofstream out(path);
-		if (!out) {
-			LOG_SYSTEM(LogType::Warning, "MYTHRIL_DUMP_RG set but failed to open '{}' for writing.", path);
-			return;
-		}
-
-		auto queueColor = [](QueueAffinity q) {
-			switch (q) {
-				case QueueAffinity::Graphics:      return "lightblue";
-				case QueueAffinity::AsyncCompute:  return "palegreen";
-				case QueueAffinity::AsyncTransfer: return "lightyellow";
-			}
-			return "white";
-		};
-		auto typeLabel = [](PassDesc::Type t) {
-			switch (t) {
-				case PassDesc::Type::Graphics:     return "G";
-				case PassDesc::Type::Compute:      return "C";
-				case PassDesc::Type::Intermediate: return "I";
-			}
-			return "?";
-		};
-
-		std::unordered_map<uint32_t, const CompiledPass*> byPassIdx;
-		byPassIdx.reserve(compiledPasses.size());
-		for (const CompiledPass& p : compiledPasses)
-			byPassIdx[p.passIndex] = &p;
-
-		out << "digraph RenderGraph {\n";
-		out << "  rankdir=LR;\n";
-		out << "  node [shape=box, style=\"filled,rounded\", fontname=\"Helvetica\"];\n";
-		out << "  edge [color=\"#555555\"];\n";
-
-		for (size_t depth = 0; depth < schedule.layers.size(); ++depth) {
-			out << "  subgraph cluster_d" << depth << " {\n";
-			out << "    label=\"depth " << depth << "\"; style=dashed; color=\"#999999\";\n";
-			out << "    { rank=same;\n";
-			for (uint32_t passIdx : schedule.layers[depth]) {
-				auto it = byPassIdx.find(passIdx);
-				if (it == byPassIdx.end()) continue;
-				const CompiledPass* p = it->second;
-				out << "      p" << passIdx
-				    << " [label=\"" << p->name << "\\n[" << typeLabel(p->type) << "]\""
-				    << ", fillcolor=" << queueColor(p->queue) << "];\n";
-			}
-			out << "    }\n";
-			out << "  }\n";
-		}
-
-		for (const CompiledPass& p : compiledPasses) {
-			for (uint32_t pred : predecessors[p.passIndex]) {
-				if (byPassIdx.count(pred))
-					out << "  p" << pred << " -> p" << p.passIndex << ";\n";
-			}
-		}
-		out << "}\n";
-		LOG_SYSTEM(LogType::Info, "RenderGraph DOT written to '{}'.", path);
-
-		// flamegraph-style SVG: queues as rows, depth layers as columns
-		const std::string flamePath = std::string(path) + ".flame.svg";
-		std::ofstream svg(flamePath);
-		if (!svg) {
-			LOG_SYSTEM(LogType::Warning, "Failed to open '{}' for writing flame SVG.", flamePath);
-			return;
-		}
-
-		struct Lane { QueueAffinity q; const char* label; const char* color; };
-		const Lane lanes[] = {
-			{QueueAffinity::Graphics,      "Graphics",      "#7eb6ff"},
-			{QueueAffinity::AsyncCompute,  "AsyncCompute",  "#9be39b"},
-			{QueueAffinity::AsyncTransfer, "AsyncTransfer", "#f5e189"},
-		};
-		constexpr int blockH = 24;       // min block height (~text + padding)
-		constexpr int rowGap = 6;
-		constexpr int colW = 180;
-		constexpr int padL = 140;
-		constexpr int padT = 40;
-		const int numLayers = static_cast<int>(schedule.layers.size());
-
-		// per-lane height = max passes in any column for that lane
-		std::array<int, std::size(lanes)> laneMaxPasses{};
-		std::vector<std::array<std::vector<const CompiledPass*>, std::size(lanes)>> grid(numLayers);
-		for (int d = 0; d < numLayers; ++d) {
-			for (uint32_t passIdx : schedule.layers[d]) {
-				auto it = byPassIdx.find(passIdx);
-				if (it == byPassIdx.end()) continue;
-				for (size_t li = 0; li < std::size(lanes); ++li) {
-					if (lanes[li].q == it->second->queue) {
-						grid[d][li].push_back(it->second);
-						laneMaxPasses[li] = std::max(laneMaxPasses[li], static_cast<int>(grid[d][li].size()));
-						break;
-					}
-				}
-			}
-		}
-		std::array<int, std::size(lanes)> laneH{};
-		std::array<int, std::size(lanes)> laneY{};
-		int cursor = padT;
-		for (size_t li = 0; li < std::size(lanes); ++li) {
-			const int n = std::max(1, laneMaxPasses[li]);
-			laneH[li] = n * blockH + (n + 1) * rowGap;
-			laneY[li] = cursor;
-			cursor += laneH[li];
-		}
-		const int width = padL + colW * std::max(1, numLayers) + 20;
-		const int height = cursor + 30;
-
-		svg << "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"" << width << "\" height=\"" << height
-		    << "\" font-family=\"Helvetica, Arial, sans-serif\" font-size=\"12\">\n";
-		svg << "  <rect width=\"100%\" height=\"100%\" fill=\"#1e1e22\"/>\n";
-
-		// depth column headers + vertical guides
-		for (int d = 0; d < numLayers; ++d) {
-			const int x = padL + d * colW;
-			svg << "  <text x=\"" << (x + colW / 2) << "\" y=\"" << (padT - 14)
-			    << "\" fill=\"#cccccc\" text-anchor=\"middle\">depth " << d << "</text>\n";
-			svg << "  <line x1=\"" << x << "\" y1=\"" << padT << "\" x2=\"" << x
-			    << "\" y2=\"" << cursor << "\" stroke=\"#333\"/>\n";
-		}
-
-		// lane backgrounds + labels
-		for (size_t li = 0; li < std::size(lanes); ++li) {
-			svg << "  <rect x=\"0\" y=\"" << laneY[li] << "\" width=\"" << width << "\" height=\"" << laneH[li]
-			    << "\" fill=\"" << (li % 2 ? "#26262c" : "#222226") << "\"/>\n";
-			svg << "  <text x=\"" << (padL - 10) << "\" y=\"" << (laneY[li] + laneH[li] / 2 + 4)
-			    << "\" fill=\"#dddddd\" text-anchor=\"end\">" << lanes[li].label << "</text>\n";
-		}
-
-		// passes
-		for (int d = 0; d < numLayers; ++d) {
-			for (size_t li = 0; li < std::size(lanes); ++li) {
-				const auto& passes = grid[d][li];
-				for (size_t i = 0; i < passes.size(); ++i) {
-					const int x = padL + d * colW + 6;
-					const int y = laneY[li] + rowGap + static_cast<int>(i) * (blockH + rowGap);
-					const int w = colW - 12;
-					svg << "    <rect x=\"" << x << "\" y=\"" << y << "\" width=\"" << w << "\" height=\"" << blockH
-					    << "\" rx=\"4\" fill=\"" << lanes[li].color << "\" stroke=\"#111\"/>\n";
-					svg << "    <text x=\"" << (x + 8) << "\" y=\"" << (y + blockH / 2 + 4)
-					    << "\" fill=\"#111\">" << passes[i]->name << "</text>\n";
-				}
-			}
-		}
-
-		svg << "</svg>\n";
-		LOG_SYSTEM(LogType::Info, "RenderGraph flame SVG written to '{}'.", flamePath);
 	}
 
 	void RenderGraph::compile(CTX& rCtx) {
@@ -965,9 +816,6 @@ namespace mythril {
 		performDryRun(rCtx);
 		this->_hasCompiled = true;
 		this->_compiledEpoch = rCtx._resourceEpoch;
-#ifdef DEBUG
-		DumpRenderGraphDot(this->_compiledPasses, passPredecessors, schedule);
-#endif
 	}
 
 	void RenderGraph::trackWindowSized(Texture& texture) {
@@ -983,7 +831,7 @@ namespace mythril {
 		for (const WindowSizedTexture& tracked: _windowSizedTextures) {
 			ASSERT(tracked.texture);
 			const Dimensions nextDimensions = tracked.scaleFn ? tracked.scaleFn(swapchainDimensions) : swapchainDimensions;
-			tracked.texture->resize(nextDimensions);
+			tracked.texture->getContext()->resizeTexture(tracked.texture->handle(), nextDimensions);
 		}
 	}
 
@@ -1059,7 +907,7 @@ namespace mythril {
 	}
 
 	// will be the only execute but left for now
-	void RenderGraph::execute(CTX& rCtx) {
+	void RenderGraph::executeEXT(CTX& rCtx) {
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_RENDERGRAPH);
 		ASSERT_MSG(_hasCompiled, "A RenderGraph must be compiled before it can be executed!");
 
@@ -1108,9 +956,9 @@ namespace mythril {
 			cmd._currentPipelineHandle = {};
 			cmd._activePass = pass;
 			// we already checked if it has an execute callback so it should be guaranteed
-			if (isGraphics) cmd.cmdBeginRendering(pass.layerCount, pass.viewMask);
+			if (isGraphics) cmd.cmdBeginRenderingEXT(pass.layerCount, pass.viewMask);
 			pass.executeCallback(cmd);
-			if (isGraphics) cmd.cmdEndRendering();
+			if (isGraphics) cmd.cmdEndRenderingEXT();
 		}
 		if (!cmd._ctx->isHeadless()) {
 			// fixme: make this cleaner im so lazy right now

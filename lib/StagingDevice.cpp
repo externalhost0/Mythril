@@ -8,6 +8,7 @@
 
 
 namespace mythril {
+	using namespace detail;
 	StagingDevice::StagingDevice(CTX& ctx) :
 	    _ctx(ctx) {
 		const VkPhysicalDeviceLimits& limits = _ctx.getPhysicalDeviceProperties10().limits;

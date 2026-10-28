@@ -16,8 +16,10 @@
 
 namespace mythril {
 	class CTX;
-	class AllocatedBuffer;
-	class AllocatedTexture;
+	namespace detail {
+		class AllocatedBuffer;
+		class AllocatedTexture;
+	}
 
 	constexpr uint8_t kMaxMipLevels = 16;
 
@@ -31,21 +33,21 @@ namespace mythril {
 		BufferHandle _stagingBuffer;
 
 	public:
-		void bufferSubData(AllocatedBuffer& buffer, size_t dstOffset, size_t size, const void* data);
+		void bufferSubData(detail::AllocatedBuffer& buffer, size_t dstOffset, size_t size, const void* data);
 		struct StagedBufferCopy {
 			VkDeviceSize stagingOffset = 0;
 			VkDeviceSize size = 0;
 			VkBuffer dstBuffer = VK_NULL_HANDLE;
 			VkDeviceSize dstOffset = 0;
 		};
-		std::vector<StagedBufferCopy> stageBufferCopy(AllocatedBuffer& buffer, const void* data, size_t size, size_t dstOffset);
+		std::vector<StagedBufferCopy> stageBufferCopy(detail::AllocatedBuffer& buffer, const void* data, size_t size, size_t dstOffset);
 		void recordBufferCopies(VkCommandBuffer cmd, std::span<const StagedBufferCopy> copies);
 		void onGraphSubmit(SubmitHandle submit);
 		void resetPending();
 		void
-		imageData2D(AllocatedTexture& image, const VkRect2D& imageRegion, uint32_t baseMipLevel, uint32_t numMipLevels, uint32_t layerCheck, uint32_t numLayers, VkFormat format, const void* data);
-		void imageData3D(AllocatedTexture& image, const VkOffset3D& offset, const VkExtent3D& extent, VkFormat format, const void* data);
-		void getImageData(AllocatedTexture& image, const VkOffset3D& offset, const VkExtent3D& extent, VkImageSubresourceRange range, VkFormat format, void* outData);
+		imageData2D(detail::AllocatedTexture& image, const VkRect2D& imageRegion, uint32_t baseMipLevel, uint32_t numMipLevels, uint32_t layerCheck, uint32_t numLayers, VkFormat format, const void* data);
+		void imageData3D(detail::AllocatedTexture& image, const VkOffset3D& offset, const VkExtent3D& extent, VkFormat format, const void* data);
+		void getImageData(detail::AllocatedTexture& image, const VkOffset3D& offset, const VkExtent3D& extent, VkImageSubresourceRange range, VkFormat format, void* outData);
 
 	private:
 		static constexpr int kStagingBufferAlignment = 16;

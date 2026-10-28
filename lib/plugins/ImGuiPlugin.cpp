@@ -13,15 +13,38 @@
 #include "mythril/CTXBuilder.h"
 
 namespace mythril {
+	namespace {
+		class ScopedImGuiContext {
+		public:
+			explicit ScopedImGuiContext(ImGuiContext* next) :
+			    _previous(ImGui::GetCurrentContext()) {
+				ASSERT_MSG(next, "Cannot switch to a null ImGui context.");
+				if (_previous != next) {
+					ImGui::SetCurrentContext(next);
+				}
+			}
+
+			~ScopedImGuiContext() {
+				if (ImGui::GetCurrentContext() != _previous) {
+					ImGui::SetCurrentContext(_previous);
+				}
+			}
+
+		private:
+			ImGuiContext* _previous = nullptr;
+		};
+	} // namespace
+
 	void ImGuiPlugin::onInit(CTX& ctx, ImGuiPluginSpec spec) {
-		this->_isEnabeld = true;
+		ASSERT_MSG(_activePlugin == nullptr || _activePlugin == this, "Only one Mythril ImGui plugin can be active at a time.");
+
 		this->_requestedFormat = spec.format;
 		this->_funcWindowInit = spec.windowInitFunction;
 		this->_funcWindowDestroy = spec.windowDestroyFunction;
 
 		_ctx = &ctx;
 		IMGUI_CHECKVERSION();
-		ImGui::CreateContext();
+		_backendContext = ImGui::CreateContext();
 		ImGuiIO& io = ImGui::GetIO();
 		io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 		io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
@@ -77,18 +100,32 @@ namespace mythril {
 		};
 		this->_funcWindowInit();
 		ImGui_ImplVulkan_Init(&vulkanInitInfo);
-		// to pull in ctx to use in aliased functions
-		auto* data = new MyUserData{.ctx = &ctx, .sampler = _ctx->_samplerPool.get(_ctx->_dummyLinearSampler.handle())->getSampler(), .handleMap = {}};
-		ImGui::GetIO().UserData = data;
+		_defaultSampler = _ctx->_samplerPool.get(_ctx->_dummyLinearSampler.handle())->getSampler();
+		_activePlugin = this;
+		this->_isEnabeld = true;
 	}
 	void ImGuiPlugin::onDestroy() {
-		auto* data = reinterpret_cast<MyUserData*>(ImGui::GetIO().UserData);
-		delete data;
-		ImGui_ImplVulkan_Shutdown();
+		VK_CHECK(vkDeviceWaitIdle(_ctx->_vkDevice));
+		_ctx->waitDeferredTasks();
+		clearImageDescriptors();
+		{
+			ScopedImGuiContext context(_backendContext);
+			ImGui_ImplVulkan_Shutdown();
+		}
 		// destroying the descriptor pool we made must come after ImplVulkan_Shutdown()
 		vkDestroyDescriptorPool(_ctx->_vkDevice, _descriptorPool, nullptr);
-		this->_funcWindowDestroy();
-		ImGui::DestroyContext();
+		{
+			ScopedImGuiContext context(_backendContext);
+			this->_funcWindowDestroy();
+		}
+		ImGui::DestroyContext(_backendContext);
+		if (_activePlugin == this) {
+			_activePlugin = nullptr;
+		}
+		_backendContext = nullptr;
+		_defaultSampler = VK_NULL_HANDLE;
+		_descriptorPool = VK_NULL_HANDLE;
+		_ctx = nullptr;
 		this->_isEnabeld = false;
 	}
 } // namespace mythril

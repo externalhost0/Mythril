@@ -4,27 +4,6 @@
 
 #pragma once
 
-// ┌─────────────────────────────────────────────────────────────────────┐
-// │  Why view() and access() are NOT on the public CTX API              │
-// │                                                                     │
-// │  view() and access() return Allocated* types (AllocatedTexture,     │
-// │  AllocatedBuffer, etc.) which are internal Vulkan implementation    │
-// │  details — they carry raw VkImage/VkBuffer handles, VMA state,      │
-// │  and layout tracking. Exposing them on CTX forces every file that   │
-// │  includes CTX.h to also drag in VulkanObjects.h, Pipelines.h, and   │
-// │  Shader.h, defeating the encapsulation that CtxPtr provides.        │
-// │                                                                     │
-// │  Internal library code (CommandBuffer, RenderGraph, StagingDevice)  │
-// │  reaches these methods as CTX friends. User code that holds a       │
-// │  resource (Buffer, Texture, etc.) gets the same data through the    │
-// │  ObjectHolder wrapper's operator-> and view()/access() methods.     │
-// └─────────────────────────────────────────────────────────────────────┘
-
-// NOTE: CTX.h is intentionally heavy — it is the implementation header for the
-// central context type. Including <mythril/CTX.h> drags in the full set of
-// internal lib/ headers below (VMA, fmt via HelperMacros, the AllocatedX
-// classes, etc.). User code that only needs to construct a CTX should include
-// <mythril/CTXBuilder.h> instead, which is internals-free.
 #include "../../lib/HelperMacros.h"
 #include "../../lib/ImmediateCommands.h"
 #include "ObjectHandles.h"
@@ -34,11 +13,13 @@
 #include "../../lib/Pipelines.h"
 #include "../../lib/Shader.h"
 #include "../../lib/VulkanObjects.h"
+#include "../../lib/AccelerationStructure.h"
 
 #include "Objects.h"
 #include "../../lib/CommandBuffer.h"
 #include "../../lib/Plugins.h"
 #include "../../lib/SlangCompiler.h"
+
 #include "Specs.h"
 
 #include <deque>
@@ -135,14 +116,6 @@ namespace mythril {
 	static constexpr VkColorSpaceKHR kDefaultSwapchainColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
 	static constexpr VkPresentModeKHR kDefaultSwapchainPresentMode = VK_PRESENT_MODE_FIFO_KHR;
 
-
-	// class Sampler;
-	// class Buffer;
-	// class Texture;
-	// class Shader;
-	// class GraphicsPipeline;
-	// class ComputePipeline;
-
 	struct DeferredTask {
 		DeferredTask(std::packaged_task<void()>&& task, SubmitHandle handle, uint64_t frameNum) :
 		    _task(std::move(task)),
@@ -181,12 +154,15 @@ namespace mythril {
 		VkPhysicalDeviceVulkan13Properties props13;
 	};
 
+	struct AccelerationStructureSizes {
+
+	};
+
 
 	class CTX final {
 		void construct();
 		// hide the default constructor to avoid user from instantiating a useless CTX
 		CTX() = default;
-
 	public:
 		~CTX();
 
@@ -195,7 +171,6 @@ namespace mythril {
 
 		CTX(CTX&&) noexcept = default;
 		CTX& operator=(CTX&&) noexcept = default;
-
 	public:
 		// arguements are optional as when not given we recreate with the same settings as the last swapchain
 		void createSwapchain(const SwapchainSpec& spec = {});
@@ -212,7 +187,7 @@ namespace mythril {
 			return _swapchain->getCurrentSwapchainTextureHandle();
 		}
 		const Texture& getBackBufferTexture() {
-			wrappedBackBuffer.updateHandle(this, _swapchain->getCurrentSwapchainTextureHandle());
+			wrappedBackBuffer.updateHandle(*this, _swapchain->getCurrentSwapchainTextureHandle());
 			return wrappedBackBuffer;
 		}
 		Dimensions getSwapchainDimensions() const {
@@ -225,12 +200,22 @@ namespace mythril {
 		const Texture& getNullTexture() const { return this->_dummyTexture; }
 
 		Buffer createBuffer(BufferSpec spec);
+		void resizeBuffer(BufferHandle handle, size_t newSize);
 		Texture createTexture(TextureSpec spec);
 		void resizeTexture(TextureHandle handle, Dimensions newDimensions);
+		Dimensions getTextureDimensions(TextureHandle handle) const;
+		bool isSwapchainTexture(TextureHandle handle) const { return view(handle).isSwapchainImage(); }
+
+		// subresource views; owned by the texture, freed on destroy
+		TextureViewKey createTextureView(TextureHandle handle, const TextureViewSpec& spec);
+		VkImageView getTextureView(TextureHandle handle, TextureViewKey key) const;
+		TextureHandle getTextureViewHandle(TextureHandle handle, TextureViewKey key) const;
 		Sampler createSampler(SamplerSpec spec);
 		GraphicsPipeline createGraphicsPipeline(const GraphicsPipelineSpec& spec);
 		ComputePipeline createComputePipeline(const ComputePipelineSpec& spec);
+		RaytracingPipeline createRaytracingPipeline(const RaytracingPipelineSpec& spec);
 		Shader createShader(const ShaderSpec& spec);
+		AccelerationStructure createAccelerationStructure(const AccelerationStructureSpec& spec);
 
 		VkDeviceAddress gpuAddress(BufferHandle handle, size_t offset = 0);
 
@@ -239,7 +224,7 @@ namespace mythril {
 		void download(BufferHandle handle, void* data, size_t size, size_t offset);
 		// for textures
 		void upload(TextureHandle handle, const void* data, const TexRange& range);
-		void download(TextureHandle handle, void* data, const TexRange& range);CommandBuffer createActiveCommand(CommandBuffer::Type type);SubmitHandle submitActiveCommand(CommandBuffer&cmd);
+		void download(TextureHandle handle, void* data, const TexRange& range);
 
 	public:
 		// for automatic cleanup of resources
@@ -249,6 +234,8 @@ namespace mythril {
 		void destroy(ShaderHandle handle);
 		void destroy(GraphicsPipelineHandle handle);
 		void destroy(ComputePipelineHandle handle);
+		void destroy(RaytracingPipelineHandle handle);
+		void destroy(AccelerationStructureHandle handle);
 
 		// helpers to query the capabilities of the Vulkan runtime
 		bool isExtensionEnabled(std::string_view extension_name) const;
@@ -267,24 +254,31 @@ namespace mythril {
 		[[nodiscard]] CommandBuffer& acquireCommand(CommandBuffer::Type type);
 		SubmitHandle submitCommand(CommandBuffer& cmd);
 
+		AccelerationStructureSizes getAccelerationStructureSizes(const AccelerationStructureSpec& spec);
+		VkAccelerationStructureBuildSizesInfoKHR getBLASBuildInfo(const BottomLevelBuildSpec& spec);
+
 		// literally just for our node editor for now, experimental
 		void switchShader(GraphicsPipeline& graphics_pipeline, Shader& newShader, ShaderStages stage);
+
+		const detail::AllocatedShader& inspectShader(ShaderHandle handle) const { return view(handle); }
 	private:
 
-		// internal accessors, not public API; use ObjectHolder::view()/access() or operator-> from user code
-		const AllocatedTexture& view(TextureHandle h) const { return viewImpl(_texturePool, h); }
-		const AllocatedBuffer& view(BufferHandle h) const { return viewImpl(_bufferPool, h); }
-		const AllocatedSampler& view(SamplerHandle h) const { return viewImpl(_samplerPool, h); }
-		const AllocatedShader& view(ShaderHandle h) const { return viewImpl(_shaderPool, h); }
-		const AllocatedGraphicsPipeline& view(GraphicsPipelineHandle h) const { return viewImpl(_graphicsPipelinePool, h); }
-		const AllocatedComputePipeline& view(ComputePipelineHandle h) const { return viewImpl(_computePipelinePool, h); }
+		// internal detail:: accessors; user code goes through the handle-taking methods above
+		const detail::AllocatedTexture& view(TextureHandle h) const { return viewImpl(_texturePool, h); }
+		const detail::AllocatedBuffer& view(BufferHandle h) const { return viewImpl(_bufferPool, h); }
+		const detail::AllocatedSampler& view(SamplerHandle h) const { return viewImpl(_samplerPool, h); }
+		const detail::AllocatedShader& view(ShaderHandle h) const { return viewImpl(_shaderPool, h); }
+		const detail::AllocatedGraphicsPipeline& view(GraphicsPipelineHandle h) const { return viewImpl(_graphicsPipelinePool, h); }
+		const detail::AllocatedComputePipeline& view(ComputePipelineHandle h) const { return viewImpl(_computePipelinePool, h); }
+		const detail::AllocatedRaytracingPipeline& view(RaytracingPipelineHandle h) const { return viewImpl(_raytracingPipelinePool, h); }
 
-		AllocatedTexture& access(TextureHandle h) { return accessImpl(_texturePool, h); }
-		AllocatedBuffer& access(BufferHandle h) { return accessImpl(_bufferPool, h); }
-		AllocatedSampler& access(SamplerHandle h) { return accessImpl(_samplerPool, h); }
-		AllocatedShader& access(ShaderHandle h) { return accessImpl(_shaderPool, h); }
-		AllocatedGraphicsPipeline& access(GraphicsPipelineHandle h) { return accessImpl(_graphicsPipelinePool, h); }
-		AllocatedComputePipeline& access(ComputePipelineHandle h) { return accessImpl(_computePipelinePool, h); }
+		detail::AllocatedTexture& access(TextureHandle h) { return accessImpl(_texturePool, h); }
+		detail::AllocatedBuffer& access(BufferHandle h) { return accessImpl(_bufferPool, h); }
+		detail::AllocatedSampler& access(SamplerHandle h) { return accessImpl(_samplerPool, h); }
+		detail::AllocatedShader& access(ShaderHandle h) { return accessImpl(_shaderPool, h); }
+		detail::AllocatedGraphicsPipeline& access(GraphicsPipelineHandle h) { return accessImpl(_graphicsPipelinePool, h); }
+		detail::AllocatedComputePipeline& access(ComputePipelineHandle h) { return accessImpl(_computePipelinePool, h); }
+		detail::AllocatedRaytracingPipeline& access(RaytracingPipelineHandle h) { return accessImpl(_raytracingPipelinePool, h); }
 
 		// wrappers around VulkanObjects
 		// advanced functions that user will rarely need to call
@@ -292,19 +286,25 @@ namespace mythril {
 		TextureHandle createTextureViewImpl(TextureHandle handle, TextureViewSpec spec);
 
 		// all things related to our pipeline constructions
-		PipelineCoreData buildPipelineCommonDataExceptVkPipelineImpl(const PipelineLayoutSignature& signature);
+		detail::PipelineCoreData buildPipelineCommonDataExceptVkPipelineImpl(const PipelineLayoutSignature& signature);
 
 		// return values from resolvings are ignored for now
-		void resolveGraphicsPipelineImpl(AllocatedGraphicsPipeline& pipeline, uint32_t viewMask);
-		void resolveComputePipelineImpl(AllocatedComputePipeline& pipeline);
+		void resolveGraphicsPipelineImpl(detail::AllocatedGraphicsPipeline& pipeline, uint32_t viewMask);
+		void resolveComputePipelineImpl(detail::AllocatedComputePipeline& pipeline);
+		void resolveRaytracingPipelineImpl(detail::AllocatedRaytracingPipeline& pipeline);
 
-		// VkPipeline buildGraphicsPipelineImpl(VkPipelineLayout layout, GraphicsPipelineSpec spec);
 		VkPipeline buildComputePipelineImpl(VkPipelineLayout layout, ComputePipelineSpec spec);
+		static void CheckSpecializationConstants(const detail::AllocatedShader& shader,
+		                                         unsigned int expectedSpecConstantscount,
+		                                         const char* shaderStageName,
+		                                         const char* pipelineDebugName,
+		                                         bool hasMultipleStages);
+		VkPipeline buildRayTracingPipelineImpl(VkPipelineLayout layout, RaytracingPipelineSpec spec);
 
 
 		// because they are big functions :(
-		AllocatedBuffer createBufferImpl(VkDeviceSize bufferSize, VkBufferUsageFlags usageFlags, VkMemoryPropertyFlags memFlags);
-		AllocatedTexture createTextureImpl(
+		detail::AllocatedBuffer createBufferImpl(VkDeviceSize bufferSize, VkBufferUsageFlags usageFlags, VkMemoryPropertyFlags memFlags);
+		detail::AllocatedTexture createTextureImpl(
 		        VkImageUsageFlags usageFlags,
 		        VkMemoryPropertyFlags memFlags,
 		        VkExtent3D extent3D,
@@ -318,11 +318,14 @@ namespace mythril {
 		        VkImageCreateFlags createFlags = 0
 		);
 
+		VkAccelerationStructureKHR createVkTLAS(const AccelerationStructureSpec& spec);
+		VkAccelerationStructureKHR createVkBLAS(const AccelerationStructureSpec& spec);
+
 		void checkAndUpdateBindlessDescriptorSetImpl();
 		void growBindlessDescriptorPoolImpl(uint32_t newMaxSamplerCount, uint32_t newMaxTextureCount);
 
 		template<typename T>
-		constexpr PipelineCoreData& getPipelienCommonData(T handle) {
+		constexpr detail::PipelineCoreData& getPipelineCommonData(T handle) {
 			static_assert(std::is_same_v<T, GraphicsPipelineHandle> || std::is_same_v<T, ComputePipelineHandle>);
 			if constexpr (std::is_same_v<T, GraphicsPipelineHandle>) {
 				auto* obj = _graphicsPipelinePool.get(handle);
@@ -376,8 +379,8 @@ namespace mythril {
 		VmaAllocator _vmaAllocator = VK_NULL_HANDLE;
 
 		// vulkan properties, features, and extensions we query
-		VulkanFeatures _featuresVulkan;
-		VulkanProperties _propertiesVulkan;
+		VulkanFeatures _featuresVulkan {};
+		VulkanProperties _propertiesVulkan {};
 		std::unordered_set<std::string> _enabledExtensionNames; // includes both instance and device extensions
 
 		// queues
@@ -410,12 +413,10 @@ namespace mythril {
 		VkSemaphore _timelineSemaphore = VK_NULL_HANDLE;
 
 		CommandBuffer _currentCommandBuffer;
-
 	private:
 		// my stuff //
 		uint64_t _currentFrameNumber = 0;
 		// bumped whenever graph-relevant resource topology changes (texture resize, swapchain recreate/destroy)
-		// RenderGraph snapshots this in compile() and re-checks it in execute() to auto-recompile when stale. one uint64 compare per frame.
 		uint64_t _resourceEpoch = 0;
 		std::unique_ptr<ImmediateCommands> _immGraphics = nullptr;
 		// both are nullptr when we fail to get a distinct family during setup
@@ -426,7 +427,7 @@ namespace mythril {
 		std::unique_ptr<StagingDevice> _staging = nullptr;
 
 		Texture wrappedBackBuffer;
-		// SwapchainSpec lastSwapchainSpec;
+		// defaults
 		SwapchainSpec lastSwapchainSpec{
 		    .width = 1280,
 		    .height = 720,
@@ -435,12 +436,14 @@ namespace mythril {
 		    .presentMode = kDefaultSwapchainPresentMode,
 		};
 
-		HandlePool<BufferHandle, AllocatedBuffer> _bufferPool;
-		HandlePool<TextureHandle, AllocatedTexture> _texturePool;
-		HandlePool<SamplerHandle, AllocatedSampler> _samplerPool;
-		HandlePool<ShaderHandle, AllocatedShader> _shaderPool;
-		HandlePool<GraphicsPipelineHandle, AllocatedGraphicsPipeline> _graphicsPipelinePool;
-		HandlePool<ComputePipelineHandle, AllocatedComputePipeline> _computePipelinePool;
+		HandlePool<BufferHandle, detail::AllocatedBuffer> _bufferPool;
+		HandlePool<TextureHandle, detail::AllocatedTexture> _texturePool;
+		HandlePool<SamplerHandle, detail::AllocatedSampler> _samplerPool;
+		HandlePool<ShaderHandle, detail::AllocatedShader> _shaderPool;
+		HandlePool<GraphicsPipelineHandle, detail::AllocatedGraphicsPipeline> _graphicsPipelinePool;
+		HandlePool<ComputePipelineHandle, detail::AllocatedComputePipeline> _computePipelinePool;
+		HandlePool<RaytracingPipelineHandle, detail::AllocatedRaytracingPipeline> _raytracingPipelinePool;
+		HandlePool<AccelerationStructureHandle, detail::AllocatedAccelerationStructure> _accelerationStructurePool;
 
 		// some rare stuff
 #ifdef MYTH_ENABLED_IMGUI
@@ -458,31 +461,23 @@ namespace mythril {
 		friend class StagingDevice;
 		friend class Swapchain;
 		friend class CTXBuilder;
-		friend class AllocatedBuffer;
-		friend class AllocatedTexture;
-		friend class Texture;
+		friend class detail::AllocatedBuffer;
+		friend class detail::AllocatedTexture;
 		// plugins are usually friends
 		friend class ImGuiPlugin;
 		friend class TracyGPUPlugin;
 
-		// basically a lvk Holder
+		// wrappers need destroy()/updateHandle()
 		template<typename T>
-		friend class ObjectHolder;
+		friend class detail::Holder;
 	};
-
-#ifdef MYTH_ENABLED_IMGUI
-	// data that is stored alongside th ImGui singleton so that it can be called from anywhere
-	struct MyUserData {
-		CTX* ctx;
-		VkSampler sampler;
-		std::unordered_map<TextureHandle, VkDescriptorSet> handleMap;
-	};
-#endif
 } // namespace mythril
 #ifdef MYTH_ENABLED_IMGUI
 namespace ImGui {
 	void Image(const mythril::Texture& texture, const ImVec2& image_size = {0, 0}, const ImVec2& uv0 = {0, 0}, const ImVec2& uv1 = {1, 1});
+	void Image(const mythril::Texture& texture, const mythril::Sampler& sampler, const ImVec2& image_size = {0, 0}, const ImVec2& uv0 = {0, 0}, const ImVec2& uv1 = {1, 1});
 	void Image(mythril::TextureHandle texHandle, const ImVec2& image_size = {0, 0}, const ImVec2& uv0 = {0, 0}, const ImVec2& uv1 = {1, 1});
-	void Image(const mythril::Texture& texture, const mythril::Texture::ViewKey& viewKey, const ImVec2& image_size = {0, 0}, const ImVec2& uv0 = {0, 0}, const ImVec2& uv1 = {1, 1});
+	void Image(mythril::TextureHandle texHandle, mythril::SamplerHandle samplerHandle, const ImVec2& image_size, const ImVec2& uv0 = {0, 0}, const ImVec2& uv1 = {1, 1});
+	void Image(const mythril::Texture& texture, mythril::TextureViewKey viewKey, const ImVec2& image_size = {0, 0}, const ImVec2& uv0 = {0, 0}, const ImVec2& uv1 = {1, 1});
 } // namespace ImGui
 #endif

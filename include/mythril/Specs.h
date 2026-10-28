@@ -5,8 +5,8 @@
 #pragma once
 
 #include "vkenums.h"
-#include <filesystem>
 
+#include <filesystem>
 #include <volk.h>
 
 namespace mythril {
@@ -27,7 +27,11 @@ namespace mythril {
 	enum BufferUsageBits : uint8_t {
 		BufferUsageBits_Index = 1 << 0,
 		BufferUsageBits_Storage = 1 << 1,
-		BufferUsageBits_Indirect = 1 << 2
+		BufferUsageBits_Indirect = 1 << 2,
+		// for ray tracing exclusively
+		BufferUsageBits_AccelerationStructureInput = 1 << 3,
+		BufferUsageBits_AccelerationStructureStorage = 1 << 4,
+		BufferUsageBits_ShaderBindingTable = 1 << 5,
 	};
 	enum TextureUsageBits : uint8_t {
 		TextureUsageBits_Sampled = 1 << 0,

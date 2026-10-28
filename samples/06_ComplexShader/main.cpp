@@ -311,7 +311,7 @@ void DrawFieldInfoRecursive(const std::vector<mythril::FieldInfo>& fields) {
 		ImGui::PopID();
 	}
 }
-void DrawShaderInfo(const mythril::AllocatedShader& shader) {
+void DrawShaderInfo(const mythril::detail::AllocatedShader& shader) {
 	char title_buf[128];
 	const char* windowName = "Shader Inspector";
 	snprintf(title_buf, sizeof(title_buf), "%s - %s", windowName, shader.getDebugName().data());
@@ -324,11 +324,11 @@ void DrawShaderInfo(const mythril::AllocatedShader& shader) {
 			ImGui::Text("Total Sets: %zu", descriptor_set_infos.size());
 			ImGui::Separator();
 
-			for (const mythril::AllocatedShader::DescriptorSetInfo& setInfo : descriptor_set_infos) {
+			for (const mythril::detail::AllocatedShader::DescriptorSetInfo& setInfo : descriptor_set_infos) {
 				char set_buf[64];
 				snprintf(set_buf, sizeof(set_buf), "Set %u", setInfo.setIndex);
 				if (ImGui::TreeNode(set_buf)) {
-					for (const mythril::AllocatedShader::DescriptorBindingInfo& bindingInfo : setInfo.bindingInfos) {
+					for (const mythril::detail::AllocatedShader::DescriptorBindingInfo& bindingInfo : setInfo.bindingInfos) {
 						ImGui::Text("Variable Name: %s", bindingInfo.varName.c_str());
 						ImGui::Text("Type Name: %s", bindingInfo.typeName.c_str());
 						ImGui::Text("Set Index: %u", bindingInfo.setIndex);
@@ -356,7 +356,7 @@ void DrawShaderInfo(const mythril::AllocatedShader& shader) {
 			ImGui::Separator();
 
 			for (size_t i = 0; i < pushConstants.size(); i++) {
-				const mythril::AllocatedShader::PushConstantInfo& push = pushConstants[i];
+				const mythril::detail::AllocatedShader::PushConstantInfo& push = pushConstants[i];
 				char push_buf[128];
 				snprintf(push_buf, sizeof(push_buf), "Push Constant %zu : \"%s\"", i, push.varName.c_str());
 				if (ImGui::TreeNode(push_buf)) {
@@ -513,9 +513,9 @@ int main() {
 			modelmatrix = glm::rotate(modelmatrix, time * 0.5f, glm::vec3(1.0f, 0.0f, 0.0f));
 			GPU::GeometryPushConstant push {
 				.model =  modelmatrix,
-				.vertexBufferAddress = cubeVertexBuffer.gpuAddress(),
-				.perFrame = perFrameDataBuffer.gpuAddress(),
-				.perMaterial = perMaterialDataBuffer.gpuAddress()
+				.vertexBufferAddress = ctx->gpuAddress(cubeVertexBuffer.handle()),
+				.perFrame = ctx->gpuAddress(perFrameDataBuffer.handle()),
+				.perMaterial = ctx->gpuAddress(perMaterialDataBuffer.handle())
 			};
 			cmd.cmdPushConstants(push);
 			cmd.cmdBindIndexBuffer(cubeIndexBuffer);
@@ -563,15 +563,15 @@ int main() {
 
 				// get framebuffer size for correct resolution, not windowsize which might not scale to your monitor dpi correctly
 				mythril::Dimensions applied_dimensions = { currentWindowSize.width, currentWindowSize.height, 1};
-				colorTarget.resize(applied_dimensions);
-				depthTarget.resize(applied_dimensions);
-				finalColorTarget.resize(applied_dimensions);
+				ctx->resizeTexture(colorTarget.handle(), applied_dimensions);
+				ctx->resizeTexture(depthTarget.handle(), applied_dimensions);
+				ctx->resizeTexture(finalColorTarget.handle(), applied_dimensions);
 			}
 
 			ImGui_ImplVulkan_NewFrame();
 			ImGui_ImplSDL3_NewFrame();
 			ImGui::NewFrame();
-			DrawShaderInfo(standardShader.view());
+			DrawShaderInfo(ctx->inspectShader(standardShader.handle()));
 
 			ImGui::Begin("Cube Data");
 			ImGui::Text("Original Shader design by 'nasana'.");
@@ -629,7 +629,7 @@ int main() {
 			float time = std::chrono::duration<float>(currentTime - startTime).count();
 			// once again, getFramebufferSize is the actual resolution we render out
 			const GPU::GlobalData frameData {
-				.objects = objectDataBuf.gpuAddress(),
+				.objects = ctx->gpuAddress(objectDataBuf.handle()),
 				.camera = cameraData,
 				.renderResolution = { currentWindowSize.width, currentWindowSize.height },
 				.time = time

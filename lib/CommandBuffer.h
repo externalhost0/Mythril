@@ -19,8 +19,11 @@
 namespace mythril {
 	// forward declarations
 	class CTX;
-	class AllocatedTexture;
-	struct PipelineCoreData;
+	namespace detail {
+		class AllocatedTexture;
+		struct PipelineCoreData;
+		struct SharedPipelineInfo;
+	}
 
 	// we only use it for the cmdBeginRendering command anyways
 	struct Dependencies {
@@ -60,15 +63,17 @@ namespace mythril {
 
 		void cmdBindComputePipeline(const ComputePipeline& computePipeline) { cmdBindComputePipeline(computePipeline.handle()); }
 		void cmdBindGraphicsPipeline(const GraphicsPipeline& graphicsPipeline) { cmdBindGraphicsPipeline(graphicsPipeline.handle()); }
+		void cmdBindRaytracingPipeline(const RaytracingPipeline& raytracingPipeline) { cmdBindRaytracingPipeline(raytracingPipeline.handle()); }
 		void cmdBindComputePipeline(ComputePipelineHandle handle);
 		void cmdBindGraphicsPipeline(GraphicsPipelineHandle handle);
+		void cmdBindRaytracingPipeline(RaytracingPipelineHandle handle);
 		// ALL BELOW COMMANDS SHOULD RETURN ON DRYRUN //
 		void cmdBindDepthState(const DepthState& state);
 		void cmdSetDepthBiasEnable(bool enable);
 		void cmdSetDepthBias(float constantFactor, float slopeFactor, float clamp);
 
-		void cmdBeginRendering(uint32_t layerCount = 1, uint32_t viewMask = 0b000000);
-		void cmdEndRendering();
+		void cmdBeginRenderingEXT(uint32_t layerCount = 1, uint32_t viewMask = 0b000000);
+		void cmdEndRenderingEXT();
 
 		void cmdDispatchThreadGroup(const Dimensions& threadGroupCount);
 
@@ -127,12 +132,11 @@ namespace mythril {
 		void cmdCopyImage(TextureHandle source, TextureHandle destination);
 		void cmdBlitImage(TextureHandle source, TextureHandle destination);
 		void cmdCopyImageToBuffer(TextureHandle source, BufferHandle destination, const VkBufferImageCopy& region);
-
 	private:
 		void cmdBlitImageToSwapchain(TextureHandle source);
 		void cmdCopyImageToSwapchain(TextureHandle source);
 		// just repeated logic
-		void cmdBindPipelineImpl(const PipelineCoreData* common, VkPipelineBindPoint bindPoint);
+		void cmdBindPipelineImpl(const detail::PipelineCoreData* common, VkPipelineBindPoint bindPoint);
 
 		// all functions that still have equivalent Vulkan commands but should be abstracted away from user
 		void cmdBeginRenderingImpl(uint32_t layerCount, uint32_t viewMask);
@@ -150,7 +154,7 @@ namespace mythril {
 
 		// helpers
 		PassDesc::Type getCurrentPassType();
-		void CheckTextureRenderingUsage(const AllocatedTexture& source, const AllocatedTexture& destination, const char* operation);
+		void CheckTextureRenderingUsage(const detail::AllocatedTexture& source, const detail::AllocatedTexture& destination, const char* operation);
 		void CheckImageLayoutAuto(TextureHandle sourceHandle, TextureHandle destinationHandle, const char* operation);
 
 	private:
@@ -162,8 +166,9 @@ namespace mythril {
 		VkPipeline _lastBoundvkPipeline = VK_NULL_HANDLE;
 
 		// avoid lookup and store the common data
-		SharedPipelineInfo* _currentPipelineInfo = nullptr;
-		std::variant<GraphicsPipelineHandle, ComputePipelineHandle> _currentPipelineHandle;
+		detail::SharedPipelineInfo* _currentPipelineInfo = nullptr;
+		// todo: kinda sloppy since you have to manually update
+		std::variant<GraphicsPipelineHandle, ComputePipelineHandle, RaytracingPipelineHandle> _currentPipelineHandle;
 		CompiledPass _activePass;
 
 		bool _isRendering = false; // cmdBeginRendering

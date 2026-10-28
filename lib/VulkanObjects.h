@@ -11,9 +11,19 @@
 
 #include "CommandBuffer.h"
 #include "Constants.h"
+#include "mythril/Objects.h"
+
+#include <unordered_map>
 
 namespace mythril {
 	class CTX;
+	class CommandBuffer;
+	class Swapchain;
+	class StagingDevice;
+	class RenderGraph;
+	class IntermediateBuilder;
+
+	namespace detail {
 
 	class AllocatedSampler {
 	public:
@@ -24,7 +34,7 @@ namespace mythril {
 		VkSampler _vkSampler = VK_NULL_HANDLE;
 		char _debugName[kMaxDebugNameLength] = {0};
 
-		friend class CTX;
+		friend class ::mythril::CTX;
 	};
 
 	class AllocatedTexture {
@@ -106,11 +116,13 @@ namespace mythril {
 		bool _isOwning = true;
 		char _debugName[kMaxDebugNameLength] = {0};
 
-		friend class CTX;
-		friend class CommandBuffer;
-		friend class Swapchain;
-		friend class StagingDevice;
-		friend class RenderGraph;
+		std::unordered_map<TextureViewKey, TextureHandle> _additionalViews;
+
+		friend class ::mythril::CTX;
+		friend class ::mythril::CommandBuffer;
+		friend class ::mythril::Swapchain;
+		friend class ::mythril::StagingDevice;
+		friend class ::mythril::RenderGraph;
 	};
 
 	class AllocatedBuffer {
@@ -142,11 +154,12 @@ namespace mythril {
 		bool _isCoherentMemory = false;
 		char _debugName[kMaxDebugNameLength] = {0};
 
-		friend class CTX;
-		friend class CommandBuffer;
-		friend class RenderGraph;
-		friend class IntermediateBuilder;
-		friend class StagingDevice;
-		friend class Buffer;
+		friend class ::mythril::CTX;
+		friend class ::mythril::CommandBuffer;
+		friend class ::mythril::RenderGraph;
+		friend class ::mythril::IntermediateBuilder;
+		friend class ::mythril::StagingDevice;
 	};
+
+	} // namespace detail
 } // namespace mythril

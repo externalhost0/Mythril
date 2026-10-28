@@ -16,6 +16,7 @@
 #include "vkstring.h"
 
 namespace mythril {
+	using namespace detail;
 	Swapchain::Swapchain(CTX& ctx, SwapchainSpec args) :
 	    _ctx(ctx) {
 		ASSERT_MSG(args.width > 0 && args.height > 0, "Swapchain width & height must both be greater than 0!");

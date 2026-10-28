@@ -85,7 +85,7 @@ int main() {
 					.height = static_cast<uint32_t>(h)
 				});
 
-				colorTarget.resize({static_cast<uint32_t>(w), static_cast<uint32_t>(h)});
+				ctx->resizeTexture(colorTarget.handle(), {static_cast<uint32_t>(w), static_cast<uint32_t>(h)});
 			}
 
 
@@ -110,7 +110,7 @@ int main() {
 			SDL_GetWindowSize(sdlWindow, &w, &h);
 			ImGui::Text("Windowsize: %u, %u", w, h);
 
-			const mythril::Dimensions colorTargetDims = colorTarget->getDimensions();
+			const mythril::Dimensions colorTargetDims = ctx->getTextureDimensions(colorTarget.handle());
 			ImGui::Text("Color Texture Size: %.1u x %.1u", colorTargetDims.width, colorTargetDims.height);
 
 			const ImGuiIO& io = ImGui::GetIO();

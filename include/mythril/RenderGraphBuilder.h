@@ -26,7 +26,6 @@ namespace mythril {
         VkAccessFlags2 access;
     };
 
-    // forward declarations for compiled/internal types (defined in lib/RenderGraphInternal.h)
     struct AttachmentInfo;
     struct SubresourceRange;
     struct SubresourceState;
@@ -104,7 +103,7 @@ namespace mythril {
                 add(this->base._passSource, desc);
             return *this;
         }
-
+		// conditionally perform a renderpass without having to enter the execution stage
         [[nodiscard]] GraphicsPassBuilder& condition(std::function<bool()> fn) {
             this->base._passSource.conditionCallback = std::move(fn);
             return *this;
@@ -217,7 +216,7 @@ namespace mythril {
         // called sparingly, perhaps once
         void compile(CTX& rCtx);
         // called every frame
-    	void execute(CTX& rCtx);
+    	void executeEXT(CTX& rCtx);
     	void execute(CommandBuffer& cmd);
         void trackWindowSized(Texture& texture);
         void trackWindowSized(Texture& texture, std::function<Dimensions(Dimensions)> scaleFn);

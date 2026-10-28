@@ -16,6 +16,10 @@
 #include "mythril/Objects.h"
 
 namespace mythril {
+	class CTX;
+	class CommandBuffer;
+
+	// use ShaderStage as the parameters since it means we can optionaly specify the entrypoint
 	struct ShaderStage {
 		ShaderHandle handle{};
 		const char* entryPoint = nullptr;
@@ -27,6 +31,8 @@ namespace mythril {
 		ShaderStage(ShaderHandle handle, const char* entryPoint) :
 		    handle(handle),
 		    entryPoint(entryPoint) {}
+		// recently added
+		ShaderStage(const Shader& shader, const char* entryPoint);
 
 		bool valid() const noexcept { return handle.valid(); }
 	};
@@ -65,12 +71,17 @@ namespace mythril {
 		SpecializationConstantEntry specConstants[16];
 		const char* debugName = "Unnamed Compute Pipeline";
 	};
-	struct RayTracingPipelineSpec {
-		ShaderHandle shader;
+	struct RaytracingPipelineSpec {
+		ShaderStage rayGenShader;
+		ShaderStage missShader;
+		ShaderStage hitShader;
+		std::optional<ShaderStage> callableShader;
 		SpecializationConstantEntry specConstants[16];
 		const char* debugName = "Unnamed RayTracing Pipeline";
 	};
 
+
+	namespace detail {
 
 	// information that any type of pipeline also has
 	struct PipelineCoreData {
@@ -91,24 +102,21 @@ namespace mythril {
 		Compute,
 		RayTracing
 	};
-
 	struct SharedPipelineInfo {
 		PipelineCoreData core;
 		bool needsRecompile = false;
 		char debugName[kMaxDebugNameLength] = {0};
 	};
 
-	class AllocatedRayTracingPipeline {
+	class AllocatedRaytracingPipeline {
 	public:
 		[[nodiscard]] std::string_view getDebugName() const { return _shared.debugName; }
 
 	private:
-		RayTracingPipelineSpec _spec;
+		RaytracingPipelineSpec _spec;
 		SharedPipelineInfo _shared;
-
-
-		friend class CTX;
-		friend class CommandBuffer;
+		friend class ::mythril::CTX;
+		friend class ::mythril::CommandBuffer;
 	};
 
 	class AllocatedGraphicsPipeline {
@@ -118,10 +126,8 @@ namespace mythril {
 	private:
 		GraphicsPipelineSpec _spec;
 		SharedPipelineInfo _shared;
-
-
-		friend class CTX;
-		friend class CommandBuffer;
+		friend class ::mythril::CTX;
+		friend class ::mythril::CommandBuffer;
 	};
 
 	class AllocatedComputePipeline {
@@ -131,10 +137,9 @@ namespace mythril {
 	private:
 		ComputePipelineSpec _spec;
 		SharedPipelineInfo _shared;
-
-
-		friend class CTX;
-		friend class CommandBuffer;
+		friend class ::mythril::CTX;
+		friend class ::mythril::CommandBuffer;
 	};
 
+	} // namespace detail
 } // namespace mythril

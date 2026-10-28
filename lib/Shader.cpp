@@ -19,6 +19,7 @@
 #include "mythril/Objects.h"
 
 namespace mythril {
+	using namespace detail;
 
 	const char* FieldKindToString(FieldKind fieldKind) {
 		switch (fieldKind) {
