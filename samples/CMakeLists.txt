@@ -116,6 +116,8 @@ set(_sample_args_04_PostProcessingCube "LIBS;glm")
 set(_sample_args_05_ImGui              "LIBS;imgui_sdl3_backend")
 set(_sample_args_06_ComplexShader      "LIBS;glm;imgui_sdl3_backend")
 set(_sample_args_07_CompleteScene      "LIBS;glm;fastgltf;stb_image;imguizmo;imgui_sdl3_backend")
+set(_sample_args_08_RayTracing         "LIBS;glm;fastgltf;imgui_sdl3_backend")
+
 
 foreach(sample IN LISTS MYTH_SAMPLES_TO_BUILD)
     ADD_SAMPLE(${sample} ${_sample_args_${sample}})

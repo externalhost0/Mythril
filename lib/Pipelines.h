@@ -72,11 +72,13 @@ namespace mythril {
 		const char* debugName = "Unnamed Compute Pipeline";
 	};
 	struct RaytracingPipelineSpec {
-		ShaderStage rayGenShader;
-		ShaderStage missShader;
-		ShaderStage hitShader;
-		std::optional<ShaderStage> callableShader;
+		std::vector<ShaderStage> rayGenShaders;
+		std::vector<ShaderStage> missShaders;
+		std::vector<ShaderStage> closestHitShaders;
+		std::vector<ShaderStage> callableShader;
 		SpecializationConstantEntry specConstants[16];
+		uint32_t maxRecursionDepth = 0;
+		uint32_t stackSize = 0;
 		const char* debugName = "Unnamed RayTracing Pipeline";
 	};
 
@@ -113,6 +115,12 @@ namespace mythril {
 		[[nodiscard]] std::string_view getDebugName() const { return _shared.debugName; }
 
 	private:
+		VkStridedDeviceAddressRegionKHR _sbtEntryRayGen = {};
+		VkStridedDeviceAddressRegionKHR _sbtEntryMiss = {};
+		VkStridedDeviceAddressRegionKHR _sbtEntryHit = {};
+		VkStridedDeviceAddressRegionKHR _sbtEntryCallable = {};
+		Buffer _sbtBuffer;
+
 		RaytracingPipelineSpec _spec;
 		SharedPipelineInfo _shared;
 		friend class ::mythril::CTX;

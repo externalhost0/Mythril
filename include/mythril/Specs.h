@@ -29,7 +29,7 @@ namespace mythril {
 		BufferUsageBits_Storage = 1 << 1,
 		BufferUsageBits_Indirect = 1 << 2,
 		// for ray tracing exclusively
-		BufferUsageBits_AccelerationStructureInput = 1 << 3,
+		BufferUsageBits_AccelerationStructureInputReadOnly = 1 << 3,
 		BufferUsageBits_AccelerationStructureStorage = 1 << 4,
 		BufferUsageBits_ShaderBindingTable = 1 << 5,
 	};

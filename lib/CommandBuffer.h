@@ -46,6 +46,7 @@ namespace mythril {
 			General = 0,
 			Graphics,
 			Compute,
+			RayTracing
 		};
 		CommandBuffer() = default;
 		explicit CommandBuffer(CTX* ctx, Type type);
@@ -77,6 +78,7 @@ namespace mythril {
 
 		void cmdDispatchThreadGroup(const Dimensions& threadGroupCount);
 
+		void cmdTraceRays(const Dimensions& queryDimension);
 
 		void cmdBindIndexBuffer(const Buffer& buffer) { cmdBindIndexBuffer(buffer.handle()); }
 		void cmdBindIndexBuffer(BufferHandle buffer);
@@ -153,8 +155,8 @@ namespace mythril {
 		void bufferBarrierImpl(BufferHandle bufhandle, VkPipelineStageFlags2 srcStage, VkPipelineStageFlags2 dstStage);
 
 		// helpers
-		PassDesc::Type getCurrentPassType();
-		void CheckTextureRenderingUsage(const detail::AllocatedTexture& source, const detail::AllocatedTexture& destination, const char* operation);
+		PassDesc::Type getCurrentPassType() const;
+		void CheckTextureRenderingUsage(const detail::AllocatedTexture& source, const detail::AllocatedTexture& destination, const char* operation) const;
 		void CheckImageLayoutAuto(TextureHandle sourceHandle, TextureHandle destinationHandle, const char* operation);
 
 	private:

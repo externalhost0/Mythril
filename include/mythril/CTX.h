@@ -154,11 +154,6 @@ namespace mythril {
 		VkPhysicalDeviceVulkan13Properties props13;
 	};
 
-	struct AccelerationStructureSizes {
-
-	};
-
-
 	class CTX final {
 		void construct();
 		// hide the default constructor to avoid user from instantiating a useless CTX
@@ -217,7 +212,8 @@ namespace mythril {
 		Shader createShader(const ShaderSpec& spec);
 		AccelerationStructure createAccelerationStructure(const AccelerationStructureSpec& spec);
 
-		VkDeviceAddress gpuAddress(BufferHandle handle, size_t offset = 0);
+		VkDeviceAddress gpuAddress(BufferHandle handle, size_t offset = 0) const;
+		VkDeviceAddress gpuAddress(AccelerationStructureHandle handle) const;
 
 		// for buffers
 		void upload(BufferHandle handle, const void* data, size_t size, size_t offset = 0);
@@ -254,13 +250,15 @@ namespace mythril {
 		[[nodiscard]] CommandBuffer& acquireCommand(CommandBuffer::Type type);
 		SubmitHandle submitCommand(CommandBuffer& cmd);
 
-		AccelerationStructureSizes getAccelerationStructureSizes(const AccelerationStructureSpec& spec);
-		VkAccelerationStructureBuildSizesInfoKHR getBLASBuildInfo(const BottomLevelBuildSpec& spec);
-
 		// literally just for our node editor for now, experimental
 		void switchShader(GraphicsPipeline& graphics_pipeline, Shader& newShader, ShaderStages stage);
 
 		const detail::AllocatedShader& inspectShader(ShaderHandle handle) const { return view(handle); }
+
+		// for ray tracing ease of use, not clean as of now;
+		// we want to reduce the user having to make calls like these since we do so behind the scenes in CTX later anyways
+		void getTLASBuildInfo(const TopLevelBuildDesc& desc, VkAccelerationStructureBuildSizesInfoKHR& outBuildSizesInfo, VkAccelerationStructureGeometryKHR& outGeometry);
+		void getBLASBuildInfo(const BottomLevelBuildDesc& desc, VkAccelerationStructureBuildSizesInfoKHR& outBuildSizesInfo, VkAccelerationStructureGeometryKHR& outGeometry);
 	private:
 
 		// internal detail:: accessors; user code goes through the handle-taking methods above
@@ -292,6 +290,7 @@ namespace mythril {
 		void resolveGraphicsPipelineImpl(detail::AllocatedGraphicsPipeline& pipeline, uint32_t viewMask);
 		void resolveComputePipelineImpl(detail::AllocatedComputePipeline& pipeline);
 		void resolveRaytracingPipelineImpl(detail::AllocatedRaytracingPipeline& pipeline);
+		void buildShaderBindingTableImpl(detail::AllocatedRaytracingPipeline& pipeline);
 
 		VkPipeline buildComputePipelineImpl(VkPipelineLayout layout, ComputePipelineSpec spec);
 		static void CheckSpecializationConstants(const detail::AllocatedShader& shader,
@@ -299,7 +298,7 @@ namespace mythril {
 		                                         const char* shaderStageName,
 		                                         const char* pipelineDebugName,
 		                                         bool hasMultipleStages);
-		VkPipeline buildRayTracingPipelineImpl(VkPipelineLayout layout, RaytracingPipelineSpec spec);
+		VkPipeline buildRayTracingPipelineImpl(VkPipelineLayout layout, RaytracingPipelineSpec& spec);
 
 
 		// because they are big functions :(
@@ -318,11 +317,12 @@ namespace mythril {
 		        VkImageCreateFlags createFlags = 0
 		);
 
-		VkAccelerationStructureKHR createVkTLAS(const AccelerationStructureSpec& spec);
-		VkAccelerationStructureKHR createVkBLAS(const AccelerationStructureSpec& spec);
+		detail::AllocatedAccelerationStructure createTLASImpl(const AccelerationStructureSpec& spec);
+		detail::AllocatedAccelerationStructure createBLASImpl(const AccelerationStructureSpec& spec);
+
 
 		void checkAndUpdateBindlessDescriptorSetImpl();
-		void growBindlessDescriptorPoolImpl(uint32_t newMaxSamplerCount, uint32_t newMaxTextureCount);
+		void growBindlessDescriptorPoolImpl(uint32_t newMaxSamplerCount, uint32_t newMaxTextureCount, uint32_t newMaxAccelStructureCount);
 
 		template<typename T>
 		constexpr detail::PipelineCoreData& getPipelineCommonData(T handle) {
@@ -381,6 +381,9 @@ namespace mythril {
 		// vulkan properties, features, and extensions we query
 		VulkanFeatures _featuresVulkan {};
 		VulkanProperties _propertiesVulkan {};
+		// special case for extensions
+		VkPhysicalDeviceRayTracingPipelinePropertiesKHR _raytracingProperties {};
+		VkPhysicalDeviceAccelerationStructurePropertiesKHR _accelerationStructureProperties {};
 		std::unordered_set<std::string> _enabledExtensionNames; // includes both instance and device extensions
 
 		// queues
@@ -397,6 +400,9 @@ namespace mythril {
 		// not really my stuff //
 		Texture _dummyTexture;
 		Sampler _dummyLinearSampler;
+		// every bindless acceleration structure slot must hold a TLAS, this one is never built so never trace against it
+		VkAccelerationStructureKHR _dummyTLAS = VK_NULL_HANDLE;
+		Buffer _dummyTLASBuffer;
 
 		mutable std::vector<DeferredTask> _deferredTasks;
 
@@ -405,6 +411,7 @@ namespace mythril {
 		bool _awaitingNewImmutableSamplers = false;
 		uint32_t _currentMaxTextureCount = 16;
 		uint16_t _currentMaxSamplerCount = 16;
+		uint32_t _currentMaxAccelerationCount = 16;
 
 		VkDescriptorSetLayout _vkBindlessDSL = VK_NULL_HANDLE;
 		VkDescriptorPool _vkBindlessDPool = VK_NULL_HANDLE;

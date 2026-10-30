@@ -107,6 +107,7 @@ namespace mythril {
 	static VkDevice CreateVulkanLogicalDevice(
 	        vkb::PhysicalDevice& vkbPhysicalDevice,
 	        std::span<const char*> user_device_extensions,
+	        const VkPhysicalDeviceFeatures& user_device_features,
 	        void* user_device_extension_features,
 	        VulkanFeatures& outFeatures,
 	        VulkanProperties& outProperties,
@@ -162,6 +163,14 @@ namespace mythril {
 		    .samplerAnisotropy = supportedfeatures10.features.samplerAnisotropy,
 		    .fragmentStoresAndAtomics = supportedfeatures10.features.fragmentStoresAndAtomics,
 		};
+		// merge our additional features with the required ones
+		static_assert(sizeof(VkPhysicalDeviceFeatures) % sizeof(VkBool32) == 0);
+		{
+			auto* dst = reinterpret_cast<VkBool32*>(&requiredfeatures10);
+			const auto* src = reinterpret_cast<const VkBool32*>(&user_device_features);
+			for (size_t i = 0; i < sizeof(VkPhysicalDeviceFeatures) / sizeof(VkBool32); i++)
+				dst[i] |= src[i];
+		}
 		VkPhysicalDeviceVulkan11Features requiredfeatures11 = {
 		    .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
 		    .pNext = user_device_extension_features != nullptr ? user_device_extension_features : nullptr,
@@ -345,7 +354,9 @@ missing_features.append("\n\t(" version ") " #feature);
 
 #ifdef VK_ENABLE_BETA_EXTENSIONS
 		VkPhysicalDevicePortabilitySubsetFeaturesKHR portability_subset_features = {
-		    .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PORTABILITY_SUBSET_FEATURES_KHR, .pNext = &requiredfeatures13, .imageViewFormatSwizzle = VK_TRUE
+		    .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PORTABILITY_SUBSET_FEATURES_KHR,
+			.pNext = &requiredfeatures13,
+			.imageViewFormatSwizzle = VK_TRUE
 		};
 #endif
 
@@ -603,7 +614,7 @@ missing_features.append("\n\t(" version ") " #feature);
 		VulkanProperties properties{};
 		VulkanQueueOutputs queues{};
 		// sets features & properties
-		VkDevice vk_device = CreateVulkanLogicalDevice(vkb_physical_device, device_extensions, this->_vulkanCfg.deviceExtensionFeatureChain, features, properties, queues);
+		VkDevice vk_device = CreateVulkanLogicalDevice(vkb_physical_device, device_extensions, this->_vulkanCfg.additionalDeviceFeatures, this->_vulkanCfg.deviceExtensionFeatureChain, features, properties, queues);
 		VmaAllocator vma_allocator = CreateVulkanMemoryAllocator({.vkInstance = vkb_instance.instance, .vkPhysicalDevice = vkb_physical_device.physical_device, .vkDevice = vk_device});
 
 		// most of the setup we need to worry about is done in the constructor
@@ -627,6 +638,24 @@ missing_features.append("\n\t(" version ") " #feature);
 		ctx->_enabledExtensionNames.clear();
 		for (const auto& ext: vkb_physical_device.get_extensions()) {
 			ctx->_enabledExtensionNames.insert(ext);
+		}
+		// stupid special cases for ray tracnig + as
+		{
+			ctx->_accelerationStructureProperties = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_PROPERTIES_KHR};
+			ctx->_raytracingProperties = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR};
+			VkPhysicalDeviceProperties2 props = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
+			if (ctx->isExtensionEnabled(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME)) {
+				ctx->_accelerationStructureProperties.pNext = props.pNext;
+				props.pNext = &ctx->_accelerationStructureProperties;
+			}
+			if (ctx->isExtensionEnabled(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME)) {
+				ctx->_raytracingProperties.pNext = props.pNext;
+				props.pNext = &ctx->_raytracingProperties;
+			}
+			vkGetPhysicalDeviceProperties2(ctx->_vkPhysicalDevice, &props);
+			// stored structs must not keep pointers into this stack frame
+			ctx->_accelerationStructureProperties.pNext = nullptr;
+			ctx->_raytracingProperties.pNext = nullptr;
 		}
 
 		// queues, required + optional

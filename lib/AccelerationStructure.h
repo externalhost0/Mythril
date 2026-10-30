@@ -24,10 +24,18 @@ namespace mythril {
 
 		std::optional<BufferHandle> transformBuffer;
 	};
-	struct BottomLevelBuildSpec {
+	struct BottomLevelBuildDesc {
 		VkGeometryTypeKHR geometryType;
 		AccelerationStructureGeometry geometry;
-		VkGeometryFlagsKHR geometryFlags;
+		VkGeometryFlagsKHR geometryFlags = 0;
+		uint32_t maxPrimitiveCount = 0;
+		VkBuildAccelerationStructureFlagsKHR buildFlags = 0;
+	};
+	struct TopLevelBuildDesc {
+		BufferHandle instancesBuffer;
+		VkGeometryFlagsKHR geometryFlags = 0;
+		uint32_t maxPrimitiveCount = 0;
+		VkBuildAccelerationStructureFlagsKHR buildFlags = 0;
 	};
 
 	struct AccelerationStructureSpec {
@@ -59,7 +67,7 @@ namespace mythril {
 		BufferHandle indexBuffer;
 		VkIndexType indexType = VK_INDEX_TYPE_UINT32;
 
-		BufferHandle transformBuffer;
+		std::optional<BufferHandle> transformBuffer;
 		BufferHandle instancesBuffer;
 
 		BuildRange buildRange;
@@ -76,6 +84,10 @@ namespace mythril {
 		private:
 
 			VkAccelerationStructureKHR _vkAccelerationStructure = VK_NULL_HANDLE;
+			Buffer _buffer;
+			Buffer _scratchBuffer;
+			VkDeviceAddress _vkDeviceAddress;
+			bool _isTLAS = false;
 
 			char _debugName[kMaxDebugNameLength] = {0};
 			friend class ::mythril::CTX;

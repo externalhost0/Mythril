@@ -16,4 +16,22 @@ struct PushConstant {
 	Ptr<Vertex> vertexBufferAddress;
 };
 
+struct PerFrame {
+	float4x4 viewInverse;
+	float4x4 projInverse;
+};
+struct ShadowPushConstant {
+	Ptr<PerFrame> frame;
+    float4 lightDir;
+    Ptr<Vertex> vertices;
+	Ptr<uint32_t> indices;
+    DescriptorHandle<RWTexture2D<float4>> outTexture;
+    DescriptorHandle<RaytracingAccelerationStructure> tlas;
+    uint32_t enableShadows;
+    uint32_t debugMode;
+};
+struct FullscreenPushConstant {
+	DescriptorHandle<Texture2D> rayTracedImage;
+};
+
 NAMESPACE_END()

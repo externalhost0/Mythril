@@ -59,10 +59,16 @@ struct ConstantBuffer {
 struct Texture2D {
 
 };
+template<typename T>
+struct RWTexture2D {
+
+};
 struct SamplerState {
 
 };
+struct RaytracingAccelerationStructure {
 
+};
 
 NAMESPACE_END()
 

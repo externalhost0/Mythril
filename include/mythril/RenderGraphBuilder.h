@@ -48,6 +48,7 @@ namespace mythril {
         friend class GraphicsPassBuilder;
         friend class ComputePassBuilder;
         friend class IntermediateBuilder;
+    	friend class RayTracingPassBuilder;
     };
 
 
@@ -164,6 +165,44 @@ namespace mythril {
         BasePassBuilder base;
     };
 
+	class RayTracingPassBuilder {
+	public:
+		RayTracingPassBuilder() = delete;
+		RayTracingPassBuilder(RenderGraph& rGraph, const char* pName)
+			: base(rGraph, pName, PassDesc::Type::Compute) {}
+#ifdef DEBUG
+		~RayTracingPassBuilder();
+#endif
+
+		[[nodiscard]] RayTracingPassBuilder& dependency(const TextureDesc& texDesc, const Layout layout = Layout::GENERAL) {
+			add(this->base._passSource, texDesc, layout);
+			return *this;
+		}
+		[[nodiscard]] RayTracingPassBuilder& dependency(Buffer& buffer, const BufferAccess access) {
+			add(this->base._passSource, buffer, access);
+			return *this;
+		}
+		// c style overload
+		[[nodiscard]] RayTracingPassBuilder& dependency(Texture* tex, int count, const Layout layout = Layout::GENERAL) {
+			for (int i = 0; i < count; i++) {
+				add(this->base._passSource, tex[i], layout);
+			}
+			return *this;
+		}
+		// span overload
+		[[nodiscard]] RayTracingPassBuilder& dependency(const std::span<Texture* const> textures, const Layout layout = Layout::GENERAL) {
+			for (auto* tex : textures)
+				add(this->base._passSource, *tex, layout);
+			return *this;
+		}
+
+		void execute(const std::function<void(CommandBuffer& cmd)>& callback) {
+			base.setExecuteCallback(callback);
+		}
+	private:
+		BasePassBuilder base;
+	};
+
     class IntermediateBuilder {
     public:
         IntermediateBuilder() = delete;
@@ -212,6 +251,9 @@ namespace mythril {
         [[nodiscard]] IntermediateBuilder addIntermediate(const char* pName) {
             return IntermediateBuilder{*this, pName};
         }
+    	[[nodiscard]] RayTracingPassBuilder addRayTracingPass(const char* pName) {
+	        return RayTracingPassBuilder{*this, pName};
+        }
         // compile is where ALL of the overhead should be, all data stored during setup is now translated into pieces that are easier to direct with
         // called sparingly, perhaps once
         void compile(CTX& rCtx);
@@ -256,5 +298,6 @@ namespace mythril {
         friend class GraphicsPassBuilder;
         friend class ComputePassBuilder;
         friend class IntermediateBuilder;
+    	friend class RayTracingPassBuilder;
     };
 }

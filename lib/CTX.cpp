@@ -23,10 +23,12 @@
 #include <slang/slang.h>
 
 #include "AccelerationStructure.h"
+#include "AccelerationStructure.h"
 #include "CommandBuffer.h"
 
 namespace mythril {
 	using namespace detail;
+	// we arent using VkMutable
 	// https://docs.shader-slang.org/en/latest/external/slang/docs/user-guide/03-convenience-features.html#descriptorhandle-for-bindless-descriptor-access:~:text=None%20provides%20the%20following%20bindings%20for%20descriptor%20types%3A-,Enum,-Value
 	namespace BindlessSpaceIndex {
 		enum Type : uint8_t {
@@ -38,11 +40,17 @@ namespace mythril {
 			//			kStorageTexelBuffer = 2,
 			//			kUniformBuffer = 2,
 			//			kStorageBuffer = 2,
+			kAccelerationStructure = 8,
 
 			// this MUST be manually set when reusing binding indices
-			kNumOfBinds = 3
+			kNumOfBinds = 4
 		};
 	} // namespace BindlessSpaceIndex
+
+	static uint64_t getAlignedAddress(uint64_t addr, uint64_t align) {
+		const uint64_t offs = addr % align;
+		return offs ? addr + (align - offs) : addr;
+	}
 
 	static VkMemoryPropertyFlags StorageTypeToVkMemoryPropertyFlags(StorageType storage) {
 		VkMemoryPropertyFlags memFlags{0};
@@ -128,8 +136,26 @@ namespace mythril {
 			         .wrapW = SamplerWrap::ClampEdge,
 			         .debugName = "Internal_Linear_Sampler"}
 			);
+			// dummy tlas for bindless validation warnings
+			if (isExtensionEnabled(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME)) {
+				constexpr VkDeviceSize kDummyTLASSize = 256;
+				this->_dummyTLASBuffer = this->createBuffer({
+					.size = kDummyTLASSize,
+					.usage = BufferUsageBits_AccelerationStructureStorage,
+					.storage = StorageType::Device,
+					.debugName = "Internal_Dummy_TLAS_Buffer"
+				});
+				const VkAccelerationStructureCreateInfoKHR ci = {
+					.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR,
+					.buffer = _bufferPool.get(_dummyTLASBuffer.handle())->_vkBuffer,
+					.size = kDummyTLASSize,
+					.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR,
+				};
+				VK_CHECK(vkCreateAccelerationStructureKHR(_vkDevice, &ci, nullptr, &_dummyTLAS));
+				vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR, reinterpret_cast<uint64_t>(_dummyTLAS), "Internal_Dummy_TLAS");
+			}
 			// initial descriptor pool creation
-			this->growBindlessDescriptorPoolImpl(this->_currentMaxTextureCount, this->_currentMaxSamplerCount);
+			this->growBindlessDescriptorPoolImpl(this->_currentMaxTextureCount, this->_currentMaxSamplerCount, this->_currentMaxAccelerationCount);
 		}
 	}
 
@@ -154,6 +180,11 @@ namespace mythril {
 		this->destroySwapchain();
 		this->_dummyTexture.release();
 		this->_dummyLinearSampler.release();
+		if (_dummyTLAS != VK_NULL_HANDLE) {
+			vkDestroyAccelerationStructureKHR(_vkDevice, _dummyTLAS, nullptr);
+			_dummyTLAS = VK_NULL_HANDLE;
+		}
+		this->_dummyTLASBuffer.release();
 
 		// TODO::fixing the allocation not being proerly freed for VMA
 		if (_shaderPool.numObjects()) {
@@ -174,6 +205,12 @@ namespace mythril {
 				destroy(_computePipelinePool.getHandle(_computePipelinePool.findObject(&_computePipelinePool._objects[i]._obj).index()));
 			}
 		}
+		if (_raytracingPipelinePool.numObjects()) {
+			LOG_SYSTEM(LogType::Info, "Cleaned up {} raytracing pipelines", _raytracingPipelinePool.numObjects());
+			for (int i = 0; i < _raytracingPipelinePool._objects.size(); i++) {
+				destroy(_raytracingPipelinePool.getHandle(_raytracingPipelinePool.findObject(&_raytracingPipelinePool._objects[i]._obj).index()));
+			}
+		}
 		if (_samplerPool.numObjects()) {
 			LOG_SYSTEM(LogType::Info, "Cleaned up {} samplers", _samplerPool.numObjects());
 			for (int i = 0; i < _samplerPool._objects.size(); i++) {
@@ -192,6 +229,13 @@ namespace mythril {
 				destroy(_bufferPool.getHandle(_bufferPool.findObject(&_bufferPool._objects[i]._obj).index()));
 			}
 		}
+		if (_accelerationStructurePool.numObjects()) {
+			LOG_SYSTEM(LogType::Info, "Cleaned up {} acceleration structures", _accelerationStructurePool.numObjects());
+			for (int i = 0; i < _accelerationStructurePool._objects.size(); i++) {
+				destroy(_accelerationStructurePool.getHandle(_accelerationStructurePool.findObject(&_accelerationStructurePool._objects[i]._obj).index()));
+			}
+		}
+
 
 		// the order of operations is very specific so that we dont trigger any validation warnings
 
@@ -287,6 +331,7 @@ namespace mythril {
 		}
 		uint32_t newMaxSamplers = _currentMaxSamplerCount;
 		uint32_t newMaxTextures = _currentMaxTextureCount;
+		uint32_t newMaxAccelStructures = _currentMaxAccelerationCount;
 
 		// grow max counts to accomadate ALL possiblely cretade textures and samplers
 		while (_texturePool._objects.size() > newMaxTextures) {
@@ -295,8 +340,11 @@ namespace mythril {
 		while (_samplerPool._objects.size() > newMaxSamplers) {
 			newMaxSamplers *= 2;
 		}
+		while (_accelerationStructurePool._objects.size() > newMaxAccelStructures) {
+			newMaxAccelStructures *= 2;
+		}
 		if (newMaxTextures != _currentMaxTextureCount || newMaxSamplers != _currentMaxSamplerCount || _awaitingNewImmutableSamplers) {
-			growBindlessDescriptorPoolImpl(newMaxSamplers, newMaxTextures);
+			growBindlessDescriptorPoolImpl(newMaxSamplers, newMaxTextures, newMaxAccelStructures);
 		}
 		// SAMPLERS //
 		std::vector<VkDescriptorImageInfo> infoSamplers;
@@ -370,6 +418,17 @@ namespace mythril {
 		//			});
 		//		}
 
+		// ACCELERATION STRUCTURES //
+		std::vector<VkAccelerationStructureKHR> handlesAccelerationStructures;
+		handlesAccelerationStructures.reserve(_accelerationStructurePool._objects.size());
+		for (const auto& obj : _accelerationStructurePool._objects) {
+			const bool isLiveTLAS = obj._obj._isTLAS && obj._obj._vkAccelerationStructure != VK_NULL_HANDLE;
+			handlesAccelerationStructures.push_back(isLiveTLAS ? obj._obj._vkAccelerationStructure : _dummyTLAS);
+		}
+
+
+
+		// now seutp write
 		VkWriteDescriptorSet write[BindlessSpaceIndex::kNumOfBinds] = {};
 		uint32_t numWrites = 0;
 		if (!infoSamplers.empty()) {
@@ -419,6 +478,21 @@ namespace mythril {
 			    .pImageInfo = infoStorageImages.data(),
 			};
 		}
+		if (!handlesAccelerationStructures.empty() && _dummyTLAS != VK_NULL_HANDLE) { const VkWriteDescriptorSetAccelerationStructureKHR writeAccelStruct = {
+				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR,
+				.accelerationStructureCount = static_cast<uint32_t>(handlesAccelerationStructures.size()),
+				.pAccelerationStructures = handlesAccelerationStructures.data(),
+			};
+			write[numWrites++] = VkWriteDescriptorSet{
+				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+				.pNext = &writeAccelStruct,
+				.dstSet = _vkBindlessDSet,
+				.dstBinding = BindlessSpaceIndex::kAccelerationStructure,
+				.dstArrayElement = 0,
+				.descriptorCount = static_cast<uint32_t>(handlesAccelerationStructures.size()),
+				.descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR
+			};
+		}
 		if (numWrites) {
 			_immGraphics->wait(_immGraphics->getLastSubmitHandle());
 			vkUpdateDescriptorSets(_vkDevice, numWrites, write, 0, nullptr);
@@ -426,10 +500,11 @@ namespace mythril {
 		_awaitingCreation = false;
 	}
 
-	void CTX::growBindlessDescriptorPoolImpl(uint32_t newMaxSamplerCount, uint32_t newMaxTextureCount) {
+	void CTX::growBindlessDescriptorPoolImpl(uint32_t newMaxSamplerCount, uint32_t newMaxTextureCount, uint32_t newMaxAccelStructureCount) {
 		MYTH_PROFILER_FUNCTION();
 		_currentMaxSamplerCount = newMaxSamplerCount;
 		_currentMaxTextureCount = newMaxTextureCount;
+		_currentMaxAccelerationCount = newMaxAccelStructureCount;
 
 		const uint32_t MAX_TEXTURE_LIMIT = getPhysicalDeviceProperties12().maxDescriptorSetUpdateAfterBindSampledImages;
 		ASSERT_MSG(newMaxTextureCount <= MAX_TEXTURE_LIMIT, "Max sampled textures exceeded: {}, but maximum of {} is allowed!", newMaxTextureCount, MAX_TEXTURE_LIMIT);
@@ -444,7 +519,11 @@ namespace mythril {
 			deferTask(std::packaged_task<void()>([device = _vkDevice, dp = _vkBindlessDPool]() { vkDestroyDescriptorPool(device, dp, nullptr); }));
 		}
 
-		constexpr VkShaderStageFlags stage_flags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
+		VkShaderStageFlags stage_flags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
+		if (isExtensionEnabled(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME)) {
+			stage_flags |= (VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR |
+						   VK_SHADER_STAGE_MISS_BIT_KHR | VK_SHADER_STAGE_INTERSECTION_BIT_KHR | VK_SHADER_STAGE_CALLABLE_BIT_KHR);
+		}
 		const VkDescriptorSetLayoutBinding bindings[BindlessSpaceIndex::kNumOfBinds] = {
 		    // __DynamicResource<__DynamicResourceKind.Sampler>
 		    VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kSampler, VK_DESCRIPTOR_TYPE_SAMPLER, newMaxSamplerCount, stage_flags, nullptr),
@@ -456,6 +535,7 @@ namespace mythril {
 		    //				VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kStorageTexelBuffer, VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, newMaxTextureCount, stage_flags, nullptr),
 		    //				VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kUniformBuffer, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, newMaxTextureCount, stage_flags, nullptr),
 		    //				VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kStorageBuffer, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, newMaxTextureCount, stage_flags, nullptr),
+			VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kAccelerationStructure, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, newMaxAccelStructureCount, stage_flags)
 		};
 		constexpr uint32_t dsbinding_flags = VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_UNUSED_WHILE_PENDING_BIT | VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT;
 		// assign each of our descriptors the same flags
@@ -463,23 +543,25 @@ namespace mythril {
 		for (VkDescriptorBindingFlags& bindingFlag: bindingFlags) {
 			bindingFlag = dsbinding_flags;
 		}
+		const uint32_t numberofBindsNeeded = isExtensionEnabled(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME) ? BindlessSpaceIndex::kNumOfBinds : BindlessSpaceIndex::kNumOfBinds - 1;
 		// ReSharper disable once CppVariableCanBeMadeConstexpr
 		const VkDescriptorSetLayoutBindingFlagsCreateInfo dsl_bf_ci = {
 		    .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO,
-		    .bindingCount = static_cast<uint32_t>(BindlessSpaceIndex::kNumOfBinds),
+		    .bindingCount = numberofBindsNeeded,
 		    .pBindingFlags = bindingFlags,
 		};
 		const VkDescriptorSetLayoutCreateInfo dsl_ci = {
 		    .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
 		    .pNext = &dsl_bf_ci,
 		    .flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT,
-		    .bindingCount = static_cast<uint32_t>(BindlessSpaceIndex::kNumOfBinds),
+		    .bindingCount =numberofBindsNeeded,
 		    .pBindings = bindings,
 		};
 		VK_CHECK(vkCreateDescriptorSetLayout(_vkDevice, &dsl_ci, nullptr, &_vkBindlessDSL));
 		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT, reinterpret_cast<uint64_t>(_vkBindlessDSL), "Mythril's Bindless Descriptor SetLayout");
 
-		const VkDescriptorPoolSize poolSizes[BindlessSpaceIndex::kNumOfBinds]{
+		// always just have as max possible length
+		VkDescriptorPoolSize poolSizes[BindlessSpaceIndex::kNumOfBinds]{
 		    VkDescriptorPoolSize(VK_DESCRIPTOR_TYPE_SAMPLER, newMaxSamplerCount),
 		    //			VkDescriptorPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, newMaxTextureCount),
 		    VkDescriptorPoolSize(VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, newMaxTextureCount),
@@ -489,11 +571,15 @@ namespace mythril {
 		    //			VkDescriptorPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, newMaxTextureCount),
 		    //			VkDescriptorPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, newMaxTextureCount),
 		};
+		uint32_t numPoolSizes = 3;
+		if (isExtensionEnabled(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME)) {
+			poolSizes[numPoolSizes++] = VkDescriptorPoolSize(VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, newMaxAccelStructureCount);
+		}
 		const VkDescriptorPoolCreateInfo dp_ci = {
 		    .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
 		    .flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT,
 		    .maxSets = 1,
-		    .poolSizeCount = BindlessSpaceIndex::kNumOfBinds,
+		    .poolSizeCount = numPoolSizes,
 		    .pPoolSizes = poolSizes,
 		};
 		VK_CHECK(vkCreateDescriptorPool(_vkDevice, &dp_ci, nullptr, &_vkBindlessDPool));
@@ -509,10 +595,17 @@ namespace mythril {
 		_awaitingNewImmutableSamplers = false;
 	}
 
-	VkDeviceAddress CTX::gpuAddress(BufferHandle handle, size_t offset) {
+	VkDeviceAddress CTX::gpuAddress(BufferHandle handle, size_t offset) const {
 		const AllocatedBuffer* buf = _bufferPool.get(handle);
-		ASSERT_MSG(buf && buf->_vkDeviceAddress, "Buffer doesnt have a valid device address!");
+		ASSERT_MSG(buf, "Buffer handle (index {}, gen {}) is empty or stale!", handle.index(), handle.gen());
+		ASSERT_MSG(buf->_vkDeviceAddress, "Buffer '{}' doesnt have a valid device address!", buf->getDebugName());
 		return buf->_vkDeviceAddress + offset;
+	}
+	VkDeviceAddress CTX::gpuAddress(AccelerationStructureHandle handle) const {
+		const AllocatedAccelerationStructure* structure = _accelerationStructurePool.get(handle);
+		ASSERT_MSG(structure, "Acceleration Structure handle (index {}, gen {}) is empty or stale!", handle.index(), handle.gen());
+		ASSERT_MSG(structure->_vkDeviceAddress, "Acceleration Structure '{}' doesnt have a valid device address!", structure->getDebugName());
+		return structure->_vkDeviceAddress;
 	}
 
 	static VkPipelineLayout BuildPipelineLayout(VkDevice device, const std::vector<VkDescriptorSetLayout>& layouts, const std::vector<VkPushConstantRange>& ranges) {
@@ -613,7 +706,7 @@ namespace mythril {
 		bundle->packedData.resize(offset);
 		for (uint32_t i = 0; i < entryCount; i++) {
 			const SpecializationConstantEntry& spec_entry = pEntries[i];
-			size_t dstOffset = bundle->mapEntriesData[i].offset;
+			const size_t dstOffset = bundle->mapEntriesData[i].offset;
 			std::memcpy(bundle->packedData.data() + dstOffset, spec_entry.data, spec_entry.size);
 		}
 
@@ -689,28 +782,144 @@ namespace mythril {
 			);
 	}
 
-	VkPipeline CTX::buildRayTracingPipelineImpl(VkPipelineLayout layout, RaytracingPipelineSpec spec) {
+	VkPipeline CTX::buildRayTracingPipelineImpl(VkPipelineLayout layout, RaytracingPipelineSpec& spec) {
+		// sc_count is across all stages of a shader
 		uint32_t sc_count = 0;
 		while (sc_count < 16 && spec.specConstants[sc_count].size) {
 			sc_count++;
 		}
 
-		AllocatedShader* ray_gen_shader = _shaderPool.get(spec.rayGenShader.handle);
-		CheckSpecializationConstants(*ray_gen_shader, sc_count, "ray generatioon", spec.debugName, true);
-		AllocatedShader* hit_shader = _shaderPool.get(spec.hitShader.handle);
-		CheckSpecializationConstants(*hit_shader, sc_count, "closest hit", spec.debugName, true);
-		AllocatedShader* miss_shader = _shaderPool.get(spec.missShader.handle);
-		CheckSpecializationConstants(*miss_shader, sc_count, "miss", spec.debugName, true);
+		// track number for later states
+		uint32_t numShaderStages = 0;
+		uint32_t numShaderGroups = 0;
+		// track individual shader stages
+		uint32_t idxMiss = 0;
+		uint32_t numMissGroups = 0;
+		uint32_t idxHit = 0;
+		uint32_t numHitGroups = 0;
+		uint32_t idxCallable = 0;
+		uint32_t numCallableGroups = 0;
 
-		VkRayTracingPipelineCreateInfoKHR pipeline_ci = {
+		// a single hit group can have up to 3 shader stages: source lvkweight said so
+		const size_t kMaxRayTracingShaderStages =
+			spec.rayGenShaders.size() +
+				spec.missShaders.size() +
+					spec.callableShader.size() +
+						3 * spec.closestHitShaders.size();
+
+		std::vector<VkPipelineShaderStageCreateInfo> createInfoShaderStages(kMaxRayTracingShaderStages);
+		// pSpecializationInfo points into these, so they must outlive vkCreateRayTracingPipelinesKHR
+		std::vector<std::unique_ptr<SpecializationInfoBundle>> specConstantsBundles;
+		specConstantsBundles.reserve(kMaxRayTracingShaderStages);
+		auto addStage = [this, sc_count, &spec, &numShaderStages, &createInfoShaderStages, &specConstantsBundles](VkShaderStageFlagBits stageFlag, const ShaderStage& shaderStage) -> uint32_t {
+			if (shaderStage.handle.empty())
+				return VK_SHADER_UNUSED_KHR;
+			AllocatedShader* shader = _shaderPool.get(shaderStage.handle);
+			ASSERT_MSG(shader, "A shader for raytracing pipeline: '{}' was destroyed or moved.", spec.debugName);
+			ASSERT_MSG(shaderStage.entryPoint, "Raytracing shaders have no default entry point, one must be given for raytracing pipeline: '{}'.", spec.debugName);
+			specConstantsBundles.push_back(BuildSpecializationInfoBundle(spec.specConstants, sc_count, shader->_specializationInfo.nameToID));
+			const SpecializationInfoBundle* bundle = specConstantsBundles.back().get();
+			createInfoShaderStages[numShaderStages] = {
+				.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+				.pNext = nullptr,
+				.flags = 0,
+				.stage = stageFlag,
+				.module = shader->vkShaderModule,
+				.pName = shaderStage.entryPoint,
+				.pSpecializationInfo = bundle ? &bundle->vkInfo : nullptr
+			};
+			return numShaderStages++;
+		};
+
+
+		const uint32_t kMaxShaderGroups =
+			spec.rayGenShaders.size() +
+				spec.missShaders.size() +
+					spec.callableShader.size() +
+						spec.closestHitShaders.size();
+		// we can safely index into it
+		std::vector<VkRayTracingShaderGroupCreateInfoKHR> shaderGroups(kMaxShaderGroups);
+
+		for (auto& raygenShader : spec.rayGenShaders) {
+			if (auto shader = _shaderPool.get(raygenShader.handle)) {
+				CheckSpecializationConstants(*shader, sc_count, "ray generatioon", spec.debugName, true);
+				shaderGroups[numShaderGroups++] = {
+					.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR,
+					.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR,
+					.generalShader = addStage(VK_SHADER_STAGE_RAYGEN_BIT_KHR, raygenShader),
+					.closestHitShader = VK_SHADER_UNUSED_KHR,
+					.anyHitShader = VK_SHADER_UNUSED_KHR,
+					.intersectionShader = VK_SHADER_UNUSED_KHR
+				};
+			}
+		}
+		for (auto& missShader : spec.missShaders) {
+			if (auto shader = _shaderPool.get(missShader.handle)) {
+				CheckSpecializationConstants(*shader, sc_count, "miss", spec.debugName, true);
+				numMissGroups++;
+				shaderGroups[numShaderGroups++] = {
+					.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR,
+					.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR,
+					.generalShader = addStage(VK_SHADER_STAGE_MISS_BIT_KHR, missShader),
+					.closestHitShader = VK_SHADER_UNUSED_KHR,
+					.anyHitShader = VK_SHADER_UNUSED_KHR,
+					.intersectionShader = VK_SHADER_UNUSED_KHR
+				};
+			}
+		}
+		for (auto& closestHitShader : spec.closestHitShaders) {
+			if (auto shader = _shaderPool.get(closestHitShader.handle)) {
+				CheckSpecializationConstants(*shader, sc_count, "closest hit", spec.debugName, true);
+				numHitGroups++;
+				shaderGroups[numShaderGroups++] = {
+					.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR,
+					.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR,
+					.generalShader = VK_SHADER_UNUSED_KHR,
+					.closestHitShader = addStage(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, closestHitShader),
+					.anyHitShader = VK_SHADER_UNUSED_KHR,
+					.intersectionShader = VK_SHADER_UNUSED_KHR
+				};
+			}
+		}
+		for (auto& callableShader : spec.callableShader) {
+			if (auto shader = _shaderPool.get(callableShader.handle)) {
+				CheckSpecializationConstants(*shader, sc_count, "callable", spec.debugName, true);
+				numCallableGroups++;
+				shaderGroups[numShaderGroups++] = {
+					.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR,
+					.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR,
+					.generalShader = addStage(VK_SHADER_STAGE_CALLABLE_BIT_KHR, callableShader),
+					.closestHitShader = VK_SHADER_UNUSED_KHR,
+					.anyHitShader = VK_SHADER_UNUSED_KHR,
+					.intersectionShader = VK_SHADER_UNUSED_KHR
+				};
+			}
+		}
+
+		const uint32_t maxDepth = _raytracingProperties.maxRayRecursionDepth;
+		const uint32_t depth = spec.maxRecursionDepth ? spec.maxRecursionDepth : 0;
+		// only need
+		constexpr VkDynamicState dynamicState = VK_DYNAMIC_STATE_RAY_TRACING_PIPELINE_STACK_SIZE_KHR;
+		const VkPipelineDynamicStateCreateInfo ciDynamicState = {
+			.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+			.dynamicStateCount = 1,
+			.pDynamicStates = &dynamicState
+		};
+		const VkRayTracingPipelineCreateInfoKHR pipeline_ci = {
 			.sType = VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR,
 			.pNext = nullptr,
 			.flags = 0,
-			//.stageCount = ,
-			//.pStages = ,
+			.stageCount = numShaderStages,
+			.pStages = createInfoShaderStages.data(),
+			.groupCount = numShaderGroups,
+			.pGroups = shaderGroups.data(),
+			.maxPipelineRayRecursionDepth = depth ? std::min(depth, maxDepth) : maxDepth,
+			.pDynamicState = spec.stackSize ? &ciDynamicState : nullptr,
+			.layout = layout
 		};
 		VkPipeline vk_pipeline = VK_NULL_HANDLE;
 		VK_CHECK(vkCreateRayTracingPipelinesKHR(_vkDevice, nullptr, nullptr, 1, &pipeline_ci, nullptr, &vk_pipeline));
+
 		return vk_pipeline;
 	}
 
@@ -731,14 +940,89 @@ namespace mythril {
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_CREATE);
 		// aliases
 		RaytracingPipelineSpec& spec = pipeline._spec;
-		AllocatedShader* ray_gen_shader = _shaderPool.get(spec.rayGenShader.handle);
-		AllocatedShader* hit_shader = _shaderPool.get(spec.hitShader.handle);
-		AllocatedShader* miss_shader = _shaderPool.get(spec.missShader.handle);
+
+		// shader signature collection
+		std::vector<PipelineLayoutSignature> pipeline_layout_signatures = {};
+		for (const std::vector<ShaderStage>* stages : {&spec.rayGenShaders, &spec.missShaders, &spec.closestHitShaders, &spec.callableShader}) {
+			for (const ShaderStage& stage : *stages) {
+				if (!stage.valid())
+					continue;
+				AllocatedShader* shader = _shaderPool.get(stage.handle);
+				ASSERT_MSG(shader, "A shader for raytracing pipeline: '{}' was destroyed or moved.", spec.debugName);
+				pipeline_layout_signatures.push_back(shader->_pipelineSignature);
+			}
+		}
+		const PipelineLayoutSignature merged_pl_signature = MergeSignatures(pipeline_layout_signatures);
+
 		// resolvement and assignment
-		//PipelineCoreData common = this->buildPipelineCommonDataExceptVkPipelineImpl(shader->_pipelineSignature);
-		//pipeline._shared.core = common;
-		//pipeline._shared.core._vkPipeline = this->buildRaytracingPipelineImpl(common._vkPipelineLayout, spec);
+		PipelineCoreData common = this->buildPipelineCommonDataExceptVkPipelineImpl(merged_pl_signature);
+		pipeline._shared.core = common;
+		pipeline._shared.core._vkPipeline = this->buildRayTracingPipelineImpl(common._vkPipelineLayout, spec);
 		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_PIPELINE, reinterpret_cast<uint64_t>(pipeline._shared.core._vkPipeline), pipeline.getDebugName().data());
+		buildShaderBindingTableImpl(pipeline);
+	}
+
+	void CTX::buildShaderBindingTableImpl(AllocatedRaytracingPipeline& pipeline) {
+		const RaytracingPipelineSpec& spec = pipeline._spec;
+		// must mirror the group order and skip rule in buildRayTracingPipelineImpl
+		const auto countLive = [this](const std::vector<ShaderStage>& stages) {
+			uint32_t count = 0;
+			for (const ShaderStage& stage: stages) {
+				if (_shaderPool.get(stage.handle))
+					count++;
+			}
+			return count;
+		};
+		const uint32_t numRaygen = countLive(spec.rayGenShaders);
+		const uint32_t numMiss = countLive(spec.missShaders);
+		const uint32_t numHit = countLive(spec.closestHitShaders);
+		const uint32_t numCallable = countLive(spec.callableShader);
+		const uint32_t numGroups = numRaygen + numMiss + numHit + numCallable;
+		ASSERT_MSG(numRaygen > 0, "Raytracing pipeline '{}' needs at least one ray generation shader.", spec.debugName);
+
+		const uint32_t handleSize = _raytracingProperties.shaderGroupHandleSize;
+		const uint32_t handleAlignment = _raytracingProperties.shaderGroupHandleAlignment;
+		const uint32_t baseAlignment = _raytracingProperties.shaderGroupBaseAlignment;
+		ASSERT_MSG(handleSize && handleAlignment && baseAlignment, "Ray tracing pipeline properties were never queried.");
+		const VkDeviceSize handleStride = getAlignedAddress(handleSize, handleAlignment);
+		const VkDeviceSize raygenSize = getAlignedAddress(handleStride, baseAlignment);
+		const VkDeviceSize missSize = getAlignedAddress(numMiss * handleStride, baseAlignment);
+		const VkDeviceSize hitSize = getAlignedAddress(numHit * handleStride, baseAlignment);
+		const VkDeviceSize callableSize = getAlignedAddress(numCallable * handleStride, baseAlignment);
+
+		std::vector<uint8_t> handles(static_cast<size_t>(numGroups) * handleSize);
+		VK_CHECK(vkGetRayTracingShaderGroupHandlesKHR(_vkDevice, pipeline._shared.core._vkPipeline, 0, numGroups, handles.size(), handles.data()));
+
+		std::vector<uint8_t> table(raygenSize + missSize + hitSize + callableSize + baseAlignment, 0);
+		char buffer_name[128];
+		snprintf(buffer_name, sizeof(buffer_name), "SBT - %s", spec.debugName);
+		pipeline._sbtBuffer = this->createBuffer({
+			.size = table.size(),
+			.usage = BufferUsageBits_ShaderBindingTable,
+			.storage = StorageType::HostVisible,
+			.debugName = buffer_name
+		});
+		const VkDeviceAddress bufferAddress = gpuAddress(pipeline._sbtBuffer.handle());
+		const VkDeviceAddress raygenAddress = getAlignedAddress(bufferAddress, baseAlignment);
+		const VkDeviceSize baseOffset = raygenAddress - bufferAddress;
+
+		uint32_t group = 0;
+		const auto writeRegion = [&](VkDeviceSize regionOffset, uint32_t count) {
+			for (uint32_t i = 0; i < count; i++, group++) {
+				memcpy(table.data() + baseOffset + regionOffset + i * handleStride, handles.data() + static_cast<size_t>(group) * handleSize, handleSize);
+			}
+		};
+		writeRegion(0, 1);
+		group = numRaygen;
+		writeRegion(raygenSize, numMiss);
+		writeRegion(raygenSize + missSize, numHit);
+		writeRegion(raygenSize + missSize + hitSize, numCallable);
+		upload(pipeline._sbtBuffer.handle(), table.data(), table.size());
+
+		pipeline._sbtEntryRayGen = VkStridedDeviceAddressRegionKHR{.deviceAddress = raygenAddress, .stride = raygenSize, .size = raygenSize};
+		pipeline._sbtEntryMiss = numMiss ? VkStridedDeviceAddressRegionKHR{.deviceAddress = raygenAddress + raygenSize, .stride = handleStride, .size = missSize} : VkStridedDeviceAddressRegionKHR{};
+		pipeline._sbtEntryHit = numHit ? VkStridedDeviceAddressRegionKHR{.deviceAddress = raygenAddress + raygenSize + missSize, .stride = handleStride, .size = hitSize} : VkStridedDeviceAddressRegionKHR{};
+		pipeline._sbtEntryCallable = numCallable ? VkStridedDeviceAddressRegionKHR{.deviceAddress = raygenAddress + raygenSize + missSize + hitSize, .stride = handleStride, .size = callableSize} : VkStridedDeviceAddressRegionKHR{};
 	}
 
 	void CTX::resolveGraphicsPipelineImpl(AllocatedGraphicsPipeline& pipeline, uint32_t viewMask) {
@@ -778,7 +1062,6 @@ namespace mythril {
 		if (current_pass_info.depthAttachment.has_value()) {
 			builder.set_depth_format(current_pass_info.depthAttachment->imageFormat);
 		}
-
 		// manually resolve the # of spec constants user gave
 		uint32_t sc_count = 0;
 		while (sc_count < 16 && spec.specConstants[sc_count].size) {
@@ -926,7 +1209,7 @@ namespace mythril {
 			usage_flags |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
 		if (spec.usage & BufferUsageBits::BufferUsageBits_Indirect)
 			usage_flags |= VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-		if (spec.usage & BufferUsageBits::BufferUsageBits_AccelerationStructureInput)
+		if (spec.usage & BufferUsageBits::BufferUsageBits_AccelerationStructureInputReadOnly)
 			usage_flags |= VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
 		if (spec.usage & BufferUsageBits::BufferUsageBits_AccelerationStructureStorage)
 			usage_flags |= VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
@@ -1099,6 +1382,7 @@ namespace mythril {
 		image->_vkCurrentImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 		image->_mappedPtr = newImage._mappedPtr;
 		++_resourceEpoch;
+		_awaitingCreation = true;
 	}
 
 	Texture CTX::createTexture(TextureSpec spec) {
@@ -1420,37 +1704,294 @@ namespace mythril {
 		return {this, handle};
 	}
 
-	VkAccelerationStructureKHR CTX::createVkTLAS(const AccelerationStructureSpec& spec) {
-		ASSERT_MSG(spec.type == AccelerationStructureSpec::Type::TLAS, "Really why are you calling this (createTLAS) when the type isnt even TLAS");
-		const VkAccelerationStructureCreateInfoKHR create_info = {
-			.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR,
-			.pNext = nullptr,
-			.createFlags = 0,
-			.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR,
-			//.buffer = ,
-			//.size =
-		};
-
-		VkAccelerationStructureKHR acceleration_structure = VK_NULL_HANDLE;
-		VK_CHECK(vkCreateAccelerationStructureKHR(_vkDevice, &create_info, nullptr, &acceleration_structure));
-		return acceleration_structure;
+	// ReSharper disable once CppNotAllPathsReturnValue
+	VkGeometryTypeKHR GeometryTypeToVk(AccelerationStructureSpec::GeometryType geomType) {
+		switch (geomType) {
+			case AccelerationStructureSpec::GeometryType::Triangle:
+				return VK_GEOMETRY_TYPE_TRIANGLES_KHR;
+			case AccelerationStructureSpec::GeometryType::AABB:
+				return VK_GEOMETRY_TYPE_AABBS_KHR;
+			case AccelerationStructureSpec::GeometryType::Instances:
+				return VK_GEOMETRY_TYPE_INSTANCES_KHR;
+			case AccelerationStructureSpec::GeometryType::INVALID:
+				ASSERT_MSG(false, "You passed in AccelerationStructureSpec::GeometryType::INVALID, whice is, per the name, INVALID, please pick an actual geometry type.");
+		}
 	}
-	VkAccelerationStructureKHR CTX::createVkBLAS(const AccelerationStructureSpec& spec) {
-		ASSERT_MSG(spec.type == AccelerationStructureSpec::Type::BLAS, "Really why are you calling this (createBLAS) when the type isnt even BLAS");
+	void CTX::getBLASBuildInfo(const BottomLevelBuildDesc& desc,
+		VkAccelerationStructureBuildSizesInfoKHR& outBuildSizesInfo,
+		VkAccelerationStructureGeometryKHR& outGeometry) {
 
-		//VkAccelerationStructureGeometryKHR geometry = getBuildInfoGeometry(spec);
+		outGeometry = {
+			.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR,
+			.geometryType = VK_GEOMETRY_TYPE_TRIANGLES_KHR,
+			.geometry = {
+				.triangles = {
+					VkAccelerationStructureGeometryTrianglesDataKHR{
+						.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR,
+						.vertexFormat = desc.geometry.vertexFormat,
+						.vertexData = { .deviceAddress = gpuAddress(desc.geometry.vertexBuffer) },
+						.vertexStride = desc.geometry.vertexStride,
+						.maxVertex = desc.geometry.numVertices,
+						.indexType = desc.geometry.indexType,
+						.indexData = { .deviceAddress = gpuAddress(desc.geometry.indexBuffer) },
+						.transformData = { .deviceAddress = desc.geometry.transformBuffer.has_value() ? gpuAddress(desc.geometry.transformBuffer.value()) : 0 }
+					}
+				}
+			},
+			.flags = desc.geometryFlags
+		};
+		const VkAccelerationStructureBuildGeometryInfoKHR buildGeometryInfo = {
+			.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR,
+			.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR,
+			.flags = desc.buildFlags,
+			.geometryCount = 1,
+			.pGeometries = &outGeometry,
+		};
+		outBuildSizesInfo = {
+			.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR,
+			.pNext = nullptr
+		};
+		vkGetAccelerationStructureBuildSizesKHR(_vkDevice, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildGeometryInfo, &desc.maxPrimitiveCount, &outBuildSizesInfo);
+		const uint32_t alignment = _accelerationStructureProperties.minAccelerationStructureScratchOffsetAlignment;
+		outBuildSizesInfo.accelerationStructureSize += alignment;
+		outBuildSizesInfo.updateScratchSize += alignment;
+		outBuildSizesInfo.buildScratchSize += alignment;
+	}
+	void CTX::getTLASBuildInfo(const TopLevelBuildDesc& desc,
+		VkAccelerationStructureBuildSizesInfoKHR& outBuildSizesInfo,
+		VkAccelerationStructureGeometryKHR& outGeometry) {
+
+		outGeometry = {
+			.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR,
+			.geometryType = VK_GEOMETRY_TYPE_INSTANCES_KHR,
+			.geometry = {
+				.instances = {
+					.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR,
+					.arrayOfPointers = VK_FALSE,
+					.data = {
+						.deviceAddress = _bufferPool.get(desc.instancesBuffer)->_vkDeviceAddress
+					}
+				}
+			},
+			.flags = desc.geometryFlags,
+		};
+		const VkAccelerationStructureBuildGeometryInfoKHR buildGeometryInfo = {
+			.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR,
+			.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR,
+			.flags = desc.buildFlags,
+			.geometryCount = 1,
+			.pGeometries = &outGeometry,
+		};
+
+		outBuildSizesInfo = {
+			.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR,
+			.pNext = nullptr
+		};
+		vkGetAccelerationStructureBuildSizesKHR(_vkDevice, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildGeometryInfo, &desc.maxPrimitiveCount, &outBuildSizesInfo);
+		const uint32_t alignment = _accelerationStructureProperties.minAccelerationStructureScratchOffsetAlignment;
+		outBuildSizesInfo.accelerationStructureSize += alignment;
+		outBuildSizesInfo.updateScratchSize += alignment;
+		outBuildSizesInfo.buildScratchSize += alignment;
+
+	}
+
+
+	AllocatedAccelerationStructure CTX::createTLASImpl(const AccelerationStructureSpec& spec) {
+		ASSERT_MSG(spec.type == AccelerationStructureSpec::Type::TLAS, "Really why are you calling this (createTLAS) when the type isnt even TLAS");
+		ASSERT(spec.instancesBuffer.valid());
+		ASSERT(spec.buildRange.primitiveCount);
+		ASSERT(spec.geometryType == AccelerationStructureSpec::GeometryType::Instances);
+
+		AllocatedAccelerationStructure obj {};
+		obj._isTLAS = true;
+
+		VkAccelerationStructureBuildSizesInfoKHR retrievedBuildSizesInfo;
+		VkAccelerationStructureGeometryKHR retrievedBuildGeometryInfo;
+		// get data abt our requested AS that we use everywhere
+		getTLASBuildInfo({
+			.instancesBuffer = spec.instancesBuffer,
+			.geometryFlags = spec.geometryFlags,
+			.maxPrimitiveCount = spec.buildRange.primitiveCount,
+			.buildFlags = spec.buildFlags
+		}, retrievedBuildSizesInfo, retrievedBuildGeometryInfo);
+
+		// buffer
+		{
+			char buffer_name[128];
+			snprintf(buffer_name, sizeof(buffer_name), "Buffer - %s", spec.debugName);
+			obj._buffer = this->createBuffer({
+				.size = retrievedBuildSizesInfo.accelerationStructureSize,
+				.usage = BufferUsageBits_AccelerationStructureStorage,
+				.storage = StorageType::Device,
+				.debugName = buffer_name
+			});
+		}
+		// scratch buffer
+		{
+			char buffer_name[128];
+			snprintf(buffer_name, sizeof(buffer_name), "Scratch Buffer - %s", spec.debugName);
+			obj._scratchBuffer = this->createBuffer({
+				.size = retrievedBuildSizesInfo.buildScratchSize,
+				.usage = BufferUsageBits_Storage,
+				.storage = StorageType::Device,
+				.debugName = buffer_name
+			});
+		}
 		const VkAccelerationStructureCreateInfoKHR create_info = {
 			.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR,
 			.pNext = nullptr,
 			.createFlags = 0,
-			.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR,
-			//.buffer = ,
-			//.size =
+			.buffer = _bufferPool.get(obj._buffer.handle())->_vkBuffer,
+			.size = retrievedBuildSizesInfo.accelerationStructureSize,
+			.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR,
+		};
+		// create acceleration structure
+		VkAccelerationStructureKHR vk_acceleration_structure = VK_NULL_HANDLE;
+		VK_CHECK(vkCreateAccelerationStructureKHR(_vkDevice, &create_info, nullptr, &vk_acceleration_structure));
+		obj._vkAccelerationStructure = vk_acceleration_structure;
+
+		// build acceleration structure
+		const VkAccelerationStructureBuildGeometryInfoKHR buildGeometryInfo = {
+			.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR,
+			.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR,
+			.flags = spec.buildFlags,
+			.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR,
+			.dstAccelerationStructure = vk_acceleration_structure,
+			.geometryCount = 1,
+			.pGeometries = &retrievedBuildGeometryInfo,
+			.scratchData = { .deviceAddress =
+				getAlignedAddress(gpuAddress(obj._scratchBuffer.handle()), _accelerationStructureProperties.minAccelerationStructureScratchOffsetAlignment) }
 		};
 
-		VkAccelerationStructureKHR acceleration_structure = VK_NULL_HANDLE;
-		VK_CHECK(vkCreateAccelerationStructureKHR(_vkDevice, &create_info, nullptr, &acceleration_structure));
-		return acceleration_structure;
+		const VkAccelerationStructureBuildRangeInfoKHR accelerationBuildStructureRangeInfo = {
+			.primitiveCount = spec.buildRange.primitiveCount,
+			.primitiveOffset = spec.buildRange.primitiveOffset,
+			.firstVertex = spec.buildRange.firstVertex,
+			.transformOffset = spec.buildRange.transformOffset
+		};
+		// just stuff it into this ig
+		const VkAccelerationStructureBuildRangeInfoKHR* accelerationBuildStructureRangeInfos = { &accelerationBuildStructureRangeInfo };
+		CommandBuffer& cmd = acquireCommand(CommandBuffer::Type::General);
+		vkCmdBuildAccelerationStructuresKHR(cmd._wrapper->_cmdBuf, 1, &buildGeometryInfo, &accelerationBuildStructureRangeInfos);
+		_immGraphics->wait(submitCommand(cmd));
+
+		// retrieve data abt acceleration structure: device address
+		const VkAccelerationStructureDeviceAddressInfoKHR info = {
+			.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR,
+			.accelerationStructure = vk_acceleration_structure,
+		};
+		obj._vkDeviceAddress = vkGetAccelerationStructureDeviceAddressKHR(_vkDevice, &info);
+		return obj;
+	}
+
+	AllocatedAccelerationStructure CTX::createBLASImpl(const AccelerationStructureSpec& spec) {
+		ASSERT_MSG(spec.type == AccelerationStructureSpec::Type::BLAS, "Really why are you calling this (createBLAS) when the type isnt even BLAS");
+		ASSERT(spec.geometryType == AccelerationStructureSpec::GeometryType::Triangle);
+
+		AllocatedAccelerationStructure obj {};
+
+		// complaints here should also be applied to above for VkTLAS
+		// todo: reuse the geometry struct we have this is just rebuilding a previous step
+
+		VkAccelerationStructureBuildSizesInfoKHR retrievedBuildSizesInfo;
+		VkAccelerationStructureGeometryKHR retrievedBuildGeometryInfo;
+		getBLASBuildInfo({
+			.geometryType = GeometryTypeToVk(spec.geometryType),
+			.geometry = AccelerationStructureGeometry{
+				.vertexBuffer = spec.vertexBuffer,
+				.vertexStride = spec.vertexStride,
+				.vertexFormat = spec.vertexFormat,
+				.numVertices = spec.numVertices,
+				.indexBuffer = spec.indexBuffer,
+				.indexType = spec.indexType,
+				.transformBuffer = spec.transformBuffer,
+			},
+			.geometryFlags = spec.geometryFlags,
+			.maxPrimitiveCount = spec.buildRange.primitiveCount,
+			.buildFlags = spec.buildFlags,
+		}, retrievedBuildSizesInfo, retrievedBuildGeometryInfo);
+		//const auto sizes = getBLASBuildInfo({
+		//	.geometryType = GeometryTypeToVk(spec.geometryType),
+		//	.geometry = AccelerationStructureGeometry{
+		//		.vertexBuffer = spec.vertexBuffer,
+		//		.vertexStride = spec.vertexStride,
+		//		.vertexFormat = spec.vertexFormat,
+		//		.numVertices = spec.numVertices,
+		//		.indexBuffer = spec.indexBuffer,
+		//		.indexType = spec.indexType,
+		//		.transformBuffer = spec.transformBuffer,
+		//	},
+		//	.geometryFlags = spec.geometryFlags
+		//});
+
+		// buffer
+		{
+			char buffer_name[128];
+			snprintf(buffer_name, sizeof(buffer_name), "Buffer - %s", spec.debugName);
+			obj._buffer = this->createBuffer({
+				.size = retrievedBuildSizesInfo.accelerationStructureSize,
+				.usage = BufferUsageBits_AccelerationStructureStorage,
+				.storage = StorageType::Device,
+				.debugName = buffer_name
+			});
+		}
+		// scratch buffer
+		{
+			char buffer_name[128];
+			snprintf(buffer_name, sizeof(buffer_name), "Scratch Buffer - %s", spec.debugName);
+			obj._scratchBuffer = this->createBuffer({
+				.size = std::max(retrievedBuildSizesInfo.buildScratchSize, retrievedBuildSizesInfo.updateScratchSize),
+				.usage = BufferUsageBits_Storage,
+				.storage = StorageType::Device,
+				.debugName = buffer_name
+			});
+		}
+		const VkAccelerationStructureCreateInfoKHR create_info = {
+			.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR,
+			.pNext = nullptr,
+			.createFlags = 0,
+			.buffer = _bufferPool.get(obj._buffer.handle())->_vkBuffer,
+			.size = retrievedBuildSizesInfo.accelerationStructureSize,
+			.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR,
+		};
+
+		VkAccelerationStructureKHR vk_acceleration_structure = VK_NULL_HANDLE;
+		VK_CHECK(vkCreateAccelerationStructureKHR(_vkDevice, &create_info, nullptr, &vk_acceleration_structure));
+		obj._vkAccelerationStructure = vk_acceleration_structure;
+
+		// build acceleration structure
+		const VkAccelerationStructureBuildGeometryInfoKHR buildGeometryInfo = {
+			.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR,
+			.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR,
+			.flags = spec.buildFlags,
+			.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR,
+			.dstAccelerationStructure = vk_acceleration_structure,
+			.geometryCount = 1,
+			.pGeometries = &retrievedBuildGeometryInfo,
+			.scratchData = { .deviceAddress =
+				getAlignedAddress(gpuAddress(obj._scratchBuffer.handle()), _accelerationStructureProperties.minAccelerationStructureScratchOffsetAlignment) }
+		};
+
+		const VkAccelerationStructureBuildRangeInfoKHR accelerationBuildStructureRangeInfo = {
+			.primitiveCount = spec.buildRange.primitiveCount,
+			.primitiveOffset = spec.buildRange.primitiveOffset,
+			.firstVertex = spec.buildRange.firstVertex,
+			.transformOffset = spec.buildRange.transformOffset
+		};
+
+		const VkAccelerationStructureBuildRangeInfoKHR* accelerationBuildStructureRangeInfos = { &accelerationBuildStructureRangeInfo };
+		CommandBuffer& cmd = acquireCommand(CommandBuffer::Type::General);
+		vkCmdBuildAccelerationStructuresKHR(cmd._wrapper->_cmdBuf, 1, &buildGeometryInfo, &accelerationBuildStructureRangeInfos);
+		_immGraphics->wait(submitCommand(cmd));
+
+		// retrieve data abt acceleration structure: device address
+		const VkAccelerationStructureDeviceAddressInfoKHR info = {
+			.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR,
+			.accelerationStructure = vk_acceleration_structure,
+		};
+		obj._vkDeviceAddress = vkGetAccelerationStructureDeviceAddressKHR(_vkDevice, &info);
+
+		return obj;
 	}
 
 	AccelerationStructure CTX::createAccelerationStructure(const AccelerationStructureSpec& spec) {
@@ -1459,22 +2000,22 @@ namespace mythril {
 		ASSERT_MSG(isExtensionEnabled(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME), "VK_KHR_acceleration_structure is not enabled!");
 		ASSERT_MSG(spec.indexType == VK_INDEX_TYPE_UINT16 || spec.indexType == VK_INDEX_TYPE_UINT32 || spec.indexType == VK_INDEX_TYPE_NONE_KHR, "Invalid indexType attribute, must be VK_INDEX_TYPE_UINT16, VK_INDEX_TYPE_UINT32, or VK_INDEX_TYPE_NONE_KHR.");
 
-
 		AllocatedAccelerationStructure obj{};
 		// _debugName
 		snprintf(obj._debugName, sizeof(obj._debugName), "%s", spec.debugName);
 
-		VkAccelerationStructureKHR vk_accel{};
 		switch (spec.type) {
-			case AccelerationStructureSpec::Type::BLAS:
-				vk_accel = createVkBLAS(spec);
-			case AccelerationStructureSpec::Type::TLAS:
-				vk_accel = createVkTLAS(spec);
+			case AccelerationStructureSpec::Type::BLAS: {
+				obj = createBLASImpl(spec);
+			} break;
+			case AccelerationStructureSpec::Type::TLAS: {
+				obj = createTLASImpl(spec);
+			} break;
 			default:
 				ASSERT_MSG(false, "Invalid acceleration structure type choosen!");
 		}
 
-		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR, reinterpret_cast<uint64_t>(vk_accel), obj.getDebugName().data());
+		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR, reinterpret_cast<uint64_t>(obj._vkAccelerationStructure), obj.getDebugName().data());
 		const AccelerationStructureHandle handle = _accelerationStructurePool.create(std::move(obj));
 		return { this, handle };
 	}
@@ -1694,49 +2235,52 @@ namespace mythril {
 	// 		return handle;
 	// 	}
 
-	VkAccelerationStructureBuildSizesInfoKHR CTX::getBLASBuildInfo(const BottomLevelBuildSpec& spec) {
-		if (!this->isExtensionEnabled(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME))
-			LOG_SYSTEM(LogType::Warning, "VK_KHR_ACCELERATION_STRUCTURE is not an enabled extension, why are you calling 'getBLASBuildInfo()' then.");
 
-		VkAccelerationStructureGeometryDataKHR geometryData;
-		switch (spec.geometryType) {
-			case VK_GEOMETRY_TYPE_TRIANGLES_KHR: {
-				VkAccelerationStructureGeometryTrianglesDataKHR geometry_triangles = {
-					.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR,
-					.vertexFormat = spec.geometry.vertexFormat,
-					.vertexData = { .deviceAddress = this->gpuAddress(spec.geometry.vertexBuffer) },
-					.vertexStride = spec.geometry.vertexStride,
-					.maxVertex = spec.geometry.numVertices,
-					.indexType = spec.geometry.indexType,
-					.indexData = { .deviceAddress = this->gpuAddress(spec.geometry.indexBuffer) }
-				};
-				geometryData = VkAccelerationStructureGeometryDataKHR(geometry_triangles);
-			} break;
-			case VK_GEOMETRY_TYPE_AABBS_KHR:
-			case VK_GEOMETRY_TYPE_INSTANCES_KHR:
-			default:
-				ASSERT_MSG(false, "Geometry type not supported yet!");
-		}
-
-		VkAccelerationStructureGeometryKHR geometry = {
-			.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR,
-			.geometryType = spec.geometryType,
-			.geometry = geometryData,
-			.flags = spec.geometryFlags,
-		};
-		VkAccelerationStructureBuildGeometryInfoKHR buildGeometryInfo = {
-			.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR,
-			.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR,
-			.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR,
-			.geometryCount = 1,// not sure yet
-			.pGeometries = &geometry,
-		};
-
-		// hardcoded build_type for
-		VkAccelerationStructureBuildSizesInfoKHR buildSizes;
-		vkGetAccelerationStructureBuildSizesKHR(_vkDevice, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildGeometryInfo, &buildGeometryInfo.geometryCount, &buildSizes);
-		return buildSizes;
-	}
+	// come back here for reference
+	//VkAccelerationStructureBuildSizesInfoKHR CTX::getBLASBuildInfo(const BottomLevelBuildDesc& desc) {
+	//	if (!this->isExtensionEnabled(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME))
+	//		LOG_SYSTEM(LogType::Warning, "VK_KHR_ACCELERATION_STRUCTURE is not an enabled extension, why are you calling 'getBLASBuildInfo()' then.");
+	//
+	//	VkAccelerationStructureGeometryDataKHR geometryData;
+	//	switch (desc.geometryType) {
+	//		case VK_GEOMETRY_TYPE_TRIANGLES_KHR: {
+	//			VkAccelerationStructureGeometryTrianglesDataKHR geometry_triangles = {
+	//				.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR,
+	//				.vertexFormat = desc.geometry.vertexFormat,
+	//				.vertexData = { .deviceAddress = this->gpuAddress(desc.geometry.vertexBuffer) },
+	//				.vertexStride = desc.geometry.vertexStride,
+	//				.maxVertex = desc.geometry.numVertices,
+	//				.indexType = desc.geometry.indexType,
+	//				.indexData = { .deviceAddress = this->gpuAddress(desc.geometry.indexBuffer) }
+	//			};
+	//			geometryData = VkAccelerationStructureGeometryDataKHR(geometry_triangles);
+	//		} break;
+	//		case VK_GEOMETRY_TYPE_AABBS_KHR:
+	//		case VK_GEOMETRY_TYPE_INSTANCES_KHR:
+	//		default:
+	//			ASSERT_MSG(false, "Geometry type not supported yet!");
+	//	}
+	//
+	//	VkAccelerationStructureGeometryKHR geometry = {
+	//		.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR,
+	//		.geometryType = desc.geometryType,
+	//		.geometry = geometryData,
+	//		.flags = desc.geometryFlags,
+	//	};
+	//	VkAccelerationStructureBuildGeometryInfoKHR buildGeometryInfo = {
+	//		.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR,
+	//		.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR,
+	//		.flags = 0,
+	//		.geometryCount = 1, // not sure yet
+	//		.pGeometries = &geometry,
+	//	};
+	//
+	//	VkAccelerationStructureBuildSizesInfoKHR outbuildSizes = {
+	//		.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR
+	//	};
+	//	vkGetAccelerationStructureBuildSizesKHR(_vkDevice, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildGeometryInfo, &buildGeometryInfo.geometryCount, &outbuildSizes);
+	//	return outbuildSizes;
+	//}
 
 	void CTX::destroy(BufferHandle handle) {
 		AllocatedBuffer* buf = _bufferPool.get(handle);

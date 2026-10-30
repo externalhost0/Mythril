@@ -53,6 +53,10 @@ namespace mythril {
 		if (!this->base._passSource.executeCallback)
 			LOG_SYSTEM_NOSOURCE(LogType::Warning, "ComputePass '{}' has no execution callback!", this->base._passSource.name);
 	}
+	RayTracingPassBuilder::~RayTracingPassBuilder() {
+		if (!this->base._passSource.executeCallback)
+			LOG_SYSTEM_NOSOURCE(LogType::Warning, "RayTracing '{}' has no execution callback!", this->base._passSource.name);
+	}
 #endif
 
 	IntermediateBuilder& IntermediateBuilder::blit(TextureDesc src, TextureDesc dst) {

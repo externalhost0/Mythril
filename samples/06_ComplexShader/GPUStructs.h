@@ -44,7 +44,7 @@ struct MaterialData {
 	float warpIterations;
 	float glowAmount;
 	float distortAmount;
-    uint unint1;
+    uint unint1; // padding ig
 };
 
 struct GeometryPushConstant {

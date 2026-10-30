@@ -33,6 +33,7 @@ set(ALL_SAMPLES
         05_ImGui
         06_ComplexShader
         07_CompleteScene
+        08_RayTracing
 )
 
 # ==================== C++ Standard ====================
@@ -170,6 +171,7 @@ elseif(MYTH_ENABLE_IMGUI_DOCKING)
 endif()
 
 if(MYTH_ENABLE_IMGUI_STANDARD OR MYTH_ENABLE_IMGUI_DOCKING)
+    if(NOT TARGET imgui)
     CPMAddPackage(
             NAME imgui
             GITHUB_REPOSITORY "ocornut/imgui"
@@ -196,6 +198,9 @@ if(MYTH_ENABLE_IMGUI_STANDARD OR MYTH_ENABLE_IMGUI_DOCKING)
     )
 
     target_link_libraries(imgui PRIVATE volk)
+    endif ()
+
+    set(MYTHRIL_IMGUI_SOURCE_DIR "${imgui_SOURCE_DIR}" CACHE PATH "ImGui source directory (set by mythril)" FORCE)
 endif()
 
 # ==================== Tracy (Optional) ====================
@@ -229,6 +234,7 @@ set(MYTHRIL_SOURCES
         lib/Shader.cpp
         lib/SlangCompiler.cpp
         lib/Objects.cpp
+        lib/AccelerationStructure.h
 )
 
 if(MYTH_ENABLE_IMGUI_STANDARD OR MYTH_ENABLE_IMGUI_DOCKING)

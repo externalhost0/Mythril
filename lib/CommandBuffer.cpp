@@ -77,17 +77,21 @@ namespace mythril {
 				return "Compute";
 			case PassDesc::Type::Intermediate:
 				return "Transfer";
+			case PassDesc::Type::Raytracing:
+				return "RayTracing";
 			default:
 				assert(false);
 		}
 	}
 
-	PassDesc::Type CommandBuffer::getCurrentPassType() {
+	PassDesc::Type CommandBuffer::getCurrentPassType() const {
 		if (std::holds_alternative<GraphicsPipelineHandle>(_currentPipelineHandle))
 			return PassDesc::Type::Graphics;
 		if (std::holds_alternative<ComputePipelineHandle>(_currentPipelineHandle))
 			return PassDesc::Type::Compute;
-		assert(false);
+		if (std::holds_alternative<RaytracingPipelineHandle>(_currentPipelineHandle))
+			return PassDesc::Type::Raytracing;
+		ASSERT_MSG(false, "Catastrophic error, the developer forgot to account for other variants in the handle!");
 	}
 
 	static void MaybeWarnPushConstantSizeMismatch(const PipelineCoreData& common, uint32_t cpuSize, std::string_view pipelineName) {
@@ -235,6 +239,24 @@ namespace mythril {
 
 		vkCmdDispatch(_wrapper->_cmdBuf, threadGroupCount.width, threadGroupCount.height, threadGroupCount.depth);
 	}
+	void CommandBuffer::cmdTraceRays(const Dimensions& queryDimension) {
+		DRY_RETURN()
+		CHECK_PASS_OPERATION_MISMATCH(PassDesc::Type::Raytracing);
+		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_COMMAND);
+		MYTH_PROFILER_GPU_ZONE("cmdTraceRays()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
+		if (!_ctx->isExtensionEnabled(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME)) {
+			LOG_SYSTEM(LogType::Warning, "You are calling cmdTraceRays without VK_KHR_ray_tracing_pipeline extension enabled.");
+			return;
+		}
+		AllocatedRaytracingPipeline* rtpipeline = this->_ctx->_raytracingPipelinePool.get(std::get<RaytracingPipelineHandle>(_currentPipelineHandle));
+		vkCmdTraceRaysKHR(_wrapper->_cmdBuf,
+			&rtpipeline->_sbtEntryRayGen,
+			&rtpipeline->_sbtEntryMiss,
+			&rtpipeline->_sbtEntryHit,
+			&rtpipeline->_sbtEntryCallable,
+			queryDimension.width, queryDimension.height, queryDimension.depth);
+	}
+
 	void CommandBuffer::cmdGenerateMipmap(TextureHandle handle) {
 		DRY_RETURN()
 		CHECK_PASS_OPERATION_MISMATCH(PassDesc::Type::Intermediate);
@@ -278,7 +300,7 @@ namespace mythril {
 		}
 		return true;
 	}
-	void CommandBuffer::CheckTextureRenderingUsage(const AllocatedTexture& source, const AllocatedTexture& destination, const char* operation) {
+	void CommandBuffer::CheckTextureRenderingUsage(const AllocatedTexture& source, const AllocatedTexture& destination, const char* operation) const {
 		if (_isRendering) {
 			VkImageView source_vkImageView = source._vkImageView;
 			VkImageView dest_vkImageView = destination._vkImageView;
@@ -403,18 +425,19 @@ namespace mythril {
 			LOG_SYSTEM(LogType::Error, "Push constants size exceeded %u (max %u bytes)", size + offset, limits.maxPushConstantsSize);
 		}
 
-		// we just use the enum for PassSource::Type even though it makes no sense cause thats not what we are testing for
-		const PassDesc::Type type = getCurrentPassType();
-		const VkShaderStageFlags stages = [](const PassDesc::Type passType) -> VkShaderStageFlags {
-			switch (passType) {
-				case PassDesc::Type::Graphics:
-					return VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-				case PassDesc::Type::Compute:
-					return VK_SHADER_STAGE_COMPUTE_BIT;
-				default:
-					assert(false);
+		VkShaderStageFlags stages = 0;
+		uint32_t rangeEnd = 0;
+		for (const VkPushConstantRange& range: _currentPipelineInfo->core.signature.pushes) {
+			if (offset < range.offset + range.size && range.offset < offset + size) {
+				stages |= range.stageFlags;
+				rangeEnd = std::max(rangeEnd, range.offset + range.size);
 			}
-		}(type);
+		}
+		size = std::min(size, rangeEnd - offset);
+		if (!stages) {
+			LOG_SYSTEM(LogType::Warning, "Pipeline '{}' has no push constant range overlapping [{}, {}), skipping push constants!", _currentPipelineInfo->debugName, offset, offset + size);
+			return;
+		}
 #ifdef DEBUG
 		MaybeWarnPushConstantSizeMismatch(_currentPipelineInfo->core, size, _currentPipelineInfo->debugName);
 #endif

@@ -328,18 +328,23 @@ namespace mythril {
 		std::unordered_map<VkShaderStageFlags, int> numOfStageEntryPoints;
 #endif
 		VkShaderStageFlags vkShaderStageFlags = 0;
-		uint32_t entry_point_count = spirv_module.entry_point_count;
+		const uint32_t entry_point_count = spirv_module.entry_point_count;
 		for (int i_entryPoint = 0; i_entryPoint < entry_point_count; i_entryPoint++) {
 			SpvReflectEntryPoint reflectedEntryPoint = spirv_module.entry_points[i_entryPoint];
 			auto vk_shader_stage_flag = static_cast<VkShaderStageFlagBits>(reflectedEntryPoint.shader_stage);
 #ifdef DEBUG
-			numOfStageEntryPoints[vk_shader_stage_flag]++;
-			ASSERT_MSG(
-			        numOfStageEntryPoints[vk_shader_stage_flag] < 2,
-			        "You cannot have more than 1 entrypoint for the same shader stage! '{}' is the second entrypoint that targets '{}'",
-			        reflectedEntryPoint.name,
-			        vkstring::VulkanShaderStageFlagBitsToString(vk_shader_stage_flag).c_str()
-			);
+			// a raytracing pipeline picks its shaders by entry point, so several per stage is expected
+			constexpr VkShaderStageFlags kRayTracingStages = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_MISS_BIT_KHR |
+			                                                 VK_SHADER_STAGE_INTERSECTION_BIT_KHR | VK_SHADER_STAGE_CALLABLE_BIT_KHR;
+			if (!(vk_shader_stage_flag & kRayTracingStages)) {
+				numOfStageEntryPoints[vk_shader_stage_flag]++;
+				ASSERT_MSG(
+				        numOfStageEntryPoints[vk_shader_stage_flag] < 2,
+				        "You cannot have more than 1 entrypoint for the same shader stage! '{}' is the second entrypoint that targets '{}'",
+				        reflectedEntryPoint.name,
+				        vkstring::VulkanShaderStageFlagBitsToString(vk_shader_stage_flag).c_str()
+				);
+			}
 #endif
 			vkShaderStageFlags |= vk_shader_stage_flag;
 		}

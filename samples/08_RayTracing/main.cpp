@@ -14,12 +14,12 @@
 #include "glm/detail/type_mat4x4.hpp"
 
 #include "GPUStructs.h"
+#include "Meshes.h"
 
-struct Vertex {
-	glm::vec3 position;
-};
 struct Camera {
 	glm::vec3 position;
+	glm::vec3 forwardVector;
+	glm::vec3 upVector;
 	float aspectRatio;
 	float fov;
 	float nearPlane;
@@ -82,13 +82,9 @@ const std::vector<uint32_t> cubeIndices = {
 	22, 23, 20
 };
 
-struct Mesh {
-	std::vector<Vertex> vertices;
-	std::vector<uint32_t> indices;
-};
 Mesh buildSceneMesh(float floorHalfExtent, float floorHeight = -1.f) {
 	Mesh mesh = { cubeVertices, cubeIndices };
-	const uint32_t base = static_cast<uint32_t>(mesh.vertices.size());
+	const auto base = static_cast<uint32_t>(mesh.vertices.size());
 	const float e = floorHalfExtent;
 	// same winding as the cube's top face so the floor faces +y
 	mesh.vertices.insert(mesh.vertices.end(), {
@@ -101,11 +97,14 @@ Mesh buildSceneMesh(float floorHalfExtent, float floorHeight = -1.f) {
 		base + 0, base + 1, base + 2,
 		base + 2, base + 3, base + 0
 	});
+
+	appendMesh(mesh, buildTreeMesh({.seed = 7}), glm::scale(glm::translate(glm::mat4(1.f), {3.5f, floorHeight, -1.f}), glm::vec3(0.7f)));
+	appendMesh(mesh, buildTreeMesh({.seed = 21}), glm::scale(glm::translate(glm::mat4(1.f), {-3.5f, floorHeight, -2.5f}), glm::vec3(0.8f)));
 	return mesh;
 }
 
 glm::mat4 calculateViewMatrix(const Camera &camera) {
-	return glm::lookAt(camera.position, camera.position + glm::vec3(0, 0, -1), glm::vec3(0, 1, 0));
+	return glm::lookAt(camera.position, camera.position + camera.forwardVector, camera.upVector);
 }
 glm::mat4 calculateProjectionMatrix(const Camera& camera) {
 	return glm::perspective(glm::radians(camera.fov), camera.aspectRatio, camera.nearPlane, camera.farPlane);
@@ -123,7 +122,30 @@ int main() {
 	static const std::vector<const char*> vulkan_extensions = {
 		VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
 		VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
-		VK_KHR_RAY_QUERY_EXTENSION_NAME
+		VK_KHR_RAY_QUERY_EXTENSION_NAME,
+		VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME
+	};
+	VkPhysicalDeviceAccelerationStructureFeaturesKHR accelerationStructureFeatures = {
+		.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR,
+		.accelerationStructure = VK_TRUE,
+		.accelerationStructureCaptureReplay = VK_FALSE,
+		.accelerationStructureIndirectBuild = VK_FALSE,
+		.accelerationStructureHostCommands = VK_FALSE,
+		.descriptorBindingAccelerationStructureUpdateAfterBind = VK_TRUE,
+	};
+	VkPhysicalDeviceRayTracingPipelineFeaturesKHR rayTracingPipelineFeatures = {
+		.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR,
+		.pNext = &accelerationStructureFeatures,
+		.rayTracingPipeline = VK_TRUE,
+		.rayTracingPipelineShaderGroupHandleCaptureReplay = VK_FALSE,
+		.rayTracingPipelineShaderGroupHandleCaptureReplayMixed = VK_FALSE,
+		.rayTracingPipelineTraceRaysIndirect = VK_TRUE,
+		.rayTraversalPrimitiveCulling = VK_FALSE,
+	};
+	VkPhysicalDeviceRayQueryFeaturesKHR rayQueryFeatures = {
+		.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR,
+		.pNext = &rayTracingPipelineFeatures,
+		.rayQuery = VK_TRUE,
 	};
 	{
 		auto ctx = mythril::CTXBuilder{}
@@ -134,6 +156,8 @@ int main() {
 			.engine_version = {0, 0, 1},
 			.enableValidation = true,
 			.deviceExtensions = vulkan_extensions,
+			.additionalDeviceFeatures = { .shaderInt64 = VK_TRUE },
+			.deviceExtensionFeatureChain = &rayQueryFeatures
 		})
 		.set_window_surface([sdlWindow](VkInstance instance) {
 			VkSurfaceKHR surface;
@@ -153,20 +177,39 @@ int main() {
 		})
 		.build();
 
-		mythril::Shader standardShader = ctx->createShader({
-			.source = kDataDir / "main.slang",
-			.debugName = "Main Shader"
+		mythril::Shader fullscreenShader = ctx->createShader({
+			.source = kDataDir / "fullscreen.slang",
+			.debugName = "Fullscreen Shader"
 		});
 		mythril::Shader raytraceShader = ctx->createShader({
 			.source = kDataDir / "raytrace.slang",
 			.debugName = "Raytrace Shader"
 		});
+		mythril::GraphicsPipeline fullscreenPipeline = ctx->createGraphicsPipeline({
+			.vertexShader = {fullscreenShader},
+			.fragmentShader = {fullscreenShader},
+			.debugName = "Fullscreen Pipeline"
+		});
 
+
+		mythril::Buffer frameBuffer = ctx->createBuffer({
+			.size = sizeof(GPU::PerFrame),
+			.usage = mythril::BufferUsageBits::BufferUsageBits_Storage,
+			.storage = mythril::StorageType::Device,
+			.debugName = "Frame Uniforms"
+		});
 
 		mythril::RaytracingPipeline mainPipeline = ctx->createRaytracingPipeline({
-			.rayGenShader = { raytraceShader, "raygenMain" },
-			.missShader = { raytraceShader, "missMain" },
-			.hitShader = { raytraceShader, "hitMain" } ,
+			.rayGenShaders = {
+				{ raytraceShader, "raygenMain" }
+			},
+			.missShaders = {
+				{ raytraceShader, "missMain" },
+				{ raytraceShader, "missShadowMain" }
+			},
+			.closestHitShaders = {
+				{ raytraceShader, "closestHitMain" }
+			},
 			.debugName = "Main Pipeline"
 		});
 
@@ -174,14 +217,14 @@ int main() {
 
 		mythril::Buffer sceneVertexBuffer = ctx->createBuffer({
 			.size = sizeof(Vertex) * scene.vertices.size(),
-			.usage = mythril::BufferUsageBits::BufferUsageBits_Storage,
+			.usage = mythril::BufferUsageBits::BufferUsageBits_Storage | mythril::BufferUsageBits_AccelerationStructureInputReadOnly,
 			.storage = mythril::StorageType::Device,
 			.initialData = scene.vertices.data(),
 			.debugName = "Scene Vertex Buffer"
 		});
 		mythril::Buffer sceneIndexBuffer = ctx->createBuffer({
 			.size = sizeof(uint32_t) * scene.indices.size(),
-			.usage = mythril::BufferUsageBits::BufferUsageBits_Index,
+			.usage = mythril::BufferUsageBits::BufferUsageBits_Storage | mythril::BufferUsageBits_Index | mythril::BufferUsageBits_AccelerationStructureInputReadOnly,
 			.storage = mythril::StorageType::Device,
 			.initialData = scene.indices.data(),
 			.debugName = "Scene Index Buffer"
@@ -198,12 +241,15 @@ int main() {
 			.indexBuffer = sceneIndexBuffer.handle(),
 			.indexType = VK_INDEX_TYPE_UINT32,
 		};
-		mythril::BottomLevelBuildSpec blasBuildSpec = {
+		mythril::BottomLevelBuildDesc blasBuildSpec = {
 			.geometryType = VK_GEOMETRY_TYPE_TRIANGLES_KHR,
 			.geometry = sceneGeometryForAccel,
-			.geometryFlags = VK_GEOMETRY_OPAQUE_BIT_KHR
+			.geometryFlags = VK_GEOMETRY_OPAQUE_BIT_KHR,
+			.maxPrimitiveCount = static_cast<uint32_t>(scene.indices.size() / 3)
 		};
-		VkAccelerationStructureBuildSizesInfoKHR blasSizes = ctx->getBLASBuildInfo(blasBuildSpec);
+		VkAccelerationStructureBuildSizesInfoKHR blasSizes;
+		VkAccelerationStructureGeometryKHR unnused;
+		ctx->getBLASBuildInfo(blasBuildSpec, blasSizes, unnused);
 
 		const uint32_t maxStorageBufferSize = ctx->getPhysicalDeviceProperties10().limits.maxStorageBufferRange;
 		const uint32_t requiredBLASCount = [&blasSizes, maxStorageBufferSize] {
@@ -230,39 +276,36 @@ int main() {
 			.buildFlags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR,
 		};
 
-		struct Instance {
-			glm::mat3x4 transform;
-			uint32_t customIndex = 0;
-			mythril::AccelerationStructureHandle blas;
-		};
-
 		const uint32_t desiredPrimitivesPerBLAS = totalPrimitiveCount / requiredBLASCount;
 		std::vector<mythril::AccelerationStructure> blases;
-		std::vector<Instance> instances;
+		std::vector<VkAccelerationStructureInstanceKHR> instances;
 		instances.reserve(requiredBLASCount);
 		blases.reserve(requiredBLASCount);
 		for (int i = 0; i < requiredBLASCount; i++) {
-			const uint32_t remainingPrimitives = totalPrimitiveCount - i;
+			const uint32_t firstPrimitive = i * desiredPrimitivesPerBLAS;
+			const uint32_t remainingPrimitives = totalPrimitiveCount - firstPrimitive;
 			mythril::AccelerationStructureSpec spec = baseSpec;
-			spec.buildRange.primitiveOffset = static_cast<uint32_t>(i * 3 * sizeof(uint32_t));
+			spec.buildRange.primitiveOffset = static_cast<uint32_t>(firstPrimitive * 3 * sizeof(uint32_t));
 			// switch to remaining once we get to the end of what we can evenly divide
 			spec.buildRange.primitiveCount = (desiredPrimitivesPerBLAS < remainingPrimitives) ? desiredPrimitivesPerBLAS : remainingPrimitives;;
 			// give each a numbered name
 			char debugName[128];
 			snprintf(debugName, sizeof(debugName), "BLAS Structure %d", i);
 			spec.debugName = debugName;
-			blases[i] = ctx->createAccelerationStructure(spec);
-			instances[i] = {
-				.transform = glm::scale(glm::mat4(1), glm::vec3(1.f)),
-				.customIndex = 0,
-				.blas = blases[i].handle()
-			};
+			blases.push_back(ctx->createAccelerationStructure(spec));
+			instances.push_back({
+				.transform = {{{1.f, 0.f, 0.f, 0.f}, {0.f, 1.f, 0.f, 0.f}, {0.f, 0.f, 1.f, 0.f}}},
+				.instanceCustomIndex = firstPrimitive,
+				.mask = 0xFF,
+				.instanceShaderBindingTableRecordOffset = 0,
+				.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR,
+				.accelerationStructureReference = ctx->gpuAddress(blases.back().handle())
+			});
 		}
 
-
 		mythril::Buffer instanceBuf = ctx->createBuffer({
-			.size = sizeof(Instance) * instances.size(),
-			.usage = mythril::BufferUsageBits::BufferUsageBits_AccelerationStructureInput,
+			.size = sizeof(VkAccelerationStructureInstanceKHR) * instances.size(),
+			.usage = mythril::BufferUsageBits::BufferUsageBits_AccelerationStructureInputReadOnly,
 			.storage = mythril::StorageType::HostVisible,
 			.initialData = instances.data(),
 			.debugName = "instances data"
@@ -276,9 +319,69 @@ int main() {
 			.debugName = "TLAS Accel"
 		});
 
+		// framebuffer sized since fullscreen.slang does a pixel-exact load
+		const uint32_t kTraceWidth = initialWindowSize.width, kTraceHeight = initialWindowSize.height;
+		mythril::Texture tracedShadowOutput = ctx->createTexture({
+			.dimension = { kTraceWidth, kTraceHeight },
+			.type = mythril::TextureType::Type_2D,
+			.format = VK_FORMAT_R8G8B8A8_UNORM,
+			.usage = mythril::TextureUsageBits::TextureUsageBits_Sampled | mythril::TextureUsageBits_Storage,
+			.debugName = "Raytraced output"
+		});
 
-		const auto startTime = std::chrono::high_resolution_clock::now();
+
+		const auto initalSize = GetSDLWindowFramebufferSize(sdlWindow);
+		Camera camera = {
+			.position = { 0.f, 0.f, 5.f },
+			.forwardVector = { 0.f, 0.f, -1.f },
+			.upVector = { 0.f, 1.f, 0.f },
+			.aspectRatio = static_cast<float>(initalSize.width)/static_cast<float>(initalSize.height),
+			.fov = 80.f,
+			.nearPlane = 0.1f,
+			.farPlane = 100.f
+		};
+
+		// must match the kDebug* constants in raytrace.slang
+		static constexpr const char* kDebugModeNames[] = {
+			"Lit", "Normals", "Hit Distance", "Primitive ID", "Barycentrics", "Shadow Rays", "Ray Direction"
+		};
+		static constexpr uint32_t kNumDebugModes = std::size(kDebugModeNames);
+		uint32_t debugMode = 0;
+		const auto applyDebugMode = [&](uint32_t mode) {
+			debugMode = mode;
+			char title[128];
+			snprintf(title, sizeof(title), "08_RayTracing - [%u] %s (keys 0-%u)", mode, kDebugModeNames[mode], kNumDebugModes - 1);
+			SDL_SetWindowTitle(sdlWindow, title);
+		};
+		applyDebugMode(0);
+
 		mythril::RenderGraph graph;
+		graph.addRayTracingPass("trace shadows")
+		.dependency(tracedShadowOutput, mythril::Layout::GENERAL)
+		.execute([&](mythril::CommandBuffer& cmd) {
+			cmd.cmdBindRaytracingPipeline(mainPipeline);
+			GPU::PerFrame frameData = {
+				.viewInverse = glm::inverse(calculateViewMatrix(camera)),
+				.projInverse = glm::inverse(calculateProjectionMatrix(camera)),
+			};
+			cmd.cmdUpdateBuffer(frameBuffer, 0, sizeof(GPU::PerFrame), &frameData);
+			
+			GPU::ShadowPushConstant push = {
+				.frame = ctx->gpuAddress(frameBuffer.handle()),
+				// points toward the light, closestHitMain dots it with the surface normal
+				.lightDir = glm::vec4(1.5, 2.0, 1.0, 0),
+				.vertices = ctx->gpuAddress(sceneVertexBuffer.handle()),
+				.indices = ctx->gpuAddress(sceneIndexBuffer.handle()),
+				.outTexture = tracedShadowOutput.index(),
+				.tlas = ctx->gpuAddress(tlas.handle()),
+				.enableShadows = static_cast<uint32_t>(true),
+				.debugMode = debugMode
+			};
+			cmd.cmdPushConstants(push);
+			// must match the output texture, out of bounds image stores are not discarded without robustness
+			cmd.cmdTraceRays({kTraceWidth, kTraceHeight, 1});
+
+		});
 		graph.addGraphicsPass("final")
 		.attachment({
 			.texDesc = ctx->getBackBufferTexture(),
@@ -286,37 +389,63 @@ int main() {
 			.loadOp = mythril::LoadOp::CLEAR,
 			.storeOp = mythril::StoreOp::STORE
 		})
+		.dependency(tracedShadowOutput, mythril::Layout::READ)
 		.execute([&](mythril::CommandBuffer& cmd) {
-			cmd.cmdBindRaytracingPipeline(mainPipeline);
-
-			auto frameWindowSize = GetSDLWindowFramebufferSize(sdlWindow);
-			Camera camera = {
-					.position = { 0.f, 0.f, 5.f },
-					.aspectRatio = (float)frameWindowSize.width/(float)frameWindowSize.height,
-					.fov = 80.f,
-					.nearPlane = 0.1f,
-					.farPlane = 100.f
-			};
-			auto currentTime = std::chrono::high_resolution_clock::now();
-			float time = std::chrono::duration<float>(currentTime - startTime).count();
-			glm::mat4 model = glm::rotate(glm::mat4(1.0f), time, glm::vec3(0.0f, 1.0f, 0.0f));
-			model = glm::rotate(model, time * 0.5f, glm::vec3(1.0f, 0.0f, 0.0f));
-			GPU::PushConstant push = {
-					.mvp = calculateProjectionMatrix(camera) * calculateViewMatrix(camera) * model,
-					.vertexBufferAddress = ctx->gpuAddress(sceneVertexBuffer.handle())
-			};
+			cmd.cmdBindGraphicsPipeline(fullscreenPipeline);
+			const GPU::FullscreenPushConstant push = { .rayTracedImage = tracedShadowOutput.index() };
 			cmd.cmdPushConstants(push);
-			cmd.cmdBindIndexBuffer(sceneIndexBuffer);
-			cmd.cmdDrawIndexed(scene.indices.size());
+			cmd.cmdDraw(3);
 		});
 		graph.compile(*ctx);
 
+		bool focused = false;
+		SDL_SetWindowRelativeMouseMode(sdlWindow, focused);
+		constexpr float kMouseSensitivity = 0.3f;
+		constexpr float kBaseCameraSpeed = 4.f;
+		constexpr float kShiftCameraSpeed = kBaseCameraSpeed * 3.f;
+		// -90 yaw faces -z, matching the initial forward vector
+		float yaw = -90.f, pitch = 0.f;
+
+		auto lastTime = std::chrono::steady_clock::now();
 		bool quit = false;
 		while (!quit) {
+			const auto now = std::chrono::steady_clock::now();
+			const float deltaTime = std::chrono::duration<float>(now - lastTime).count();
+			lastTime = now;
+
 			SDL_Event e;
 			while (SDL_PollEvent(&e)) {
 				if (e.type == SDL_EVENT_QUIT) quit = true;
+				if (e.type == SDL_EVENT_KEY_DOWN) {
+					if (e.key.key == SDLK_Q) quit = true;
+					if (e.key.key == SDLK_C) SDL_SetWindowRelativeMouseMode(sdlWindow, focused = !focused);
+					if (e.key.key >= SDLK_0 && e.key.key < SDLK_0 + kNumDebugModes) applyDebugMode(e.key.key - SDLK_0);
+				}
+				if (e.type == SDL_EVENT_MOUSE_MOTION && focused) {
+					yaw += e.motion.xrel * kMouseSensitivity;
+					pitch -= e.motion.yrel * kMouseSensitivity;
+					pitch = glm::clamp(pitch, -89.0f, 89.0f);
+				}
 			}
+			glm::vec3 front;
+			front.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
+			front.y = sin(glm::radians(pitch));
+			front.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
+			front = glm::normalize(front);
+			const glm::vec3 up = {0, 1, 0};
+			const glm::vec3 right = glm::normalize(glm::cross(front, up));
+
+			const bool* state = SDL_GetKeyboardState(nullptr);
+			const float cameraSpeed = (state[SDL_SCANCODE_LSHIFT] ? kShiftCameraSpeed : kBaseCameraSpeed) * deltaTime;
+			if (state[SDL_SCANCODE_W]) camera.position += front * cameraSpeed;
+			if (state[SDL_SCANCODE_S]) camera.position -= front * cameraSpeed;
+			if (state[SDL_SCANCODE_A]) camera.position -= right * cameraSpeed;
+			if (state[SDL_SCANCODE_D]) camera.position += right * cameraSpeed;
+			if (state[SDL_SCANCODE_SPACE]) camera.position += up * cameraSpeed;
+			if (state[SDL_SCANCODE_LCTRL]) camera.position -= up * cameraSpeed;
+			camera.forwardVector = front;
+			camera.upVector = up;
+
 			graph.executeEXT(*ctx);
 		}
 	}
