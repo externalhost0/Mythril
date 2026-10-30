@@ -8,6 +8,7 @@ It aims to provide a easy to create context and highly abstracted API for Vulkan
 * RenderGraph implementation, automatically builds and optimizes your described frame.
 * Fully Bindless design for textures & samplers.
 * Automatic shader reflection.
+* Ray Tracing pipeline & Acceleration Structure support.
 * RAII Object System, all Vulkan objects are cleaned up automatically.
 * Supported plugin system for commonly used dev tools, currently includes ImGui and Tracy.
 * BYOW (Bring Your Own Window), you can use whatever windowing library you like easily. (SDL3/GLFW/any native api)

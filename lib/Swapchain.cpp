@@ -126,7 +126,7 @@ namespace mythril {
 		// SECONDARY DATA CREATION //
 		VkSemaphoreCreateInfo semaphoreInfo = vkinfo::CreateSemaphoreInfo();
 		VkFenceCreateInfo fenceInfo = vkinfo::CreateFenceInfo(VK_FENCE_CREATE_SIGNALED_BIT);
-		for (int i = 0; i < _numSwapchainImages; i++) {
+		for (int i = 0; i < kNUM_FRAMES_IN_FLIGHT; i++) {
 			VK_CHECK(vkCreateSemaphore(_ctx._vkDevice, &semaphoreInfo, nullptr, &_vkAcquireSemaphores[i]));
 			VK_CHECK(vkCreateFence(_ctx._vkDevice, &fenceInfo, nullptr, &_vkAcquireFences[i]));
 		}
@@ -139,7 +139,7 @@ namespace mythril {
 		}
 		vkDestroySwapchainKHR(_ctx._vkDevice, _vkSwapchain, nullptr);
 		// DESTROY SECONDARY DATA //
-		for (int i = 0; i < _numSwapchainImages; i++) {
+		for (int i = 0; i < kNUM_FRAMES_IN_FLIGHT; i++) {
 			vkDestroySemaphore(_ctx._vkDevice, _vkAcquireSemaphores[i], nullptr);
 			if (_vkAcquireFences[i] != VK_NULL_HANDLE) {
 				vkDestroyFence(_ctx._vkDevice, _vkAcquireFences[i], nullptr);

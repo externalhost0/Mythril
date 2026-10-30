@@ -358,6 +358,7 @@ int main() {
 		mythril::RenderGraph graph;
 		graph.addRayTracingPass("trace shadows")
 		.dependency(tracedShadowOutput, mythril::Layout::GENERAL)
+		.dependency(frameBuffer, mythril::BufferAccess::ShaderRead)
 		.execute([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdBindRaytracingPipeline(mainPipeline);
 			GPU::PerFrame frameData = {

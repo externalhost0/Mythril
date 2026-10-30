@@ -241,10 +241,10 @@ namespace mythril {
 		VkPhysicalDeviceVulkan12Features getPhysicalDeviceFeatures12() const { return _featuresVulkan.features12; }
 		VkPhysicalDeviceVulkan13Features getPhysicalDeviceFeatures13() const { return _featuresVulkan.features13; }
 
-		VkPhysicalDeviceProperties getPhysicalDeviceProperties10() const { return _propertiesVulkan.props10; }
-		VkPhysicalDeviceVulkan11Properties getPhysicalDeviceProperties11() const { return _propertiesVulkan.props11; }
-		VkPhysicalDeviceVulkan12Properties getPhysicalDeviceProperties12() const { return _propertiesVulkan.props12; }
-		VkPhysicalDeviceVulkan13Properties getPhysicalDeviceProperties13() const { return _propertiesVulkan.props13; }
+		const VkPhysicalDeviceProperties& getPhysicalDeviceProperties10() const { return _propertiesVulkan.props10; }
+		const VkPhysicalDeviceVulkan11Properties& getPhysicalDeviceProperties11() const { return _propertiesVulkan.props11; }
+		const VkPhysicalDeviceVulkan12Properties& getPhysicalDeviceProperties12() const { return _propertiesVulkan.props12; }
+		const VkPhysicalDeviceVulkan13Properties& getPhysicalDeviceProperties13() const { return _propertiesVulkan.props13; }
 
 		// temp for now, for samples
 		[[nodiscard]] CommandBuffer& acquireCommand(CommandBuffer::Type type);
@@ -384,7 +384,11 @@ namespace mythril {
 		// special case for extensions
 		VkPhysicalDeviceRayTracingPipelinePropertiesKHR _raytracingProperties {};
 		VkPhysicalDeviceAccelerationStructurePropertiesKHR _accelerationStructureProperties {};
-		std::unordered_set<std::string> _enabledExtensionNames; // includes both instance and device extensions
+		struct TransparentStringHash {
+			using is_transparent = void;
+			size_t operator()(const std::string_view s) const { return std::hash<std::string_view>{}(s); }
+		};
+		std::unordered_set<std::string, TransparentStringHash, std::equal_to<>> _enabledExtensionNames; // includes both instance and device extensions
 
 		// queues
 		VkQueue _vkGraphicsQueue = VK_NULL_HANDLE;

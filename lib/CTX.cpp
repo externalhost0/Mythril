@@ -92,7 +92,7 @@ namespace mythril {
 		return true;
 	}
 
-	bool CTX::isExtensionEnabled(const std::string_view extension_name) const { return _enabledExtensionNames.contains(std::string(extension_name)); }
+	bool CTX::isExtensionEnabled(const std::string_view extension_name) const { return _enabledExtensionNames.contains(extension_name); }
 	void CTX::construct() {
 		ASSERT(this->_vkInstance != VK_NULL_HANDLE);
 		ASSERT(this->_vkPhysicalDevice != VK_NULL_HANDLE);
@@ -478,11 +478,12 @@ namespace mythril {
 			    .pImageInfo = infoStorageImages.data(),
 			};
 		}
-		if (!handlesAccelerationStructures.empty() && _dummyTLAS != VK_NULL_HANDLE) { const VkWriteDescriptorSetAccelerationStructureKHR writeAccelStruct = {
-				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR,
-				.accelerationStructureCount = static_cast<uint32_t>(handlesAccelerationStructures.size()),
-				.pAccelerationStructures = handlesAccelerationStructures.data(),
-			};
+		const VkWriteDescriptorSetAccelerationStructureKHR writeAccelStruct = {
+			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR,
+			.accelerationStructureCount = static_cast<uint32_t>(handlesAccelerationStructures.size()),
+			.pAccelerationStructures = handlesAccelerationStructures.data(),
+		};
+		if (!handlesAccelerationStructures.empty() && _dummyTLAS != VK_NULL_HANDLE) {
 			write[numWrites++] = VkWriteDescriptorSet{
 				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
 				.pNext = &writeAccelStruct,
@@ -1052,7 +1053,8 @@ namespace mythril {
 
 		// things we gather in the middle of the renderpass (attachment formats)
 		// looks at the current pass and reflects those formats in use
-		const CompiledPass& current_pass_info = _currentCommandBuffer._activePass;
+		ASSERT(_currentCommandBuffer._activePass);
+		const CompiledPass& current_pass_info = *_currentCommandBuffer._activePass;
 		std::vector<VkFormat> colorFormats;
 		colorFormats.reserve(current_pass_info.colorAttachments.size());
 		for (const AttachmentInfo& colorAttachment: current_pass_info.colorAttachments) {
@@ -1227,7 +1229,6 @@ namespace mythril {
 		if (spec.initialData) {
 			upload(handle, spec.initialData, spec.size);
 		}
-		_awaitingCreation = true;
 		return {this, handle};
 	}
 	AllocatedBuffer CTX::createBufferImpl(VkDeviceSize bufferSize, VkBufferUsageFlags usageFlags, VkMemoryPropertyFlags memFlags) {
@@ -2017,6 +2018,7 @@ namespace mythril {
 
 		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR, reinterpret_cast<uint64_t>(obj._vkAccelerationStructure), obj.getDebugName().data());
 		const AccelerationStructureHandle handle = _accelerationStructurePool.create(std::move(obj));
+		_awaitingCreation = true;
 		return { this, handle };
 	}
 
@@ -2375,6 +2377,7 @@ namespace mythril {
 
 		deferTask(std::packaged_task<void()>([device = _vkDevice, accel_struct = acceleration_structure->_vkAccelerationStructure]() { vkDestroyAccelerationStructureKHR(device, accel_struct, nullptr); }));
 		_accelerationStructurePool.destroy(handle);
+		_awaitingCreation = true;
 	}
 
 	// ---- texture subresource views ----

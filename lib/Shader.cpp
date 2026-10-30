@@ -295,31 +295,30 @@ namespace mythril {
 
 		// we want to get the first descriptor set and ensure that its set index is 0
 		// if not then we shift all descriptor sets over by its set index until its at 0
-		if (spirv_module.descriptor_set_count < 1)
-			return;
 		// we might want to check just the first SpvReflectDescriptorSet, however idk if they are ordered
 		uint32_t lowest_set_index = std::numeric_limits<uint32_t>::max();
 		for (int i = 0; i < spirv_module.descriptor_set_count; i++) {
-			const SpvReflectDescriptorSet& set = spirv_module.descriptor_sets[i];
-			if (lowest_set_index > set.set)
-				lowest_set_index = set.set;
+			const SpvReflectDescriptorSet& spvSet = spirv_module.descriptor_sets[i];
+			if (lowest_set_index > spvSet.set)
+				lowest_set_index = spvSet.set;
 		}
-		if (lowest_set_index == 0)
-			return;
-		// now we know we have to apply the patch
-		// we loop through every descriptor set and shift their set index down by lowest set
-		for (int i = 0; i < spirv_module.descriptor_set_count; i++) {
-			SpvReflectDescriptorSet& set = spirv_module.descriptor_sets[i];
-			spvReflectChangeDescriptorSetNumber(&spirv_module, &set, set.set - lowest_set_index);
+		if (spirv_module.descriptor_set_count > 0 && lowest_set_index != 0) {
+			// now we know we have to apply the patch
+			// we loop through every descriptor set and shift their set index down by lowest set
+			for (int i = 0; i < spirv_module.descriptor_set_count; i++) {
+				SpvReflectDescriptorSet& spvSet = spirv_module.descriptor_sets[i];
+				spvReflectChangeDescriptorSetNumber(&spirv_module, &spvSet, spvSet.set - lowest_set_index);
+			}
+			size = spvReflectGetCodeSize(&spirv_module);
+			memcpy(code, spvReflectGetCode(&spirv_module), size);
 		}
-		size = spvReflectGetCodeSize(&spirv_module);
-		memcpy(code, spvReflectGetCode(&spirv_module), size);
+		spvReflectDestroyShaderModule(&spirv_module);
 	}
 
 	ReflectionResult ReflectSPIRV(const uint32_t* code, size_t size) {
-		SpvReflectShaderModule spirv_module = {};
-		SpvReflectResult spv_result = spvReflectCreateShaderModule(size, code, &spirv_module);
-		ASSERT_MSG(spv_result == SPV_REFLECT_RESULT_SUCCESS, "Initial reflection of the SpvReflectShaderModule failed!");
+		SpvReflectShaderModule spvReflectModule = {};
+		SpvReflectResult spvResult = spvReflectCreateShaderModule(size, code, &spvReflectModule);
+		ASSERT_MSG(spvResult == SPV_REFLECT_RESULT_SUCCESS, "Initial reflection of the SpvReflectShaderModule failed!");
 
 		// define return value
 		ReflectionResult result = {};
@@ -328,10 +327,10 @@ namespace mythril {
 		std::unordered_map<VkShaderStageFlags, int> numOfStageEntryPoints;
 #endif
 		VkShaderStageFlags vkShaderStageFlags = 0;
-		const uint32_t entry_point_count = spirv_module.entry_point_count;
+		const uint32_t entry_point_count = spvReflectModule.entry_point_count;
 		for (int i_entryPoint = 0; i_entryPoint < entry_point_count; i_entryPoint++) {
-			SpvReflectEntryPoint reflectedEntryPoint = spirv_module.entry_points[i_entryPoint];
-			auto vk_shader_stage_flag = static_cast<VkShaderStageFlagBits>(reflectedEntryPoint.shader_stage);
+			SpvReflectEntryPoint spvReflectedEntryPoint = spvReflectModule.entry_points[i_entryPoint];
+			auto vk_shader_stage_flag = static_cast<VkShaderStageFlagBits>(spvReflectedEntryPoint.shader_stage);
 #ifdef DEBUG
 			// a raytracing pipeline picks its shaders by entry point, so several per stage is expected
 			constexpr VkShaderStageFlags kRayTracingStages = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_MISS_BIT_KHR |
@@ -341,7 +340,7 @@ namespace mythril {
 				ASSERT_MSG(
 				        numOfStageEntryPoints[vk_shader_stage_flag] < 2,
 				        "You cannot have more than 1 entrypoint for the same shader stage! '{}' is the second entrypoint that targets '{}'",
-				        reflectedEntryPoint.name,
+				        spvReflectedEntryPoint.name,
 				        vkstring::VulkanShaderStageFlagBitsToString(vk_shader_stage_flag).c_str()
 				);
 			}
@@ -351,21 +350,21 @@ namespace mythril {
 
 		// collect specialization constants
 		uint32_t sc_count = 0;
-		spv_result = spvReflectEnumerateSpecializationConstants(&spirv_module, &sc_count, nullptr);
-		ASSERT_MSG(spv_result == SPV_REFLECT_RESULT_SUCCESS, "Failed to enumerate Specialization Constants for count.");
+		spvResult = spvReflectEnumerateSpecializationConstants(&spvReflectModule, &sc_count, nullptr);
+		ASSERT_MSG(spvResult == SPV_REFLECT_RESULT_SUCCESS, "Failed to enumerate Specialization Constants for count.");
 
 		std::vector<SpvReflectSpecializationConstant*> constants(sc_count);
-		spv_result = spvReflectEnumerateSpecializationConstants(&spirv_module, &sc_count, constants.data());
-		ASSERT_MSG(spv_result == SPV_REFLECT_RESULT_SUCCESS, "Failed to enumerate Specialization Constants for data.");
+		spvResult = spvReflectEnumerateSpecializationConstants(&spvReflectModule, &sc_count, constants.data());
+		ASSERT_MSG(spvResult == SPV_REFLECT_RESULT_SUCCESS, "Failed to enumerate Specialization Constants for data.");
 
 		for (const SpvReflectSpecializationConstant* reflected_constant: constants) {
 			// safely derefrence
-			const SpvReflectTypeDescription& constantType = *reflected_constant->type_description;
+			const SpvReflectTypeDescription& spvConstantTyoe = *reflected_constant->type_description;
 			SpecializationConstant info = {};
 
 			info.varName = reflected_constant->name;
 			info.typeName = "Scalar";
-			info.scalarKind = ResolveScalarKindFromType(constantType);
+			info.scalarKind = ResolveScalarKindFromType(spvConstantTyoe);
 			info.id = reflected_constant->constant_id;
 
 			result.specializationInfo.specializationConstants.emplace_back(info);
@@ -374,26 +373,26 @@ namespace mythril {
 
 		// collect descriptor sets info
 		uint32_t ds_count = 0;
-		spv_result = spvReflectEnumerateDescriptorSets(&spirv_module, &ds_count, nullptr);
-		ASSERT_MSG(spv_result == SPV_REFLECT_RESULT_SUCCESS, "Failed to enumerate Descriptor Sets for count.");
+		spvResult = spvReflectEnumerateDescriptorSets(&spvReflectModule, &ds_count, nullptr);
+		ASSERT_MSG(spvResult == SPV_REFLECT_RESULT_SUCCESS, "Failed to enumerate Descriptor Sets for count.");
 
 		std::vector<SpvReflectDescriptorSet*> sets(ds_count);
-		spv_result = spvReflectEnumerateDescriptorSets(&spirv_module, &ds_count, sets.data());
-		ASSERT_MSG(spv_result == SPV_REFLECT_RESULT_SUCCESS, "Failed to enumerate Descriptor Sets for data.");
+		spvResult = spvReflectEnumerateDescriptorSets(&spvReflectModule, &ds_count, sets.data());
+		ASSERT_MSG(spvResult == SPV_REFLECT_RESULT_SUCCESS, "Failed to enumerate Descriptor Sets for data.");
 
 		result.retrievedDescriptorSets.reserve(sets.size());
 
 		for (int set_index = 0; set_index < sets.size(); set_index++) {
-			const SpvReflectDescriptorSet* reflected_set = sets[set_index];
+			const SpvReflectDescriptorSet* spvReflectedSet = sets[set_index];
 
 			AllocatedShader::DescriptorSetInfo set_info = {};
-			set_info.setIndex = reflected_set->set;
+			set_info.setIndex = spvReflectedSet->set;
 
 			bool isBindless = false;
-			for (int binding_index = 0; binding_index < reflected_set->binding_count; binding_index++) {
-				const SpvReflectDescriptorBinding* reflected_binding = reflected_set->bindings[binding_index];
+			for (int binding_index = 0; binding_index < spvReflectedSet->binding_count; binding_index++) {
+				const SpvReflectDescriptorBinding* spvReflectedBinding = spvReflectedSet->bindings[binding_index];
 
-				if (strcmp(reflected_binding->name, "__slang_resource_heap") == 0) {
+				if (strcmp(spvReflectedBinding->name, "__slang_resource_heap") == 0) {
 					isBindless = true;
 					continue;
 				}
@@ -402,9 +401,9 @@ namespace mythril {
 				        false,
 				        "Shader declares non-bindless descriptor binding '{}' at set={}, binding={}. "
 				        "Mythril is fully bindless: use Ptr<T> in push constants or DescriptorHandle<T>.",
-				        reflected_binding->name,
-				        reflected_set->set,
-				        reflected_binding->binding
+				        spvReflectedBinding->name,
+				        spvReflectedSet->set,
+				        spvReflectedBinding->binding
 				);
 			}
 
@@ -412,39 +411,39 @@ namespace mythril {
 			        isBindless,
 			        "Shader declares descriptor set={} with no bindless heap. "
 			        "Mythril is fully bindless: only Slang's __slang_resource_heap is permitted.",
-			        reflected_set->set
+			        spvReflectedSet->set
 			);
 
-			result.pipelineLayoutSignature.bindlessSetIndex = reflected_set->set;
+			result.pipelineLayoutSignature.bindlessSetIndex = spvReflectedSet->set;
 			if (!set_info.bindingInfos.empty())
 				result.retrievedDescriptorSets.push_back(set_info);
 		}
 
 		// collect push constant info
 		uint32_t pc_count = 0;
-		spv_result = spvReflectEnumeratePushConstantBlocks(&spirv_module, &pc_count, nullptr);
-		ASSERT_MSG(spv_result == SPV_REFLECT_RESULT_SUCCESS, "Failed to enumerate PushConstant Blocks for count.");
+		spvResult = spvReflectEnumeratePushConstantBlocks(&spvReflectModule, &pc_count, nullptr);
+		ASSERT_MSG(spvResult == SPV_REFLECT_RESULT_SUCCESS, "Failed to enumerate PushConstant Blocks for count.");
 
-		std::vector<SpvReflectBlockVariable*> blocks(pc_count);
-		spv_result = spvReflectEnumeratePushConstantBlocks(&spirv_module, &pc_count, blocks.data());
-		ASSERT_MSG(spv_result == SPV_REFLECT_RESULT_SUCCESS, "Failed to enumerate PushConstant Blocks for count.");
+		std::vector<SpvReflectBlockVariable*> spvBlocks(pc_count);
+		spvResult = spvReflectEnumeratePushConstantBlocks(&spvReflectModule, &pc_count, spvBlocks.data());
+		ASSERT_MSG(spvResult == SPV_REFLECT_RESULT_SUCCESS, "Failed to enumerate PushConstant Blocks for count.");
 
-		std::vector<VkPushConstantRange> pc_ranges(blocks.size());
-		result.retrivedPushConstants.reserve(blocks.size());
-		for (int i_block = 0; i_block < blocks.size(); i_block++) {
-			const SpvReflectBlockVariable* block = blocks[i_block];
+		std::vector<VkPushConstantRange> pc_ranges(spvBlocks.size());
+		result.retrivedPushConstants.reserve(spvBlocks.size());
+		for (int i_block = 0; i_block < spvBlocks.size(); i_block++) {
+			const SpvReflectBlockVariable* spvBlock = spvBlocks[i_block];
 
 			VkPushConstantRange pc_range = {};
-			pc_range.size = block->size;
-			pc_range.offset = block->offset;
+			pc_range.size = spvBlock->size;
+			pc_range.offset = spvBlock->offset;
 			pc_range.stageFlags = vkShaderStageFlags;
 			pc_ranges[i_block] = pc_range;
 
-			result.retrivedPushConstants.emplace_back(GatherPushConstantInformation(*block));
+			result.retrivedPushConstants.emplace_back(GatherPushConstantInformation(*spvBlock));
 		}
 		result.pipelineLayoutSignature.pushes = std::move(pc_ranges);
 
-		spvReflectDestroyShaderModule(&spirv_module);
+		spvReflectDestroyShaderModule(&spvReflectModule);
 
 		return result;
 	}

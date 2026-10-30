@@ -304,13 +304,13 @@ namespace mythril {
 		if (_isRendering) {
 			VkImageView source_vkImageView = source._vkImageView;
 			VkImageView dest_vkImageView = destination._vkImageView;
-			for (const auto& color_attachment: this->_activePass.colorAttachments) {
+			for (const auto& color_attachment: this->_activePass->colorAttachments) {
 				ASSERT_MSG(
 				        color_attachment.imageView != source_vkImageView && color_attachment.imageView != dest_vkImageView, "You cannot {} an image currently being used by a RenderPass!", operation
 				);
 			}
-			if (this->_activePass.depthAttachment.has_value()) {
-				const auto& depth_attachment = this->_activePass.depthAttachment.value();
+			if (this->_activePass->depthAttachment.has_value()) {
+				const auto& depth_attachment = this->_activePass->depthAttachment.value();
 				ASSERT_MSG(
 				        depth_attachment.imageView != source_vkImageView && depth_attachment.imageView != dest_vkImageView, "You cannot {} an image currently being used by a RenderPass!", operation
 				);
@@ -420,8 +420,7 @@ namespace mythril {
 		}
 
 		ASSERT_MSG(size % 4 == 0, "Push constant size needs to be a multiple of 4. Is size {}", size);
-		const VkPhysicalDeviceLimits& limits = _ctx->getPhysicalDeviceProperties10().limits;
-		if (size + offset > limits.maxPushConstantsSize) {
+		if (const VkPhysicalDeviceLimits& limits = _ctx->getPhysicalDeviceProperties10().limits; size + offset > limits.maxPushConstantsSize) {
 			LOG_SYSTEM(LogType::Error, "Push constants size exceeded %u (max %u bytes)", size + offset, limits.maxPushConstantsSize);
 		}
 
@@ -639,7 +638,7 @@ namespace mythril {
 		CHECK_SHOULD_BE_RENDERING();
 		CHECK_PASS_OPERATION_MISMATCH(PassDesc::Type::Graphics);
 #ifdef DEBUG
-		for (const auto& color_attachment: this->_activePass.colorAttachments) {
+		for (const auto& color_attachment: this->_activePass->colorAttachments) {
 			ASSERT_MSG(color_attachment.resolveImageView == VK_NULL_HANDLE, "Rendering of ImGui cannot be done inside a multisampled texture!");
 			ASSERT_MSG(
 			        color_attachment.imageFormat == this->_ctx->_imguiPlugin.getFormat(),
@@ -655,16 +654,17 @@ namespace mythril {
 	// ALL INTERNALLY CALLED COMMAND BUFFER FUNCTIONS
 	void CommandBuffer::cmdBeginRenderingImpl(uint32_t layerCount, uint32_t viewMask) {
 		ASSERT_MSG(!_isRendering, "Command Buffer is already rendering!");
-		const bool hasDepth = _activePass.depthAttachment.has_value();
-		const VkRect2D renderArea = _activePass.renderArea;
-		std::vector<VkRenderingAttachmentInfo> vk_color_attachment_infos{};
-		vk_color_attachment_infos.reserve(_activePass.colorAttachments.size());
-		for (const auto& attachment_info: _activePass.colorAttachments) {
-			vk_color_attachment_infos.push_back(attachment_info.getAsVkRenderingAttachmentInfo());
+		const bool hasDepth = _activePass->depthAttachment.has_value();
+		const VkRect2D renderArea = _activePass->renderArea;
+		std::array<VkRenderingAttachmentInfo, kMaxColorAttachments> vk_color_attachment_infos{};
+		ASSERT(vk_color_attachment_infos.size() >= _activePass->colorAttachments.size());
+		for (int i = 0; i < _activePass->colorAttachments.size(); i++) {
+			const auto& attachmentInfo = _activePass->colorAttachments[i];
+			vk_color_attachment_infos[i] = attachmentInfo.getAsVkRenderingAttachmentInfo();
 		}
 		VkRenderingAttachmentInfo vk_depth_attachment_info{};
 		if (hasDepth) {
-			vk_depth_attachment_info = _activePass.depthAttachment->getAsVkRenderingAttachmentInfo();
+			vk_depth_attachment_info = _activePass->depthAttachment->getAsVkRenderingAttachmentInfo();
 		}
 		const VkRenderingInfo info = {
 		    .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
@@ -673,7 +673,7 @@ namespace mythril {
 		    .renderArea = renderArea,
 		    .layerCount = layerCount,
 		    .viewMask = viewMask,
-		    .colorAttachmentCount = static_cast<uint32_t>(_activePass.colorAttachments.size()),
+		    .colorAttachmentCount = static_cast<uint32_t>(_activePass->colorAttachments.size()),
 		    .pColorAttachments = vk_color_attachment_infos.data(),
 		    .pDepthAttachment = hasDepth ? &vk_depth_attachment_info : nullptr,
 		    .pStencilAttachment = nullptr
@@ -684,7 +684,6 @@ namespace mythril {
 
 		_ctx->checkAndUpdateBindlessDescriptorSetImpl();
 
-		vkCmdSetDepthCompareOp(_wrapper->_cmdBuf, VK_COMPARE_OP_ALWAYS);
 		vkCmdSetDepthBiasEnable(_wrapper->_cmdBuf, VK_FALSE);
 		MYTH_PROFILER_GPU_ZONE("cmdBeginRendering()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
 		vkCmdBeginRendering(_wrapper->_cmdBuf, &info);

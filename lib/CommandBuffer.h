@@ -171,7 +171,7 @@ namespace mythril {
 		detail::SharedPipelineInfo* _currentPipelineInfo = nullptr;
 		// todo: kinda sloppy since you have to manually update
 		std::variant<GraphicsPipelineHandle, ComputePipelineHandle, RaytracingPipelineHandle> _currentPipelineHandle;
-		CompiledPass _activePass;
+		const CompiledPass* _activePass;
 
 		bool _isRendering = false; // cmdBeginRendering
 

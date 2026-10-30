@@ -20,7 +20,7 @@
     },
     {
       "name": "debug",
-      "displayName": "Debug (all features + samples)",
+      "displayName": "Debug",
       "inherits": "base",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug"
@@ -28,7 +28,7 @@
     },
     {
       "name": "release",
-      "displayName": "Release (all features + samples)",
+      "displayName": "Release",
       "inherits": "base",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"

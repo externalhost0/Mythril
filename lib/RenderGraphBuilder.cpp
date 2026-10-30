@@ -299,6 +299,8 @@ namespace mythril {
 					return VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
 				case PassDesc::Type::Intermediate:
 					return VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+				case PassDesc::Type::Raytracing:
+					return VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR;
 			}
 			return VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
 		}();
@@ -469,7 +471,7 @@ namespace mythril {
 			// by default CommandBuffer will have _isDryRun = true
 			CommandBuffer dryCmd;
 			dryCmd._ctx = &rCtx;
-			dryCmd._activePass = pass;
+			dryCmd._activePass = &pass;
 			dryCmd._viewMask = pass.viewMask;
 			rCtx._currentCommandBuffer = dryCmd;
 			ASSERT_MSG(pass.executeCallback != nullptr, "Pass '{}' doesn't have an execute callback, something went horribly wrong!", pass.name);
@@ -924,7 +926,7 @@ namespace mythril {
 			compile(rCtx);
 		}
 
-		CommandBuffer cmd = rCtx.acquireCommand(CommandBuffer::Type::Graphics);
+		CommandBuffer& cmd = rCtx.acquireCommand(CommandBuffer::Type::Graphics);
 		this->execute(cmd);
 		rCtx.submitCommand(cmd);
 	}
@@ -958,7 +960,7 @@ namespace mythril {
 			// reset current states
 			cmd._currentPipelineInfo = nullptr;
 			cmd._currentPipelineHandle = {};
-			cmd._activePass = pass;
+			cmd._activePass = &pass;
 			// we already checked if it has an execute callback so it should be guaranteed
 			if (isGraphics) cmd.cmdBeginRenderingEXT(pass.layerCount, pass.viewMask);
 			pass.executeCallback(cmd);
