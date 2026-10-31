@@ -300,6 +300,7 @@ namespace mythril {
 		void resolveComputePipelineImpl(detail::AllocatedComputePipeline& pipeline);
 		void resolveRaytracingPipelineImpl(detail::AllocatedRaytracingPipeline& pipeline);
 		void buildShaderBindingTableImpl(detail::AllocatedRaytracingPipeline& pipeline);
+		void invalidateBindlessPipelineImpl(detail::SharedPipelineInfo& shared);
 
 		VkPipeline buildComputePipelineImpl(VkPipelineLayout layout, ComputePipelineSpec spec);
 		static void CheckSpecializationConstants(const detail::AllocatedShader& shader,

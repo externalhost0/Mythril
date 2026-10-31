@@ -342,7 +342,15 @@ namespace mythril {
 			newMaxAccelStructures *= 2;
 		}
 		if (newMaxSamplers != _currentMaxSamplerCount || newMaxTextures != _currentMaxTextureCount || newMaxAccelStructures != _currentMaxAccelerationCount || _awaitingNewImmutableSamplers) {
-			growBindlessDescriptorPoolImpl(newMaxSamplers, newMaxTextures, newMaxAccelStructures);
+			// actual call site for growing
+			this->growBindlessDescriptorPoolImpl(newMaxSamplers, newMaxTextures, newMaxAccelStructures);
+			// pipeline layouts embed the old DSL's descriptor counts, so they are incompatible with the new set and must be rebuilt
+			for (auto& obj : _graphicsPipelinePool._objects)
+				invalidateBindlessPipelineImpl(obj._obj._shared);
+			for (auto& obj : _computePipelinePool._objects)
+				invalidateBindlessPipelineImpl(obj._obj._shared);
+			for (auto& obj : _raytracingPipelinePool._objects)
+				invalidateBindlessPipelineImpl(obj._obj._shared);
 		}
 		// SAMPLERS //
 		std::vector<VkDescriptorImageInfo> infoSamplers;
@@ -534,12 +542,12 @@ namespace mythril {
 		    //				VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kStorageTexelBuffer, VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, newMaxTextureCount, stage_flags, nullptr),
 		    //				VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kUniformBuffer, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, newMaxTextureCount, stage_flags, nullptr),
 		    //				VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kStorageBuffer, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, newMaxTextureCount, stage_flags, nullptr),
-			VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kAccelerationStructure, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, newMaxAccelStructureCount, stage_flags)
+			VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kAccelerationStructure, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, newMaxAccelStructureCount, stage_flags, nullptr)
 		};
 		constexpr uint32_t dsbinding_flags = VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_UNUSED_WHILE_PENDING_BIT | VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT;
 		// assign each of our descriptors the same flags
 		VkDescriptorBindingFlags bindingFlags[BindlessSpaceIndex::kNumOfBinds];
-		for (VkDescriptorBindingFlags& bindingFlag: bindingFlags) {
+		for (VkDescriptorBindingFlags& bindingFlag : bindingFlags) {
 			bindingFlag = dsbinding_flags;
 		}
 		const uint32_t numberofBindsNeeded = isExtensionEnabled(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME) ? BindlessSpaceIndex::kNumOfBinds : BindlessSpaceIndex::kNumOfBinds - 1;
@@ -961,6 +969,17 @@ namespace mythril {
 		buildShaderBindingTableImpl(pipeline);
 	}
 
+	void CTX::invalidateBindlessPipelineImpl(SharedPipelineInfo& shared) {
+		PipelineCoreData& core = shared.core;
+		if (core._vkPipeline == VK_NULL_HANDLE || core._vkBindlessDescriptorSet == VK_NULL_HANDLE)
+			return;
+		deferTask(std::packaged_task<void()>([device = _vkDevice, pipeline = core._vkPipeline]() { vkDestroyPipeline(device, pipeline, nullptr); }));
+		deferTask(std::packaged_task<void()>([device = _vkDevice, layout = core._vkPipelineLayout]() { vkDestroyPipelineLayout(device, layout, nullptr); }));
+		core._vkPipeline = VK_NULL_HANDLE;
+		core._vkPipelineLayout = VK_NULL_HANDLE;
+		core._vkBindlessDescriptorSet = VK_NULL_HANDLE;
+	}
+
 	void CTX::buildShaderBindingTableImpl(AllocatedRaytracingPipeline& pipeline) {
 		const RaytracingPipelineSpec& spec = pipeline._spec;
 		// must mirror the group order and skip rule in buildRayTracingPipelineImpl
@@ -1115,7 +1134,7 @@ namespace mythril {
 
 		const PipelineLayoutSignature merged_pl_signature = MergeSignatures(pipeline_layout_signatures);
 
-		PipelineCoreData common = buildPipelineCommonDataExceptVkPipelineImpl(merged_pl_signature);
+		PipelineCoreData common = this->buildPipelineCommonDataExceptVkPipelineImpl(merged_pl_signature);
 		pipeline._shared.core = common;
 		pipeline._shared.core._vkPipeline = builder.build(_vkDevice, common._vkPipelineLayout);
 		// 0 represents the first compile of a pipeline
@@ -1137,7 +1156,8 @@ namespace mythril {
 		deferTask(std::packaged_task<void()>([device = _vkDevice, pipeline = core._vkPipeline]() { vkDestroyPipeline(device, pipeline, nullptr); }));
 		deferTask(std::packaged_task<void()>([device = _vkDevice, layout = core._vkPipelineLayout]() { vkDestroyPipelineLayout(device, layout, nullptr); }));
 
-		graphics_pipeline_obj->_shared.needsRecompile = true;
+		core._vkPipeline = VK_NULL_HANDLE;
+		core._vkPipelineLayout = VK_NULL_HANDLE;
 		switch (stage) {
 			case ShaderStages::Vertex: {
 				graphics_pipeline_obj->_spec.vertexShader = newShader;

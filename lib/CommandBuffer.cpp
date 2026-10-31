@@ -464,20 +464,11 @@ namespace mythril {
 		}
 		AllocatedGraphicsPipeline* pipeline = _ctx->_graphicsPipelinePool.get(handle);
 		this->_ctx->checkAndUpdateBindlessDescriptorSetImpl();
-		if (_isDryRun) {
-			if (pipeline->_shared.core._vkPipeline != VK_NULL_HANDLE) {
-				 //LOG_SYSTEM(LogType::Error, "Dry run attempting to resolve Pipeline '{}' that has already been built!", pipeline->getDebugName());
-				return;
-			}
-			// we perform construction inside our dry run for all pipelines, which is when we compile the RenderGraph
-			// we do this so we dont stutter mid gameplay loop
+		// the dry run hits this first so pipelines are built at graph compile, not mid frame
+		if (pipeline->_shared.core._vkPipeline == VK_NULL_HANDLE)
 			_ctx->resolveGraphicsPipelineImpl(*pipeline, _viewMask);
+		if (_isDryRun)
 			return;
-		}
-		if (pipeline->_shared.needsRecompile) {
-			_ctx->resolveGraphicsPipelineImpl(*pipeline, _viewMask);
-			pipeline->_shared.needsRecompile = false;
-		}
 		this->_currentPipelineHandle = handle;
 		this->_currentPipelineInfo = &pipeline->_shared;
 
@@ -497,14 +488,10 @@ namespace mythril {
 		}
 		AllocatedComputePipeline* pipeline = _ctx->_computePipelinePool.get(handle);
 		this->_ctx->checkAndUpdateBindlessDescriptorSetImpl();
-		if (_isDryRun) {
-			if (pipeline->_shared.core._vkPipeline != VK_NULL_HANDLE) {
-				// LOG_SYSTEM(LogType::Error, "Dry run attempting to resolve Pipeline '{}' that has already been built!", pipeline->getDebugName());
-				return;
-			}
+		if (pipeline->_shared.core._vkPipeline == VK_NULL_HANDLE)
 			_ctx->resolveComputePipelineImpl(*pipeline);
+		if (_isDryRun)
 			return;
-		}
 		this->_currentPipelineHandle = handle;
 		this->_currentPipelineInfo = &pipeline->_shared;
 		const SharedPipelineInfo* info = this->_currentPipelineInfo;
@@ -521,14 +508,10 @@ namespace mythril {
 		}
 		AllocatedRaytracingPipeline* pipeline = _ctx->_raytracingPipelinePool.get(handle);
 		this->_ctx->checkAndUpdateBindlessDescriptorSetImpl();
-		if (_isDryRun) {
-			if (pipeline->_shared.core._vkPipeline != VK_NULL_HANDLE) {
-				// LOG_SYSTEM(LogType::Error, "Dry run attempting to resolve Pipeline '{}' that has already been built!", pipeline->getDebugName());
-				return;
-			}
+		if (pipeline->_shared.core._vkPipeline == VK_NULL_HANDLE)
 			_ctx->resolveRaytracingPipelineImpl(*pipeline);
+		if (_isDryRun)
 			return;
-		}
 		this->_currentPipelineHandle = handle;
 		this->_currentPipelineInfo = &pipeline->_shared;
 		const SharedPipelineInfo* info = this->_currentPipelineInfo;

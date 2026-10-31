@@ -95,7 +95,7 @@ namespace mythril {
 		PipelineLayoutSignature signature;
 
 		// our managed descriptor set the pipeline can bind to, if its shader uses it
-		// VK_NULL_HANDLE means the pipeline uses no descriptor sets at all (push-constants only).
+		// VK_NULL_HANDLE means the pipeline uses no descriptor sets at all (can still use push-constants)
 		VkDescriptorSet _vkBindlessDescriptorSet = VK_NULL_HANDLE;
 	};
 
@@ -106,7 +106,6 @@ namespace mythril {
 	};
 	struct SharedPipelineInfo {
 		PipelineCoreData core;
-		bool needsRecompile = false;
 		char debugName[kMaxDebugNameLength] = {0};
 	};
 
