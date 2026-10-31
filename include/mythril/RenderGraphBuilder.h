@@ -28,8 +28,7 @@ namespace mythril {
 
     struct AttachmentInfo;
     struct SubresourceRange;
-    struct SubresourceState;
-    class TextureStateTracker;
+    struct TextureAccessCache;
     struct CompiledImageBarrier;
     struct CompiledBufferBarrier;
     struct UploadData;
@@ -271,9 +270,8 @@ namespace mythril {
 		static void processAttachments(const CTX& rCtx, const PassDesc& pass_desc, CompiledPass& outPass);
     	// this should not be const lol
         void performDryRun(CTX& rCtx);
-        // every texture used in the framegraph needs proper tracking to ensure its layout is correct...
-        // at every pass, even more necessary for textures that request individual mips/layers
-        std::unordered_map<TextureHandle, TextureStateTracker> _resourceTrackers;
+        // last recorded stage/access per subresource, layouts themselves live on the texture
+        std::unordered_map<TextureHandle, TextureAccessCache> _resourceTrackers;
         std::unordered_map<BufferHandle, StageAccess> _bufferTrackers;
         struct WindowSizedTexture {
             Texture* texture = nullptr;

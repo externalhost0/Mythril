@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include "SubresourceMap.h"
 #include "vkutil.h"
 
 #include <vk_mem_alloc.h>
@@ -53,7 +54,9 @@ namespace mythril {
 		[[nodiscard]] uint8_t getSampleCount() const { return _sampleCount; }
 		[[nodiscard]] VkImageType getType() const { return _vkImageType; }
 		[[nodiscard]] VkImageViewType getViewType() const { return _vkImageViewType; }
-		[[nodiscard]] VkImageLayout getImageLayout() const { return _vkCurrentImageLayout; }
+		[[nodiscard]] VkImageLayout getImageLayout(const SubresourceRange& range) const;
+		[[nodiscard]] SubresourceRange getWholeRange() const { return {0, _numLevels, 0, _numLayers}; }
+		[[nodiscard]] uint32_t getLayoutVersion() const { return _layoutVersion; }
 		[[nodiscard]] Dimensions getDimensions() const { return {_vkExtent.width, _vkExtent.height, _vkExtent.depth}; }
 		[[nodiscard]] VkImageAspectFlags getImageAspectFlags() const { return vkutil::AspectMaskFromFormat(_vkFormat); }
 
@@ -73,7 +76,13 @@ namespace mythril {
 		);
 
 		void generateMipmap(VkCommandBuffer cmd);
-		void transitionLayout(VkCommandBuffer cmd, VkImageLayout newImageLayout, const VkImageSubresourceRange& subresourceRange);
+		void transitionLayout(VkCommandBuffer cmd, VkImageLayout newImageLayout, const SubresourceRange& range);
+		void setLayout(const SubresourceRange& range, VkImageLayout layout);
+		SubresourceRange toSubresourceRange(const VkImageSubresourceRange& range) const {
+			const uint32_t numMips = range.levelCount == VK_REMAINING_MIP_LEVELS ? _numLevels - range.baseMipLevel : range.levelCount;
+			const uint32_t numLayers = range.layerCount == VK_REMAINING_ARRAY_LAYERS ? _numLayers - range.baseArrayLayer : range.layerCount;
+			return {range.baseMipLevel, numMips, range.baseArrayLayer, numLayers};
+		}
 
 		constexpr VkSampleCountFlagBits getVkSampleCountBits() const {
 			switch (_sampleCount) {
@@ -101,7 +110,9 @@ namespace mythril {
 		uint32_t _numLayers = 1u;
 		VkComponentMapping _vkComponentMappings = {};
 
-		VkImageLayout _vkCurrentImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		// layout as of the last recorded command, valid because command buffers are submitted in recording order
+		SubresourceMap<VkImageLayout> _recordedLayout{1, 1, VK_IMAGE_LAYOUT_UNDEFINED};
+		uint32_t _layoutVersion = 0;
 		VkImageType _vkImageType = VK_IMAGE_TYPE_MAX_ENUM;
 		VkImageViewType _vkImageViewType = VK_IMAGE_VIEW_TYPE_MAX_ENUM;
 		VkImageUsageFlags _vkUsageFlags = 0;

@@ -271,7 +271,6 @@ namespace mythril {
 			LOG_SYSTEM(LogType::Warning, "Texture cannot have mipmaps when # of levels is less than 2.");
 			return;
 		}
-		ASSERT(tex->_vkCurrentImageLayout != VK_IMAGE_LAYOUT_UNDEFINED);
 		MYTH_PROFILER_GPU_ZONE("cmdGenerateMipmap()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
 		tex->generateMipmap(_wrapper->_cmdBuf);
 	}
@@ -282,7 +281,8 @@ namespace mythril {
 	}
 	void CommandBuffer::cmdTransitionLayout(TextureHandle source, VkImageLayout newLayout, VkImageSubresourceRange range) {
 		DRY_RETURN()
-		cmdTransitionLayoutImpl(source, _ctx->_texturePool.get(source)->_vkCurrentImageLayout, newLayout, range);
+		AllocatedTexture* tex = _ctx->_texturePool.get(source);
+		tex->transitionLayout(_wrapper->_cmdBuf, newLayout, tex->toSubresourceRange(range));
 	}
 
 	static bool CheckTextureCopyInstead(const AllocatedTexture& source, const AllocatedTexture& destination) {
@@ -320,23 +320,24 @@ namespace mythril {
 	void CommandBuffer::CheckImageLayoutAuto(TextureHandle sourceHandle, TextureHandle destinationHandle, const char* operation) {
 		auto& sourceObject = _ctx->view(sourceHandle);
 		auto& destinationObject = _ctx->view(destinationHandle);
-		if (sourceObject.getImageLayout() != VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) {
+		constexpr SubresourceRange baseSubresource = {0, 1, 0, 1};
+		if (sourceObject.getImageLayout(baseSubresource) != VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) {
 			LOG_SYSTEM(
 			        LogType::Info,
 			        "Automatically resolved texture ({}) to be in correct layout (VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) before {}. Was in ({})",
 			        sourceObject._debugName,
 			        operation,
-			        vkstring::VulkanImageLayoutToString(sourceObject.getImageLayout())
+			        vkstring::VulkanImageLayoutToString(sourceObject.getImageLayout(baseSubresource))
 			);
 			this->cmdTransitionLayout(sourceHandle, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
 		}
-		if (destinationObject.getImageLayout() != VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
+		if (destinationObject.getImageLayout(baseSubresource) != VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
 			LOG_SYSTEM(
 			        LogType::Info,
 			        "Automatically resolved texture ({}) to be in correct layout (VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) before {}. Was in ({})",
 			        destinationObject._debugName,
 			        operation,
-			        vkstring::VulkanImageLayoutToString(destinationObject.getImageLayout())
+			        vkstring::VulkanImageLayoutToString(destinationObject.getImageLayout(baseSubresource))
 			);
 			this->cmdTransitionLayout(destinationHandle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 		}
@@ -572,11 +573,13 @@ namespace mythril {
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_COMMAND);
 
 		auto& sourceTex = _ctx->view(source);
-		VkImageLayout currentLayout = sourceTex._vkCurrentImageLayout;
+		const VkImageSubresourceLayers& layers = region.imageSubresource;
+		const SubresourceRange range = {layers.mipLevel, 1, layers.baseArrayLayer, layers.layerCount};
+		const VkImageLayout currentLayout = sourceTex.getImageLayout(range);
 		if (currentLayout != VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL && currentLayout != VK_IMAGE_LAYOUT_GENERAL) {
-			cmdTransitionLayout(source, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+			cmdTransitionLayout(source, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, {layers.aspectMask, layers.mipLevel, 1, layers.baseArrayLayer, layers.layerCount});
 		}
-		VkImageLayout properLayout = sourceTex._vkCurrentImageLayout;
+		const VkImageLayout properLayout = sourceTex.getImageLayout(range);
 		MYTH_PROFILER_GPU_ZONE("cmdCopyImageToBuffer()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
 		vkCmdCopyImageToBuffer(_wrapper->_cmdBuf, sourceTex._vkImage, properLayout, _ctx->view(destination)._vkBuffer, 1, &region);
 	}
@@ -810,31 +813,6 @@ namespace mythril {
 		MYTH_PROFILER_GPU_ZONE("cmdBlitImage2()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
 		vkCmdBlitImage2(_wrapper->_cmdBuf, &blitInfo);
 	}
-	void CommandBuffer::cmdTransitionLayoutImpl(TextureHandle source, VkImageLayout currentLayout, VkImageLayout newLayout, VkImageSubresourceRange range) {
-		auto& sourceTex = _ctx->view(source);
-		// if (sourceTex._vkCurrentImageLayout == newLayout) {
-		// 	LOG_SYSTEM(LogType::Info, "Image ({}) is already in the requested layout.", sourceTex._debugName);
-		// }
-
-		vkutil::StageAccess srcStage = vkutil::GetPipelineStageAccess(currentLayout);
-		vkutil::StageAccess dstStage = vkutil::GetPipelineStageAccess(newLayout);
-		if (sourceTex.isSwapchainImage()) {
-			srcStage = {.stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, .access = VK_ACCESS_2_MEMORY_WRITE_BIT};
-			dstStage = {.stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, .access = VK_ACCESS_2_MEMORY_WRITE_BIT | VK_ACCESS_2_MEMORY_READ_BIT};
-		}
-		if (sourceTex._isResolveAttachment && vkutil::IsFormatDepthOrStencil(sourceTex._vkFormat)) {
-			// https://registry.khronos.org/vulkan/specs/latest/html/vkspec.html#renderpass-resolve-operations
-			srcStage.stage |= VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
-			srcStage.stage |= VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
-			dstStage.access |= VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
-			dstStage.access |= VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
-		}
-
-		vkutil::ImageMemoryBarrier2(_wrapper->_cmdBuf, sourceTex._vkImage, srcStage, dstStage, currentLayout, newLayout, range);
-		// set the texture to its new image layout
-		_ctx->_texturePool.get(source)->_vkCurrentImageLayout = newLayout;
-	}
-
 	void CommandBuffer::cmdSetViewportImpl(VkExtent2D extent2D) {
 		// we flip the viewport because Vulkan is reversed using LH instead of OpenGL's RH
 		// HOWEVER: using Slang compilier option to reflect the y axis solves this so we dont have to flip here

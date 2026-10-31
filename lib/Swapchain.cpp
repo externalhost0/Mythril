@@ -114,7 +114,7 @@ namespace mythril {
 			image._isOwning = false;
 			image._vkUsageFlags = usage_flags;
 			image._vkImageType = VK_IMAGE_TYPE_2D;
-			image._vkImage = images[i], image._vkImageView = imageviews[i], image._vkCurrentImageLayout = VK_IMAGE_LAYOUT_UNDEFINED, image._vkExtent = {_vkExtent2D.width, _vkExtent2D.height, 1},
+			image._vkImage = images[i], image._vkImageView = imageviews[i], image._vkExtent = {_vkExtent2D.width, _vkExtent2D.height, 1},
 			image._vkFormat = _vkImageFormat;
 			snprintf(image._debugName, sizeof(image._debugName), "Swapchain Image %d", i);
 			vkutil::SetObjectDebugName(ctx._vkDevice, VK_OBJECT_TYPE_IMAGE, reinterpret_cast<uint64_t>(images[i]), image._debugName);

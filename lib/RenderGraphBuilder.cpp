@@ -257,14 +257,14 @@ namespace mythril {
 		return ctx->getTextureView(texDesc.texture.handle(), viewKey);
 	}
 
-	static constexpr bool NeedsBarrier(const SubresourceState& currentState, VkImageLayout desiredLayout, const vkutil::StageAccess& desiredStageAccess) {
-		if (currentState.layout != desiredLayout) return true;
+	static constexpr bool NeedsBarrier(VkImageLayout currentLayout, const vkutil::StageAccess& currentStageAccess, VkImageLayout desiredLayout, const vkutil::StageAccess& desiredStageAccess) {
+		if (currentLayout != desiredLayout) return true;
 
 		constexpr VkAccessFlags2 write_flags2 =
 		        VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT;
 
 		// same layout: only read-after-read can skip the barrier
-		const bool currentWrites = (currentState.mask.access & write_flags2) != 0;
+		const bool currentWrites = (currentStageAccess.access & write_flags2) != 0;
 		const bool desiredWrites = (desiredStageAccess.access & write_flags2) != 0;
 		return currentWrites || desiredWrites;
 	}
@@ -737,8 +737,7 @@ namespace mythril {
 	void RenderGraph::compile(CTX& rCtx) {
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_RENDERGRAPH);
 		this->_compiledPasses.clear();
-		// fixme: we cant be clearing the trackers since they describe what the gpu last did, not our current goal
-		this->_resourceTrackers.clear();
+		std::erase_if(_resourceTrackers, [&rCtx](const auto& entry) { return rCtx._texturePool.get(entry.first) == nullptr; });
 		this->_bufferTrackers.clear();
 
 		std::vector<uint32_t> culled_order;
@@ -853,31 +852,35 @@ namespace mythril {
 		// as it changes every frame
 		for (const CompiledImageBarrier& req: compiledPass.imageBarriers) {
 			const TextureHandle activeHandle = req.isSwapchain ? cmd._ctx->getCurrentSwapchainTexHandle() : req.handle;
-			const AllocatedTexture& activeTexture = cmd._ctx->view(activeHandle);
-			if (!_resourceTrackers.contains(activeHandle)) {
-				_resourceTrackers.emplace(activeHandle, TextureStateTracker{activeTexture.getNumMips(), activeTexture.getNumLayers()});
+			AllocatedTexture& activeTexture = cmd._ctx->access(activeHandle);
+			auto [it, inserted] = _resourceTrackers.try_emplace(activeHandle, TextureAccessCache{SubresourceMap<StageAccess>{activeTexture.getNumMips(), activeTexture.getNumLayers()}});
+			TextureAccessCache& cache = it->second;
+			if (inserted || cache.layoutVersion != activeTexture.getLayoutVersion()) {
+				// something outside the graph touched the image, so its last access is unknown
+				cache.masks.set(cache.masks.wholeRange(), {.stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, .access = VK_ACCESS_2_MEMORY_WRITE_BIT});
 			}
-			TextureStateTracker& tracker = _resourceTrackers.at(activeHandle);
-			const std::vector<TextureStateTracker::SubresourceEntry> currentStates = tracker.getOverlappingStates(req.range);
-			for (const auto& current: currentStates) {
-				if (!NeedsBarrier(current.state, req.dstLayout, req.dstMask))
-					continue;
-				vkImageBarriers.push_back(
-				        {.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-				         .srcStageMask = current.state.mask.stage,
-				         .srcAccessMask = current.state.mask.access,
-				         .dstStageMask = req.dstMask.stage,
-				         .dstAccessMask = req.dstMask.access,
-				         .oldLayout = current.state.layout,
-				         .newLayout = req.dstLayout,
-				         .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-				         .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-				         .image = activeTexture.getImage(),
-				         .subresourceRange = MakeVkRange(activeTexture.getFormat(), current.range)}
-				);
+			for (const auto& [layoutRange, currentLayout]: activeTexture._recordedLayout.getOverlapping(req.range)) {
+				for (const auto& [range, currentMask]: cache.masks.getOverlapping(layoutRange)) {
+					if (!NeedsBarrier(currentLayout, currentMask, req.dstLayout, req.dstMask))
+						continue;
+					vkImageBarriers.push_back(
+					        {.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+					         .srcStageMask = currentMask.stage,
+					         .srcAccessMask = currentMask.access,
+					         .dstStageMask = req.dstMask.stage,
+					         .dstAccessMask = req.dstMask.access,
+					         .oldLayout = currentLayout,
+					         .newLayout = req.dstLayout,
+					         .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+					         .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+					         .image = activeTexture.getImage(),
+					         .subresourceRange = MakeVkRange(activeTexture.getFormat(), range)}
+					);
+				}
 			}
-			tracker.setState(req.range, {req.dstLayout, req.dstMask});
-			cmd._ctx->access(activeHandle)._vkCurrentImageLayout = req.dstLayout;
+			cache.masks.set(req.range, req.dstMask);
+			activeTexture.setLayout(req.range, req.dstLayout);
+			cache.layoutVersion = activeTexture.getLayoutVersion();
 		}
 		for (const CompiledBufferBarrier& req: compiledPass.bufferBarriers) {
 			const AllocatedBuffer& buffer = cmd._ctx->view(req.handle);
@@ -968,13 +971,6 @@ namespace mythril {
 		if (!cmd._ctx->isHeadless()) {
 			// fixme: make this cleaner im so lazy right now
 			cmd.cmdTransitionLayout(cmd._ctx->getCurrentSwapchainTexHandle(), VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
-			const vkutil::StageAccess dstMask = vkutil::GetPipelineStageAccess(VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
-			const TextureHandle currentSwapchainHandle = cmd._ctx->getCurrentSwapchainTexHandle();
-			if (_resourceTrackers.contains(currentSwapchainHandle)) {
-				TextureStateTracker& tracker = _resourceTrackers.at(currentSwapchainHandle);
-				tracker.setState(tracker.wholeResourceRange(), SubresourceState{VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, dstMask});
-			}
-			cmd._ctx->access(currentSwapchainHandle)._vkCurrentImageLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 		}
 	}
 } // namespace mythril

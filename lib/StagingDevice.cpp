@@ -230,7 +230,7 @@ namespace mythril {
 		        VkImageSubresourceRange{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}
 		);
 
-		image._vkCurrentImageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		image.setLayout({0, 1, 0, 1}, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
 		desc.handle_ = _ctx._immGraphics->submit(wrapper);
 		desc.state_ = MemoryRegionDesc::State::Busy;
@@ -353,14 +353,15 @@ namespace mythril {
 				offset += vkutil::GetTextureBytesPerLayer(imageRegion.extent.width, imageRegion.extent.height, format, currentMipLevel);
 			}
 		}
-		image._vkCurrentImageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		image.setLayout({baseMipLevel, numMipLevels, 0, numLayers}, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
 		desc.handle_ = _ctx._immGraphics->submit(wrapper);
 		desc.state_ = MemoryRegionDesc::State::Busy;
 		_regions.push_back(desc);
 	}
 	void StagingDevice::getImageData(AllocatedTexture& image, const VkOffset3D& offset, const VkExtent3D& extent, VkImageSubresourceRange range, VkFormat format, void* outData) {
-		ASSERT(image.getImageLayout() != VK_IMAGE_LAYOUT_UNDEFINED);
+		const VkImageLayout originalLayout = image.getImageLayout(image.toSubresourceRange(range));
+		ASSERT(originalLayout != VK_IMAGE_LAYOUT_UNDEFINED);
 		ASSERT(range.layerCount == 1);
 
 		const uint32_t storageSize = extent.width * extent.height * extent.depth * vkutil::GetBytesPerPixel(format);
@@ -391,7 +392,7 @@ namespace mythril {
 		        image._vkImage,
 		        vkutil::StageAccess{.stage = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT, .access = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT},
 		        vkutil::StageAccess{.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = VK_ACCESS_2_TRANSFER_READ_BIT},
-		        image.getImageLayout(),
+		        originalLayout,
 		        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
 		        range
 		);
@@ -435,7 +436,7 @@ namespace mythril {
 		        vkutil::StageAccess{.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = VK_ACCESS_2_TRANSFER_READ_BIT},
 		        vkutil::StageAccess{.stage = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT, .access = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT},
 		        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-		        image.getImageLayout(),
+		        originalLayout,
 		        range
 		);
 

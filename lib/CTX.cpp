@@ -1326,6 +1326,7 @@ namespace mythril {
 
 	void CTX::resizeTexture(TextureHandle handle, Dimensions newDimensions) {
 		MYTH_PROFILER_FUNCTION();
+		ASSERT_MSG(!_currentCommandBuffer._ctx, "Cannot resize a texture while a CommandBuffer is open, already recorded commands reference the old image.");
 		AllocatedTexture* image = _texturePool.get(handle);
 		if (!image) {
 			LOG_SYSTEM(LogType::Warning, "'resizeTexture' called on invalid handle!");
@@ -1380,7 +1381,7 @@ namespace mythril {
 		image->_vkImageViewStorage = newImage._vkImageViewStorage;
 		image->_vmaAllocation = newImage._vmaAllocation;
 		// reset of state
-		image->_vkCurrentImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		image->setLayout(image->getWholeRange(), VK_IMAGE_LAYOUT_UNDEFINED);
 		image->_mappedPtr = newImage._mappedPtr;
 		++_resourceEpoch;
 		_awaitingCreation = true;
@@ -1578,6 +1579,7 @@ namespace mythril {
 		obj._vkFormat = format;
 		obj._numLevels = numLevels;
 		obj._numLayers = numLayers;
+		obj._recordedLayout = SubresourceMap<VkImageLayout>{numLevels, numLayers, VK_IMAGE_LAYOUT_UNDEFINED};
 		VkFormatProperties2 format_props2 = {.sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2};
 		vkGetPhysicalDeviceFormatProperties2(_vkPhysicalDevice, obj._vkFormat, &format_props2);
 		obj._vkFormatProperties = format_props2.formatProperties;
@@ -2024,6 +2026,7 @@ namespace mythril {
 
 	// functions that wrap around existing functions for AllocatedObjects
 	void CTX::generateMipmaps(TextureHandle handle) {
+		ASSERT_MSG(!_currentCommandBuffer._ctx, "Cannot generate mipmaps immediately while a CommandBuffer is open, use IntermediateBuilder::generateMipmaps instead.");
 		if (handle.empty()) {
 			LOG_SYSTEM(LogType::Warning, "Generate mipmap with empty handle!");
 			return;
@@ -2033,7 +2036,6 @@ namespace mythril {
 			LOG_SYSTEM(LogType::Warning, "Generate mipmap request of texture with less then 2 levels, returning early.");
 			return;
 		}
-		ASSERT(image->_vkCurrentImageLayout != VK_IMAGE_LAYOUT_UNDEFINED);
 		const ImmediateCommands::CommandBufferWrapper& wrapper = _immGraphics->acquire();
 		image->generateMipmap(wrapper._cmdBuf);
 		_immGraphics->submit(wrapper);
@@ -2073,6 +2075,7 @@ namespace mythril {
 	}
 	void CTX::upload(TextureHandle handle, const void* data, const TexRange& range) {
 		MYTH_PROFILER_FUNCTION();
+		ASSERT_MSG(!_currentCommandBuffer._ctx, "Cannot upload a texture while a CommandBuffer is open, the immediate submit would run before it.");
 		ASSERT_MSG(handle.valid(), "CTX::upload called with an invalid TextureHandle.");
 		if (!data) {
 			LOG_SYSTEM(LogType::Warning, "Attempting to upload data which is null!");
@@ -2097,6 +2100,7 @@ namespace mythril {
 	}
 	void CTX::download(TextureHandle handle, void* data, const TexRange& range) {
 		MYTH_PROFILER_FUNCTION();
+		ASSERT_MSG(!_currentCommandBuffer._ctx, "Cannot download a texture while a CommandBuffer is open, the immediate submit would run before it.");
 		if (!data) {
 			LOG_SYSTEM(LogType::Warning, "Data is null.");
 			return;
@@ -2156,7 +2160,8 @@ namespace mythril {
 		cmd._lastSubmitHandle = _immGraphics->submit(*cmd._wrapper);
 		_staging->onGraphSubmit(cmd._lastSubmitHandle);
 		if (isPresenting) {
-			ASSERT(_texturePool.get(_swapchain->getCurrentSwapchainTextureHandle())->getImageLayout() == VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+			const AllocatedTexture* backBuffer = _texturePool.get(_swapchain->getCurrentSwapchainTextureHandle());
+			ASSERT(backBuffer->getImageLayout(backBuffer->getWholeRange()) == VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
 			_swapchain->present(_immGraphics->acquireLastSubmitSemaphore());
 		}
 		_currentFrameNumber++;

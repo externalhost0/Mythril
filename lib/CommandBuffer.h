@@ -144,7 +144,6 @@ namespace mythril {
 		void cmdBeginRenderingImpl(uint32_t layerCount, uint32_t viewMask);
 		void cmdEndRenderingImpl();
 
-		void cmdTransitionLayoutImpl(TextureHandle source, VkImageLayout currentLayout, VkImageLayout newLayout, VkImageSubresourceRange range);
 
 		void cmdCopyImageImpl(TextureHandle source, TextureHandle destination, VkExtent2D size);
 		void cmdBlitImageImpl(TextureHandle source, TextureHandle destination, VkExtent2D srcSize, VkExtent2D dstSize);

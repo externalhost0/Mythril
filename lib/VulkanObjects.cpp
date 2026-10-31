@@ -8,9 +8,10 @@
 #include "vkstring.h"
 #include "vkutil.h"
 
+#include <algorithm>
 #include <cstring>
-namespace mythril {
-	namespace detail {
+
+namespace mythril::detail {
 	void AllocatedBuffer::bufferSubData(const CTX& ctx, size_t offset, size_t size, const void* data) {
 		// only host-visible buffers can be uploaded this way
 		if (!_mappedPtr) {
@@ -51,26 +52,45 @@ namespace mythril {
 		vmaInvalidateAllocation(ctx._vmaAllocator, _vmaAllocation, offset, size);
 	}
 
-	void AllocatedTexture::transitionLayout(VkCommandBuffer cmd, VkImageLayout newImageLayout, const VkImageSubresourceRange& subresourceRange) {
-		// resolvement if attachment optional layout is asked to be a specific type
-		const VkImageLayout oldImageLayout = (_vkCurrentImageLayout == VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL)
-		                                             ? (isDepthAttachment() ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL)
-		                                             : _vkCurrentImageLayout;
+	VkImageLayout AllocatedTexture::getImageLayout(const SubresourceRange& range) const {
+		const std::vector<SubresourceMap<VkImageLayout>::Entry> layouts = _recordedLayout.getOverlapping(range);
+		ASSERT_MSG(!layouts.empty(), "Texture '{}' was queried for a subresource range outside the image.", getDebugName());
+		ASSERT_MSG(
+		        std::ranges::all_of(layouts, [&](const auto& entry) { return entry.value == layouts.front().value; }),
+		        "Texture '{}' has different layouts across the queried subresource range, query each subresource instead.",
+		        getDebugName()
+		);
+		return layouts.front().value;
+	}
+	void AllocatedTexture::setLayout(const SubresourceRange& range, VkImageLayout layout) {
+		if (layout == VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL) {
+			layout = isDepthAttachment() ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		}
+		_recordedLayout.set(range, layout);
+		++_layoutVersion;
+	}
+	void AllocatedTexture::transitionLayout(VkCommandBuffer cmd, VkImageLayout newImageLayout, const SubresourceRange& range) {
 		if (newImageLayout == VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL) {
 			newImageLayout = isDepthAttachment() ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 		}
-		vkutil::StageAccess src = vkutil::GetPipelineStageAccess(oldImageLayout);
-		vkutil::StageAccess dst = vkutil::GetPipelineStageAccess(newImageLayout);
-
-		if (isDepthAttachment() && _isResolveAttachment) {
-			// https://registry.khronos.org/vulkan/specs/latest/html/vkspec.html#renderpass-resolve-operations
-			src.stage |= VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
-			dst.stage |= VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
-			src.access |= VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
-			dst.access |= VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+		for (const auto& [subRange, oldImageLayout]: _recordedLayout.getOverlapping(range)) {
+			vkutil::StageAccess src = vkutil::GetPipelineStageAccess(oldImageLayout);
+			vkutil::StageAccess dst = vkutil::GetPipelineStageAccess(newImageLayout);
+			if (_isSwapchainImage) {
+				src = {.stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, .access = VK_ACCESS_2_MEMORY_WRITE_BIT};
+				dst = {.stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, .access = VK_ACCESS_2_MEMORY_WRITE_BIT | VK_ACCESS_2_MEMORY_READ_BIT};
+			}
+			if (isDepthAttachment() && _isResolveAttachment) {
+				// https://registry.khronos.org/vulkan/specs/latest/html/vkspec.html#renderpass-resolve-operations
+				src.stage |= VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+				dst.stage |= VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+				src.access |= VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+				dst.access |= VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+			}
+			const VkImageSubresourceRange vkRange = {getImageAspectFlags(), subRange.baseMip, subRange.numMips, subRange.baseLayer, subRange.numLayers};
+			vkutil::ImageMemoryBarrier2(cmd, _vkImage, src, dst, oldImageLayout, newImageLayout, vkRange);
 		}
-		vkutil::ImageMemoryBarrier2(cmd, _vkImage, src, dst, oldImageLayout, newImageLayout, subresourceRange);
-		_vkCurrentImageLayout = newImageLayout;
+		setLayout(range, newImageLayout);
 	}
 	// this will only do LINEAR or NEAREST filtering, hence why we do this manually for advanced techniques like our bloom
 	// https://docs.vulkan.org/samples/latest/samples/api/texture_mipmap_generation/README.html#:~:text=%2C%0A%20%20%20%20%26image_blit%2C%0A%20%20%20%20VK_FILTER_LINEAR)%3B-,vkCmdBlitImage,-does%20the%20down
@@ -96,10 +116,11 @@ namespace mythril {
 		}(vkutil::IsFormatDepthOrStencil(_vkFormat), _vkFormatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT);
 
 		const VkImageAspectFlags imageAspectFlags = vkutil::AspectMaskFromFormat(_vkFormat);
-		const VkImageLayout originalImageLayout = _vkCurrentImageLayout;
+		const SubresourceRange baseMip = {0, 1, 0, _numLayers};
+		const VkImageLayout originalImageLayout = getImageLayout(baseMip);
 		ASSERT(originalImageLayout != VK_IMAGE_LAYOUT_UNDEFINED);
 		// transfer base image to be ready for blitting
-		this->transitionLayout(cmd, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VkImageSubresourceRange{imageAspectFlags, 0, 1, 0, _numLayers});
+		this->transitionLayout(cmd, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, baseMip);
 
 		// now make the mipmaps
 		for (uint32_t layer = 0; layer < _numLayers; ++layer) {
@@ -161,7 +182,7 @@ namespace mythril {
 		        originalImageLayout,
 		        VkImageSubresourceRange{imageAspectFlags, 0, _numLevels, 0, _numLayers}
 		);
-		_vkCurrentImageLayout = originalImageLayout;
+		setLayout(getWholeRange(), originalImageLayout);
 	}
 
 	VkImageView AllocatedTexture::createTextureView(
@@ -182,5 +203,5 @@ namespace mythril {
 		ASSERT(image_view != VK_NULL_HANDLE);
 		return image_view;
 	}
-	} // namespace detail
-} // namespace mythril
+} // namespace mythril::detail
+
