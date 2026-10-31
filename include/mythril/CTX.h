@@ -157,6 +157,7 @@ namespace mythril {
 	class CTX final {
 		void construct();
 		// hide the default constructor to avoid user from instantiating a useless CTX
+		// aka a CTX not returned from CTXBuilder
 		CTX() = default;
 	public:
 		~CTX();
@@ -234,7 +235,7 @@ namespace mythril {
 		void destroy(AccelerationStructureHandle handle);
 
 		// helpers to query the capabilities of the Vulkan runtime
-		bool isExtensionEnabled(std::string_view extension_name) const;
+		bool isExtensionEnabled(std::string_view extensionName) const;
 
 		const VkPhysicalDeviceFeatures& getPhysicalDeviceFeatures10() const { return _featuresVulkan.features10; }
 		const VkPhysicalDeviceVulkan11Features& getPhysicalDeviceFeatures11() const { return _featuresVulkan.features11; }
@@ -251,7 +252,7 @@ namespace mythril {
 		SubmitHandle submitCommand(CommandBuffer& cmd);
 
 		// literally just for our node editor for now, experimental
-		void switchShader(GraphicsPipeline& graphics_pipeline, Shader& newShader, ShaderStages stage);
+		void switchShader(GraphicsPipeline& graphicsPipeline, Shader& newShader, ShaderStages stage);
 
 		const detail::AllocatedShader& inspectShader(ShaderHandle handle) const { return view(handle); }
 

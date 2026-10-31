@@ -133,7 +133,7 @@ namespace mythril {
 
 	private:
 		// a shader defines not only the module obviously, but a pipelineLayout
-		VkShaderModule vkShaderModule;
+		VkShaderModule _vkShaderModule;
 		PipelineLayoutSignature _pipelineSignature;
 		SpecializationInfo _specializationInfo; // holds both info and a map when varName is used to resolve ID
 

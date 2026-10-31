@@ -92,7 +92,7 @@ namespace mythril {
 		return true;
 	}
 
-	bool CTX::isExtensionEnabled(const std::string_view extension_name) const { return _enabledExtensionNames.contains(extension_name); }
+	bool CTX::isExtensionEnabled(const std::string_view extensionName) const { return _enabledExtensionNames.contains(extensionName); }
 	void CTX::construct() {
 		ASSERT(this->_vkInstance != VK_NULL_HANDLE);
 		ASSERT(this->_vkPhysicalDevice != VK_NULL_HANDLE);
@@ -756,7 +756,7 @@ namespace mythril {
 		    .pNext = nullptr,
 		    .flags = 0,
 		    .stage = VK_SHADER_STAGE_COMPUTE_BIT,
-		    .module = shader->vkShaderModule,
+		    .module = shader->_vkShaderModule,
 		    .pName = "cs_main",
 		    .pSpecializationInfo = &spec_constants_bundle->vkInfo,
 		};
@@ -825,7 +825,7 @@ namespace mythril {
 				.pNext = nullptr,
 				.flags = 0,
 				.stage = stageFlag,
-				.module = shader->vkShaderModule,
+				.module = shader->_vkShaderModule,
 				.pName = shaderStage.entryPoint,
 				.pSpecializationInfo = bundle ? &bundle->vkInfo : nullptr
 			};
@@ -1083,7 +1083,7 @@ namespace mythril {
 			ASSERT_MSG(shader, "The vertex shader for graphics pipeline: '{}' was destroyed or moved.", spec.debugName);
 			CheckSpecializationConstants(*shader, sc_count, "vertex", spec.debugName, true);
 			vertSpecConstantsBundle = BuildSpecializationInfoBundle(spec.specConstants, sc_count, shader->_specializationInfo.nameToID);
-			builder.add_shader_module(shader->vkShaderModule, VK_SHADER_STAGE_VERTEX_BIT, vertStage.entryPoint, &vertSpecConstantsBundle->vkInfo);
+			builder.add_shader_module(shader->_vkShaderModule, VK_SHADER_STAGE_VERTEX_BIT, vertStage.entryPoint, &vertSpecConstantsBundle->vkInfo);
 			pipeline_layout_signatures.push_back(shader->_pipelineSignature);
 		}
 		ShaderStage& fragStage = spec.fragmentShader;
@@ -1096,7 +1096,7 @@ namespace mythril {
 			ASSERT_MSG(shader, "The fragment shader for graphics pipeline: '{}' was destroyed or moved.", spec.debugName);
 			CheckSpecializationConstants(*shader, sc_count, "fragment", spec.debugName, true);
 			fragSpecConstantsBundle = BuildSpecializationInfoBundle(spec.specConstants, sc_count, shader->_specializationInfo.nameToID);
-			builder.add_shader_module(shader->vkShaderModule, VK_SHADER_STAGE_FRAGMENT_BIT, fragStage.entryPoint, &fragSpecConstantsBundle->vkInfo);
+			builder.add_shader_module(shader->_vkShaderModule, VK_SHADER_STAGE_FRAGMENT_BIT, fragStage.entryPoint, &fragSpecConstantsBundle->vkInfo);
 			pipeline_layout_signatures.push_back(shader->_pipelineSignature);
 		}
 		// we dont support geometry shaders because my mac doesnt :)
@@ -1125,8 +1125,8 @@ namespace mythril {
 		// good to go, maybe later you could return it
 	}
 
-	void CTX::switchShader(GraphicsPipeline& graphics_pipeline, Shader& newShader, ShaderStages stage) {
-		AllocatedGraphicsPipeline* graphics_pipeline_obj = this->_graphicsPipelinePool.get(graphics_pipeline.handle());
+	void CTX::switchShader(GraphicsPipeline& graphicsPipeline, Shader& newShader, ShaderStages stage) {
+		AllocatedGraphicsPipeline* graphics_pipeline_obj = this->_graphicsPipelinePool.get(graphicsPipeline.handle());
 		if (!graphics_pipeline_obj) {
 			LOG_SYSTEM(LogType::Warning, "'switchShader' called on null/invalid graphics_pipeline!");
 			return;
@@ -1699,7 +1699,7 @@ namespace mythril {
 		// after vkCreateShaderModule we no longer need CompileResult btw
 		VK_CHECK(vkCreateShaderModule(_vkDevice, &create_info, nullptr, &shaderModule));
 		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_SHADER_MODULE, reinterpret_cast<uint64_t>(shaderModule), obj.getDebugName().data());
-		obj.vkShaderModule = shaderModule;
+		obj._vkShaderModule = shaderModule;
 
 		ShaderHandle handle = _shaderPool.create(std::move(obj));
 		return {this, handle};
@@ -2338,7 +2338,7 @@ namespace mythril {
 		AllocatedShader* shader = _shaderPool.get(handle);
 		if (!shader)
 			return;
-		deferTask(std::packaged_task<void()>([device = _vkDevice, module = shader->vkShaderModule]() { vkDestroyShaderModule(device, module, nullptr); }));
+		deferTask(std::packaged_task<void()>([device = _vkDevice, module = shader->_vkShaderModule]() { vkDestroyShaderModule(device, module, nullptr); }));
 		_shaderPool.destroy(handle);
 	}
 
