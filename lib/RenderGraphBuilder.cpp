@@ -258,22 +258,15 @@ namespace mythril {
 	}
 
 	static constexpr bool NeedsBarrier(const SubresourceState& currentState, VkImageLayout desiredLayout, const vkutil::StageAccess& desiredStageAccess) {
-		if (currentState.layout != desiredLayout)
-			return true;
+		if (currentState.layout != desiredLayout) return true;
 
 		constexpr VkAccessFlags2 write_flags2 =
-		        VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT;
+		        VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT;
 
-		bool currentStateWrites = (currentState.mask.access & write_flags2) > 0;
-		// if (currentStateWrites || IsAttachmentImageLayout(desiredLayout))
-		// 	return true;
-		if (currentStateWrites && desiredStageAccess.stage != currentState.mask.stage)
-			return true;
-
-		if (currentState.mask.stage != desiredStageAccess.stage) {
-			return true;
-		}
-		return false;
+		// same layout: only read-after-read can skip the barrier
+		const bool currentWrites = (currentState.mask.access & write_flags2) != 0;
+		const bool desiredWrites = (desiredStageAccess.access & write_flags2) != 0;
+		return currentWrites || desiredWrites;
 	}
 	static constexpr bool IsBufferWriteAccess(VkAccessFlags2 access) {
 		constexpr VkAccessFlags2 writeFlags = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT | VK_ACCESS_2_HOST_WRITE_BIT;
@@ -324,11 +317,10 @@ namespace mythril {
 		ASSERT_MSG(false, "Unsupported BufferAccess value.");
 	}
 
-	void RenderGraph::processResourceAccess(const TextureDesc& texDesc, VkImageLayout desiredLayout, CompiledPass& outPass, std::string_view passName) {
+	void RenderGraph::processResourceAccess(const TextureDesc& texDesc, VkImageLayout desiredLayout, const StageAccess& dstMask, CompiledPass& outPass, std::string_view passName) {
 		const AllocatedTexture& texture = texDesc.texture.getContext()->view(texDesc.texture.handle());
 		const bool isSwapchain = texture.isSwapchainImage();
-		const SubresourceRange range = ResolveSubresourceRange(texDesc, texture, passName);
-		const vkutil::StageAccess dstMask = vkutil::GetPipelineStageAccess(desiredLayout);
+		const SubresourceRange& range = ResolveSubresourceRange(texDesc, texture, passName);
 		outPass.imageBarriers.push_back({.handle = texDesc.texture.handle(), .range = range, .dstLayout = desiredLayout, .dstMask = dstMask, .isSwapchain = isSwapchain});
 	}
 
@@ -353,15 +345,17 @@ namespace mythril {
 						assert(false);
 				}
 			}(dependency_desc.desiredLayout);
-			processResourceAccess(dependency_desc.texDesc, layout, outPass, passDesc.name);
+			processResourceAccess(dependency_desc.texDesc, layout, vkutil::GetPipelineStageAccess(layout), outPass, passDesc.name);
 		}
 		for (const AttachmentDesc& attachment_desc: passDesc.attachmentOperations) {
 			const AllocatedTexture& texture = attachment_desc.texDesc.texture.getContext()->view(attachment_desc.texDesc.texture.handle());
 			const VkImageLayout layout = texture.isDepthAttachment() ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-			processResourceAccess(attachment_desc.texDesc, layout, outPass, passDesc.name);
+			processResourceAccess(attachment_desc.texDesc, layout, vkutil::GetPipelineStageAccess(layout), outPass, passDesc.name);
 
 			if (attachment_desc.resolveTexDesc.has_value()) {
-				processResourceAccess(attachment_desc.resolveTexDesc.value(), layout, outPass, passDesc.name);
+				// resolves always write in color attachment output, even for depth/stencil
+				constexpr StageAccess resolveMask = {.stage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, .access = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT};
+				processResourceAccess(attachment_desc.resolveTexDesc.value(), layout, resolveMask, outPass, passDesc.name);
 			}
 		}
 		for (const BufferDependencyDesc& dependency_desc: passDesc.bufferDependencyOperations) {

@@ -334,16 +334,16 @@ namespace mythril {
 		uint32_t newMaxAccelStructures = _currentMaxAccelerationCount;
 
 		// grow max counts to accomadate ALL possiblely cretade textures and samplers
-		while (_texturePool._objects.size() > newMaxTextures) {
-			newMaxTextures *= 2;
-		}
 		while (_samplerPool._objects.size() > newMaxSamplers) {
 			newMaxSamplers *= 2;
+		}
+		while (_texturePool._objects.size() > newMaxTextures) {
+			newMaxTextures *= 2;
 		}
 		while (_accelerationStructurePool._objects.size() > newMaxAccelStructures) {
 			newMaxAccelStructures *= 2;
 		}
-		if (newMaxTextures != _currentMaxTextureCount || newMaxSamplers != _currentMaxSamplerCount || _awaitingNewImmutableSamplers) {
+		if (newMaxSamplers != _currentMaxSamplerCount || newMaxTextures != _currentMaxTextureCount || newMaxAccelStructures != _currentMaxAccelerationCount || _awaitingNewImmutableSamplers) {
 			growBindlessDescriptorPoolImpl(newMaxSamplers, newMaxTextures, newMaxAccelStructures);
 		}
 		// SAMPLERS //

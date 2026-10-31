@@ -265,7 +265,7 @@ namespace mythril {
         void resizeTrackedWindowSized(const Dimensions& swapchainDimensions) const;
     private:
         void PerformBarrierTransitions(CommandBuffer& cmd, const CompiledPass& compiledPass);
-        static void processResourceAccess(const TextureDesc& texDesc, VkImageLayout desiredLayout, CompiledPass& outPass, std::string_view passName);
+        static void processResourceAccess(const TextureDesc& texDesc, VkImageLayout desiredLayout, const StageAccess& dstMask, CompiledPass& outPass, std::string_view passName);
         static void processPassResources(const PassDesc& passDesc, CompiledPass& outPass);
 		static void processAttachments(const CTX& rCtx, const PassDesc& pass_desc, CompiledPass& outPass);
     	// this should not be const lol
