@@ -88,7 +88,7 @@ endif()
 CPMAddPackage(
         NAME imguizmo
         GITHUB_REPOSITORY "CedricGuillemet/ImGuizmo"
-        GIT_TAG master
+        GIT_TAG 105e4fde45e4e74aae8973d98750820ef7aca7e2
         DOWNLOAD_ONLY True
 )
 if(MYTH_ENABLE_IMGUI_STANDARD OR MYTH_ENABLE_IMGUI_DOCKING)
@@ -99,12 +99,12 @@ if(MYTH_ENABLE_IMGUI_STANDARD OR MYTH_ENABLE_IMGUI_DOCKING)
 endif()
 
 if(imguizmo_ADDED AND (MYTH_ENABLE_IMGUI_STANDARD OR MYTH_ENABLE_IMGUI_DOCKING))
-    file(GLOB IMGUIZMO_SOURCES ${imguizmo_SOURCE_DIR}/*.cpp)
-    file(GLOB IMGUIZMO_HEADERS ${imguizmo_SOURCE_DIR}/*.h)
+    file(GLOB IMGUIZMO_SOURCES ${imguizmo_SOURCE_DIR}/src/*.cpp)
+    file(GLOB IMGUIZMO_HEADERS ${imguizmo_SOURCE_DIR}/src/*.h)
 
     add_library(imguizmo STATIC ${IMGUIZMO_SOURCES} ${IMGUIZMO_HEADERS})
     target_link_libraries(imguizmo PUBLIC imgui)
-    target_include_directories(imguizmo PUBLIC ${imguizmo_SOURCE_DIR})
+    target_include_directories(imguizmo PUBLIC ${imguizmo_SOURCE_DIR}/src)
 endif()
 
 # ==================== Sample Definitions ====================

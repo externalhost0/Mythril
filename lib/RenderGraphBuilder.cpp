@@ -737,22 +737,27 @@ namespace mythril {
 	void RenderGraph::compile(CTX& rCtx) {
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_RENDERGRAPH);
 		this->_compiledPasses.clear();
+		// fixme: we cant be clearing the trackers since they describe what the gpu last did, not our current goal
 		this->_resourceTrackers.clear();
 		this->_bufferTrackers.clear();
 
-		const DirectedGraph directed_graph = build_directed_graph(this->_passDescriptions);
+		std::vector<uint32_t> culled_order;
+		ExecutionSchedule schedule;
+		{
+			const DirectedGraph directed_graph = build_directed_graph(this->_passDescriptions);
 
-		// yeah i know this is doing more work then necessary but its way better to understand
-		const std::vector<std::unordered_set<uint32_t>>& passPredecessors = directed_graph.predecessors;
-		const std::optional<std::vector<uint32_t>>& sorted_order_opt = directed_graph.topologicalSort();
-		if (!sorted_order_opt) {
-			// who cares about the recalculation overhead
-			report_cycle_and_assert(directed_graph, this->_passDescriptions);
+			// yeah i know this is doing more work then necessary but its way better to understand
+			const std::vector<std::unordered_set<uint32_t>>& passPredecessors = directed_graph.predecessors;
+			const std::optional<std::vector<uint32_t>>& sortedOrderOptional = directed_graph.topologicalSort();
+			if (!sortedOrderOptional.has_value()) {
+				// who cares about the recalculation overhead
+				report_cycle_and_assert(directed_graph, this->_passDescriptions);
+			}
+			culled_order = cull_unused_passes(sortedOrderOptional.value(), passPredecessors, _passDescriptions);
+
+			schedule = calculate_execution_schedule(culled_order, passPredecessors);
+			this->_schedule = schedule;
 		}
-		const std::vector<uint32_t>& culled_order = cull_unused_passes(sorted_order_opt.value(), passPredecessors, _passDescriptions);
-
-		const ExecutionSchedule schedule = calculate_execution_schedule(culled_order, passPredecessors);
-		this->_schedule = schedule;
 
 		// map from passDescription to _compiledPasses, reversed basically
 		std::unordered_map<uint32_t, uint32_t> passToCompiled;

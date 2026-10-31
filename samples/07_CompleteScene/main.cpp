@@ -566,8 +566,7 @@ int main() {
 		(kDataDir / "shaders/").string()
 	};
 	SDL_Window* sdlWindow = BuildSDLWindow(true);
-	auto initialWindowSize = GetSDLWindowFramebufferSize(sdlWindow);
-	static constexpr std::vector<const char*> vulkan_extensions = {};
+	const auto initialWindowSize = GetSDLWindowFramebufferSize(sdlWindow);
 	{
 		auto ctx = mythril::CTXBuilder{}
 		.set_vulkan_cfg({
@@ -576,7 +575,6 @@ int main() {
 			.app_version = {0, 0, 1},
 			.engine_version = {0, 0, 1},
 			.enableValidation = true,
-			.deviceExtensions = vulkan_extensions,
 		})
 		.set_window_surface([sdlWindow](VkInstance instance) {
 			VkSurfaceKHR surface;
@@ -866,7 +864,7 @@ int main() {
 			cmd.cmdSetDepthBiasEnable(true);
 			cmd.cmdSetDepthBias(depthBiasConstant, depthBiasSlope, 0.f);
 
-			glm::vec3 lightDir = glm::normalize(lightingData.directionalLights.direction);
+			const glm::vec3 lightDir = glm::normalize(lightingData.directionalLights.direction);
 			const glm::vec3 lightPos = scene_center - lightDir * distance_from_center;
 
 			if (far < near) {
