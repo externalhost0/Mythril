@@ -236,10 +236,10 @@ namespace mythril {
 		// helpers to query the capabilities of the Vulkan runtime
 		bool isExtensionEnabled(std::string_view extension_name) const;
 
-		VkPhysicalDeviceFeatures getPhysicalDeviceFeatures10() const { return _featuresVulkan.features10; }
-		VkPhysicalDeviceVulkan11Features getPhysicalDeviceFeatures11() const { return _featuresVulkan.features11; }
-		VkPhysicalDeviceVulkan12Features getPhysicalDeviceFeatures12() const { return _featuresVulkan.features12; }
-		VkPhysicalDeviceVulkan13Features getPhysicalDeviceFeatures13() const { return _featuresVulkan.features13; }
+		const VkPhysicalDeviceFeatures& getPhysicalDeviceFeatures10() const { return _featuresVulkan.features10; }
+		const VkPhysicalDeviceVulkan11Features& getPhysicalDeviceFeatures11() const { return _featuresVulkan.features11; }
+		const VkPhysicalDeviceVulkan12Features& getPhysicalDeviceFeatures12() const { return _featuresVulkan.features12; }
+		const VkPhysicalDeviceVulkan13Features& getPhysicalDeviceFeatures13() const { return _featuresVulkan.features13; }
 
 		const VkPhysicalDeviceProperties& getPhysicalDeviceProperties10() const { return _propertiesVulkan.props10; }
 		const VkPhysicalDeviceVulkan11Properties& getPhysicalDeviceProperties11() const { return _propertiesVulkan.props11; }
