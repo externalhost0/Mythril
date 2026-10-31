@@ -63,8 +63,8 @@ namespace mythril {
 		TextureHandle srcHandle = src.texture.handle();
 		TextureHandle dstHandle = dst.texture.handle();
 
-		add(base._passSource, src, Layout::TRANSFER_SRC);
-		add(base._passSource, dst, Layout::TRANSFER_DST);
+		add(base._passSource, src, TextureAccess::TransferRead);
+		add(base._passSource, dst, TextureAccess::TransferWrite);
 
 		auto oldCallback = base._passSource.executeCallback;
 		if (dst.texture.getContext()->view(dst.texture.handle()).isSwapchainImage()) {
@@ -86,8 +86,8 @@ namespace mythril {
 		TextureHandle srcHandle = src.texture.handle();
 		TextureHandle dstHandle = dst.texture.handle();
 
-		add(base._passSource, src, Layout::TRANSFER_SRC);
-		add(base._passSource, dst, Layout::TRANSFER_DST);
+		add(base._passSource, src, TextureAccess::TransferRead);
+		add(base._passSource, dst, TextureAccess::TransferWrite);
 
 		auto oldCallback = base._passSource.executeCallback;
 		if (dst.texture.getContext()->view(dst.texture.handle()).isSwapchainImage()) {
@@ -283,21 +283,54 @@ namespace mythril {
 
 		return true;
 	}
+	static constexpr VkPipelineStageFlags2 GetPassShaderStages(PassDesc::Type passType) {
+		switch (passType) {
+			case PassDesc::Type::Graphics:
+				return VK_PIPELINE_STAGE_2_PRE_RASTERIZATION_SHADERS_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+			case PassDesc::Type::Compute:
+				return VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+			case PassDesc::Type::Intermediate:
+				return VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+			case PassDesc::Type::Raytracing:
+				return VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR;
+		}
+		return VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+	}
+	static constexpr VkImageLayout GetTextureLayout(TextureAccess access) {
+		switch (access) {
+			case TextureAccess::Sampled:
+				return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+			case TextureAccess::StorageRead:
+			case TextureAccess::StorageWrite:
+			case TextureAccess::StorageReadWrite:
+				return VK_IMAGE_LAYOUT_GENERAL;
+			case TextureAccess::TransferRead:
+				return VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+			case TextureAccess::TransferWrite:
+				return VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+		}
+		ASSERT_MSG(false, "Unsupported TextureAccess value.");
+	}
+	static vkutil::StageAccess GetTextureStageAccess(TextureAccess access, PassDesc::Type passType) {
+		const VkPipelineStageFlags2 shaderStages = GetPassShaderStages(passType);
+		// SHADER_READ covers bindless handles that end up sampled rather than loaded
+		switch (access) {
+			case TextureAccess::Sampled:
+			case TextureAccess::StorageRead:
+				return {.stage = shaderStages, .access = VK_ACCESS_2_SHADER_READ_BIT};
+			case TextureAccess::StorageWrite:
+				return {.stage = shaderStages, .access = VK_ACCESS_2_SHADER_WRITE_BIT};
+			case TextureAccess::StorageReadWrite:
+				return {.stage = shaderStages, .access = VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT};
+			case TextureAccess::TransferRead:
+				return {.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = VK_ACCESS_2_TRANSFER_READ_BIT};
+			case TextureAccess::TransferWrite:
+				return {.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = VK_ACCESS_2_TRANSFER_WRITE_BIT};
+		}
+		ASSERT_MSG(false, "Unsupported TextureAccess value.");
+	}
 	static vkutil::StageAccess GetBufferStageAccess(BufferAccess access, PassDesc::Type passType) {
-		const auto shaderStages = [passType] {
-			switch (passType) {
-				case PassDesc::Type::Graphics:
-					return VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
-				case PassDesc::Type::Compute:
-					return VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-				case PassDesc::Type::Intermediate:
-					return VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-				case PassDesc::Type::Raytracing:
-					return VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR;
-			}
-			return VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-		}();
-
+		const VkPipelineStageFlags2 shaderStages = GetPassShaderStages(passType);
 		switch (access) {
 			case BufferAccess::ShaderRead:
 				return {.stage = shaderStages, .access = VK_ACCESS_2_SHADER_STORAGE_READ_BIT};
@@ -329,23 +362,7 @@ namespace mythril {
 		outPass.imageBarriers.reserve(passDesc.textureDependencyOperations.size() + passDesc.attachmentOperations.size());
 		outPass.bufferBarriers.reserve(passDesc.bufferDependencyOperations.size());
 		for (const TextureDependencyDesc& dependency_desc: passDesc.textureDependencyOperations) {
-			const VkImageLayout layout = [](const Layout simpleLayout) {
-				switch (simpleLayout) {
-					case Layout::GENERAL:
-						return VK_IMAGE_LAYOUT_GENERAL;
-					case Layout::READ:
-						return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-					case Layout::TRANSFER_SRC:
-						return VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-					case Layout::TRANSFER_DST:
-						return VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-					case Layout::PRESENT:
-						return VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-					default:
-						assert(false);
-				}
-			}(dependency_desc.desiredLayout);
-			processResourceAccess(dependency_desc.texDesc, layout, vkutil::GetPipelineStageAccess(layout), outPass, passDesc.name);
+			processResourceAccess(dependency_desc.texDesc, GetTextureLayout(dependency_desc.access), GetTextureStageAccess(dependency_desc.access, passDesc.type), outPass, passDesc.name);
 		}
 		for (const AttachmentDesc& attachment_desc: passDesc.attachmentOperations) {
 			const AllocatedTexture& texture = attachment_desc.texDesc.texture.getContext()->view(attachment_desc.texDesc.texture.handle());
@@ -474,8 +491,8 @@ namespace mythril {
 		rCtx._currentCommandBuffer = saved;
 	}
 
-	bool isWrite(Layout layout) {
-		return layout == Layout::GENERAL || layout == Layout::TRANSFER_DST;
+	bool isWrite(TextureAccess access) {
+		return access == TextureAccess::StorageWrite || access == TextureAccess::StorageReadWrite || access == TextureAccess::TransferWrite;
 	}
 	bool isWrite(BufferAccess access) {
 		return access == BufferAccess::ShaderReadWrite || access == BufferAccess::ShaderWrite || access == BufferAccess::TransferWrite;
@@ -552,7 +569,7 @@ namespace mythril {
 			std::vector<std::pair<TextureHandle, bool>> result;
 			result.reserve(desc.textureDependencyOperations.size() + desc.attachmentOperations.size());
 			for (const auto& texDep : desc.textureDependencyOperations) {
-				result.emplace_back(texDep.texDesc.texture.handle(), isWrite(texDep.desiredLayout));
+				result.emplace_back(texDep.texDesc.texture.handle(), isWrite(texDep.access));
 			}
 			for (const auto& attachDep : desc.attachmentOperations) {
 				// an attachment is always written to
@@ -679,7 +696,7 @@ namespace mythril {
 			}
 			// verify that it is a write to swapchain not a read for some reason
 			for (const auto& texDesc : pass_desc.textureDependencyOperations) {
-				if (texDesc.texDesc.texture.getContext()->isSwapchainTexture(texDesc.texDesc.texture.handle()) && isWrite(texDesc.desiredLayout)) {
+				if (texDesc.texDesc.texture.getContext()->isSwapchainTexture(texDesc.texDesc.texture.handle()) && isWrite(texDesc.access)) {
 					sinkPasses.insert(i);
 					break;
 				}
@@ -850,6 +867,7 @@ namespace mythril {
 		vkBufferBarriers.reserve(compiledPass.bufferBarriers.size());
 		// we have to update the image associated if its a swapchain image
 		// as it changes every frame
+		std::vector<SubresourceMap<StageAccess>::Entry> mergedReads;
 		for (const CompiledImageBarrier& req: compiledPass.imageBarriers) {
 			const TextureHandle activeHandle = req.isSwapchain ? cmd._ctx->getCurrentSwapchainTexHandle() : req.handle;
 			AllocatedTexture& activeTexture = cmd._ctx->access(activeHandle);
@@ -861,8 +879,11 @@ namespace mythril {
 			}
 			for (const auto& [layoutRange, currentLayout]: activeTexture._recordedLayout.getOverlapping(req.range)) {
 				for (const auto& [range, currentMask]: cache.masks.getOverlapping(layoutRange)) {
-					if (!NeedsBarrier(currentLayout, currentMask, req.dstLayout, req.dstMask))
+					if (!NeedsBarrier(currentLayout, currentMask, req.dstLayout, req.dstMask)) {
+						// a later write must wait on every reader since the last barrier
+						mergedReads.push_back({range, {.stage = currentMask.stage | req.dstMask.stage, .access = currentMask.access | req.dstMask.access}});
 						continue;
+					}
 					vkImageBarriers.push_back(
 					        {.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
 					         .srcStageMask = currentMask.stage,
@@ -879,6 +900,10 @@ namespace mythril {
 				}
 			}
 			cache.masks.set(req.range, req.dstMask);
+			for (const auto& [range, merged]: mergedReads) {
+				cache.masks.set(range, merged);
+			}
+			mergedReads.clear();
 			activeTexture.setLayout(req.range, req.dstLayout);
 			cache.layoutVersion = activeTexture.getLayoutVersion();
 		}

@@ -106,7 +106,8 @@
 #define MYTH_PROFILER_GPU_ZONE(ctx, name, cmdBuffer)
 #endif // MYTH_ENABLED_TRACY_GPU
 
-// Apple GPUs only sample timestamps at encoder boundaries, per-command zones would split Metal encoders
+// metal only samples timestamps at encoder boundaries, per-command zones would split metal encoders
+// aka you get horrible performance, so we disable it
 #if defined(MYTH_ENABLED_TRACY_GPU) && !defined(__APPLE__)
 #define MYTH_PROFILER_GPU_COMMAND_ZONE(name, cmdBuffer, color) TracyVkZoneC(this->_ctx->_tracyPlugin.getTracyVkCtx(), cmdBuffer, name, color);
 #else

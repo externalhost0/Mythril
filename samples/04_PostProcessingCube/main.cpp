@@ -239,7 +239,7 @@ int main() {
 			.loadOp = mythril::LoadOp::DONT_CARE,
 			.storeOp = mythril::StoreOp::STORE
 		})
-		.dependency(resolveColorTarget, mythril::Layout::READ)
+		.dependency(resolveColorTarget, mythril::TextureAccess::Sampled)
 		.execute([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdBindGraphicsPipeline(postPipeline);
 

@@ -111,8 +111,8 @@ The `debug` / `release` presets enable `MYTH_BUILD_SAMPLES`,
 | `MYTH_INSTALL`               | `OFF`   | Generate `install()` rules and `mythrilConfig.cmake` (experimental).   |
 | `MYTH_ENABLE_IMGUI_STANDARD` | `OFF`   | Fetch ImGui (main branch) and enable mythril's ImGuiPlugin.            |
 | `MYTH_ENABLE_IMGUI_DOCKING`  | `OFF`   | Fetch ImGui (docking branch) and enable mythril's ImGuiPlugin.         |
-| `MYTH_ENABLE_TRACY`          | `OFF`   | Fetch Tracy and enable mythril's TracyPlugin.                          |
-| `MYTH_ENABLE_TRACY_GPU`      | `OFF`   | Requires `MYTH_ENABLE_TRACY=ON`. GPU timing (experimental).            |
+| `MYTH_ENABLE_TRACY`          | `OFF`   | Fetch Tracy and enable CPU profiling.                                  |
+| `MYTH_ENABLE_TRACY_GPU`      | `OFF`   | Requires `MYTH_ENABLE_TRACY=ON`. Enables GPU timings (experimental).   |
 | `MYTH_USE_LOCAL_SLANG`       | `OFF`   | Use a locally-built Slang (`MYTH_LOCAL_SLANG_DIR`) instead of the SDK. |
 
 > Note: `MYTH_ENABLE_IMGUI_STANDARD` and `MYTH_ENABLE_IMGUI_DOCKING` are mutually exclusive.

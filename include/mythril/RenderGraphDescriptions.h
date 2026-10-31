@@ -83,12 +83,13 @@ namespace mythril {
 		StoreOp storeOp = StoreOp::DONT_CARE;
 		std::optional<TextureDesc> resolveTexDesc;
 	};
-	enum class Layout : uint8_t {
-		GENERAL,
-		READ,
-		TRANSFER_SRC,
-		TRANSFER_DST,
-		PRESENT
+	enum class TextureAccess : uint8_t {
+		Sampled,
+		StorageRead,
+		StorageWrite,
+		StorageReadWrite,
+		TransferRead,
+		TransferWrite,
 	};
 	enum class BufferAccess : uint8_t {
 		ShaderRead,
@@ -102,7 +103,7 @@ namespace mythril {
 	// not actually passed directly to dependency calls right now
 	struct TextureDependencyDesc {
 		TextureDesc texDesc;
-		Layout desiredLayout = Layout::READ;
+		TextureAccess access = TextureAccess::Sampled;
 	};
 	struct BufferDependencyDesc {
 		Buffer& buffer;

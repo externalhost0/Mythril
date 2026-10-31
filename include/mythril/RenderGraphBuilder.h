@@ -51,8 +51,8 @@ namespace mythril {
     };
 
 
-    inline void add(PassDesc& passSource, const TextureDesc& desc, const Layout layout) {
-        passSource.textureDependencyOperations.emplace_back(desc, layout);
+    inline void add(PassDesc& passSource, const TextureDesc& desc, const TextureAccess access) {
+        passSource.textureDependencyOperations.emplace_back(desc, access);
     }
     inline void add(PassDesc& passSource, Buffer& buffer, const BufferAccess access) {
         passSource.bufferDependencyOperations.push_back({buffer, access});
@@ -75,8 +75,8 @@ namespace mythril {
             return *this;
         }
     	// dependency for texture
-        [[nodiscard]] GraphicsPassBuilder& dependency(const TextureDesc& texDesc, const Layout layout = Layout::READ) {
-            add(this->base._passSource, texDesc, layout);
+        [[nodiscard]] GraphicsPassBuilder& dependency(const TextureDesc& texDesc, const TextureAccess access = TextureAccess::Sampled) {
+            add(this->base._passSource, texDesc, access);
             return *this;
         }
     	// dependency for buffer
@@ -85,16 +85,16 @@ namespace mythril {
             return *this;
         }
     	// c style overload
-        [[nodiscard]] GraphicsPassBuilder& dependency(Texture* tex, int count, const Layout layout = Layout::READ) {
+        [[nodiscard]] GraphicsPassBuilder& dependency(Texture* tex, int count, const TextureAccess access = TextureAccess::Sampled) {
             for (int i = 0; i < count; i++) {
-                add(this->base._passSource, tex[i], layout);
+                add(this->base._passSource, tex[i], access);
             }
             return *this;
         }
     	// span overload
-    	[[nodiscard]] GraphicsPassBuilder& dependency(std::span<Texture* const> textures, const Layout layout = Layout::READ) {
+    	[[nodiscard]] GraphicsPassBuilder& dependency(std::span<Texture* const> textures, const TextureAccess access = TextureAccess::Sampled) {
             for (auto* tex : textures)
-                add(this->base._passSource, *tex, layout);
+                add(this->base._passSource, *tex, access);
 	        return *this;
         }
     	// span overload
@@ -130,8 +130,8 @@ namespace mythril {
         ~ComputePassBuilder();
 #endif
 
-        [[nodiscard]] ComputePassBuilder& dependency(const TextureDesc& texDesc, const Layout layout = Layout::GENERAL) {
-                add(this->base._passSource, texDesc, layout);
+        [[nodiscard]] ComputePassBuilder& dependency(const TextureDesc& texDesc, const TextureAccess access = TextureAccess::StorageReadWrite) {
+                add(this->base._passSource, texDesc, access);
             return *this;
         }
         [[nodiscard]] ComputePassBuilder& dependency(Buffer& buffer, const BufferAccess access) {
@@ -139,16 +139,16 @@ namespace mythril {
             return *this;
         }
     	// c style overload
-        [[nodiscard]] ComputePassBuilder& dependency(Texture* tex, int count, const Layout layout = Layout::GENERAL) {
+        [[nodiscard]] ComputePassBuilder& dependency(Texture* tex, int count, const TextureAccess access = TextureAccess::StorageReadWrite) {
             for (int i = 0; i < count; i++) {
-                add(this->base._passSource, tex[i], layout);
+                add(this->base._passSource, tex[i], access);
             }
             return *this;
         }
     	// span overload
-        [[nodiscard]] ComputePassBuilder& dependency(const std::span<Texture* const> textures, const Layout layout = Layout::GENERAL) {
+        [[nodiscard]] ComputePassBuilder& dependency(const std::span<Texture* const> textures, const TextureAccess access = TextureAccess::StorageReadWrite) {
             for (auto* tex : textures)
-                add(this->base._passSource, *tex, layout);
+                add(this->base._passSource, *tex, access);
             return *this;
         }
 
@@ -173,8 +173,8 @@ namespace mythril {
 		~RayTracingPassBuilder();
 #endif
 
-		[[nodiscard]] RayTracingPassBuilder& dependency(const TextureDesc& texDesc, const Layout layout = Layout::GENERAL) {
-			add(this->base._passSource, texDesc, layout);
+		[[nodiscard]] RayTracingPassBuilder& dependency(const TextureDesc& texDesc, const TextureAccess access = TextureAccess::StorageReadWrite) {
+			add(this->base._passSource, texDesc, access);
 			return *this;
 		}
 		[[nodiscard]] RayTracingPassBuilder& dependency(Buffer& buffer, const BufferAccess access) {
@@ -182,16 +182,16 @@ namespace mythril {
 			return *this;
 		}
 		// c style overload
-		[[nodiscard]] RayTracingPassBuilder& dependency(Texture* tex, int count, const Layout layout = Layout::GENERAL) {
+		[[nodiscard]] RayTracingPassBuilder& dependency(Texture* tex, int count, const TextureAccess access = TextureAccess::StorageReadWrite) {
 			for (int i = 0; i < count; i++) {
-				add(this->base._passSource, tex[i], layout);
+				add(this->base._passSource, tex[i], access);
 			}
 			return *this;
 		}
 		// span overload
-		[[nodiscard]] RayTracingPassBuilder& dependency(const std::span<Texture* const> textures, const Layout layout = Layout::GENERAL) {
+		[[nodiscard]] RayTracingPassBuilder& dependency(const std::span<Texture* const> textures, const TextureAccess access = TextureAccess::StorageReadWrite) {
 			for (auto* tex : textures)
-				add(this->base._passSource, *tex, layout);
+				add(this->base._passSource, *tex, access);
 			return *this;
 		}
 

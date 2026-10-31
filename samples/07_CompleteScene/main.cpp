@@ -1062,8 +1062,8 @@ int main() {
 			.loadOp = mythril::LoadOp::CLEAR,
 			.storeOp = mythril::StoreOp::STORE,
 		})
-		.dependency(shadowMap, mythril::Layout::READ)
-		.dependency(&pointLightShadowTex[0], kNumPointLights, mythril::Layout::READ)
+		.dependency(shadowMap, mythril::TextureAccess::Sampled)
+		.dependency(&pointLightShadowTex[0], kNumPointLights, mythril::TextureAccess::Sampled)
 		.dependency(frameDataHandle, mythril::BufferAccess::ShaderRead)
 		.execute([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdBindGraphicsPipeline(opaquePipeline);
@@ -1121,7 +1121,7 @@ int main() {
 			.loadOp = mythril::LoadOp::LOAD,
 			.storeOp = mythril::StoreOp::STORE,
 		})
-		.dependency(shadowMap, mythril::Layout::READ)
+		.dependency(shadowMap, mythril::TextureAccess::Sampled)
 		.dependency(frameDataHandle, mythril::BufferAccess::ShaderRead)
 		.execute([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdBindGraphicsPipeline(transparentPipeline);
@@ -1280,7 +1280,7 @@ int main() {
 		.finish();
 
 		graph.addComputePass("Downsampling")
-		.dependency(&offscreenColorTexs[0], kNumColorMips, mythril::Layout::GENERAL)
+		.dependency(&offscreenColorTexs[0], kNumColorMips, mythril::TextureAccess::StorageReadWrite)
 		.execute([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdBindComputePipeline(downsampleComputePipeline);
 			for (int i = 0; i < kNumColorMips-1; i++) {
@@ -1322,8 +1322,8 @@ int main() {
 			.debugName = "Luminance Current Texture"
 		});
 		graph.addComputePass("convert into current lum")
-		.dependency(offscreenColorTexs[7], mythril::Layout::READ)
-		.dependency(currentLuminanceTex, mythril::Layout::GENERAL)
+		.dependency(offscreenColorTexs[7], mythril::TextureAccess::Sampled)
+		.dependency(currentLuminanceTex, mythril::TextureAccess::StorageReadWrite)
 		.execute([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdBindComputePipeline(conversionLuminancePipeline);
 			struct PushConstant {
@@ -1395,9 +1395,9 @@ int main() {
 		float adaptationSpeed = 1.5f;
 		auto st = std::chrono::steady_clock::now();
 		graph.addComputePass("adaptation")
-		.dependency(currentLuminanceTex, mythril::Layout::GENERAL)
-		.dependency(adaptedLuminanceTextures[0], mythril::Layout::GENERAL)
-		.dependency(adaptedLuminanceTextures[1], mythril::Layout::GENERAL)
+		.dependency(currentLuminanceTex, mythril::TextureAccess::StorageReadWrite)
+		.dependency(adaptedLuminanceTextures[0], mythril::TextureAccess::StorageReadWrite)
+		.dependency(adaptedLuminanceTextures[1], mythril::TextureAccess::StorageReadWrite)
 		.execute([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdBindComputePipeline(adaptationComputePipeline);
 			const auto ct = std::chrono::steady_clock::now();
@@ -1450,9 +1450,9 @@ int main() {
 			.loadOp = mythril::LoadOp::CLEAR,
 			.storeOp = mythril::StoreOp::STORE
 		})
-		.dependency(offscreenColorTarget, mythril::Layout::READ)
-		.dependency(offscreenColorTexs[0], mythril::Layout::READ)
-		.dependency(adaptedLuminanceTextures[1], mythril::Layout::READ)
+		.dependency(offscreenColorTarget, mythril::TextureAccess::Sampled)
+		.dependency(offscreenColorTexs[0], mythril::TextureAccess::Sampled)
+		.dependency(adaptedLuminanceTextures[1], mythril::TextureAccess::Sampled)
 		.execute([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdBindGraphicsPipeline(fullscreenCompositePipeline);
 			struct PushConstant { // 32 + 48 = 80 bytes total
@@ -1544,9 +1544,9 @@ int main() {
 			.loadOp = mythril::LoadOp::LOAD,
 			.storeOp = mythril::StoreOp::STORE
 		})
-		.dependency(shadowMap, mythril::Layout::READ)
-		.dependency(adaptedLuminanceTextures[0], mythril::Layout::READ)
-		.dependency(&offscreenColorTexs[0], kNumColorMips, mythril::Layout::READ)
+		.dependency(shadowMap, mythril::TextureAccess::Sampled)
+		.dependency(adaptedLuminanceTextures[0], mythril::TextureAccess::Sampled)
+		.dependency(&offscreenColorTexs[0], kNumColorMips, mythril::TextureAccess::Sampled)
 		.execute([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdDrawImGui();
 		});

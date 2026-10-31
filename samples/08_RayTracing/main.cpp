@@ -357,7 +357,7 @@ int main() {
 
 		mythril::RenderGraph graph;
 		graph.addRayTracingPass("trace shadows")
-		.dependency(tracedShadowOutput, mythril::Layout::GENERAL)
+		.dependency(tracedShadowOutput, mythril::TextureAccess::StorageReadWrite)
 		.dependency(frameBuffer, mythril::BufferAccess::ShaderRead)
 		.execute([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdBindRaytracingPipeline(mainPipeline);
@@ -390,7 +390,7 @@ int main() {
 			.loadOp = mythril::LoadOp::CLEAR,
 			.storeOp = mythril::StoreOp::STORE
 		})
-		.dependency(tracedShadowOutput, mythril::Layout::READ)
+		.dependency(tracedShadowOutput, mythril::TextureAccess::Sampled)
 		.execute([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdBindGraphicsPipeline(fullscreenPipeline);
 			const GPU::FullscreenPushConstant push = { .rayTracedImage = tracedShadowOutput.index() };
