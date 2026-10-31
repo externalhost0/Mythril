@@ -44,16 +44,25 @@ namespace mythril {
 				assert(false);
 			}
 		}
-#if defined __APPLE__
+#if defined __APPLE__ && DEBUG
 		static constexpr uint32_t kLogLevel = 3;
 		static constexpr VkLayerSettingEXT kMvkDebugLevel = {
 		    .pLayerName = "MoltenVK",
 		    .pSettingName = "MVK_CONFIG_TRACE_VULKAN_CALLS",
-		    .type = VK_LAYER_SETTING_TYPE_STRING_EXT,
+		    .type = VK_LAYER_SETTING_TYPE_UINT32_EXT,
 		    .valueCount = 1,
 		    .pValues = &kLogLevel,
 		};
 #endif
+		static VkBool32 kBoolSync = VK_FALSE;
+		if (enableValidation) kBoolSync = VK_TRUE;
+		static constexpr VkLayerSettingEXT kValidateSyc = {
+			.pLayerName = "VK_LAYER_KHRONOS_validation",
+			.pSettingName = "validate_sync",
+			.type = VK_LAYER_SETTING_TYPE_BOOL32_EXT,
+			.valueCount = 1,
+			.pValues = &kBoolSync
+		};
 		vkb::Result<vkb::Instance> instanceResult = instanceBuilder
 			.set_app_name(inputs.appName)
 			.set_app_version(inputs.appVersion.getVKVersion())
@@ -62,8 +71,9 @@ namespace mythril {
 			.require_api_version(VK_API_VERSION_1_3)
 			.set_minimum_instance_version(1, 4, 335)
 			.request_validation_layers(enableValidation)
+			.add_layer_setting(kValidateSyc)
 			.set_headless(enableHeadless)
-#if defined __APPLE__
+#if defined __APPLE__ && DEBUG
 			.add_layer_setting(kMvkDebugLevel)
 #endif
 #ifdef DEBUG
