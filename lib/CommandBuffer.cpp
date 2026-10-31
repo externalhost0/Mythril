@@ -232,9 +232,22 @@ namespace mythril {
 		DRY_RETURN()
 		CHECK_PASS_OPERATION_MISMATCH(PassDesc::Type::Compute);
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_COMMAND);
+		orderAfterPreviousDispatchImpl();
 		MYTH_PROFILER_GPU_COMMAND_ZONE("cmdDispatchThreadGroup()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
 
 		vkCmdDispatch(_wrapper->_cmdBuf, threadGroupCount.width, threadGroupCount.height, threadGroupCount.depth);
+	}
+	void CommandBuffer::orderAfterPreviousDispatchImpl() {
+		const bool needsBarrier = _hasDispatchedInPass && _activePass && _activePass->inOrderBarrier.has_value();
+		_hasDispatchedInPass = true;
+		if (!needsBarrier)
+			return;
+		const VkDependencyInfo dependencyInfo = {
+		    .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+		    .memoryBarrierCount = 1,
+		    .pMemoryBarriers = &_activePass->inOrderBarrier.value(),
+		};
+		vkCmdPipelineBarrier2(_wrapper->_cmdBuf, &dependencyInfo);
 	}
 	void CommandBuffer::cmdTraceRays(const Dimensions& queryDimension) {
 		DRY_RETURN()
@@ -244,6 +257,7 @@ namespace mythril {
 			return;
 		}
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_COMMAND);
+		orderAfterPreviousDispatchImpl();
 		MYTH_PROFILER_GPU_COMMAND_ZONE("cmdTraceRays()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
 		AllocatedRaytracingPipeline* rtpipeline = this->_ctx->_raytracingPipelinePool.get(std::get<RaytracingPipelineHandle>(_currentPipelineHandle));
 		vkCmdTraceRaysKHR(_wrapper->_cmdBuf,

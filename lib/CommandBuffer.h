@@ -152,6 +152,7 @@ namespace mythril {
 		void cmdSetScissorImpl(VkExtent2D extent2D);
 
 		void bufferBarrierImpl(BufferHandle bufhandle, VkPipelineStageFlags2 srcStage, VkPipelineStageFlags2 dstStage);
+		void orderAfterPreviousDispatchImpl();
 
 		// helpers
 		PassDesc::Type getCurrentPassType() const;
@@ -173,6 +174,7 @@ namespace mythril {
 		const CompiledPass* _activePass;
 
 		bool _isRendering = false; // cmdBeginRendering
+		bool _hasDispatchedInPass = false;
 
 		SubmitHandle _lastSubmitHandle = {};
 		Type _cmdType = Type::General;

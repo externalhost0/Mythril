@@ -95,6 +95,7 @@ namespace mythril {
         std::vector<CompiledBufferBarrier> bufferBarriers;
         std::function<void(CommandBuffer&)> executeCallback;
         std::function<bool()> conditionCallback;
+        std::optional<VkMemoryBarrier2> inOrderBarrier;
 
         // new info transformed from source on compile()
         std::vector<AttachmentInfo> colorAttachments;

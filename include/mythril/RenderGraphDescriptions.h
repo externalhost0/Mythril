@@ -129,5 +129,6 @@ namespace mythril {
 		uint32_t viewMask = 0;
 		std::function<bool()> conditionCallback{};
     	QueueAffinity queue;
+		bool executeInOrder = false;
 	};
 } // namespace mythril

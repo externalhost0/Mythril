@@ -1281,6 +1281,7 @@ int main() {
 
 		graph.addComputePass("Downsampling")
 		.dependency(&offscreenColorTexs[0], kNumColorMips, mythril::TextureAccess::StorageReadWrite)
+		.executeCmdsInOrder()
 		.execute([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdBindComputePipeline(downsampleComputePipeline);
 			for (int i = 0; i < kNumColorMips-1; i++) {
@@ -1355,6 +1356,7 @@ int main() {
 		float blend = 1.f;
 		graph.addComputePass("Upsampling")
 		.dependency(&offscreenColorTexs[0], kNumColorMips)
+		.executeCmdsInOrder()
 		.execute([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdBindComputePipeline(upsampleComputePipeline);
 			for (int i = kNumColorMips-1; i > 0; i--) {

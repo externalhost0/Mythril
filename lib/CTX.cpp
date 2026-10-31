@@ -1045,17 +1045,6 @@ namespace mythril {
 
 	void CTX::resolveGraphicsPipelineImpl(AllocatedGraphicsPipeline& pipeline, uint32_t viewMask) {
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_CREATE);
-		// updating descriptor layout //
-		//		if (graphics_pipeline->_vkLastDescriptorSetLayout != _vkBindlessDSL) {
-		//			deferTask(std::packaged_task<void()>([device = _vkDevice, pipeline = graphics_pipeline->_vkPipeline]() {
-		//				vkDestroyPipeline(device, pipeline, nullptr);
-		//			}));
-		//			deferTask(std::packaged_task<void()>([device = _vkDevice, layout = graphics_pipeline->_vkPipelineLayout]() {
-		//				vkDestroyPipelineLayout(device, layout, nullptr);
-		//			}));
-		//			graphics_pipeline->_vkPipeline = VK_NULL_HANDLE;
-		//			graphics_pipeline->_vkLastDescriptorSetLayout = _vkBindlessDSL;
-		//		}
 
 		GraphicsPipelineSpec& spec = pipeline._spec;
 

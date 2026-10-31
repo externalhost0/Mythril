@@ -152,6 +152,12 @@ namespace mythril {
             return *this;
         }
 
+    	// dispatches in this pass are unordered unless requested, use when one dispatch reads what a previous one wrote (ie: mip chain)
+    	// has a performance overhead so only use if the commands in your pass need to be dependent on previous
+    	[[nodiscard]] ComputePassBuilder& executeCmdsInOrder() {
+        	this->base._passSource.executeInOrder = true;
+	        return *this;
+        }
     	[[nodiscard]] ComputePassBuilder& async() {
         	this->base._passSource.queue = QueueAffinity::AsyncCompute;
 	        return *this;
@@ -168,7 +174,7 @@ namespace mythril {
 	public:
 		RayTracingPassBuilder() = delete;
 		RayTracingPassBuilder(RenderGraph& rGraph, const char* pName)
-			: base(rGraph, pName, PassDesc::Type::Compute) {}
+			: base(rGraph, pName, PassDesc::Type::Raytracing) {}
 #ifdef DEBUG
 		~RayTracingPassBuilder();
 #endif
@@ -192,6 +198,10 @@ namespace mythril {
 		[[nodiscard]] RayTracingPassBuilder& dependency(const std::span<Texture* const> textures, const TextureAccess access = TextureAccess::StorageReadWrite) {
 			for (auto* tex : textures)
 				add(this->base._passSource, *tex, access);
+			return *this;
+		}
+		[[nodiscard]] RayTracingPassBuilder& executeCmdsInOrder() {
+			this->base._passSource.executeInOrder = true;
 			return *this;
 		}
 

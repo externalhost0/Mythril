@@ -380,6 +380,33 @@ namespace mythril {
 		}
 	}
 
+	static std::optional<VkMemoryBarrier2> BuildInOrderBarrier(const CompiledPass& pass) {
+		constexpr VkAccessFlags2 kWriteAccess = VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT;
+		StageAccess src{};
+		StageAccess dst{};
+		auto accumulate = [&](const StageAccess& mask) {
+			dst.stage |= mask.stage;
+			dst.access |= mask.access;
+			if (mask.access & kWriteAccess) {
+				src.stage |= mask.stage;
+				src.access |= mask.access & kWriteAccess;
+			}
+		};
+		for (const CompiledImageBarrier& barrier: pass.imageBarriers)
+			accumulate(barrier.dstMask);
+		for (const CompiledBufferBarrier& barrier: pass.bufferBarriers)
+			accumulate(barrier.dstMask);
+		if (src.access == 0)
+			return std::nullopt;
+		return VkMemoryBarrier2{
+		    .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
+		    .srcStageMask = src.stage,
+		    .srcAccessMask = src.access,
+		    .dstStageMask = dst.stage,
+		    .dstAccessMask = dst.access,
+		};
+	}
+
 	void RenderGraph::processAttachments(const CTX& rCtx, const PassDesc& pass_desc, CompiledPass& outPass) {
 		if (pass_desc.attachmentOperations.empty())
 			return;
@@ -819,6 +846,8 @@ namespace mythril {
 			// every type of process should run for every pass
 			processPassResources(pass_desc, compiled_pass);
 			processAttachments(rCtx, pass_desc, compiled_pass);
+			if (pass_desc.executeInOrder)
+				compiled_pass.inOrderBarrier = BuildInOrderBarrier(compiled_pass);
 
 			this->_compiledPasses.push_back(std::move(compiled_pass));
 		}
@@ -990,6 +1019,7 @@ namespace mythril {
 			cmd._currentPipelineInfo = nullptr;
 			cmd._currentPipelineHandle = {};
 			cmd._activePass = &pass;
+			cmd._hasDispatchedInPass = false;
 			// we already checked if it has an execute callback so it should be guaranteed
 			if (isGraphics) cmd.cmdBeginRenderingEXT(pass.layerCount, pass.viewMask);
 			pass.executeCallback(cmd);
