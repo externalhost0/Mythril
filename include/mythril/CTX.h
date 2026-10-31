@@ -101,10 +101,17 @@
 
 #if defined(MYTH_ENABLED_TRACY_GPU)
 #include <tracy/TracyVulkan.hpp>
-#define MYTH_PROFILER_GPU_ZONE(name, cmdBuffer, color) TracyVkZoneC(this->_ctx->_tracyPlugin.getTracyVkCtx(), cmdBuffer, name, color);
+#define MYTH_PROFILER_GPU_ZONE(ctx, name, cmdBuffer) TracyVkZoneTransient((ctx)->_tracyPlugin.getTracyVkCtx(), ___tracy_gpu_zone, cmdBuffer, name, true);
 #else
-#define MYTH_PROFILER_GPU_ZONE(name, cmdBuffer, color)
+#define MYTH_PROFILER_GPU_ZONE(ctx, name, cmdBuffer)
 #endif // MYTH_ENABLED_TRACY_GPU
+
+// Apple GPUs only sample timestamps at encoder boundaries, per-command zones would split Metal encoders
+#if defined(MYTH_ENABLED_TRACY_GPU) && !defined(__APPLE__)
+#define MYTH_PROFILER_GPU_COMMAND_ZONE(name, cmdBuffer, color) TracyVkZoneC(this->_ctx->_tracyPlugin.getTracyVkCtx(), cmdBuffer, name, color);
+#else
+#define MYTH_PROFILER_GPU_COMMAND_ZONE(name, cmdBuffer, color)
+#endif
 
 
 namespace mythril {
@@ -462,7 +469,7 @@ namespace mythril {
 		ImGuiPlugin _imguiPlugin;
 #endif
 #ifdef MYTH_ENABLED_TRACY_GPU
-		TracyPlugin _tracyPlugin;
+		TracyGPUPlugin _tracyPlugin;
 #endif
 		SlangCompiler _slangCompiler;
 		std::function<void(VkInstance, VkSurfaceKHR)> _surfaceDestroyFunc;

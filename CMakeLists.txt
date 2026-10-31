@@ -212,6 +212,7 @@ if(MYTH_ENABLE_TRACY)
             NAME tracy
             GITHUB_REPOSITORY "wolfpld/tracy"
             GIT_TAG "v0.13.1"
+            PATCHES "${CMAKE_CURRENT_SOURCE_DIR}/cmake/patches/tracy-vk-query-count.patch"
             OPTIONS
             "TRACY_ENABLE=ON"
     )
@@ -234,7 +235,6 @@ set(MYTHRIL_SOURCES
         lib/Shader.cpp
         lib/SlangCompiler.cpp
         lib/Objects.cpp
-        lib/AccelerationStructure.h
 )
 
 if(MYTH_ENABLE_IMGUI_STANDARD OR MYTH_ENABLE_IMGUI_DOCKING)
@@ -326,13 +326,14 @@ if(MYTH_ENABLE_TRACY)
     target_compile_definitions(mythril PUBLIC MYTH_ENABLED_TRACY)
     target_link_libraries(mythril PUBLIC $<BUILD_INTERFACE:TracyClient>)
     if(MYTH_ENABLE_TRACY_GPU)
-        if(APPLE)
-            message(FATAL_ERROR "MYTH_ENABLE_TRACY_GPU is not supported on Apple platforms.")
-        endif()
         target_compile_definitions(mythril PUBLIC
                 MYTH_ENABLED_TRACY_GPU
                 TRACY_VK_USE_SYMBOL_TABLE
         )
+        if(APPLE)
+            # MoltenVK silently emulates timestamp pools larger than Metal's 32KB counter buffer limit
+            target_compile_definitions(mythril PUBLIC TRACY_VK_QUERY_COUNT=4096)
+        endif()
     endif()
 endif()
 

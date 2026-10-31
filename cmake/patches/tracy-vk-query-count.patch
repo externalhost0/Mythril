@@ -1,0 +1,14 @@
+--- a/public/tracy/TracyVulkan.hpp	2026-10-31 13:00:57.886381000 -0700
++++ b/public/tracy/TracyVulkan.hpp	2026-10-31 13:00:57.920587534 -0700
+@@ -91,7 +91,10 @@
+ {
+     friend class VkCtxScope;
+ 
+-    enum { QueryCount = 64 * 1024 };
++#ifndef TRACY_VK_QUERY_COUNT
++#  define TRACY_VK_QUERY_COUNT (64 * 1024)
++#endif
++    enum { QueryCount = TRACY_VK_QUERY_COUNT };
+ 
+ public:
+ #if defined TRACY_VK_USE_SYMBOL_TABLE

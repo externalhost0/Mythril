@@ -155,7 +155,6 @@ namespace mythril {
 		_viewMask = viewMask;
 		DRY_RETURN();
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_COMMAND);
-		MYTH_PROFILER_GPU_ZONE("cmdBeginRendering()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
 		CHECK_PASS_OPERATION_MISMATCH(PassDesc::Type::Graphics);
 #ifdef DEBUG
 		static bool hasTriggered = false;
@@ -170,7 +169,6 @@ namespace mythril {
 	void CommandBuffer::cmdEndRenderingEXT() {
 		DRY_RETURN();
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_COMMAND);
-		MYTH_PROFILER_GPU_ZONE("cmdEndRendering()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
 		CHECK_PASS_OPERATION_MISMATCH(PassDesc::Type::Graphics);
 		this->cmdEndRenderingImpl();
 	}
@@ -181,7 +179,7 @@ namespace mythril {
 		CHECK_SHOULD_BE_RENDERING();
 		CHECK_PASS_OPERATION_MISMATCH(PassDesc::Type::Graphics);
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_COMMAND);
-		MYTH_PROFILER_GPU_ZONE("cmdDraw()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
+		MYTH_PROFILER_GPU_COMMAND_ZONE("cmdDraw()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
 
 		vkCmdDraw(_wrapper->_cmdBuf, vertexCount, instanceCount, firstVertex, firstInstance);
 	}
@@ -190,7 +188,7 @@ namespace mythril {
 		CHECK_SHOULD_BE_RENDERING();
 		CHECK_PASS_OPERATION_MISMATCH(PassDesc::Type::Graphics);
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_COMMAND);
-		MYTH_PROFILER_GPU_ZONE("cmdDrawIndexed()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
+		MYTH_PROFILER_GPU_COMMAND_ZONE("cmdDrawIndexed()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
 
 		vkCmdDrawIndexed(_wrapper->_cmdBuf, indexCount, instanceCount, firstIndex, vertexOffset, baseInstance);
 	}
@@ -202,7 +200,7 @@ namespace mythril {
 		const AllocatedBuffer& buf = _ctx->view(indirectBuffer.handle());
 		ASSERT_MSG(buf.isIndirectBuffer(), "Buffer '{}' is not an indirect buffer, please have its usage include 'BufferUsageBits_Indirect'!", buf.getDebugName());
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_COMMAND);
-		MYTH_PROFILER_GPU_ZONE("cmdDrawIndirect()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
+		MYTH_PROFILER_GPU_COMMAND_ZONE("cmdDrawIndirect()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
 
 		vkCmdDrawIndirect(_wrapper->_cmdBuf, buf._vkBuffer, offset, drawCount, stride ? stride : sizeof(VkDrawIndirectCommand));
 	}
@@ -214,7 +212,7 @@ namespace mythril {
 		const AllocatedBuffer& buf = _ctx->view(indirectBuffer.handle());
 		ASSERT_MSG(buf.isIndirectBuffer(), "Buffer '{}' is not an indirect buffer, please have its usage include 'BufferUsageBits_Indirect'!", buf.getDebugName());
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_COMMAND);
-		MYTH_PROFILER_GPU_ZONE("cmdDrawIndexedIndirect()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
+		MYTH_PROFILER_GPU_COMMAND_ZONE("cmdDrawIndexedIndirect()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
 
 		vkCmdDrawIndexedIndirect(_wrapper->_cmdBuf, buf._vkBuffer, offset, drawCount, stride ? stride : sizeof(VkDrawIndexedIndirectCommand));
 	}
@@ -224,7 +222,6 @@ namespace mythril {
 		CHECK_SHOULD_BE_RENDERING();
 		CHECK_PASS_OPERATION_MISMATCH(PassDesc::Type::Graphics);
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_COMMAND);
-		MYTH_PROFILER_GPU_ZONE("cmdBindIndexBuffer()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
 
 		const AllocatedBuffer& buffer = _ctx->view(handle);
 		// ensure that all index buffers created are of type VK_INDEX_TYPE_UINT32
@@ -235,19 +232,19 @@ namespace mythril {
 		DRY_RETURN()
 		CHECK_PASS_OPERATION_MISMATCH(PassDesc::Type::Compute);
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_COMMAND);
-		MYTH_PROFILER_GPU_ZONE("cmdDispatchThreadGroup()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
+		MYTH_PROFILER_GPU_COMMAND_ZONE("cmdDispatchThreadGroup()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
 
 		vkCmdDispatch(_wrapper->_cmdBuf, threadGroupCount.width, threadGroupCount.height, threadGroupCount.depth);
 	}
 	void CommandBuffer::cmdTraceRays(const Dimensions& queryDimension) {
 		DRY_RETURN()
 		CHECK_PASS_OPERATION_MISMATCH(PassDesc::Type::Raytracing);
-		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_COMMAND);
-		MYTH_PROFILER_GPU_ZONE("cmdTraceRays()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
 		if (!_ctx->isExtensionEnabled(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME)) {
 			LOG_SYSTEM(LogType::Warning, "You are calling cmdTraceRays without VK_KHR_ray_tracing_pipeline extension enabled.");
 			return;
 		}
+		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_COMMAND);
+		MYTH_PROFILER_GPU_COMMAND_ZONE("cmdTraceRays()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
 		AllocatedRaytracingPipeline* rtpipeline = this->_ctx->_raytracingPipelinePool.get(std::get<RaytracingPipelineHandle>(_currentPipelineHandle));
 		vkCmdTraceRaysKHR(_wrapper->_cmdBuf,
 			&rtpipeline->_sbtEntryRayGen,
@@ -271,13 +268,12 @@ namespace mythril {
 			LOG_SYSTEM(LogType::Warning, "Texture cannot have mipmaps when # of levels is less than 2.");
 			return;
 		}
-		MYTH_PROFILER_GPU_ZONE("cmdGenerateMipmap()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
 		tex->generateMipmap(_wrapper->_cmdBuf);
 	}
 
 	void CommandBuffer::cmdTransitionLayout(TextureHandle source, VkImageLayout newLayout) {
 		DRY_RETURN();
-		cmdTransitionLayout(source, newLayout, VkImageSubresourceRange{vkutil::AspectMaskFromFormat(_ctx->view(source).getFormat()), 0, 1, 0, 1});
+		this->cmdTransitionLayout(source, newLayout, VkImageSubresourceRange{vkutil::AspectMaskFromFormat(_ctx->view(source).getFormat()), 0, 1, 0, 1});
 	}
 	void CommandBuffer::cmdTransitionLayout(TextureHandle source, VkImageLayout newLayout, VkImageSubresourceRange range) {
 		DRY_RETURN()
@@ -415,6 +411,7 @@ namespace mythril {
 	void CommandBuffer::cmdPushConstants(const void* data, uint32_t size, uint32_t offset) {
 		DRY_RETURN()
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_COMMAND);
+		MYTH_PROFILER_GPU_COMMAND_ZONE("cmdPushConstants()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
 		if (!_currentPipelineInfo) {
 			LOG_SYSTEM(LogType::Warning, "No pipeline currently bound, will not perform push constants!");
 			return;
@@ -441,7 +438,6 @@ namespace mythril {
 #ifdef DEBUG
 		MaybeWarnPushConstantSizeMismatch(_currentPipelineInfo->core, size, _currentPipelineInfo->debugName);
 #endif
-		MYTH_PROFILER_GPU_ZONE("cmdPushConstants()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
 		vkCmdPushConstants(_wrapper->_cmdBuf, _currentPipelineInfo->core._vkPipelineLayout, static_cast<VkShaderStageFlagBits>(stages), offset, size, data);
 	}
 
@@ -450,13 +446,11 @@ namespace mythril {
 		// what we should be actually doing anyways
 		_lastBoundvkPipeline = common->_vkPipeline;
 		{
-			MYTH_PROFILER_GPU_ZONE("cmdBindPipeline()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
 			vkCmdBindPipeline(_wrapper->_cmdBuf, bindPoint, common->_vkPipeline);
 		}
 		if (common->_vkBindlessDescriptorSet == VK_NULL_HANDLE)
 			return;
 		{
-			MYTH_PROFILER_GPU_ZONE("cmdBindDescriptorSets()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
 			vkCmdBindDescriptorSets(_wrapper->_cmdBuf, bindPoint, common->_vkPipelineLayout, 0, 1, &common->_vkBindlessDescriptorSet, 0, nullptr);
 		}
 	}
@@ -563,7 +557,7 @@ namespace mythril {
 
 		bufferBarrierImpl(handle, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT);
 
-		MYTH_PROFILER_GPU_ZONE("cmdUpdateBuffer()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
+		MYTH_PROFILER_GPU_COMMAND_ZONE("cmdUpdateBuffer()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
 		vkCmdUpdateBuffer(_wrapper->_cmdBuf, buf->_vkBuffer, offset, size, data);
 
 		bufferBarrierImpl(handle, VK_PIPELINE_STAGE_2_TRANSFER_BIT, vkutil::BufferConsumerStages2(buf->_vkUsageFlags));
@@ -580,7 +574,7 @@ namespace mythril {
 			cmdTransitionLayout(source, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, {layers.aspectMask, layers.mipLevel, 1, layers.baseArrayLayer, layers.layerCount});
 		}
 		const VkImageLayout properLayout = sourceTex.getImageLayout(range);
-		MYTH_PROFILER_GPU_ZONE("cmdCopyImageToBuffer()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
+		MYTH_PROFILER_GPU_COMMAND_ZONE("cmdCopyImageToBuffer()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
 		vkCmdCopyImageToBuffer(_wrapper->_cmdBuf, sourceTex._vkImage, properLayout, _ctx->view(destination)._vkBuffer, 1, &region);
 	}
 	void CommandBuffer::cmdBindDepthState(const DepthState& state) {
@@ -590,15 +584,12 @@ namespace mythril {
 		// https://github.com/corporateshark/lightweightvk/blob/master/lvk/vulkan/VulkanClasses.cpp#L2458
 		const VkCompareOp op = toVulkan(state.compareOp);
 		{
-			MYTH_PROFILER_GPU_ZONE("cmdBindDepthWriteEnable()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
 			vkCmdSetDepthWriteEnable(_wrapper->_cmdBuf, state.isDepthWriteEnabled ? VK_TRUE : VK_FALSE);
 		}
 		{
-			MYTH_PROFILER_GPU_ZONE("cmdSetDepthTestEnable()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
 			vkCmdSetDepthTestEnable(_wrapper->_cmdBuf, (op != VK_COMPARE_OP_ALWAYS || state.isDepthWriteEnabled) ? VK_TRUE : VK_FALSE);
 		}
 		{
-			MYTH_PROFILER_GPU_ZONE("cmdSetDepthCompareOp()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
 			vkCmdSetDepthCompareOp(_wrapper->_cmdBuf, op);
 		}
 	}
@@ -606,14 +597,12 @@ namespace mythril {
 		DRY_RETURN();
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_COMMAND);
 		CHECK_PASS_OPERATION_MISMATCH(PassDesc::Type::Graphics);
-		MYTH_PROFILER_GPU_ZONE("cmdSetDepthBiasEnable()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
 		vkCmdSetDepthBiasEnable(_wrapper->_cmdBuf, enable ? VK_TRUE : VK_FALSE);
 	}
 	void CommandBuffer::cmdSetDepthBias(float constantFactor, float slopeFactor, float clamp) {
 		DRY_RETURN();
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_COMMAND);
 		CHECK_PASS_OPERATION_MISMATCH(PassDesc::Type::Graphics);
-		MYTH_PROFILER_GPU_ZONE("cmdSetDepthBias()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
 		vkCmdSetDepthBias(_wrapper->_cmdBuf, constantFactor, clamp, slopeFactor);
 	}
 
@@ -637,7 +626,7 @@ namespace mythril {
 	void CommandBuffer::cmdDrawImGui() {
 		DRY_RETURN()
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_COMMAND);
-		MYTH_PROFILER_GPU_ZONE("cmdDrawImgui()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
+		MYTH_PROFILER_GPU_COMMAND_ZONE("cmdDrawImgui()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
 		CHECK_SHOULD_BE_RENDERING();
 		CHECK_PASS_OPERATION_MISMATCH(PassDesc::Type::Graphics);
 #ifdef DEBUG
@@ -688,14 +677,12 @@ namespace mythril {
 		_ctx->checkAndUpdateBindlessDescriptorSetImpl();
 
 		vkCmdSetDepthBiasEnable(_wrapper->_cmdBuf, VK_FALSE);
-		MYTH_PROFILER_GPU_ZONE("cmdBeginRendering()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
 		vkCmdBeginRendering(_wrapper->_cmdBuf, &info);
 		_isRendering = true;
 	}
 
 	void CommandBuffer::cmdEndRenderingImpl() {
 		ASSERT_MSG(_isRendering, "Command buffer isnt even rendering!");
-		MYTH_PROFILER_GPU_ZONE("cmdEndRendering()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
 		vkCmdEndRendering(_wrapper->_cmdBuf);
 		_isRendering = false;
 	}
@@ -735,7 +722,7 @@ namespace mythril {
 		    .bufferMemoryBarrierCount = 1,
 		    .pBufferMemoryBarriers = &barrier,
 		};
-		MYTH_PROFILER_GPU_ZONE("cmdPipelineBarrier2()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
+		MYTH_PROFILER_GPU_COMMAND_ZONE("cmdPipelineBarrier2()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
 		vkCmdPipelineBarrier2(_wrapper->_cmdBuf, &depInfo);
 	}
 	void CommandBuffer::cmdCopyImageImpl(TextureHandle source, TextureHandle destination, VkExtent2D size) {
@@ -777,7 +764,7 @@ namespace mythril {
 		copyinfo.regionCount = 1;
 		copyinfo.pRegions = &copyRegion;
 
-		MYTH_PROFILER_GPU_ZONE("cmdCopyImage2()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
+		MYTH_PROFILER_GPU_COMMAND_ZONE("cmdCopyImage2()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
 		vkCmdCopyImage2(_wrapper->_cmdBuf, &copyinfo);
 	}
 	void CommandBuffer::cmdBlitImageImpl(TextureHandle source, TextureHandle destination, VkExtent2D srcSize, VkExtent2D dstSize) {
@@ -810,7 +797,7 @@ namespace mythril {
 		blitInfo.regionCount = 1;
 		blitInfo.pRegions = &blitRegion;
 
-		MYTH_PROFILER_GPU_ZONE("cmdBlitImage2()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
+		MYTH_PROFILER_GPU_COMMAND_ZONE("cmdBlitImage2()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
 		vkCmdBlitImage2(_wrapper->_cmdBuf, &blitInfo);
 	}
 	void CommandBuffer::cmdSetViewportImpl(VkExtent2D extent2D) {
@@ -823,7 +810,7 @@ namespace mythril {
 		viewport.height = static_cast<float>(extent2D.height);
 		viewport.minDepth = 0.f;
 		viewport.maxDepth = 1.f;
-		MYTH_PROFILER_GPU_ZONE("cmdSetViewport()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
+		MYTH_PROFILER_GPU_COMMAND_ZONE("cmdSetViewport()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
 		vkCmdSetViewport(_wrapper->_cmdBuf, 0, 1, &viewport);
 	}
 	void CommandBuffer::cmdSetScissorImpl(VkExtent2D extent2D) {
@@ -831,7 +818,7 @@ namespace mythril {
 		scissor.offset.x = 0; // default 0 for both
 		scissor.offset.y = 0;
 		scissor.extent = extent2D;
-		MYTH_PROFILER_GPU_ZONE("cmdSetScissor()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
+		MYTH_PROFILER_GPU_COMMAND_ZONE("cmdSetScissor()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
 		vkCmdSetScissor(_wrapper->_cmdBuf, 0, 1, &scissor);
 	}
 

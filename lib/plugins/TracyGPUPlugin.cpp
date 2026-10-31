@@ -15,7 +15,6 @@ namespace mythril {
 		VkPhysicalDevice vk_physical_device = ctx._vkPhysicalDevice;
 		VkDevice vk_device = ctx._vkDevice;
 		this->_ctx = &ctx;
-		this->_isEnabled = true;
 
 		std::vector<VkTimeDomainEXT> timeDomains;
 		const bool hasCalibratedTimestamps = ctx.isExtensionEnabled(VK_EXT_CALIBRATED_TIMESTAMPS_EXTENSION_NAME);

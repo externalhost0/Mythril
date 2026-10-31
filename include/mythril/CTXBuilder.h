@@ -137,17 +137,10 @@ namespace mythril {
 			return *this;
 		}
 #endif
-#ifdef MYTH_ENABLED_TRACY_GPU
-		CTXBuilder& with_TracyGPU() {
-			this->_usingTracyGPU = true;
-			return *this;
-		}
-#endif
 
 		[[nodiscard]] CtxPtr build();
 	private:
 		bool _usingImGui = false;
-		bool _usingTracyGPU = false;
 		bool _requestedSwapchain = false;
 		// all specs & cfgs use default values
 		// cfgs are used to resolve data

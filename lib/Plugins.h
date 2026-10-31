@@ -74,11 +74,10 @@ namespace mythril {
 	};
 #endif
 #ifdef MYTH_ENABLED_TRACY_GPU
-	class TracyPlugin {
+	class TracyGPUPlugin {
 	public:
 		void onInit(CTX& ctx);
 		void onDestroy();
-		bool isEnabled() const { return _isEnabled; }
 		TracyVkCtx getTracyVkCtx() { return _tracyVkCtx; }
 
 	private:
@@ -86,7 +85,6 @@ namespace mythril {
 		TracyVkCtx _tracyVkCtx = nullptr;
 		VkCommandPool _commandPool = VK_NULL_HANDLE;
 		VkCommandBuffer _commandBuffer = VK_NULL_HANDLE;
-		bool _isEnabled = false;
 	};
 #endif
 } // namespace mythril

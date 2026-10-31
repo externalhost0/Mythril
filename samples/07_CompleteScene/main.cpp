@@ -590,7 +590,7 @@ int main() {
 		.with_default_swapchain({
 			.width = initialWindowSize.width,
 			.height = initialWindowSize.height,
-			.presentMode = VK_PRESENT_MODE_FIFO_RELAXED_KHR,
+			.presentMode = VK_PRESENT_MODE_IMMEDIATE_KHR,
 		})
 		.with_ImGui({
 			.format = kOffscreenFormat,

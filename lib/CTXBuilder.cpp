@@ -709,8 +709,7 @@ missing_features.append("\n\t(" version ") " #feature);
 		}
 #endif
 #ifdef MYTH_ENABLED_TRACY_GPU
-		if (_usingTracyGPU)
-			ctx->_tracyPlugin.onInit(*ctx);
+		ctx->_tracyPlugin.onInit(*ctx);
 #endif
 		return ctx;
 		MYTH_PROFILER_ZONE_END();

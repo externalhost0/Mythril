@@ -170,9 +170,7 @@ namespace mythril {
 		}
 #endif
 #ifdef MYTH_ENABLED_TRACY_GPU
-		if (this->_tracyPlugin.isEnabled()) {
-			this->_tracyPlugin.onDestroy();
-		}
+		this->_tracyPlugin.onDestroy();
 #endif
 
 		destroy(this->_staging->_stagingBuffer);
@@ -2147,8 +2145,7 @@ namespace mythril {
 		ASSERT(cmd._ctx);
 		ASSERT(cmd._wrapper);
 #ifdef MYTH_ENABLED_TRACY_GPU
-		if (_tracyPlugin.isEnabled())
-			TracyVkCollect(_tracyPlugin.getTracyVkCtx(), cmd._wrapper->_cmdBuf);
+		TracyVkCollect(_tracyPlugin.getTracyVkCtx(), cmd._wrapper->_cmdBuf);
 #endif
 		const bool isPresenting = cmd._cmdType == CommandBuffer::Type::Graphics;
 		if (isPresenting) {

@@ -949,6 +949,8 @@ namespace mythril {
 			const bool isGraphics = pass.type == PassDesc::Type::Graphics;
 			// perform batched vkCmdPipelineBarrier
 			PerformBarrierTransitions(cmd, pass);
+			// keep GPU zones per pass, timestamps inside a render pass split Metal encoders on MoltenVK
+			MYTH_PROFILER_GPU_ZONE(cmd._ctx, pass.name.c_str(), cmd._wrapper->_cmdBuf);
 			// switch color attachment imageViews for Swapchain
 			if (!cmd._ctx->isHeadless()) {
 				const uint32_t swapIdx = cmd._ctx->_swapchain->getCurrentImageIndex();
