@@ -10,8 +10,7 @@
     - [Samplers](#samplers)
     - [Shaders](#shaders)
     - [Pipelines](#pipelines)
-- [FrameGraph Usage](#framegraph)
-- [CommandBuffer Usage](#commandbuffer)
+- [RenderGraph Usage](#rendergraph)
 - [Cleanup](#cleanup)
 
 
@@ -21,7 +20,7 @@
 
 You are expected to manage the windowing system yourself, however `Mythril` is built to allow ANY windowing system as long as you can get an instance of VkSurfaceKHR from it, the examples use SDL3 and therefore show how you might retrieve it via other similar libraries.
 
-The majority of operations you will be performing are the creation of our Vulkan objects and setting up your framegraph, and basically everything your application will do will take place inside the framegraph callbacks.
+The majority of operations you will be performing are the creation of our Vulkan objects and setting up your framegraph, and basically everything your application will do will take place inside the framegraph's execute callbacks, [read more](#framegraph).
 
 Throughout this document `Mythril::CTX` and `CTX` are synonymous, and lowercase "ctx" is just an instance of it.
 
@@ -34,7 +33,7 @@ If you want a headless Vulkan context:
 auto ctx = mythril::CTXBuilder{}
 .build();
 ```
-However you likely want a Vulkan context that can present images to the screen, which means you **MUST** call `set_window_surface()`, it requires both the code necessary to create and destroy a `VkSurfaceKHR`, which mean
+However you likely want a Vulkan context that can present images to the screen, which means you **MUST** call `set_window_surface()`, it requires both the code necessary to create and destroy a `VkSurfaceKHR`, which looks like:
 
 ```cpp
 auto ctx = mythril::CTXBuilder{}
@@ -80,6 +79,7 @@ Once you have your `mythril::CTX` instance you can do anything!
 All objects are created through `mythril::CTX` and returned as RAII wrapper types. 
 Resources are automatically destroyed when their wrapper goes out of scope. 
 If you need early explicit cleanup, every wrapper exposes a `CTX::destroy(handle)` path but is only necessary in some edge cases and is generally reccomended to avoid using.
+If you want to manually manage your objects you can also call `.release()` on any object, this will return the actual handle of the object and allow you to move it around without it being destroyed after leaving scope. 
 
 ## Buffers
 
@@ -104,28 +104,12 @@ mythril::Buffer uniformBuffer = ctx->createBuffer({
 });
 ```
 
-**`usage` flags** (combine with `|`):
-
-| Flag | Use |
-|---|---|
-| `BufferUsageBits_Index` | Index buffer |
-| `BufferUsageBits_Storage` | Shader read/write storage buffer |
-| `BufferUsageBits_Indirect` | Indirect draw/dispatch arguments |
-
-**`storage` types**:
-
-| Type | Description |
-|---|---|
-| `StorageType::Device` | GPU-only. Fastest for GPU access. Cannot be CPU-mapped. |
-| `StorageType::HostVisible` (DEFAULT) | CPU-accessible. Use for staging or frequently-updated data. |
-| `StorageType::Memoryless` | Transient on-chip memory. |
-
 **Good to Knows**:
 - `initialData` performs a one-time upload at creation. 
-- You can update buffers via both `CTX::upload()` which has no size limit and `CommandBuffer::cmdUpdateBuffer()` which has a max of 64kb.
+- Though `StorageType::HostVisible` is the default storage setting (for working out of the box reasons), it is reccomend to use `StorageType::Device` since you likely don't need CPU accessible data.
 - `Buffer::gpuAddress()` is only valid on storage buffers with `StorageType::Device`.
 - To read data back to CPU use `CTX::download()`.
-
+- You can update buffers via both `CTX::upload()` which has no size limit *(reccommended for one-time uploads)* and `CommandBuffer::cmdUpdateBuffer()` which has a max of 64kb. If you are doing these operations per-frame please consider using `IntermediateBuilder` instead, [read more](#add-intermediate).
 ---
 
 ## Images
@@ -160,22 +144,6 @@ mythril::Texture depthTarget = ctx->createTexture({
     .debugName = "Depth Target",
 });
 ```
-
-**`usage` flags** (combine with `|`), you must have at least one flag:
-
-| Flag | Use |
-|---|---|
-| `TextureUsageBits_Sampled` | Sample in shaders via a sampler |
-| `TextureUsageBits_Storage` | Read/write as storage image in shaders |
-| `TextureUsageBits_Attachment` | Color or depth/stencil render target |
-
-**`type` values**:
-
-| Type | Notes                                              |
-|---|----------------------------------------------------|
-| `TextureType::Type_2D` (DEFAULT) | Standard 2D texture or array when `numLayers > 1`. |
-| `TextureType::Type_3D` | Volumetric. Set `dimension.depth > 1`.             |
-| `TextureType::Type_Cube` | Cubemap. Requires `numLayers = 6`.                 |
 
 **Texture views** access a subresource (specific mip or layer) without creating a new texture:
 
@@ -225,28 +193,6 @@ mythril::Sampler aniso = ctx->createSampler({
 });
 ```
 
-All fields are optional.
-
-**Filter / mipmap**:
-
-| Option | Vulkan Definition              |
-|---|--------------------------------|
-| `SamplerFilter::Nearest` | VK_FILTER_NEAREST              |
-| `SamplerFilter::Linear` (DEFAULT) | VK_FILTER_LINEAR               |
-| `SamplerMipMap::Disabled` (DEFAULT) | No Mipmapping!                 |
-| `SamplerMipMap::Nearest` | VK_SAMPLER_MIPMAP_MODE_NEAREST |
-| `SamplerMipMap::Linear` | VK_SAMPLER_MIPMAP_MODE_LINEAR  |
-
-**Wrap modes** (configurable per U/V/W axis):
-
-| Mode | Vulkan Definition |
-|---|--|
-| `SamplerWrap::Repeat` (DEFAULT) | VK_SAMPLER_ADDRESS_MODE_REPEAT |
-| `SamplerWrap::MirrorRepeat` | VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT |
-| `SamplerWrap::ClampEdge` | VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE |
-| `SamplerWrap::ClampBorder` | VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER |
-| `SamplerWrap::MirrorClampEdge` | VK_SAMPLER_ADDRESS_MODE_MIRROR_CLAMP_TO_EDGE |
-
 ---
 
 ## Shaders
@@ -261,16 +207,17 @@ mythril::Shader defaultShader = ctx->createShader({
 ```
 
 A single `.slang` file can contain both vertex and fragment entry points, there is no requirement to split them into separate files or separate `Shader` objects.
+You can also inspect the infromation of a shader at runtime thanks to our reflection system during its compilation, do so with `CTX::inspectShader`, you can see it being used in sample_06.
 
 **Good to Knows**:
-- Keep the `Shader` alive for as long as any pipeline that uses it exists. Destroying the shader while a pipeline still references it is undefined behavior.
+- Keep the `Shader` alive for as long as any pipeline that uses it exists. Destroying the shader while a pipeline still references it is undefined behavior. *(subject to change in the future)*
 - Slang include search paths and compiler options are configured via `CTXBuilder::set_slang_cfg()` before calling `CTXBuilder::build()`, use these if your shader or its imports can't be found.
 
 ---
 
 ## Pipelines
 
-Pipelines bind shaders and fixed-function state. Mythril supports graphics and compute pipelines as of now.
+Pipelines bind shaders and fixed-function state. Mythril supports graphics, compute, and raytracing pipelines as of now.
 
 ### Graphics Pipeline
 
@@ -291,40 +238,9 @@ mythril::GraphicsPipeline pipeline = ctx->createGraphicsPipeline({
 
 ```cpp
 .vertexShader = {defaultShader.handle(), "vertMain"},
+# equivalent
+.vertexShader = {defaultShader, "vertMain"},
 ```
-
-**Topology**:
-
-| Mode | Vulkan Definition                   |
-|---|-------------------------------------|
-| `TopologyMode::TRIANGLE` (DEFAULT) | VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST |
-| `TopologyMode::LIST` | VK_PRIMITIVE_TOPOLOGY_LINE_LIST     |
-| `TopologyMode::STRIP` | VK_PRIMITIVE_TOPOLOGY_LINE_STRIP    |
-
-**Blending**:
-
-| Mode | Use |
-|---|---|
-| `BlendingMode::OFF` (DEFAULT) | No blending |
-| `BlendingMode::ALPHA_BLEND` | Standard transparency |
-| `BlendingMode::ADDITIVE` | Glow / particles |
-| `BlendingMode::MULTIPLY` | Darkening |
-| `BlendingMode::MASK` | Stencil mask |
-
-**Cull**:
-
-| Mode | Vulkan Definition      |
-|---|------------------------|
-| `CullMode::OFF` (DEFAULT) | VK_CULL_MODE_NONE      |
-| `CullMode::BACK` | VK_CULL_MODE_BACK_BIT  |
-| `CullMode::FRONT` | VK_CULL_MODE_FRONT_BIT |
-
-**Polygon**:
-
-| Mode | Vulkan Definition    |
-|---|----------------------|
-| `PolygonMode::FILL` (DEFAULT) | VK_POLYGON_MODE_FILL |
-| `PolygonMode::LINE` | VK_POLYGON_MODE_LINE |
 
 ### Compute Pipeline
 
@@ -335,9 +251,27 @@ mythril::ComputePipeline compute = ctx->createComputePipeline({
 });
 ```
 
+### RayTracing Pipeline
+
+```cpp
+mythril::RayTracingPipeline mainPipeline = ctx->createRayTracingPipeline({
+    .rayGenShaders = {
+        { raytraceShader, "raygenMain" }
+    },
+    .missShaders = {
+        { raytraceShader, "missMain" },
+        { raytraceShader, "missShadowMain" }
+    },
+    .closestHitShaders = {
+        { raytraceShader, "closestHitMain" }
+    },
+    .debugName = "Main Pipeline"
+});
+```
+
 ### Specialization Constants
 
-Both pipeline types support up to 16 specialization constants, which let you bake values into the SPIR-V at pipeline creation time without recompiling the shader:
+All pipeline types support up to 16 specialization constants, which let you bake values into the SPIR-V at pipeline creation time without recompiling the shader:
 
 ```cpp
 uint32_t maxLights = 8;
@@ -353,6 +287,46 @@ mythril::GraphicsPipeline pipeline = ctx->createGraphicsPipeline({
 
 **Good to Knows**:
 - Multiple pipelines can share a single `Shader`, as there is no need to duplicate shader objects per pipeline.
+
+### Acceleration Structures
+
+Acceleration structures are a required part of the raytracing pipeline, and can be quite complicated to create correctly, definitely refer to sample_08 since they will likely be rewritten to be more user-friendly.
+
+Heres an example of a TLAS:
+
+```cpp
+mythril::AccelerationStructure tlas = ctx->createAccelerationStructure({
+    .type = mythril::AccelerationStructureSpec::Type::TLAS,
+    .geometryType = mythril::AccelerationStructureSpec::GeometryType::Instances,
+    .instancesBuffer = instanceBuf.handle(),
+    .buildRange = { .primitiveCount = static_cast<uint32_t>(blases.size()) },
+    .buildFlags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR,
+    .debugName = "TLAS Accel"
+});
+```
+**Good to Knows**:
+- They are quite experimental so if you run into an issue please let me know lol
+- Acceleration structures are also bindless like textures/samplers so use `.index()` when reffering to them to shaders.
+
+# RenderGraph
+
+The rendergraph is Mythril's special sauce, allowing a developer to simply write each unit of GPU work as a 'pass', and magically Mythril will compile everything to the most optimialy ordering of Vulkan commands.
+The samples are your friend here since they show various use cases of a pass. 
+We use the words framegraph and rendergraph interchangably in the docs.
+
+It's a three step process:
+- Instiantate a `RenderGraph` object;
+- 
+- Add as many passes as you want via `add*Pass`. 
+  - `addGraphicsPass`: Used alongside a `GraphicsPipeline` 
+  - `addComputePass`: Used alongside a `ComputePipeline`
+  - `addRayTracingPass`: Used alongside a `RayTracingPipeline`
+<a id="add-intermediate"></a>
+  - `addIntermediate`: When you have per-frame operations that don't pertain to a pipeline, this includes copying & blitting textures, updating/uploading data to buffers. You should use this instead of a `CommandBuffer::cmdUpdateBuffer` or `CTX::upload` since it is context aware and can optimize when the updates occur.
+
+- Call `.compile()` on your rendergraph!
+
+Now you can run your entire frameloop by calling `.executeEXT(CTX& ctx)` every frame. *its suffixed with EXT since i am still experimenting with whats the best way to work in the main loop*
 
 # Cleanup
 
