@@ -79,7 +79,7 @@ namespace mythril {
 
 			// wrapper functionality
 			void reset();
-			// releases handle from being automatically cleaned
+			// releases handle from being automatically cleaned, allows manual management
 			InternalHandle release() {
 				_pCtx = nullptr;
 				return std::exchange(_handle, InternalHandle{});

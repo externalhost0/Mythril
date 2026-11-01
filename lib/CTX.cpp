@@ -40,7 +40,8 @@ namespace mythril {
 			//			kStorageTexelBuffer = 2,
 			//			kUniformBuffer = 2,
 			//			kStorageBuffer = 2,
-			kAccelerationStructure = 8,
+			// we use 9 because 0-8 are assigned already by slang
+			kAccelerationStructure = 9,
 
 			// this MUST be manually set when reusing binding indices
 			kNumOfBinds = 4

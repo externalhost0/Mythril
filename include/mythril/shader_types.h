@@ -5,6 +5,7 @@
 #pragma once
 
 #ifdef __cplusplus // when this header is processed in cpp
+#include <concepts>
 #include <glm/glm.hpp>
 
 #define NAMESPACE_BEGIN() namespace GPU {
@@ -43,7 +44,9 @@ struct Ptr {
 template<typename T>
 struct DescriptorHandle {
 	uint64_t index; // uint2 in slang
-	DescriptorHandle(uint64_t index) : index(index) {}
+	DescriptorHandle(uint32_t index) : index(index) {}
+	template<std::integral U> requires (sizeof(U) == 8)
+	DescriptorHandle(U) { static_assert(sizeof(U) == 0, "DescriptorHandle takes a bindless index (.index())"); }
 };
 
 template<typename T>
@@ -79,6 +82,9 @@ NAMESPACE_END()
 
 // will be injected into shaders that use a header file for struct definitions
 export T getDescriptorFromHandle<T : IOpaqueDescriptor>(DescriptorHandle<T> handleValue) {
+    // slang's default reads acceleration structure handles as device addresses
+    if (T.kind == DescriptorKind.AccelerationStructure)
+        return __getDynamicResourceHeap<T>(9)[((uint2)handleValue).x];
     return defaultGetDescriptorFromHandle(handleValue, BindlessDescriptorOptions.None);
 }
 

@@ -361,20 +361,20 @@ int main() {
 		.dependency(frameBuffer, mythril::BufferAccess::ShaderRead)
 		.execute([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdBindRaytracingPipeline(mainPipeline);
-			GPU::PerFrame frameData = {
+			const GPU::PerFrame frameData = {
 				.viewInverse = glm::inverse(calculateViewMatrix(camera)),
 				.projInverse = glm::inverse(calculateProjectionMatrix(camera)),
 			};
 			cmd.cmdUpdateBuffer(frameBuffer, 0, sizeof(GPU::PerFrame), &frameData);
 			
-			GPU::ShadowPushConstant push = {
+			const GPU::ShadowPushConstant push = {
 				.frame = ctx->gpuAddress(frameBuffer.handle()),
 				// points toward the light, closestHitMain dots it with the surface normal
 				.lightDir = glm::vec4(1.5, 2.0, 1.0, 0),
 				.vertices = ctx->gpuAddress(sceneVertexBuffer.handle()),
 				.indices = ctx->gpuAddress(sceneIndexBuffer.handle()),
 				.outTexture = tracedShadowOutput.index(),
-				.tlas = ctx->gpuAddress(tlas.handle()),
+				.tlas = tlas.index(),
 				.enableShadows = static_cast<uint32_t>(true),
 				.debugMode = debugMode
 			};
