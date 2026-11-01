@@ -35,7 +35,7 @@ namespace mythril {
 		class AllocatedShader;
 		class AllocatedGraphicsPipeline;
 		class AllocatedComputePipeline;
-		class AllocatedRaytracingPipeline;
+		class AllocatedRayTracingPipeline;
 		class AllocatedAccelerationStructure;
 
 
@@ -98,6 +98,6 @@ namespace mythril {
 	using Shader = detail::Holder<ShaderHandle>;
 	using GraphicsPipeline = detail::Holder<GraphicsPipelineHandle>;
 	using ComputePipeline = detail::Holder<ComputePipelineHandle>;
-	using RaytracingPipeline = detail::Holder<RaytracingPipelineHandle>;
+	using RayTracingPipeline = detail::Holder<RayTracingPipelineHandle>;
 	using AccelerationStructure = detail::Holder<AccelerationStructureHandle>;
 }

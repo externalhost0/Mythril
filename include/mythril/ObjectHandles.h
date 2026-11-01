@@ -44,7 +44,7 @@ namespace mythril {
 	using ShaderHandle = InternalObjectHandle<struct ShaderTag>;
 	using GraphicsPipelineHandle = InternalObjectHandle<struct GraphicsPipelineTag>;
 	using ComputePipelineHandle = InternalObjectHandle<struct ComputePipelineTag>;
-	using RaytracingPipelineHandle = InternalObjectHandle<struct RaytracingPipelineTag>;
+	using RayTracingPipelineHandle = InternalObjectHandle<struct RayTracingPipelineTag>;
 	using AccelerationStructureHandle = InternalObjectHandle<struct AccelerationStructureTag>;
 
 

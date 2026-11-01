@@ -174,7 +174,7 @@ namespace mythril {
 	public:
 		RayTracingPassBuilder() = delete;
 		RayTracingPassBuilder(RenderGraph& rGraph, const char* pName)
-			: base(rGraph, pName, PassDesc::Type::Raytracing) {}
+			: base(rGraph, pName, PassDesc::Type::RayTracing) {}
 #ifdef DEBUG
 		~RayTracingPassBuilder();
 #endif
@@ -221,8 +221,8 @@ namespace mythril {
         // helper that encomposses a order of the below fuctions
         IntermediateBuilder& copy(TextureDesc src, TextureDesc dst);
         IntermediateBuilder& blit(TextureDesc src, TextureDesc dst);
-        IntermediateBuilder& generateMipmaps(const Texture& texture);
-        IntermediateBuilder& dependency(Buffer& buffer, BufferAccess access);
+        //IntermediateBuilder& generateMipmaps(const Texture& texture);
+        //IntermediateBuilder& dependency(Buffer& buffer, BufferAccess access);
         IntermediateBuilder& update(Buffer& buffer, std::function<UploadData()> dataCb, size_t dstOffset = 0);
         IntermediateBuilder& upload(Buffer& buffer, std::function<UploadData()> dataCb, size_t dstOffset = 0);
         void finish() const;

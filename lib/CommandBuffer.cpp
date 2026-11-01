@@ -77,7 +77,7 @@ namespace mythril {
 				return "Compute";
 			case PassDesc::Type::Intermediate:
 				return "Transfer";
-			case PassDesc::Type::Raytracing:
+			case PassDesc::Type::RayTracing:
 				return "RayTracing";
 			default:
 				assert(false);
@@ -89,8 +89,8 @@ namespace mythril {
 			return PassDesc::Type::Graphics;
 		if (std::holds_alternative<ComputePipelineHandle>(_currentPipelineHandle))
 			return PassDesc::Type::Compute;
-		if (std::holds_alternative<RaytracingPipelineHandle>(_currentPipelineHandle))
-			return PassDesc::Type::Raytracing;
+		if (std::holds_alternative<RayTracingPipelineHandle>(_currentPipelineHandle))
+			return PassDesc::Type::RayTracing;
 		ASSERT_MSG(false, "Catastrophic error, the developer forgot to account for other variants in the handle!");
 	}
 
@@ -251,7 +251,7 @@ namespace mythril {
 	}
 	void CommandBuffer::cmdTraceRays(const Dimensions& queryDimension) {
 		DRY_RETURN()
-		CHECK_PASS_OPERATION_MISMATCH(PassDesc::Type::Raytracing);
+		CHECK_PASS_OPERATION_MISMATCH(PassDesc::Type::RayTracing);
 		if (!_ctx->isExtensionEnabled(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME)) {
 			LOG_SYSTEM(LogType::Warning, "You are calling cmdTraceRays without VK_KHR_ray_tracing_pipeline extension enabled.");
 			return;
@@ -259,7 +259,7 @@ namespace mythril {
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_COMMAND);
 		orderAfterPreviousDispatchImpl();
 		MYTH_PROFILER_GPU_COMMAND_ZONE("cmdTraceRays()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
-		AllocatedRaytracingPipeline* rtpipeline = this->_ctx->_raytracingPipelinePool.get(std::get<RaytracingPipelineHandle>(_currentPipelineHandle));
+		AllocatedRayTracingPipeline* rtpipeline = this->_ctx->_rayTracingPipelinePool.get(std::get<RayTracingPipelineHandle>(_currentPipelineHandle));
 		vkCmdTraceRaysKHR(_wrapper->_cmdBuf,
 			&rtpipeline->_sbtEntryRayGen,
 			&rtpipeline->_sbtEntryMiss,
@@ -513,24 +513,24 @@ namespace mythril {
 		CHECK_PASS_OPERATION_MISMATCH(PassDesc::Type::Compute);
 		this->cmdBindPipelineImpl(&info->core, VK_PIPELINE_BIND_POINT_COMPUTE);
 	}
-	void CommandBuffer::cmdBindRaytracingPipeline(RaytracingPipelineHandle handle) {
+	void CommandBuffer::cmdBindRayTracingPipeline(RayTracingPipelineHandle handle) {
 		ASSERT(this->_ctx);
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_COMMAND);
 		if (handle.empty()) {
 			LOG_SYSTEM(LogType::Warning, "Binded raytracing pipeline was invalid/empty!");
 			return;
 		}
-		AllocatedRaytracingPipeline* pipeline = _ctx->_raytracingPipelinePool.get(handle);
+		AllocatedRayTracingPipeline* pipeline = _ctx->_rayTracingPipelinePool.get(handle);
 		this->_ctx->checkAndUpdateBindlessDescriptorSetImpl();
 		if (pipeline->_shared.core._vkPipeline == VK_NULL_HANDLE)
-			_ctx->resolveRaytracingPipelineImpl(*pipeline);
+			_ctx->resolveRayTracingPipelineImpl(*pipeline);
 		if (_isDryRun)
 			return;
 		this->_currentPipelineHandle = handle;
 		this->_currentPipelineInfo = &pipeline->_shared;
 		const SharedPipelineInfo* info = this->_currentPipelineInfo;
 		CHECK_PIPELINE_REBIND(&info->core, _lastBoundvkPipeline, info->debugName);
-		CHECK_PASS_OPERATION_MISMATCH(PassDesc::Type::Raytracing);
+		CHECK_PASS_OPERATION_MISMATCH(PassDesc::Type::RayTracing);
 		this->cmdBindPipelineImpl(&info->core, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR);
 	}
 

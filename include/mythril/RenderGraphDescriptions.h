@@ -116,7 +116,7 @@ namespace mythril {
 			Graphics,
 			Compute,
 			Intermediate,
-			Raytracing
+			RayTracing
 		};
 		// these first three members are sent straight over to PassCompiled
 		std::string name;

@@ -652,20 +652,20 @@ missing_features.append("\n\t(" version ") " #feature);
 		// stupid special cases for ray tracnig + as
 		{
 			ctx->_accelerationStructureProperties = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_PROPERTIES_KHR};
-			ctx->_raytracingProperties = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR};
+			ctx->_rayTracingProperties = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR};
 			VkPhysicalDeviceProperties2 props = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
 			if (ctx->isExtensionEnabled(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME)) {
 				ctx->_accelerationStructureProperties.pNext = props.pNext;
 				props.pNext = &ctx->_accelerationStructureProperties;
 			}
 			if (ctx->isExtensionEnabled(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME)) {
-				ctx->_raytracingProperties.pNext = props.pNext;
-				props.pNext = &ctx->_raytracingProperties;
+				ctx->_rayTracingProperties.pNext = props.pNext;
+				props.pNext = &ctx->_rayTracingProperties;
 			}
 			vkGetPhysicalDeviceProperties2(ctx->_vkPhysicalDevice, &props);
 			// stored structs must not keep pointers into this stack frame
 			ctx->_accelerationStructureProperties.pNext = nullptr;
-			ctx->_raytracingProperties.pNext = nullptr;
+			ctx->_rayTracingProperties.pNext = nullptr;
 		}
 
 		// queues, required + optional

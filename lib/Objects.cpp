@@ -35,7 +35,7 @@ namespace mythril {
 		template class Holder<ShaderHandle>;
 		template class Holder<GraphicsPipelineHandle>;
 		template class Holder<ComputePipelineHandle>;
-		template class Holder<RaytracingPipelineHandle>;
+		template class Holder<RayTracingPipelineHandle>;
 		template class Holder<AccelerationStructureHandle>;
 	} // namespace detail
 } // namespace mythril

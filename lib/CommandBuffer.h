@@ -64,10 +64,10 @@ namespace mythril {
 
 		void cmdBindComputePipeline(const ComputePipeline& computePipeline) { cmdBindComputePipeline(computePipeline.handle()); }
 		void cmdBindGraphicsPipeline(const GraphicsPipeline& graphicsPipeline) { cmdBindGraphicsPipeline(graphicsPipeline.handle()); }
-		void cmdBindRaytracingPipeline(const RaytracingPipeline& raytracingPipeline) { cmdBindRaytracingPipeline(raytracingPipeline.handle()); }
+		void cmdBindRayTracingPipeline(const RayTracingPipeline& rayTracingPipeline) { cmdBindRayTracingPipeline(rayTracingPipeline.handle()); }
 		void cmdBindComputePipeline(ComputePipelineHandle handle);
 		void cmdBindGraphicsPipeline(GraphicsPipelineHandle handle);
-		void cmdBindRaytracingPipeline(RaytracingPipelineHandle handle);
+		void cmdBindRayTracingPipeline(RayTracingPipelineHandle handle);
 		// ALL BELOW COMMANDS SHOULD RETURN ON DRYRUN //
 		void cmdBindDepthState(const DepthState& state);
 		void cmdSetDepthBiasEnable(bool enable);
@@ -170,7 +170,7 @@ namespace mythril {
 		// avoid lookup and store the common data
 		detail::SharedPipelineInfo* _currentPipelineInfo = nullptr;
 		// todo: kinda sloppy since you have to manually update
-		std::variant<GraphicsPipelineHandle, ComputePipelineHandle, RaytracingPipelineHandle> _currentPipelineHandle;
+		std::variant<GraphicsPipelineHandle, ComputePipelineHandle, RayTracingPipelineHandle> _currentPipelineHandle;
 		const CompiledPass* _activePass;
 
 		bool _isRendering = false; // cmdBeginRendering

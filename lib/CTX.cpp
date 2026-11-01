@@ -204,10 +204,10 @@ namespace mythril {
 				destroy(_computePipelinePool.getHandle(_computePipelinePool.findObject(&_computePipelinePool._objects[i]._obj).index()));
 			}
 		}
-		if (_raytracingPipelinePool.numObjects()) {
-			LOG_SYSTEM(LogType::Info, "Cleaned up {} raytracing pipelines", _raytracingPipelinePool.numObjects());
-			for (int i = 0; i < _raytracingPipelinePool._objects.size(); i++) {
-				destroy(_raytracingPipelinePool.getHandle(_raytracingPipelinePool.findObject(&_raytracingPipelinePool._objects[i]._obj).index()));
+		if (_rayTracingPipelinePool.numObjects()) {
+			LOG_SYSTEM(LogType::Info, "Cleaned up {} raytracing pipelines", _rayTracingPipelinePool.numObjects());
+			for (int i = 0; i < _rayTracingPipelinePool._objects.size(); i++) {
+				destroy(_rayTracingPipelinePool.getHandle(_rayTracingPipelinePool.findObject(&_rayTracingPipelinePool._objects[i]._obj).index()));
 			}
 		}
 		if (_samplerPool.numObjects()) {
@@ -245,7 +245,7 @@ namespace mythril {
 		_shaderPool.clear();
 		_graphicsPipelinePool.clear();
 		_computePipelinePool.clear();
-		_raytracingPipelinePool.clear();
+		_rayTracingPipelinePool.clear();
 		_accelerationStructurePool.clear();
 		// make sure imm tasks are complete
 		waitDeferredTasks();
@@ -350,7 +350,7 @@ namespace mythril {
 				invalidateBindlessPipelineImpl(obj._obj._shared);
 			for (auto& obj : _computePipelinePool._objects)
 				invalidateBindlessPipelineImpl(obj._obj._shared);
-			for (auto& obj : _raytracingPipelinePool._objects)
+			for (auto& obj : _rayTracingPipelinePool._objects)
 				invalidateBindlessPipelineImpl(obj._obj._shared);
 		}
 		// SAMPLERS //
@@ -790,7 +790,7 @@ namespace mythril {
 			);
 	}
 
-	VkPipeline CTX::buildRayTracingPipelineImpl(VkPipelineLayout layout, RaytracingPipelineSpec& spec) {
+	VkPipeline CTX::buildRayTracingPipelineImpl(VkPipelineLayout layout, RayTracingPipelineSpec& spec) {
 		// sc_count is across all stages of a shader
 		uint32_t sc_count = 0;
 		while (sc_count < 16 && spec.specConstants[sc_count].size) {
@@ -824,7 +824,7 @@ namespace mythril {
 				return VK_SHADER_UNUSED_KHR;
 			AllocatedShader* shader = _shaderPool.get(shaderStage.handle);
 			ASSERT_MSG(shader, "A shader for raytracing pipeline: '{}' was destroyed or moved.", spec.debugName);
-			ASSERT_MSG(shaderStage.entryPoint, "Raytracing shaders have no default entry point, one must be given for raytracing pipeline: '{}'.", spec.debugName);
+			ASSERT_MSG(shaderStage.entryPoint, "RayTracing shaders have no default entry point, one must be given for raytracing pipeline: '{}'.", spec.debugName);
 			specConstantsBundles.push_back(BuildSpecializationInfoBundle(spec.specConstants, sc_count, shader->_specializationInfo.nameToID));
 			const SpecializationInfoBundle* bundle = specConstantsBundles.back().get();
 			createInfoShaderStages[numShaderStages] = {
@@ -904,7 +904,7 @@ namespace mythril {
 			}
 		}
 
-		const uint32_t maxDepth = _raytracingProperties.maxRayRecursionDepth;
+		const uint32_t maxDepth = _rayTracingProperties.maxRayRecursionDepth;
 		const uint32_t depth = spec.maxRecursionDepth ? spec.maxRecursionDepth : 0;
 		// only need
 		constexpr VkDynamicState dynamicState = VK_DYNAMIC_STATE_RAY_TRACING_PIPELINE_STACK_SIZE_KHR;
@@ -944,10 +944,10 @@ namespace mythril {
 		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_PIPELINE, reinterpret_cast<uint64_t>(pipeline._shared.core._vkPipeline), pipeline.getDebugName().data());
 		// good to go, maybe later you could return it
 	}
-	void CTX::resolveRaytracingPipelineImpl(AllocatedRaytracingPipeline& pipeline) {
+	void CTX::resolveRayTracingPipelineImpl(AllocatedRayTracingPipeline& pipeline) {
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_CREATE);
 		// aliases
-		RaytracingPipelineSpec& spec = pipeline._spec;
+		RayTracingPipelineSpec& spec = pipeline._spec;
 
 		// shader signature collection
 		std::vector<PipelineLayoutSignature> pipeline_layout_signatures = {};
@@ -981,8 +981,8 @@ namespace mythril {
 		core._vkBindlessDescriptorSet = VK_NULL_HANDLE;
 	}
 
-	void CTX::buildShaderBindingTableImpl(AllocatedRaytracingPipeline& pipeline) {
-		const RaytracingPipelineSpec& spec = pipeline._spec;
+	void CTX::buildShaderBindingTableImpl(AllocatedRayTracingPipeline& pipeline) {
+		const RayTracingPipelineSpec& spec = pipeline._spec;
 		// must mirror the group order and skip rule in buildRayTracingPipelineImpl
 		const auto countLive = [this](const std::vector<ShaderStage>& stages) {
 			uint32_t count = 0;
@@ -997,11 +997,11 @@ namespace mythril {
 		const uint32_t numHit = countLive(spec.closestHitShaders);
 		const uint32_t numCallable = countLive(spec.callableShader);
 		const uint32_t numGroups = numRaygen + numMiss + numHit + numCallable;
-		ASSERT_MSG(numRaygen > 0, "Raytracing pipeline '{}' needs at least one ray generation shader.", spec.debugName);
+		ASSERT_MSG(numRaygen > 0, "RayTracing pipeline '{}' needs at least one ray generation shader.", spec.debugName);
 
-		const uint32_t handleSize = _raytracingProperties.shaderGroupHandleSize;
-		const uint32_t handleAlignment = _raytracingProperties.shaderGroupHandleAlignment;
-		const uint32_t baseAlignment = _raytracingProperties.shaderGroupBaseAlignment;
+		const uint32_t handleSize = _rayTracingProperties.shaderGroupHandleSize;
+		const uint32_t handleAlignment = _rayTracingProperties.shaderGroupHandleAlignment;
+		const uint32_t baseAlignment = _rayTracingProperties.shaderGroupBaseAlignment;
 		ASSERT_MSG(handleSize && handleAlignment && baseAlignment, "Ray tracing pipeline properties were never queried.");
 		const VkDeviceSize handleStride = getAlignedAddress(handleSize, handleAlignment);
 		const VkDeviceSize raygenSize = getAlignedAddress(handleStride, baseAlignment);
@@ -1653,12 +1653,12 @@ namespace mythril {
 		return {this, handle};
 	}
 	// fixme: ensure correctness
-	RaytracingPipeline CTX::createRaytracingPipeline(const RaytracingPipelineSpec& spec) {
+	RayTracingPipeline CTX::createRayTracingPipeline(const RayTracingPipelineSpec& spec) {
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_CREATE);
-		AllocatedRaytracingPipeline obj = {};
+		AllocatedRayTracingPipeline obj = {};
 		obj._spec = spec;
 		snprintf(obj._shared.debugName, sizeof(obj._shared.debugName), "%s", spec.debugName);
-		RaytracingPipelineHandle handle = _raytracingPipelinePool.create(std::move(obj));
+		RayTracingPipelineHandle handle = _rayTracingPipelinePool.create(std::move(obj));
 		return { this, handle };
 	}
 
@@ -2373,14 +2373,14 @@ namespace mythril {
 		deferTask(std::packaged_task<void()>([device = _vkDevice, layout = core._vkPipelineLayout]() { vkDestroyPipelineLayout(device, layout, nullptr); }));
 		_computePipelinePool.destroy(handle);
 	}
-	void CTX::destroy(RaytracingPipelineHandle handle) {
-		AllocatedRaytracingPipeline* raytracing_pipeline = _raytracingPipelinePool.get(handle);
+	void CTX::destroy(RayTracingPipelineHandle handle) {
+		AllocatedRayTracingPipeline* raytracing_pipeline = _rayTracingPipelinePool.get(handle);
 		if (!raytracing_pipeline)
 			return;
 		PipelineCoreData& core = raytracing_pipeline->_shared.core;
 		deferTask(std::packaged_task<void()>([device = _vkDevice, pipeline = core._vkPipeline]() { vkDestroyPipeline(device, pipeline, nullptr); }));
 		deferTask(std::packaged_task<void()>([device = _vkDevice, layout = core._vkPipelineLayout]() { vkDestroyPipelineLayout(device, layout, nullptr); }));
-		_raytracingPipelinePool.destroy(handle);
+		_rayTracingPipelinePool.destroy(handle);
 	}
 	void CTX::destroy(AccelerationStructureHandle handle) {
 		AllocatedAccelerationStructure* acceleration_structure = _accelerationStructurePool.get(handle);

@@ -107,20 +107,20 @@ namespace mythril {
 	}
 
 	// todo: i have no clue how this just works immediately besides the fact we dont actually touch the base image + restore its original layout
-	IntermediateBuilder& IntermediateBuilder::generateMipmaps(const Texture& texture) {
-		TextureHandle handle = texture.handle();
-		auto oldCallback = base._passSource.executeCallback;
-		base._passSource.executeCallback = [oldCallback, handle](CommandBuffer& cmd) {
-			if (oldCallback)
-				oldCallback(cmd);
-			cmd.cmdGenerateMipmap(handle);
-		};
-		return *this;
-	}
-	IntermediateBuilder& IntermediateBuilder::dependency(Buffer& buffer, BufferAccess access) {
-		add(base._passSource, buffer, access);
-		return *this;
-	}
+	//IntermediateBuilder& IntermediateBuilder::generateMipmaps(const Texture& texture) {
+	//	TextureHandle handle = texture.handle();
+	//	auto oldCallback = base._passSource.executeCallback;
+	//	base._passSource.executeCallback = [oldCallback, handle](CommandBuffer& cmd) {
+	//		if (oldCallback)
+	//			oldCallback(cmd);
+	//		cmd.cmdGenerateMipmap(handle);
+	//	};
+	//	return *this;
+	//}
+	//IntermediateBuilder& IntermediateBuilder::dependency(Buffer& buffer, BufferAccess access) {
+	//	add(base._passSource, buffer, access);
+	//	return *this;
+	//}
 	IntermediateBuilder& IntermediateBuilder::update(Buffer& buffer, std::function<UploadData()> dataCb, size_t dstOffset) {
 		BufferHandle handle = buffer.handle();
 		add(base._passSource, buffer, BufferAccess::TransferWrite);
@@ -134,7 +134,7 @@ namespace mythril {
 
 			const UploadData data = dataCb();
 			ASSERT_MSG(data.data, "IntermediateBuilder::update called with null data.");
-			ASSERT_MSG(data.size > 0 && data.size <= 65536, "IntermediateBuilder::update requires 0 < size <= 65'536 (64KB).");
+			ASSERT_MSG(data.size > 0 && data.size <= 65536, "IntermediateBuilder::update requires 0 < size <= 65'536 (64KB). Please call IntermediateBuilder::upload instead!");
 			ASSERT_MSG(data.size % 4 == 0, "IntermediateBuilder::update size must be a multiple of 4 bytes.");
 			ASSERT_MSG(dstOffset % 4 == 0, "IntermediateBuilder::update offset must be a multiple of 4 bytes.");
 
@@ -160,6 +160,8 @@ namespace mythril {
 			const UploadData data = dataCb();
 			ASSERT_MSG(data.data, "IntermediateBuilder::upload called with null data.");
 			ASSERT_MSG(data.size > 0, "IntermediateBuilder::upload size must be greater than 0.");
+			if (data.size <= 65536) LOG_SYSTEM(LogType::Suggestion, "IntermediateBuilder::upload called with data less then 64KB, you can use IntermediateBuilder::update instead for a faster operation!");
+
 
 			AllocatedBuffer& buf = cmd._ctx->access(handle);
 			ASSERT_MSG(dstOffset + data.size <= buf._bufferSize, "IntermediateBuilder::upload: offset + size exceeds buffer '{}' size.", buf._debugName);
@@ -291,7 +293,7 @@ namespace mythril {
 				return VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
 			case PassDesc::Type::Intermediate:
 				return VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-			case PassDesc::Type::Raytracing:
+			case PassDesc::Type::RayTracing:
 				return VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR;
 		}
 		return VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;

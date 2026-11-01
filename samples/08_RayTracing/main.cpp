@@ -199,7 +199,7 @@ int main() {
 			.debugName = "Frame Uniforms"
 		});
 
-		mythril::RaytracingPipeline mainPipeline = ctx->createRaytracingPipeline({
+		mythril::RayTracingPipeline mainPipeline = ctx->createRayTracingPipeline({
 			.rayGenShaders = {
 				{ raytraceShader, "raygenMain" }
 			},
@@ -360,7 +360,7 @@ int main() {
 		.dependency(tracedShadowOutput, mythril::TextureAccess::StorageReadWrite)
 		.dependency(frameBuffer, mythril::BufferAccess::ShaderRead)
 		.execute([&](mythril::CommandBuffer& cmd) {
-			cmd.cmdBindRaytracingPipeline(mainPipeline);
+			cmd.cmdBindRayTracingPipeline(mainPipeline);
 			const GPU::PerFrame frameData = {
 				.viewInverse = glm::inverse(calculateViewMatrix(camera)),
 				.projInverse = glm::inverse(calculateProjectionMatrix(camera)),

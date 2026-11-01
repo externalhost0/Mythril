@@ -217,7 +217,7 @@ namespace mythril {
 		Sampler createSampler(SamplerSpec spec);
 		GraphicsPipeline createGraphicsPipeline(const GraphicsPipelineSpec& spec);
 		ComputePipeline createComputePipeline(const ComputePipelineSpec& spec);
-		RaytracingPipeline createRaytracingPipeline(const RaytracingPipelineSpec& spec);
+		RayTracingPipeline createRayTracingPipeline(const RayTracingPipelineSpec& spec);
 		Shader createShader(const ShaderSpec& spec);
 		AccelerationStructure createAccelerationStructure(const AccelerationStructureSpec& spec);
 
@@ -239,7 +239,7 @@ namespace mythril {
 		void destroy(ShaderHandle handle);
 		void destroy(GraphicsPipelineHandle handle);
 		void destroy(ComputePipelineHandle handle);
-		void destroy(RaytracingPipelineHandle handle);
+		void destroy(RayTracingPipelineHandle handle);
 		void destroy(AccelerationStructureHandle handle);
 
 		// helpers to query the capabilities of the Vulkan runtime
@@ -277,7 +277,7 @@ namespace mythril {
 		const detail::AllocatedShader& view(ShaderHandle h) const { return viewImpl(_shaderPool, h); }
 		const detail::AllocatedGraphicsPipeline& view(GraphicsPipelineHandle h) const { return viewImpl(_graphicsPipelinePool, h); }
 		const detail::AllocatedComputePipeline& view(ComputePipelineHandle h) const { return viewImpl(_computePipelinePool, h); }
-		const detail::AllocatedRaytracingPipeline& view(RaytracingPipelineHandle h) const { return viewImpl(_raytracingPipelinePool, h); }
+		const detail::AllocatedRayTracingPipeline& view(RayTracingPipelineHandle h) const { return viewImpl(_rayTracingPipelinePool, h); }
 
 		detail::AllocatedTexture& access(TextureHandle h) { return accessImpl(_texturePool, h); }
 		detail::AllocatedBuffer& access(BufferHandle h) { return accessImpl(_bufferPool, h); }
@@ -285,7 +285,7 @@ namespace mythril {
 		detail::AllocatedShader& access(ShaderHandle h) { return accessImpl(_shaderPool, h); }
 		detail::AllocatedGraphicsPipeline& access(GraphicsPipelineHandle h) { return accessImpl(_graphicsPipelinePool, h); }
 		detail::AllocatedComputePipeline& access(ComputePipelineHandle h) { return accessImpl(_computePipelinePool, h); }
-		detail::AllocatedRaytracingPipeline& access(RaytracingPipelineHandle h) { return accessImpl(_raytracingPipelinePool, h); }
+		detail::AllocatedRayTracingPipeline& access(RayTracingPipelineHandle h) { return accessImpl(_rayTracingPipelinePool, h); }
 
 		// wrappers around VulkanObjects
 		// advanced functions that user will rarely need to call
@@ -298,8 +298,8 @@ namespace mythril {
 		// return values from resolvings are ignored for now
 		void resolveGraphicsPipelineImpl(detail::AllocatedGraphicsPipeline& pipeline, uint32_t viewMask);
 		void resolveComputePipelineImpl(detail::AllocatedComputePipeline& pipeline);
-		void resolveRaytracingPipelineImpl(detail::AllocatedRaytracingPipeline& pipeline);
-		void buildShaderBindingTableImpl(detail::AllocatedRaytracingPipeline& pipeline);
+		void resolveRayTracingPipelineImpl(detail::AllocatedRayTracingPipeline& pipeline);
+		void buildShaderBindingTableImpl(detail::AllocatedRayTracingPipeline& pipeline);
 		void invalidateBindlessPipelineImpl(detail::SharedPipelineInfo& shared);
 
 		VkPipeline buildComputePipelineImpl(VkPipelineLayout layout, ComputePipelineSpec spec);
@@ -308,7 +308,7 @@ namespace mythril {
 		                                         const char* shaderStageName,
 		                                         const char* pipelineDebugName,
 		                                         bool hasMultipleStages);
-		VkPipeline buildRayTracingPipelineImpl(VkPipelineLayout layout, RaytracingPipelineSpec& spec);
+		VkPipeline buildRayTracingPipelineImpl(VkPipelineLayout layout, RayTracingPipelineSpec& spec);
 
 
 		// because they are big functions :(
@@ -392,7 +392,7 @@ namespace mythril {
 		VulkanFeatures _featuresVulkan {};
 		VulkanProperties _propertiesVulkan {};
 		// special case for extensions
-		VkPhysicalDeviceRayTracingPipelinePropertiesKHR _raytracingProperties {};
+		VkPhysicalDeviceRayTracingPipelinePropertiesKHR _rayTracingProperties {};
 		VkPhysicalDeviceAccelerationStructurePropertiesKHR _accelerationStructureProperties {};
 		struct TransparentStringHash {
 			using is_transparent = void;
@@ -463,7 +463,7 @@ namespace mythril {
 		HandlePool<ShaderHandle, detail::AllocatedShader> _shaderPool;
 		HandlePool<GraphicsPipelineHandle, detail::AllocatedGraphicsPipeline> _graphicsPipelinePool;
 		HandlePool<ComputePipelineHandle, detail::AllocatedComputePipeline> _computePipelinePool;
-		HandlePool<RaytracingPipelineHandle, detail::AllocatedRaytracingPipeline> _raytracingPipelinePool;
+		HandlePool<RayTracingPipelineHandle, detail::AllocatedRayTracingPipeline> _rayTracingPipelinePool;
 		HandlePool<AccelerationStructureHandle, detail::AllocatedAccelerationStructure> _accelerationStructurePool;
 
 		// some rare stuff
