@@ -106,4 +106,8 @@ namespace mythril {
     	QueueAffinity queue = QueueAffinity::Graphics;
     };
 
+    // only pass types resolve here so LOG_PASS and ASSERT_PASS can't be handed a loose string
+    inline std::string_view PassLogName(const PassDesc& pass) { return pass.name; }
+    inline std::string_view PassLogName(const CompiledPass& pass) { return pass.name; }
+
 } // namespace mythril

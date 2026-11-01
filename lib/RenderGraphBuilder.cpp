@@ -47,15 +47,15 @@ namespace mythril {
 #ifdef DEBUG
 	GraphicsPassBuilder::~GraphicsPassBuilder() {
 		if (!this->base._passSource.executeCallback)
-			LOG_SYSTEM_NOSOURCE(LogType::Warning, "GraphicsPass '{}' has no execution callback!", this->base._passSource.name);
+			LOG_PASS(LogType::Warning, this->base._passSource, "graphics pass has no execution callback!");
 	}
 	ComputePassBuilder::~ComputePassBuilder() {
 		if (!this->base._passSource.executeCallback)
-			LOG_SYSTEM_NOSOURCE(LogType::Warning, "ComputePass '{}' has no execution callback!", this->base._passSource.name);
+			LOG_PASS(LogType::Warning, this->base._passSource, "compute pass has no execution callback!");
 	}
 	RayTracingPassBuilder::~RayTracingPassBuilder() {
 		if (!this->base._passSource.executeCallback)
-			LOG_SYSTEM_NOSOURCE(LogType::Warning, "RayTracing '{}' has no execution callback!", this->base._passSource.name);
+			LOG_PASS(LogType::Warning, this->base._passSource, "raytracing pass has no execution callback!");
 	}
 #endif
 
@@ -133,14 +133,14 @@ namespace mythril {
 				return;
 
 			const UploadData data = dataCb();
-			ASSERT_MSG(data.data, "IntermediateBuilder::update called with null data.");
-			ASSERT_MSG(data.size > 0 && data.size <= 65536, "IntermediateBuilder::update requires 0 < size <= 65'536 (64KB). Please call IntermediateBuilder::upload instead!");
-			ASSERT_MSG(data.size % 4 == 0, "IntermediateBuilder::update size must be a multiple of 4 bytes.");
-			ASSERT_MSG(dstOffset % 4 == 0, "IntermediateBuilder::update offset must be a multiple of 4 bytes.");
+			ASSERT_PASS(data.data, *cmd._activePass, "IntermediateBuilder::update called with null data.");
+			ASSERT_PASS(data.size > 0 && data.size <= 65536, *cmd._activePass, "IntermediateBuilder::update requires 0 < size <= 65'536 (64KB). Please call IntermediateBuilder::upload instead!");
+			ASSERT_PASS(data.size % 4 == 0, *cmd._activePass, "IntermediateBuilder::update size must be a multiple of 4 bytes.");
+			ASSERT_PASS(dstOffset % 4 == 0, *cmd._activePass, "IntermediateBuilder::update offset must be a multiple of 4 bytes.");
 
 			AllocatedBuffer& buf = cmd._ctx->access(handle);
-			ASSERT_MSG(dstOffset + data.size <= buf._bufferSize, "IntermediateBuilder::update: offset + size exceeds buffer '{}' size.", buf._debugName);
-			ASSERT_MSG(buf._vkUsageFlags & VK_BUFFER_USAGE_TRANSFER_DST_BIT, "IntermediateBuilder::update: buffer '{}' was not created with TRANSFER_DST usage.", buf._debugName);
+			ASSERT_PASS(dstOffset + data.size <= buf._bufferSize, *cmd._activePass, "IntermediateBuilder::update: offset + size exceeds buffer '{}' size.", buf._debugName);
+			ASSERT_PASS(buf._vkUsageFlags & VK_BUFFER_USAGE_TRANSFER_DST_BIT, *cmd._activePass, "IntermediateBuilder::update: buffer '{}' was not created with TRANSFER_DST usage.", buf._debugName);
 
 			vkCmdUpdateBuffer(cmd._wrapper->_cmdBuf, buf._vkBuffer, dstOffset, data.size, data.data);
 		};
@@ -150,6 +150,11 @@ namespace mythril {
 		BufferHandle handle = buffer.handle();
 		add(base._passSource, buffer, BufferAccess::TransferWrite);
 
+		// fixme: if somehthing flakely inside an upload callback happens, this is the culprit
+#ifdef DEBUG
+		if (const size_t size = dataCb().size; size > 0 && size <= 65536)
+			LOG_PASS(LogType::Suggestion, base._passSource, "upload into buffer '{}' is {} bytes (<= 64KB), use IntermediateBuilder::update instead for a faster operation!", buffer.getContext()->view(handle).getDebugName(), size);
+#endif
 		auto oldCallback = base._passSource.executeCallback;
 		base._passSource.executeCallback = [oldCallback, handle, dataCb = std::move(dataCb), dstOffset](CommandBuffer& cmd) {
 			if (oldCallback)
@@ -158,15 +163,13 @@ namespace mythril {
 				return;
 
 			const UploadData data = dataCb();
-			ASSERT_MSG(data.data, "IntermediateBuilder::upload called with null data.");
-			ASSERT_MSG(data.size > 0, "IntermediateBuilder::upload size must be greater than 0.");
-			if (data.size <= 65536) LOG_SYSTEM(LogType::Suggestion, "IntermediateBuilder::upload called with data less then 64KB, you can use IntermediateBuilder::update instead for a faster operation!");
-
+			ASSERT_PASS(data.data, *cmd._activePass, "IntermediateBuilder::upload called with null data.");
+			ASSERT_PASS(data.size > 0, *cmd._activePass, "IntermediateBuilder::upload size must be greater than 0.");
 
 			AllocatedBuffer& buf = cmd._ctx->access(handle);
-			ASSERT_MSG(dstOffset + data.size <= buf._bufferSize, "IntermediateBuilder::upload: offset + size exceeds buffer '{}' size.", buf._debugName);
-			ASSERT_MSG(
-			        buf.isMapped() || (buf._vkUsageFlags & VK_BUFFER_USAGE_TRANSFER_DST_BIT), "IntermediateBuilder::upload: device buffer '{}' was not created with TRANSFER_DST usage.", buf._debugName
+			ASSERT_PASS(dstOffset + data.size <= buf._bufferSize, *cmd._activePass, "IntermediateBuilder::upload: offset + size exceeds buffer '{}' size.", buf._debugName);
+			ASSERT_PASS(
+			        buf.isMapped() || (buf._vkUsageFlags & VK_BUFFER_USAGE_TRANSFER_DST_BIT), *cmd._activePass, "IntermediateBuilder::upload: device buffer '{}' was not created with TRANSFER_DST usage.", buf._debugName
 			);
 			if (buf.isMapped()) {
 				buf.bufferSubData(*cmd._ctx, dstOffset, data.size, data.data);
@@ -207,27 +210,27 @@ namespace mythril {
 	static constexpr VkImageSubresourceRange MakeVkRange(VkFormat fmt, SubresourceRange range) {
 		return {vkutil::AspectMaskFromFormat(fmt), range.baseMip, range.numMips, range.baseLayer, range.numLayers};
 	}
-	static SubresourceRange ResolveSubresourceRange(const TextureDesc& texDesc, const AllocatedTexture& texture, std::string_view passName) {
+	static SubresourceRange ResolveSubresourceRange(const TextureDesc& texDesc, const AllocatedTexture& texture, const PassDesc& pass) {
 		const uint32_t baseMip = texDesc.baseLevel.value_or(0);
 		const uint32_t numMips = texDesc.numLevels.value_or(texDesc.baseLevel.has_value() ? 1 : texture.getNumMips());
 		const uint32_t baseLayer = texDesc.baseLayer.value_or(0);
 		const uint32_t numLayers = texDesc.numLayers.value_or(texDesc.baseLayer.has_value() ? 1 : texture.getNumLayers());
 
-		ASSERT_MSG(baseMip < texture.getNumMips(), "Pass '{}': Texture '{}' base mip {} is outside the texture's {} mip levels", passName, texture.getDebugName(), baseMip, texture.getNumMips());
-		ASSERT_MSG(
+		ASSERT_PASS(baseMip < texture.getNumMips(), pass, "Texture '{}' base mip {} is outside the texture's {} mip levels", texture.getDebugName(), baseMip, texture.getNumMips());
+		ASSERT_PASS(
 		        numMips > 0 && baseMip + numMips <= texture.getNumMips(),
-		        "Pass '{}': Texture '{}' mip range [{}, {}) is outside the texture's {} mip levels",
-		        passName,
+		        pass,
+		        "Texture '{}' mip range [{}, {}) is outside the texture's {} mip levels",
 		        texture.getDebugName(),
 		        baseMip,
 		        baseMip + numMips,
 		        texture.getNumMips()
 		);
-		ASSERT_MSG(baseLayer < texture.getNumLayers(), "Pass '{}': Texture '{}' base layer {} is outside the texture's {} layers", passName, texture.getDebugName(), baseLayer, texture.getNumLayers());
-		ASSERT_MSG(
+		ASSERT_PASS(baseLayer < texture.getNumLayers(), pass, "Texture '{}' base layer {} is outside the texture's {} layers", texture.getDebugName(), baseLayer, texture.getNumLayers());
+		ASSERT_PASS(
 		        numLayers > 0 && baseLayer + numLayers <= texture.getNumLayers(),
-		        "Pass '{}': Texture '{}' layer range [{}, {}) is outside the texture's {} layers",
-		        passName,
+		        pass,
+		        "Texture '{}' layer range [{}, {}) is outside the texture's {} layers",
 		        texture.getDebugName(),
 		        baseLayer,
 		        baseLayer + numLayers,
@@ -237,13 +240,13 @@ namespace mythril {
 		return {baseMip, numMips, baseLayer, numLayers};
 	}
 
-	static VkImageView ResolveImageView(const TextureDesc& texDesc, const AllocatedTexture& allocatedTexture, std::string_view passName) {
+	static VkImageView ResolveImageView(const TextureDesc& texDesc, const AllocatedTexture& allocatedTexture, const PassDesc& pass) {
 		const bool needsCustomView = texDesc.baseLayer.has_value() || texDesc.baseLevel.has_value() || texDesc.numLayers.has_value() || texDesc.numLevels.has_value();
 		if (!needsCustomView) {
 			return allocatedTexture.getImageView();
 		}
 
-		const SubresourceRange range = ResolveSubresourceRange(texDesc, allocatedTexture, passName);
+		const SubresourceRange range = ResolveSubresourceRange(texDesc, allocatedTexture, pass);
 		VkImageViewType viewType = allocatedTexture.getViewType();
 		if (range.numLayers == 1 && viewType == VK_IMAGE_VIEW_TYPE_CUBE) {
 			viewType = VK_IMAGE_VIEW_TYPE_2D;
@@ -352,10 +355,10 @@ namespace mythril {
 		ASSERT_MSG(false, "Unsupported BufferAccess value.");
 	}
 
-	void RenderGraph::processResourceAccess(const TextureDesc& texDesc, VkImageLayout desiredLayout, const StageAccess& dstMask, CompiledPass& outPass, std::string_view passName) {
+	void RenderGraph::processResourceAccess(const TextureDesc& texDesc, VkImageLayout desiredLayout, const StageAccess& dstMask, CompiledPass& outPass, const PassDesc& pass) {
 		const AllocatedTexture& texture = texDesc.texture.getContext()->view(texDesc.texture.handle());
 		const bool isSwapchain = texture.isSwapchainImage();
-		const SubresourceRange& range = ResolveSubresourceRange(texDesc, texture, passName);
+		const SubresourceRange& range = ResolveSubresourceRange(texDesc, texture, pass);
 		outPass.imageBarriers.push_back({.handle = texDesc.texture.handle(), .range = range, .dstLayout = desiredLayout, .dstMask = dstMask, .isSwapchain = isSwapchain});
 	}
 
@@ -364,17 +367,17 @@ namespace mythril {
 		outPass.imageBarriers.reserve(passDesc.textureDependencyOperations.size() + passDesc.attachmentOperations.size());
 		outPass.bufferBarriers.reserve(passDesc.bufferDependencyOperations.size());
 		for (const TextureDependencyDesc& dependency_desc: passDesc.textureDependencyOperations) {
-			processResourceAccess(dependency_desc.texDesc, GetTextureLayout(dependency_desc.access), GetTextureStageAccess(dependency_desc.access, passDesc.type), outPass, passDesc.name);
+			processResourceAccess(dependency_desc.texDesc, GetTextureLayout(dependency_desc.access), GetTextureStageAccess(dependency_desc.access, passDesc.type), outPass, passDesc);
 		}
 		for (const AttachmentDesc& attachment_desc: passDesc.attachmentOperations) {
 			const AllocatedTexture& texture = attachment_desc.texDesc.texture.getContext()->view(attachment_desc.texDesc.texture.handle());
 			const VkImageLayout layout = texture.isDepthAttachment() ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-			processResourceAccess(attachment_desc.texDesc, layout, vkutil::GetPipelineStageAccess(layout), outPass, passDesc.name);
+			processResourceAccess(attachment_desc.texDesc, layout, vkutil::GetPipelineStageAccess(layout), outPass, passDesc);
 
 			if (attachment_desc.resolveTexDesc.has_value()) {
 				// resolves always write in color attachment output, even for depth/stencil
 				constexpr StageAccess resolveMask = {.stage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, .access = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT};
-				processResourceAccess(attachment_desc.resolveTexDesc.value(), layout, resolveMask, outPass, passDesc.name);
+				processResourceAccess(attachment_desc.resolveTexDesc.value(), layout, resolveMask, outPass, passDesc);
 			}
 		}
 		for (const BufferDependencyDesc& dependency_desc: passDesc.bufferDependencyOperations) {
@@ -420,10 +423,10 @@ namespace mythril {
 
 			const bool isDepthAttachment = vkutil::IsFormatDepth(allocatedTexture.getFormat());
 			if (isDepthAttachment) {
-				ASSERT_MSG(!hasDepthAttachment, "Pass '{}': Multiple depth attachments not allowed (found '{}' to be a second depth attachment)", outPass.name, allocatedTexture.getDebugName());
+				ASSERT_PASS(!hasDepthAttachment, pass_desc, "Multiple depth attachments not allowed (found '{}' to be a second depth attachment)", allocatedTexture.getDebugName());
 				hasDepthAttachment = true;
 			}
-			VkImageView imageView = ResolveImageView(texDesc, allocatedTexture, pass_desc.name);
+			VkImageView imageView = ResolveImageView(texDesc, allocatedTexture, pass_desc);
 
 			const ClearValue& clear_value = attachment_desc.clearValue;
 			AttachmentInfo attachment_info = {
@@ -441,36 +444,36 @@ namespace mythril {
 			if (attachment_desc.resolveTexDesc.has_value()) {
 				const TextureDesc& resolve_desc = attachment_desc.resolveTexDesc.value();
 				const AllocatedTexture resolve_texture = resolve_desc.texture.getContext()->view(resolve_desc.texture.handle());
-				ASSERT_MSG(
+				ASSERT_PASS(
 				        resolve_texture.getSampleCount() == VK_SAMPLE_COUNT_1_BIT,
-				        "Pass '{}': Resolve Texture must have a sample count of 1 (found '{}' to be of a greater sample count)",
-				        pass_desc.name,
+				        pass_desc,
+				        "Resolve Texture must have a sample count of 1 (found '{}' to be of a greater sample count)",
 				        resolve_texture.getDebugName()
 				);
-				ASSERT_MSG(
-				        allocatedTexture.getSampleCount() > VK_SAMPLE_COUNT_1_BIT, "Pass '{}': Resolve operation on non-multisampled texture '{}'!", pass_desc.name, allocatedTexture.getDebugName()
+				ASSERT_PASS(
+				        allocatedTexture.getSampleCount() > VK_SAMPLE_COUNT_1_BIT, pass_desc, "Resolve operation on non-multisampled texture '{}'!", allocatedTexture.getDebugName()
 				);
-				ASSERT_MSG(
+				ASSERT_PASS(
 				        resolve_texture.getFormat() == allocatedTexture.getFormat(),
-				        "Pass '{}': Resolve texture must have the same format as the texture it resolves from (found texture '{}' to be of format {} while resolve texture '{}' is of format {})",
-				        pass_desc.name,
+				        pass_desc,
+				        "Resolve texture must have the same format as the texture it resolves from (found texture '{}' to be of format {} while resolve texture '{}' is of format {})",
 				        allocatedTexture.getDebugName(),
 				        vkstring::VulkanFormatToString(allocatedTexture.getFormat()),
 				        resolve_texture.getDebugName(),
 				        vkstring::VulkanFormatToString(resolve_texture.getFormat())
 				);
 				if (attachment_desc.storeOp == StoreOp::STORE)
-					LOG_SYSTEM_NOSOURCE(
+					LOG_PASS(
 					        LogType::Suggestion,
-					        "Pass '{}': Attachment of texture '{}' has StoreOp::STORE and has a resolve attachment, can be replaced with StoreOp::NO_CARE.",
-					        pass_desc.name,
+					        pass_desc,
+					        "Attachment of texture '{}' has StoreOp::STORE and resolves into '{}', can be replaced with StoreOp::DONT_CARE.",
 					        allocatedTexture.getDebugName(),
 					        resolve_texture.getDebugName()
 					);
 
 				// set the fields we left empty previously
 				attachment_info.resolveImageLayout = attachment_info.imageLayout;
-				attachment_info.resolveImageView = ResolveImageView(resolve_desc, resolve_texture, pass_desc.name);
+				attachment_info.resolveImageView = ResolveImageView(resolve_desc, resolve_texture, pass_desc);
 			}
 			if (allocatedTexture.isSwapchainImage()) {
 				attachment_info.isSwapchainImage = true;
@@ -496,7 +499,7 @@ namespace mythril {
 			const uint32_t height = std::max(1u, baseDims.height >> mipLevel);
 
 			if ((max_width != width || max_height != height) && (max_width != 0 || max_height != 0))
-				LOG_SYSTEM(LogType::Warning, "Pass '{}': You have attachments of different dimensions, this is allowed but experimental.", pass_desc.name);
+				LOG_PASS(LogType::Warning, pass_desc, "You have attachments of different dimensions, this is allowed but experimental.");
 			max_width = std::max(max_width, width);
 			max_height = std::max(max_height, height);
 		}
@@ -514,7 +517,7 @@ namespace mythril {
 			dryCmd._activePass = &pass;
 			dryCmd._viewMask = pass.viewMask;
 			rCtx._currentCommandBuffer = dryCmd;
-			ASSERT_MSG(pass.executeCallback != nullptr, "Pass '{}' doesn't have an execute callback, something went horribly wrong!", pass.name);
+			ASSERT_PASS(pass.executeCallback != nullptr, pass, "doesn't have an execute callback, something went horribly wrong!");
 			pass.executeCallback(dryCmd);
 		}
 		rCtx._currentCommandBuffer = saved;
@@ -813,18 +816,18 @@ namespace mythril {
 		// assign and warn queues for each pass
 		const bool canUseAC = rCtx._immAsyncCompute != nullptr;
 		const bool canUseAT = rCtx._immAsyncTransfer != nullptr;
-		auto sanitizeQueue = [canUseAC, canUseAT](const QueueAffinity requested_queue, const std::string& pass_name) {
+		auto sanitizeQueue = [canUseAC, canUseAT](const QueueAffinity requested_queue, const PassDesc& pass) {
 			// demote passes that request a queue but we dont have access to
 			if (requested_queue == QueueAffinity::AsyncCompute && !canUseAC) {
-				LOG_SYSTEM_NOSOURCE(LogType::Warning, "Pass '{}' demoted to graphics: No async compute family available.", pass_name);
+				LOG_PASS(LogType::Warning, pass, "demoted to graphics: No async compute family available.");
 				return QueueAffinity::AsyncTransfer;
 			}
 			if (requested_queue == QueueAffinity::AsyncTransfer && !canUseAT) {
 				if (canUseAC) {
-					LOG_SYSTEM_NOSOURCE(LogType::Info, "Pass '{}' routed to async compute: No dedicated transfer family.", pass_name);
+					LOG_PASS(LogType::Info, pass, "routed to async compute: No dedicated transfer family.");
 					return QueueAffinity::AsyncCompute;
 				}
-				LOG_SYSTEM_NOSOURCE(LogType::Warning, "Pass '{}' demoted to graphics: No async family available.", pass_name);
+				LOG_PASS(LogType::Warning, pass, "demoted to graphics: No async family available.");
 				return QueueAffinity::Graphics;
 			}
 			return requested_queue;
@@ -837,7 +840,7 @@ namespace mythril {
 			CompiledPass compiled_pass;
 			compiled_pass.name = pass_desc.name;
 			compiled_pass.passIndex = pass_idx;
-			compiled_pass.queue = sanitizeQueue(pass_desc.queue, pass_desc.name);
+			compiled_pass.queue = sanitizeQueue(pass_desc.queue, pass_desc);
 			compiled_pass.type = pass_desc.type;
 			compiled_pass.executeCallback = pass_desc.executeCallback;
 			compiled_pass.layerCount = pass_desc.layerCount;

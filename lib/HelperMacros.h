@@ -57,6 +57,19 @@
 #define ASSERT_MSG_NOSOURCE(ERROR, FORMAT, ...) ASSUME_(ERROR)
 #endif
 
+#ifdef DEBUG
+// DO NOT PASS SIDE EFFECT FUNCTIONS, pass must be a PassDesc or CompiledPass
+#define ASSERT_PASS(ERROR, PASS, FORMAT, ...) do { \
+    if (!static_cast<bool>(ERROR)) [[unlikely]] {                         \
+        fmt::print(stderr, "[ASSERT_PASS] | {}:{} -> Pass '{}' -> MSG:\n" FORMAT "\n", __FILE__, __LINE__, ::mythril::PassLogName(PASS) __VA_OPT__(,) __VA_ARGS__); \
+        std::raise(SIGABRT); \
+    } \
+    ASSUME_(ERROR); \
+} while(0)
+#else
+#define ASSERT_PASS(ERROR, PASS, FORMAT, ...) ASSUME_(ERROR)
+#endif
+
 
 #define MYTHRIL_INVALID_U8  ((uint8_t)0xFFu)
 #define MYTHRIL_INVALID_U16 ((uint16_t)0xFFFFu)

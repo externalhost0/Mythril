@@ -952,7 +952,7 @@ int main() {
 
 		graph.addIntermediate("per_frame_scene_uploads")
 		.update(frameDataHandle, [&] { return mythril::UploadData{&frameData, sizeof(frameData)}; })
-		.upload(pointLightShadowMatrixBuf, [&] {
+		.update(pointLightShadowMatrixBuf, [&] {
 			return mythril::UploadData{&shadowMatrices[0][0], sizeof(glm::mat4) * kNumPointLights * 6};
 		})
 		.finish();

@@ -316,7 +316,6 @@ We use the words framegraph and rendergraph interchangably in the docs.
 
 It's a three step process:
 - Instiantate a `RenderGraph` object;
-- 
 - Add as many passes as you want via `add*Pass`. 
   - `addGraphicsPass`: Used alongside a `GraphicsPipeline` 
   - `addComputePass`: Used alongside a `ComputePipeline`

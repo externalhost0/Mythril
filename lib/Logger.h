@@ -87,4 +87,11 @@ namespace mythril {
 #else
 #define LOG_SYSTEM_NOSOURCE(level, message, ...) (void(0))
 #endif
+
+// pass must be a PassDesc or CompiledPass, see PassLogName in RenderGraphInternal.h
+#ifdef DEBUG
+#define LOG_PASS(level, pass, message, ...) fmt::print(GetLogLevelAsFile(level), fg((fmt::color)GetLogLevelAsColor(level)), "[{}] Pass '{}' | " message "\n", GetLogLevelAsString(level), ::mythril::PassLogName(pass) __VA_OPT__(,) __VA_ARGS__)
+#else
+#define LOG_PASS(level, pass, message, ...) (void(0))
+#endif
 } // namespace mythril
