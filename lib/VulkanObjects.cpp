@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <optional>
 
 namespace mythril::detail {
 	void AllocatedBuffer::bufferSubData(const CTX& ctx, size_t offset, size_t size, const void* data) {
@@ -53,14 +54,15 @@ namespace mythril::detail {
 	}
 
 	VkImageLayout AllocatedTexture::getImageLayout(const SubresourceRange& range) const {
-		const std::vector<SubresourceMap<VkImageLayout>::Entry> layouts = _recordedLayout.getOverlapping(range);
-		ASSERT_MSG(!layouts.empty(), "Texture '{}' was queried for a subresource range outside the image.", getDebugName());
-		ASSERT_MSG(
-		        std::ranges::all_of(layouts, [&](const auto& entry) { return entry.value == layouts.front().value; }),
-		        "Texture '{}' has different layouts across the queried subresource range, query each subresource instead.",
-		        getDebugName()
-		);
-		return layouts.front().value;
+		std::optional<VkImageLayout> layout;
+		bool uniform = true;
+		_recordedLayout.forEachOverlapping(range, [&](const SubresourceRange&, VkImageLayout value) {
+			if (layout && *layout != value) uniform = false;
+			layout = value;
+		});
+		ASSERT_MSG(layout.has_value(), "Texture '{}' was queried for a subresource range outside the image.", getDebugName());
+		ASSERT_MSG(uniform, "Texture '{}' has different layouts across the queried subresource range, query each subresource instead.", getDebugName());
+		return *layout;
 	}
 	void AllocatedTexture::setLayout(const SubresourceRange& range, VkImageLayout layout) {
 		if (layout == VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL) {
@@ -73,7 +75,7 @@ namespace mythril::detail {
 		if (newImageLayout == VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL) {
 			newImageLayout = isDepthAttachment() ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 		}
-		for (const auto& [subRange, oldImageLayout]: _recordedLayout.getOverlapping(range)) {
+		_recordedLayout.forEachOverlapping(range, [&](const SubresourceRange& subRange, VkImageLayout oldImageLayout) {
 			vkutil::StageAccess src = vkutil::GetPipelineStageAccess(oldImageLayout);
 			vkutil::StageAccess dst = vkutil::GetPipelineStageAccess(newImageLayout);
 			if (_isSwapchainImage) {
@@ -89,7 +91,7 @@ namespace mythril::detail {
 			}
 			const VkImageSubresourceRange vkRange = {getImageAspectFlags(), subRange.baseMip, subRange.numMips, subRange.baseLayer, subRange.numLayers};
 			vkutil::ImageMemoryBarrier2(cmd, _vkImage, src, dst, oldImageLayout, newImageLayout, vkRange);
-		}
+		});
 		setLayout(range, newImageLayout);
 	}
 	// this will only do LINEAR or NEAREST filtering, hence why we do this manually for advanced techniques like our bloom

@@ -42,14 +42,13 @@ namespace mythril {
 
 		SubresourceRange wholeRange() const { return {0, _totalMips, 0, _totalLayers}; }
 
-		// each returned range is clipped to the query
-		std::vector<Entry> getOverlapping(const SubresourceRange& range) const {
-			std::vector<Entry> overlapping;
+		// fn(range, value) with each range clipped to the query, the map must not be mutated inside fn
+		template<typename Fn>
+		void forEachOverlapping(const SubresourceRange& range, Fn&& fn) const {
 			for (const Entry& entry: _entries) {
 				if (!entry.range.overlaps(range)) continue;
-				overlapping.push_back({intersect(entry.range, range), entry.value});
+				fn(intersect(entry.range, range), entry.value);
 			}
-			return overlapping;
 		}
 
 		void set(SubresourceRange range, const T& value) {

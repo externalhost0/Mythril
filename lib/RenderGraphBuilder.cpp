@@ -9,6 +9,7 @@
 #include "mythril/RenderGraphBuilder.h"
 
 #include <array>
+#include <memory_resource>
 #include <cstdlib>
 #include <fstream>
 #include <queue>
@@ -895,14 +896,17 @@ namespace mythril {
 			return;
 		ASSERT(cmd._wrapper->_cmdBuf);
 
-		std::vector<VkImageMemoryBarrier2> vkImageBarriers;
+		// per-pass scratch lives on the stack and only spills to the heap for unusually large passes
+		std::array<std::byte, 8192> scratch;
+		std::pmr::monotonic_buffer_resource arena{scratch.data(), scratch.size()};
+		std::pmr::vector<VkImageMemoryBarrier2> vkImageBarriers{&arena};
 		vkImageBarriers.reserve(compiledPass.imageBarriers.size());
-		std::vector<VkBufferMemoryBarrier2> vkBufferBarriers;
+		std::pmr::vector<VkBufferMemoryBarrier2> vkBufferBarriers{&arena};
 		vkBufferBarriers.reserve(compiledPass.bufferBarriers.size());
-		// we have to update the image associated if its a swapchain image
-		// as it changes every frame
-		std::vector<SubresourceMap<StageAccess>::Entry> mergedReads;
+		std::pmr::vector<SubresourceMap<StageAccess>::Entry> mergedReads{&arena};
 		for (const CompiledImageBarrier& req: compiledPass.imageBarriers) {
+			// we have to update the image associated if its a swapchain image
+			// as it changes every frame
 			const TextureHandle activeHandle = req.isSwapchain ? cmd._ctx->getCurrentSwapchainTexHandle() : req.handle;
 			AllocatedTexture& activeTexture = cmd._ctx->access(activeHandle);
 			auto [it, inserted] = _resourceTrackers.try_emplace(activeHandle, TextureAccessCache{SubresourceMap<StageAccess>{activeTexture.getNumMips(), activeTexture.getNumLayers()}});
@@ -911,12 +915,12 @@ namespace mythril {
 				// something outside the graph touched the image, so its last access is unknown
 				cache.masks.set(cache.masks.wholeRange(), {.stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, .access = VK_ACCESS_2_MEMORY_WRITE_BIT});
 			}
-			for (const auto& [layoutRange, currentLayout]: activeTexture._recordedLayout.getOverlapping(req.range)) {
-				for (const auto& [range, currentMask]: cache.masks.getOverlapping(layoutRange)) {
+			activeTexture._recordedLayout.forEachOverlapping(req.range, [&](const SubresourceRange& layoutRange, VkImageLayout currentLayout) {
+				cache.masks.forEachOverlapping(layoutRange, [&](const SubresourceRange& range, const StageAccess& currentMask) {
 					if (!NeedsBarrier(currentLayout, currentMask, req.dstLayout, req.dstMask)) {
 						// a later write must wait on every reader since the last barrier
 						mergedReads.push_back({range, {.stage = currentMask.stage | req.dstMask.stage, .access = currentMask.access | req.dstMask.access}});
-						continue;
+						return;
 					}
 					vkImageBarriers.push_back(
 					        {.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
@@ -931,8 +935,8 @@ namespace mythril {
 					         .image = activeTexture.getImage(),
 					         .subresourceRange = MakeVkRange(activeTexture.getFormat(), range)}
 					);
-				}
-			}
+				});
+			});
 			cache.masks.set(req.range, req.dstMask);
 			for (const auto& [range, merged]: mergedReads) {
 				cache.masks.set(range, merged);
@@ -943,7 +947,8 @@ namespace mythril {
 		}
 		for (const CompiledBufferBarrier& req: compiledPass.bufferBarriers) {
 			const AllocatedBuffer& buffer = cmd._ctx->view(req.handle);
-			const vkutil::StageAccess currentState = _bufferTrackers.contains(req.handle) ? _bufferTrackers.at(req.handle) : vkutil::StageAccess{};
+			vkutil::StageAccess& tracked = _bufferTrackers[req.handle];
+			const vkutil::StageAccess currentState = tracked;
 			if (NeedsBufferBarrier(currentState, req.dstMask)) {
 				vkBufferBarriers.push_back({
 					.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
@@ -958,7 +963,7 @@ namespace mythril {
 					.size = VK_WHOLE_SIZE}
 				);
 			}
-			_bufferTrackers[req.handle] = req.dstMask;
+			tracked = req.dstMask;
 		}
 		if (!vkImageBarriers.empty() || !vkBufferBarriers.empty()) {
 			const VkDependencyInfo dependencyInfo = {

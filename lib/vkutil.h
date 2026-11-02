@@ -11,7 +11,11 @@
 namespace mythril::vkutil {
 	using StageAccess = ::mythril::StageAccess;
 
-	VkResult SetObjectDebugName(VkDevice device, VkObjectType objectType, uint64_t handle, const char* name);
+#ifdef DEBUG
+	void SetObjectDebugName(VkDevice device, VkObjectType objectType, uint64_t handle, const char* name);
+#else
+	inline void SetObjectDebugName(VkDevice, VkObjectType, uint64_t, const char*) {}
+#endif
 	uint32_t GetTextureBytesPerPlane(uint32_t width, uint32_t height, VkFormat format, uint32_t plane);
 	uint32_t GetTextureBytesPerLayer(uint32_t width, uint32_t height, VkFormat format, uint32_t level);
 	uint32_t GetBytesPerPixel(VkFormat format);

@@ -637,6 +637,8 @@ namespace mythril {
 #endif
 		ImGui::Render();
 		ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), _wrapper->_cmdBuf);
+		// ImGui binds its own pipeline, so the rebind skip must not trust the cached one
+		_lastBoundvkPipeline = VK_NULL_HANDLE;
 	}
 #endif
 
