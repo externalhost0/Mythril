@@ -94,6 +94,7 @@ namespace mythril {
         std::vector<CompiledImageBarrier> imageBarriers;
         std::vector<CompiledBufferBarrier> bufferBarriers;
         std::function<void(CommandBuffer&)> executeCallback;
+        std::vector<IntermediateOp> intermediateOps;
         std::function<bool()> conditionCallback;
         std::optional<VkMemoryBarrier2> inOrderBarrier;
 

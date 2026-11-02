@@ -8,6 +8,7 @@
 
 #include <functional>
 #include <optional>
+#include <variant>
 #include <vector>
 #include <volk.h>
 
@@ -110,6 +111,29 @@ namespace mythril {
 		BufferAccess access = BufferAccess::ShaderRead;
 	};
 
+	struct UploadData;
+	struct CopyOp {
+		TextureHandle src;
+		TextureHandle dst;
+		bool toSwapchain = false;
+	};
+	struct BlitOp {
+		TextureHandle src;
+		TextureHandle dst;
+		bool toSwapchain = false;
+	};
+	struct UpdateOp {
+		BufferHandle dst;
+		size_t dstOffset = 0;
+		std::function<UploadData()> dataCb;
+	};
+	struct UploadOp {
+		BufferHandle dst;
+		size_t dstOffset = 0;
+		std::function<UploadData()> dataCb;
+	};
+	using IntermediateOp = std::variant<CopyOp, BlitOp, UpdateOp, UploadOp>;
+
 	// user defined information from addPass and RenderPassBuilder
 	struct PassDesc {
 		enum class Type {
@@ -122,6 +146,7 @@ namespace mythril {
 		std::string name;
 		Type type;
 		std::function<void(CommandBuffer&)> executeCallback{};
+		std::vector<IntermediateOp> intermediateOps;
 		std::vector<AttachmentDesc> attachmentOperations;
 		std::vector<TextureDependencyDesc> textureDependencyOperations;
 		std::vector<BufferDependencyDesc> bufferDependencyOperations;

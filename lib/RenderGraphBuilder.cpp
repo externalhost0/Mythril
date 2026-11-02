@@ -61,49 +61,17 @@ namespace mythril {
 #endif
 
 	IntermediateBuilder& IntermediateBuilder::blit(TextureDesc src, TextureDesc dst) {
-		TextureHandle srcHandle = src.texture.handle();
-		TextureHandle dstHandle = dst.texture.handle();
-
 		add(base._passSource, src, TextureAccess::TransferRead);
 		add(base._passSource, dst, TextureAccess::TransferWrite);
-
-		auto oldCallback = base._passSource.executeCallback;
-		if (dst.texture.getContext()->view(dst.texture.handle()).isSwapchainImage()) {
-			base._passSource.executeCallback = [oldCallback, srcHandle](CommandBuffer& cmd) {
-				if (oldCallback)
-					oldCallback(cmd);
-				cmd.cmdBlitImageToSwapchain(srcHandle);
-			};
-		} else {
-			base._passSource.executeCallback = [oldCallback, srcHandle, dstHandle](CommandBuffer& cmd) {
-				if (oldCallback)
-					oldCallback(cmd);
-				cmd.cmdBlitImage(srcHandle, dstHandle);
-			};
-		}
+		const bool toSwapchain = dst.texture.getContext()->view(dst.texture.handle()).isSwapchainImage();
+		base._passSource.intermediateOps.emplace_back(BlitOp{src.texture.handle(), dst.texture.handle(), toSwapchain});
 		return *this;
 	}
 	IntermediateBuilder& IntermediateBuilder::copy(TextureDesc src, TextureDesc dst) {
-		TextureHandle srcHandle = src.texture.handle();
-		TextureHandle dstHandle = dst.texture.handle();
-
 		add(base._passSource, src, TextureAccess::TransferRead);
 		add(base._passSource, dst, TextureAccess::TransferWrite);
-
-		auto oldCallback = base._passSource.executeCallback;
-		if (dst.texture.getContext()->view(dst.texture.handle()).isSwapchainImage()) {
-			base._passSource.executeCallback = [oldCallback, srcHandle](CommandBuffer& cmd) {
-				if (oldCallback)
-					oldCallback(cmd);
-				cmd.cmdCopyImageToSwapchain(srcHandle);
-			};
-		} else {
-			base._passSource.executeCallback = [oldCallback, srcHandle, dstHandle](CommandBuffer& cmd) {
-				if (oldCallback)
-					oldCallback(cmd);
-				cmd.cmdCopyImage(srcHandle, dstHandle);
-			};
-		}
+		const bool toSwapchain = dst.texture.getContext()->view(dst.texture.handle()).isSwapchainImage();
+		base._passSource.intermediateOps.emplace_back(CopyOp{src.texture.handle(), dst.texture.handle(), toSwapchain});
 		return *this;
 	}
 
@@ -123,69 +91,70 @@ namespace mythril {
 	//	return *this;
 	//}
 	IntermediateBuilder& IntermediateBuilder::update(Buffer& buffer, std::function<UploadData()> dataCb, size_t dstOffset) {
-		BufferHandle handle = buffer.handle();
 		add(base._passSource, buffer, BufferAccess::TransferWrite);
-
-		auto oldCallback = base._passSource.executeCallback;
-		base._passSource.executeCallback = [oldCallback, handle, dataCb = std::move(dataCb), dstOffset](CommandBuffer& cmd) {
-			if (oldCallback)
-				oldCallback(cmd);
-			if (cmd.isDrying())
-				return;
-
-			const UploadData data = dataCb();
-			ASSERT_PASS(data.data, *cmd._activePass, "IntermediateBuilder::update called with null data.");
-			ASSERT_PASS(data.size > 0 && data.size <= 65536, *cmd._activePass, "IntermediateBuilder::update requires 0 < size <= 65'536 (64KB). Please call IntermediateBuilder::upload instead!");
-			ASSERT_PASS(data.size % 4 == 0, *cmd._activePass, "IntermediateBuilder::update size must be a multiple of 4 bytes.");
-			ASSERT_PASS(dstOffset % 4 == 0, *cmd._activePass, "IntermediateBuilder::update offset must be a multiple of 4 bytes.");
-
-			AllocatedBuffer& buf = cmd._ctx->access(handle);
-			ASSERT_PASS(dstOffset + data.size <= buf._bufferSize, *cmd._activePass, "IntermediateBuilder::update: offset + size exceeds buffer '{}' size.", buf._debugName);
-			ASSERT_PASS(buf._vkUsageFlags & VK_BUFFER_USAGE_TRANSFER_DST_BIT, *cmd._activePass, "IntermediateBuilder::update: buffer '{}' was not created with TRANSFER_DST usage.", buf._debugName);
-
-			vkCmdUpdateBuffer(cmd._wrapper->_cmdBuf, buf._vkBuffer, dstOffset, data.size, data.data);
-		};
+		base._passSource.intermediateOps.emplace_back(UpdateOp{buffer.handle(), dstOffset, std::move(dataCb)});
 		return *this;
 	}
 	IntermediateBuilder& IntermediateBuilder::upload(Buffer& buffer, std::function<UploadData()> dataCb, size_t dstOffset) {
-		BufferHandle handle = buffer.handle();
 		add(base._passSource, buffer, BufferAccess::TransferWrite);
 
 		// fixme: if somehthing flakely inside an upload callback happens, this is the culprit
 #ifdef DEBUG
 		if (const size_t size = dataCb().size; size > 0 && size <= 65536)
-			LOG_PASS(LogType::Suggestion, base._passSource, "upload into buffer '{}' is {} bytes (<= 64KB), use IntermediateBuilder::update instead for a faster operation!", buffer.getContext()->view(handle).getDebugName(), size);
+			LOG_PASS(LogType::Suggestion, base._passSource, "upload into buffer '{}' is {} bytes (<= 64KB), use IntermediateBuilder::update instead for a faster operation!", buffer.getContext()->view(buffer.handle()).getDebugName(), size);
 #endif
-		auto oldCallback = base._passSource.executeCallback;
-		base._passSource.executeCallback = [oldCallback, handle, dataCb = std::move(dataCb), dstOffset](CommandBuffer& cmd) {
-			if (oldCallback)
-				oldCallback(cmd);
-			if (cmd.isDrying())
-				return;
-
-			const UploadData data = dataCb();
-			ASSERT_PASS(data.data, *cmd._activePass, "IntermediateBuilder::upload called with null data.");
-			ASSERT_PASS(data.size > 0, *cmd._activePass, "IntermediateBuilder::upload size must be greater than 0.");
-
-			AllocatedBuffer& buf = cmd._ctx->access(handle);
-			ASSERT_PASS(dstOffset + data.size <= buf._bufferSize, *cmd._activePass, "IntermediateBuilder::upload: offset + size exceeds buffer '{}' size.", buf._debugName);
-			ASSERT_PASS(
-			        buf.isMapped() || (buf._vkUsageFlags & VK_BUFFER_USAGE_TRANSFER_DST_BIT), *cmd._activePass, "IntermediateBuilder::upload: device buffer '{}' was not created with TRANSFER_DST usage.", buf._debugName
-			);
-			if (buf.isMapped()) {
-				buf.bufferSubData(*cmd._ctx, dstOffset, data.size, data.data);
-				return;
-			}
-
-			auto copies = cmd._ctx->_staging->stageBufferCopy(buf, data.data, data.size, dstOffset);
-			cmd._ctx->_staging->recordBufferCopies(cmd._wrapper->_cmdBuf, copies);
-		};
+		base._passSource.intermediateOps.emplace_back(UploadOp{buffer.handle(), dstOffset, std::move(dataCb)});
 		return *this;
 	}
 
 	void IntermediateBuilder::finish() const {
+		ASSERT_PASS(!base._passSource.intermediateOps.empty(), base._passSource, "intermediate pass has no operations!");
 		this->base._rGraph._passDescriptions.push_back(base._passSource);
 		this->base._rGraph._hasCompiled = false;
+	}
+
+	void RenderGraph::RecordIntermediateOps(CommandBuffer& cmd, const CompiledPass& pass) {
+		for (const IntermediateOp& op: pass.intermediateOps) {
+			if (const auto* copy = std::get_if<CopyOp>(&op)) {
+				if (copy->toSwapchain)
+					cmd.cmdCopyImageToSwapchain(copy->src);
+				else
+					cmd.cmdCopyImage(copy->src, copy->dst);
+			} else if (const auto* blit = std::get_if<BlitOp>(&op)) {
+				if (blit->toSwapchain)
+					cmd.cmdBlitImageToSwapchain(blit->src);
+				else
+					cmd.cmdBlitImage(blit->src, blit->dst);
+			} else if (const auto* update = std::get_if<UpdateOp>(&op)) {
+				const UploadData data = update->dataCb();
+				ASSERT_PASS(data.data, pass, "IntermediateBuilder::update called with null data.");
+				ASSERT_PASS(data.size > 0 && data.size <= 65536, pass, "IntermediateBuilder::update requires 0 < size <= 65'536 (64KB). Please call IntermediateBuilder::upload instead!");
+				ASSERT_PASS(data.size % 4 == 0, pass, "IntermediateBuilder::update size must be a multiple of 4 bytes.");
+				ASSERT_PASS(update->dstOffset % 4 == 0, pass, "IntermediateBuilder::update offset must be a multiple of 4 bytes.");
+
+				AllocatedBuffer& buf = cmd._ctx->access(update->dst);
+				ASSERT_PASS(update->dstOffset + data.size <= buf._bufferSize, pass, "IntermediateBuilder::update: offset + size exceeds buffer '{}' size.", buf._debugName);
+				ASSERT_PASS(buf._vkUsageFlags & VK_BUFFER_USAGE_TRANSFER_DST_BIT, pass, "IntermediateBuilder::update: buffer '{}' was not created with TRANSFER_DST usage.", buf._debugName);
+
+				vkCmdUpdateBuffer(cmd._wrapper->_cmdBuf, buf._vkBuffer, update->dstOffset, data.size, data.data);
+			} else if (const auto* upload = std::get_if<UploadOp>(&op)) {
+				const UploadData data = upload->dataCb();
+				ASSERT_PASS(data.data, pass, "IntermediateBuilder::upload called with null data.");
+				ASSERT_PASS(data.size > 0, pass, "IntermediateBuilder::upload size must be greater than 0.");
+
+				AllocatedBuffer& buf = cmd._ctx->access(upload->dst);
+				ASSERT_PASS(upload->dstOffset + data.size <= buf._bufferSize, pass, "IntermediateBuilder::upload: offset + size exceeds buffer '{}' size.", buf._debugName);
+				ASSERT_PASS(
+				        buf.isMapped() || (buf._vkUsageFlags & VK_BUFFER_USAGE_TRANSFER_DST_BIT), pass, "IntermediateBuilder::upload: device buffer '{}' was not created with TRANSFER_DST usage.", buf._debugName
+				);
+				if (buf.isMapped()) {
+					buf.bufferSubData(*cmd._ctx, upload->dstOffset, data.size, data.data);
+					continue;
+				}
+				auto copies = cmd._ctx->_staging->stageBufferCopy(buf, data.data, data.size, upload->dstOffset);
+				cmd._ctx->_staging->recordBufferCopies(cmd._wrapper->_cmdBuf, copies);
+			}
+		}
 	}
 
 	void BasePassBuilder::setExecuteCallback(const std::function<void(CommandBuffer& cmd)>& callback) {
@@ -512,6 +481,8 @@ namespace mythril {
 		// execute() after acquireCommand() has installed the real cmd buffer).
 		const CommandBuffer saved = rCtx._currentCommandBuffer;
 		for (const CompiledPass& pass: _compiledPasses) {
+			if (pass.type == PassDesc::Type::Intermediate)
+				continue;
 			// by default CommandBuffer will have _isDryRun = true
 			CommandBuffer dryCmd;
 			dryCmd._ctx = &rCtx;
@@ -844,6 +815,7 @@ namespace mythril {
 			compiled_pass.queue = sanitizeQueue(pass_desc.queue, pass_desc);
 			compiled_pass.type = pass_desc.type;
 			compiled_pass.executeCallback = pass_desc.executeCallback;
+			compiled_pass.intermediateOps = pass_desc.intermediateOps;
 			compiled_pass.layerCount = pass_desc.layerCount;
 			compiled_pass.viewMask = pass_desc.viewMask;
 			compiled_pass.conditionCallback = pass_desc.conditionCallback;
@@ -1030,9 +1002,12 @@ namespace mythril {
 			cmd._currentPipelineHandle = {};
 			cmd._activePass = &pass;
 			cmd._hasDispatchedInPass = false;
-			// we already checked if it has an execute callback so it should be guaranteed
 			if (isGraphics) cmd.cmdBeginRenderingEXT(pass.layerCount, pass.viewMask);
-			pass.executeCallback(cmd);
+			if (pass.type == PassDesc::Type::Intermediate)
+				RecordIntermediateOps(cmd, pass);
+			else
+				// we already checked if it has an execute callback so it should be guaranteed
+				pass.executeCallback(cmd);
 			if (isGraphics) cmd.cmdEndRenderingEXT();
 		}
 		if (!cmd._ctx->isHeadless()) {
