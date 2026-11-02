@@ -43,7 +43,7 @@ namespace mythril {
 			// we use 9 because 0-8 are assigned already by slang
 			kAccelerationStructure = 9,
 
-			// this MUST be manually set when reusing binding indices
+			// this MUST be manually updated
 			kNumOfBinds = 4
 		};
 	} // namespace BindlessSpaceIndex
@@ -2140,7 +2140,7 @@ namespace mythril {
 
 	CommandBuffer& CTX::acquireCommand(CommandBuffer::Type type) {
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_ACQUIRE);
-		ASSERT_MSG(!_currentCommandBuffer._ctx, "Cannot open more than 1 CommandBuffer simultaneously!");
+		ASSERT_MSG(!_currentCommandBuffer._ctx, "Cannot open more than 1 CommandBuffer on the same thread simultaneously!");
 		_staging->resetPending();
 		if (type == CommandBuffer::Type::Graphics) {
 			VkSemaphore acquire_semaphore = _swapchain->acquire();
