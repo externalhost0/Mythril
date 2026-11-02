@@ -983,7 +983,7 @@ namespace mythril {
 		// auto-recompile if any resource topology changed since last compile
 		// (texture resize, swapchain recreate/destroy).
 		if (_compiledEpoch != rCtx._resourceEpoch) {
-			LOG_SYSTEM(LogType::Info, "Performing recompile on RenderGraph!");
+			LOG_SYSTEM(LogType::Info, "Now performing recompile on rendergraph...");
 			compile(rCtx);
 		}
 

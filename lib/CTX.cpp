@@ -156,7 +156,7 @@ namespace mythril {
 				vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR, reinterpret_cast<uint64_t>(_dummyTLAS), "Internal_Dummy_TLAS");
 			}
 			// initial descriptor pool creation
-			this->growBindlessDescriptorPoolImpl(this->_currentMaxTextureCount, this->_currentMaxSamplerCount, this->_currentMaxAccelerationCount);
+			this->growBindlessDescriptorPoolImpl(this->_currentMaxSamplerCount, this->_currentMaxTextureCount, this->_currentMaxAccelerationCount);
 		}
 	}
 
@@ -314,7 +314,10 @@ namespace mythril {
 		AssignIfValid(new_swapchain_spec.colorSpace, spec.colorSpace, VK_COLOR_SPACE_MAX_ENUM_KHR);
 		AssignIfValid(new_swapchain_spec.presentMode, spec.presentMode, VK_PRESENT_MODE_MAX_ENUM_KHR);
 
+		ASSERT_MSG(!_currentCommandBuffer._ctx, "Cannot create a swapchain while a CommandBuffer is open, deferred tasks are flushed here.");
 		VK_CHECK(vkDeviceWaitIdle(this->_vkDevice));
+		// trivial win which opens the ability for the swapchian to reuse existing indicies that are now available
+		waitDeferredTasks();
 		this->_swapchain = std::make_unique<Swapchain>(*this, new_swapchain_spec);
 		this->_timelineSemaphore = vkutil::CreateTimelineSemaphore(_vkDevice, this->_swapchain->getNumOfSwapchainImages() - 1);
 		// we need to store in the situation where the swapcahin is deleted and we want to use the last swapchains settings
@@ -332,7 +335,6 @@ namespace mythril {
 		uint32_t newMaxTextures = _currentMaxTextureCount;
 		uint32_t newMaxAccelStructures = _currentMaxAccelerationCount;
 
-		// grow max counts to accomadate ALL possiblely cretade textures and samplers
 		while (_samplerPool._objects.size() > newMaxSamplers) {
 			newMaxSamplers *= 2;
 		}
@@ -342,10 +344,10 @@ namespace mythril {
 		while (_accelerationStructurePool._objects.size() > newMaxAccelStructures) {
 			newMaxAccelStructures *= 2;
 		}
-		if (newMaxSamplers != _currentMaxSamplerCount || newMaxTextures != _currentMaxTextureCount || newMaxAccelStructures != _currentMaxAccelerationCount || _awaitingNewImmutableSamplers) {
+		if (newMaxSamplers != _currentMaxSamplerCount || newMaxTextures != _currentMaxTextureCount || newMaxAccelStructures != _currentMaxAccelerationCount) {
 			// actual call site for growing
 			this->growBindlessDescriptorPoolImpl(newMaxSamplers, newMaxTextures, newMaxAccelStructures);
-			// pipeline layouts embed the old DSL's descriptor counts, so they are incompatible with the new set and must be rebuilt
+			// pipeline layouts include the old DSL's descriptor counts so they are incompatible with the new set and must be rebuilt
 			for (auto& obj : _graphicsPipelinePool._objects)
 				invalidateBindlessPipelineImpl(obj._obj._shared);
 			for (auto& obj : _computePipelinePool._objects)
@@ -353,159 +355,122 @@ namespace mythril {
 			for (auto& obj : _rayTracingPipelinePool._objects)
 				invalidateBindlessPipelineImpl(obj._obj._shared);
 		}
-		// SAMPLERS //
-		std::vector<VkDescriptorImageInfo> infoSamplers;
-		infoSamplers.reserve(_samplerPool._objects.size());
-		// our linear sampler is the backup/resolve
-		VkSampler linearSampler = _samplerPool._objects[0]._obj._vkSampler;
-		for (const auto& obj: _samplerPool._objects) {
-			infoSamplers.push_back({.sampler = obj._obj._vkSampler ? obj._obj._vkSampler : linearSampler, .imageView = VK_NULL_HANDLE, .imageLayout = VK_IMAGE_LAYOUT_UNDEFINED});
-		}
+		// only reached when a slot write failed, so the target is a fresh set after a grow or one that was never bound
+		_awaitingCreation = false;
+		writeSamplerDescriptorsImpl(0, static_cast<uint32_t>(_samplerPool._objects.size()));
+		writeTextureDescriptorsImpl(0, static_cast<uint32_t>(_texturePool._objects.size()));
+		writeAccelerationStructureDescriptorsImpl(0, static_cast<uint32_t>(_accelerationStructurePool._objects.size()));
+	}
 
-		// IMAGES //
-		std::vector<VkDescriptorImageInfo> infoSampledImages;
-		std::vector<VkDescriptorImageInfo> infoStorageImages;
-		const uint32_t numTextureObjects = _texturePool.numObjects();
-		infoSampledImages.reserve(numTextureObjects);
-		infoStorageImages.reserve(numTextureObjects);
+	void CTX::writeTextureDescriptorsImpl(uint32_t first, uint32_t count) {
+		if (_awaitingCreation || _vkBindlessDSet == VK_NULL_HANDLE || first + count > _currentMaxTextureCount) {
+			_awaitingCreation = true;
+			return;
+		}
+		if (count == 0)
+			return;
 		// our dummyTexture, the cross pattern, is the backup/resolve
 		VkImageView dummyImageView = _texturePool._objects[0]._obj._vkImageView;
-		for (const auto& obj: _texturePool._objects) {
-			const AllocatedTexture& img = obj._obj;
+		// sampled infos first, storage infos after, so each binding gets one contiguous run
+		std::vector<VkDescriptorImageInfo> infos(2 * count);
+		for (uint32_t k = 0; k < count; ++k) {
+			const AllocatedTexture& img = _texturePool._objects[first + k]._obj;
 			// swapchain images must not be in bindless, after present, the drawable is returned to
 			// already presenting this drawable on moltenvk
-			const bool skipForBindless = img.isSwapchainImage();
-			VkImageView view = skipForBindless ? dummyImageView : obj._obj._vkImageView;
-			VkImageView storageView = skipForBindless ? dummyImageView : (obj._obj._vkImageViewStorage ? obj._obj._vkImageViewStorage : obj._obj._vkImageView);
 			// multisampled images cannot be directly accessed from shaders
-			const bool isTextureAvailable = (img.getSampleCount() & VK_SAMPLE_COUNT_1_BIT) == VK_SAMPLE_COUNT_1_BIT;
-			const bool isSampledImage = isTextureAvailable && img.isSampledImage() && !skipForBindless;
-			const bool isStorageImage = isTextureAvailable && img.isStorageImage() && !skipForBindless;
-			// sampled images have no either layout need but shader_read_only
-			infoSampledImages.push_back(
-			        VkDescriptorImageInfo{
-			            .sampler = VK_NULL_HANDLE,
-			            .imageView = isSampledImage ? view : dummyImageView,
-			            .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-			        }
-			);
-			ASSERT_MSG(infoSampledImages.back().imageView != VK_NULL_HANDLE, "Sampled imageView is null!");
+			const bool isTextureAvailable = !img.isSwapchainImage() && (img.getSampleCount() & VK_SAMPLE_COUNT_1_BIT) == VK_SAMPLE_COUNT_1_BIT;
+			VkImageView storageView = img._vkImageViewStorage ? img._vkImageViewStorage : img._vkImageView;
+			infos[k] = {
+				.sampler = VK_NULL_HANDLE,
+				.imageView = isTextureAvailable && img.isSampledImage() ? img._vkImageView : dummyImageView,
+				.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+			};
+			ASSERT_MSG(infos[k].imageView != VK_NULL_HANDLE, "Sampled imageView is null!");
 			// storage images could be used for anything, per in general layout
-			infoStorageImages.push_back(
-			        VkDescriptorImageInfo{
-			            .sampler = VK_NULL_HANDLE,
-			            .imageView = isStorageImage ? storageView : dummyImageView,
-			            .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
-			        }
-			);
-		}
-		// BUFFERS //
-		// currently we do not support bindless buffers, though this is pretty easy to implement
-		//		std::vector<VkDescriptorBufferInfo> infoUniformBuffers;
-		//		std::vector<VkDescriptorBufferInfo> infoStorageBuffers;
-		//		const uint32_t numBufferObjects = _bufferPool.numObjects();
-		//		for (const auto& obj : _bufferPool._objects) {
-		//			const AllocatedBuffer& buf = obj._obj;
-		//			// get vulkan objects we want
-		//			VkBuffer buffer = obj._obj._vkBuffer;
-		//			// get states we need to decide on how to add to vectors
-		//			const bool isUniformBuffer = buf.isUniformBuffer();
-		//			const bool isStorageBuffer = buf.isStorageBuffer();
-		//			infoUniformBuffers.push_back(VkDescriptorBufferInfo{
-		//				.buffer = buffer,
-		//				.offset = 0,
-		//				.range = isUniformBuffer ? buf._bufferSize : VK_WHOLE_SIZE
-		//			});
-		//			LOG_DEBUG("{} - {}", buf._debugName, _bufferPool.findObject(&obj._obj).index());
-		//			ASSERT_MSG(infoUniformBuffers.back().buffer != VK_NULL_HANDLE, "Uniform VkBuffer is VK_NULL_HANDLE!");
-		//			infoStorageBuffers.push_back(VkDescriptorBufferInfo{
-		//				.buffer = buffer,
-		//				.offset = 0,
-		//				.range = isStorageBuffer ? buf._bufferSize : VK_WHOLE_SIZE
-		//			});
-		//		}
-
-		// ACCELERATION STRUCTURES //
-		std::vector<VkAccelerationStructureKHR> handlesAccelerationStructures;
-		handlesAccelerationStructures.reserve(_accelerationStructurePool._objects.size());
-		for (const auto& obj : _accelerationStructurePool._objects) {
-			const bool isLiveTLAS = obj._obj._isTLAS && obj._obj._vkAccelerationStructure != VK_NULL_HANDLE;
-			handlesAccelerationStructures.push_back(isLiveTLAS ? obj._obj._vkAccelerationStructure : _dummyTLAS);
-		}
-
-
-
-		// now seutp write
-		VkWriteDescriptorSet write[BindlessSpaceIndex::kNumOfBinds] = {};
-		uint32_t numWrites = 0;
-		if (!infoSamplers.empty()) {
-			write[numWrites++] = VkWriteDescriptorSet{
-			    .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-			    .dstSet = _vkBindlessDSet,
-			    .dstBinding = BindlessSpaceIndex::kSampler,
-			    .dstArrayElement = 0,
-			    .descriptorCount = static_cast<uint32_t>(infoSamplers.size()),
-			    .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER,
-			    .pImageInfo = infoSamplers.data(),
+			infos[count + k] = {
+				.sampler = VK_NULL_HANDLE,
+				.imageView = isTextureAvailable && img.isStorageImage() ? storageView : dummyImageView,
+				.imageLayout = VK_IMAGE_LAYOUT_GENERAL,
 			};
 		}
+		const VkWriteDescriptorSet writes[] = {
+			VkWriteDescriptorSet{
+				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+				.dstSet = _vkBindlessDSet,
+				.dstBinding = BindlessSpaceIndex::kSampledImage,
+				.dstArrayElement = first,
+				.descriptorCount = count,
+				.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
+				.pImageInfo = infos.data(),
+			},
+			VkWriteDescriptorSet{
+				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+				.dstSet = _vkBindlessDSet,
+				.dstBinding = BindlessSpaceIndex::kStorageImage,
+				.dstArrayElement = first,
+				.descriptorCount = count,
+				.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+				.pImageInfo = infos.data() + count,
+			},
+		};
+		vkUpdateDescriptorSets(_vkDevice, 2, writes, 0, nullptr);
+	}
 
-		// currently not supported as there is no way for the user to make a combined image+sampler
-		//		if (!infoSamplers.empty()) {
-		//			write[numWrites++] = VkWriteDescriptorSet{
-		//					.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-		//					.dstSet = _vkDSet,
-		//					.dstBinding = BindlessSpaceIndex::kCombinedImageSampler,
-		//					.dstArrayElement = 0,
-		//					.descriptorCount = static_cast<uint32_t>(infoSampledImages.size()),
-		//					.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-		//					.pImageInfo = infoSamplers.data(),
-		//			};
-		//		}
-
-		if (!infoSampledImages.empty()) {
-			write[numWrites++] = VkWriteDescriptorSet{
-			    .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-			    .dstSet = _vkBindlessDSet,
-			    .dstBinding = BindlessSpaceIndex::kSampledImage,
-			    .dstArrayElement = 0,
-			    .descriptorCount = static_cast<uint32_t>(infoSampledImages.size()),
-			    .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
-			    .pImageInfo = infoSampledImages.data(),
-			};
+	void CTX::writeSamplerDescriptorsImpl(uint32_t first, uint32_t count) {
+		if (_awaitingCreation || _vkBindlessDSet == VK_NULL_HANDLE || first + count > _currentMaxSamplerCount) {
+			_awaitingCreation = true;
+			return;
 		}
-		if (!infoStorageImages.empty()) {
-			write[numWrites++] = VkWriteDescriptorSet{
-			    .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-			    .dstSet = _vkBindlessDSet,
-			    .dstBinding = BindlessSpaceIndex::kStorageImage,
-			    .dstArrayElement = 0,
-			    .descriptorCount = static_cast<uint32_t>(infoStorageImages.size()),
-			    .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-			    .pImageInfo = infoStorageImages.data(),
-			};
+		if (count == 0)
+			return;
+		// our linear sampler is the backup/resolve
+		const VkSampler linearSampler = _samplerPool._objects[0]._obj._vkSampler;
+		std::vector<VkDescriptorImageInfo> infos;
+		infos.reserve(count);
+		for (uint32_t i = first; i < first + count; ++i) {
+			const VkSampler sampler = _samplerPool._objects[i]._obj._vkSampler;
+			infos.push_back({.sampler = sampler ? sampler : linearSampler, .imageView = VK_NULL_HANDLE, .imageLayout = VK_IMAGE_LAYOUT_UNDEFINED});
+		}
+		const VkWriteDescriptorSet write = {
+			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+			.dstSet = _vkBindlessDSet,
+			.dstBinding = BindlessSpaceIndex::kSampler,
+			.dstArrayElement = first,
+			.descriptorCount = count,
+			.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER,
+			.pImageInfo = infos.data(),
+		};
+		vkUpdateDescriptorSets(_vkDevice, 1, &write, 0, nullptr);
+	}
+
+	void CTX::writeAccelerationStructureDescriptorsImpl(uint32_t first, uint32_t count) {
+		if (_awaitingCreation || _vkBindlessDSet == VK_NULL_HANDLE || first + count > _currentMaxAccelerationCount) {
+			_awaitingCreation = true;
+			return;
+		}
+		if (count == 0 || _dummyTLAS == VK_NULL_HANDLE)
+			return;
+		std::vector<VkAccelerationStructureKHR> handles;
+		handles.reserve(count);
+		for (uint32_t i = first; i < first + count; ++i) {
+			const AllocatedAccelerationStructure& as = _accelerationStructurePool._objects[i]._obj;
+			handles.push_back(as._isTLAS && as._vkAccelerationStructure != VK_NULL_HANDLE ? as._vkAccelerationStructure : _dummyTLAS);
 		}
 		const VkWriteDescriptorSetAccelerationStructureKHR writeAccelStruct = {
 			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR,
-			.accelerationStructureCount = static_cast<uint32_t>(handlesAccelerationStructures.size()),
-			.pAccelerationStructures = handlesAccelerationStructures.data(),
+			.accelerationStructureCount = count,
+			.pAccelerationStructures = handles.data(),
 		};
-		if (!handlesAccelerationStructures.empty() && _dummyTLAS != VK_NULL_HANDLE) {
-			write[numWrites++] = VkWriteDescriptorSet{
-				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-				.pNext = &writeAccelStruct,
-				.dstSet = _vkBindlessDSet,
-				.dstBinding = BindlessSpaceIndex::kAccelerationStructure,
-				.dstArrayElement = 0,
-				.descriptorCount = static_cast<uint32_t>(handlesAccelerationStructures.size()),
-				.descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR
-			};
-		}
-		if (numWrites) {
-			_immGraphics->wait(_immGraphics->getLastSubmitHandle());
-			vkUpdateDescriptorSets(_vkDevice, numWrites, write, 0, nullptr);
-		}
-		_awaitingCreation = false;
+		const VkWriteDescriptorSet write = {
+			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+			.pNext = &writeAccelStruct,
+			.dstSet = _vkBindlessDSet,
+			.dstBinding = BindlessSpaceIndex::kAccelerationStructure,
+			.dstArrayElement = first,
+			.descriptorCount = count,
+			.descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR,
+		};
+		vkUpdateDescriptorSets(_vkDevice, 1, &write, 0, nullptr);
 	}
 
 	void CTX::growBindlessDescriptorPoolImpl(uint32_t newMaxSamplerCount, uint32_t newMaxTextureCount, uint32_t newMaxAccelStructureCount) {
@@ -551,6 +516,7 @@ namespace mythril {
 		for (VkDescriptorBindingFlags& bindingFlag : bindingFlags) {
 			bindingFlag = dsbinding_flags;
 		}
+		// we only have one conditional set so account for it during runtime here
 		const uint32_t numberofBindsNeeded = isExtensionEnabled(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME) ? BindlessSpaceIndex::kNumOfBinds : BindlessSpaceIndex::kNumOfBinds - 1;
 		// ReSharper disable once CppVariableCanBeMadeConstexpr
 		const VkDescriptorSetLayoutBindingFlagsCreateInfo dsl_bf_ci = {
@@ -600,7 +566,6 @@ namespace mythril {
 		};
 		VK_CHECK(vkAllocateDescriptorSets(_vkDevice, &ds_ai, &_vkBindlessDSet));
 		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_DESCRIPTOR_SET, reinterpret_cast<uint64_t>(_vkBindlessDSet), "Mythril's Bindless Descriptor Set");
-		_awaitingNewImmutableSamplers = false;
 	}
 
 	VkDeviceAddress CTX::gpuAddress(BufferHandle handle, size_t offset) const {
@@ -1206,7 +1171,7 @@ namespace mythril {
 		snprintf(obj._debugName, sizeof(obj._debugName), "%s", spec.debugName);
 		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_SAMPLER, reinterpret_cast<uint64_t>(obj._vkSampler), obj.getDebugName().data());
 		SamplerHandle handle = _samplerPool.create(std::move(obj));
-		_awaitingCreation = true;
+		writeSamplerDescriptorsImpl(handle.index(), 1);
 		return {this, handle};
 	}
 	Buffer CTX::createBuffer(BufferSpec spec) {
@@ -1392,7 +1357,9 @@ namespace mythril {
 		image->setLayout(image->getWholeRange(), VK_IMAGE_LAYOUT_UNDEFINED);
 		image->_mappedPtr = newImage._mappedPtr;
 		++_resourceEpoch;
-		_awaitingCreation = true;
+		// the slot is rewritten in place, pending frames may still read the old view through it
+		_immGraphics->wait(_immGraphics->getLastSubmitHandle());
+		writeTextureDescriptorsImpl(handle.index(), 1);
 	}
 
 	Texture CTX::createTexture(TextureSpec spec) {
@@ -1470,8 +1437,8 @@ namespace mythril {
 		snprintf(d, sizeof(d), "%s - Default View", spec.debugName);
 		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_IMAGE_VIEW, reinterpret_cast<uint64_t>(obj._vkImageView), d);
 		TextureHandle handle = _texturePool.create(std::move(obj));
+		writeTextureDescriptorsImpl(handle.index(), 1);
 		// if we have some data we want to upload, do that
-		_awaitingCreation = true;
 		if (spec.initialData) {
 			// enforces that the number of miplevels we want to upload will be accomadated by the texture
 			ASSERT(spec.dataNumMipLevels <= spec.numMipLevels);
@@ -1531,7 +1498,7 @@ namespace mythril {
 		snprintf(copied_obj._debugName, sizeof(copied_obj._debugName), "%s", spec.debugName);
 		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_IMAGE_VIEW, reinterpret_cast<uint64_t>(copied_obj._vkImageView), copied_obj.getDebugName().data());
 		TextureHandle new_handle = this->_texturePool.create(std::move(copied_obj));
-		this->_awaitingCreation = true;
+		writeTextureDescriptorsImpl(new_handle.index(), 1);
 		return {new_handle};
 	}
 	AllocatedTexture CTX::createTextureImpl(
@@ -2028,7 +1995,7 @@ namespace mythril {
 
 		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR, reinterpret_cast<uint64_t>(obj._vkAccelerationStructure), obj.getDebugName().data());
 		const AccelerationStructureHandle handle = _accelerationStructurePool.create(std::move(obj));
-		_awaitingCreation = true;
+		writeAccelerationStructureDescriptorsImpl(handle.index(), 1);
 		return { this, handle };
 	}
 
@@ -2316,6 +2283,10 @@ namespace mythril {
 			_imguiPlugin.removeImageDescriptor(handle);
 		}
 #endif
+		deferTask(std::packaged_task<void()>([this, index = handle.index()]() {
+			writeTextureDescriptorsImpl(index, 1);
+			_texturePool.release(index);
+		}));
 		for (const auto& viewHandle : image->_additionalViews | std::views::values) {
 			destroy(viewHandle);
 		}
@@ -2331,8 +2302,7 @@ namespace mythril {
 			}
 			deferTask(std::packaged_task<void()>([vma = _vmaAllocator, image = image->_vkImage, allocation = image->_vmaAllocation]() { vmaDestroyImage(vma, image, allocation); }));
 		}
-		_texturePool.destroy(handle);
-		_awaitingCreation = true;
+		_texturePool.retire(handle);
 	}
 	void CTX::destroy(SamplerHandle handle) {
 		AllocatedSampler* sampler = _samplerPool.get(handle);
@@ -2343,8 +2313,12 @@ namespace mythril {
 			_imguiPlugin.removeImageDescriptors(handle);
 		}
 #endif
+		deferTask(std::packaged_task<void()>([this, index = handle.index()]() {
+			writeSamplerDescriptorsImpl(index, 1);
+			_samplerPool.release(index);
+		}));
 		deferTask(std::packaged_task<void()>([device = _vkDevice, sampler = sampler->_vkSampler]() { vkDestroySampler(device, sampler, nullptr); }));
-		_samplerPool.destroy(handle);
+		_samplerPool.retire(handle);
 	}
 	void CTX::destroy(ShaderHandle handle) {
 		AllocatedShader* shader = _shaderPool.get(handle);
@@ -2387,9 +2361,12 @@ namespace mythril {
 		if (!acceleration_structure)
 			return;
 
+		deferTask(std::packaged_task<void()>([this, index = handle.index()]() {
+			writeAccelerationStructureDescriptorsImpl(index, 1);
+			_accelerationStructurePool.release(index);
+		}));
 		deferTask(std::packaged_task<void()>([device = _vkDevice, accel_struct = acceleration_structure->_vkAccelerationStructure]() { vkDestroyAccelerationStructureKHR(device, accel_struct, nullptr); }));
-		_accelerationStructurePool.destroy(handle);
-		_awaitingCreation = true;
+		_accelerationStructurePool.retire(handle);
 	}
 
 	// ---- texture subresource views ----

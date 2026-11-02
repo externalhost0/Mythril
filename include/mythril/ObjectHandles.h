@@ -91,6 +91,14 @@ namespace mythril {
 		void destroy(HandleType handle) {
 			if (handle.empty())
 				return;
+			retire(handle);
+			release(handle.index());
+		}
+
+		// invalidates the handle now, the index stays off the free list until release()
+		void retire(HandleType handle) {
+			if (handle.empty())
+				return;
 
 			const uint32_t index = handle.index();
 			assert(index < _objects.size());
@@ -98,9 +106,15 @@ namespace mythril {
 
 			_objects[index]._obj = ActualObject{};
 			++_objects[index]._gen;
+			_numObjects--;
+		}
+
+		void release(uint32_t index) {
+			// CTX teardown clears pools before deferred releases run
+			if (index >= _objects.size())
+				return;
 			_objects[index]._nextFree = _freeListHead;
 			_freeListHead = index;
-			_numObjects--;
 		}
 
 		ActualObject* get(HandleType handle) {

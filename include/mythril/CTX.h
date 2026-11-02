@@ -332,6 +332,9 @@ namespace mythril {
 
 
 		void checkAndUpdateBindlessDescriptorSetImpl();
+		void writeTextureDescriptorsImpl(uint32_t first, uint32_t count);
+		void writeSamplerDescriptorsImpl(uint32_t first, uint32_t count);
+		void writeAccelerationStructureDescriptorsImpl(uint32_t first, uint32_t count);
 		void growBindlessDescriptorPoolImpl(uint32_t newMaxSamplerCount, uint32_t newMaxTextureCount, uint32_t newMaxAccelStructureCount);
 
 		template<typename T>
@@ -422,7 +425,6 @@ namespace mythril {
 
 		// for updating the bindless set
 		bool _awaitingCreation = false;
-		bool _awaitingNewImmutableSamplers = false;
 		uint32_t _currentMaxTextureCount = 16;
 		uint16_t _currentMaxSamplerCount = 16;
 		uint32_t _currentMaxAccelerationCount = 16;
