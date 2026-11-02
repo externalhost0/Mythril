@@ -149,17 +149,6 @@ namespace mythril {
 			return HandleType(index, _objects[index]._gen);
 		}
 
-		HandleType findObject(const ActualObject* obj) {
-			if (!obj)
-				return {};
-			for (uint32_t idx = 0; idx < _objects.size(); ++idx) {
-				if (&_objects[idx]._obj == obj) {
-					return HandleType(idx, _objects[idx]._gen);
-				}
-			}
-			return {};
-		}
-
 		void clear() {
 			_objects.clear();
 			_freeListHead = kListEndSentinel;

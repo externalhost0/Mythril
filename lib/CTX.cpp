@@ -185,55 +185,22 @@ namespace mythril {
 		}
 		this->_dummyTLASBuffer.release();
 
-		// TODO::fixing the allocation not being proerly freed for VMA
-		if (_shaderPool.numObjects()) {
-			LOG_SYSTEM(LogType::Info, "Cleaned up {} shader modules", _shaderPool.numObjects());
-			for (int i = 0; i < _shaderPool._objects.size(); i++) {
-				destroy(_shaderPool.getHandle(_shaderPool.findObject(&_shaderPool._objects[i]._obj).index()));
-			}
-		}
-		if (_graphicsPipelinePool.numObjects()) {
-			LOG_SYSTEM(LogType::Info, "Cleaned up {} graphics pipelines", _graphicsPipelinePool.numObjects());
-			for (int i = 0; i < _graphicsPipelinePool._objects.size(); i++) {
-				destroy(_graphicsPipelinePool.getHandle(_graphicsPipelinePool.findObject(&_graphicsPipelinePool._objects[i]._obj).index()));
-			}
-		}
-		if (_computePipelinePool.numObjects()) {
-			LOG_SYSTEM(LogType::Info, "Cleaned up {} compute pipelines", _computePipelinePool.numObjects());
-			for (int i = 0; i < _computePipelinePool._objects.size(); i++) {
-				destroy(_computePipelinePool.getHandle(_computePipelinePool.findObject(&_computePipelinePool._objects[i]._obj).index()));
-			}
-		}
-		if (_rayTracingPipelinePool.numObjects()) {
-			LOG_SYSTEM(LogType::Info, "Cleaned up {} raytracing pipelines", _rayTracingPipelinePool.numObjects());
-			for (int i = 0; i < _rayTracingPipelinePool._objects.size(); i++) {
-				destroy(_rayTracingPipelinePool.getHandle(_rayTracingPipelinePool.findObject(&_rayTracingPipelinePool._objects[i]._obj).index()));
-			}
-		}
-		if (_samplerPool.numObjects()) {
-			LOG_SYSTEM(LogType::Info, "Cleaned up {} samplers", _samplerPool.numObjects());
-			for (int i = 0; i < _samplerPool._objects.size(); i++) {
-				destroy(_samplerPool.getHandle(_samplerPool.findObject(&_samplerPool._objects[i]._obj).index()));
-			}
-		}
-		if (_texturePool.numObjects()) {
-			LOG_SYSTEM(LogType::Info, "Cleaned up {} textures", _texturePool.numObjects());
-			for (int i = 0; i < _texturePool._objects.size(); i++) {
-				destroy(_texturePool.getHandle(_texturePool.findObject(&_texturePool._objects[i]._obj).index()));
-			}
-		}
-		if (_bufferPool.numObjects()) {
-			LOG_SYSTEM(LogType::Info, "Cleaned up {} buffers", _bufferPool.numObjects());
-			for (int i = 0; i < _bufferPool._objects.size(); i++) {
-				destroy(_bufferPool.getHandle(_bufferPool.findObject(&_bufferPool._objects[i]._obj).index()));
-			}
-		}
-		if (_accelerationStructurePool.numObjects()) {
-			LOG_SYSTEM(LogType::Info, "Cleaned up {} acceleration structures", _accelerationStructurePool.numObjects());
-			for (int i = 0; i < _accelerationStructurePool._objects.size(); i++) {
-				destroy(_accelerationStructurePool.getHandle(_accelerationStructurePool.findObject(&_accelerationStructurePool._objects[i]._obj).index()));
-			}
-		}
+		// TODO::fixing the allocation not being proerly freed for buffers VMA
+		auto destroyAll = [this]<typename H, typename O>(HandlePool<H, O>& pool, const char* name) {
+			if (!pool.numObjects())
+				return;
+			LOG_SYSTEM(LogType::Info, "Cleaned up {} {}", pool.numObjects(), name);
+			for (uint32_t i = 0; i < pool._objects.size(); i++)
+				destroy(pool.getHandle(i));
+		};
+		destroyAll(_shaderPool, "shader modules");
+		destroyAll(_graphicsPipelinePool, "graphics pipelines");
+		destroyAll(_computePipelinePool, "compute pipelines");
+		destroyAll(_rayTracingPipelinePool, "raytracing pipelines");
+		destroyAll(_samplerPool, "samplers");
+		destroyAll(_texturePool, "textures");
+		destroyAll(_bufferPool, "buffers");
+		destroyAll(_accelerationStructurePool, "acceleration structures");
 
 
 		// the order of operations is very specific so that we dont trigger any validation warnings

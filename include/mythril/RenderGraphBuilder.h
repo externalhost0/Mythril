@@ -283,6 +283,7 @@ namespace mythril {
         // last recorded stage/access per subresource, layouts themselves live on the texture
         std::unordered_map<TextureHandle, TextureAccessCache> _resourceTrackers;
         std::unordered_map<BufferHandle, StageAccess> _bufferTrackers;
+    	// qol feature so that textures that are always supposed to be based off size of the screen are auto updated
         struct WindowSizedTexture {
             Texture* texture = nullptr;
             std::function<Dimensions(Dimensions)> scaleFn;
