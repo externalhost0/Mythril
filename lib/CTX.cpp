@@ -1198,24 +1198,14 @@ namespace mythril {
 			    .preferredFlags = VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT,
 			};
 		}
-		if (memFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
-			// Check if coherent buffer is available.
-			VK_CHECK(vkCreateBuffer(_vkDevice, &buffer_ci, nullptr, &obj._vkBuffer));
-			VkMemoryRequirements requirements = {};
-			vkGetBufferMemoryRequirements(_vkDevice, obj._vkBuffer, &requirements);
-			vkDestroyBuffer(_vkDevice, obj._vkBuffer, nullptr);
-			obj._vkBuffer = VK_NULL_HANDLE;
-
-			if (requirements.memoryTypeBits & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) {
-				vmaAllocInfo.requiredFlags |= VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-				obj._isCoherentMemory = true;
-			}
-		}
 		vmaAllocInfo.usage = VMA_MEMORY_USAGE_AUTO;
-		vmaCreateBufferWithAlignment(_vmaAllocator, &buffer_ci, &vmaAllocInfo, 16, &obj._vkBuffer, &obj._vmaAllocation, nullptr);
-		// handle memory-mapped buffers
+		VmaAllocationInfo allocInfo = {};
+		VK_CHECK(vmaCreateBufferWithAlignment(_vmaAllocator, &buffer_ci, &vmaAllocInfo, 16, &obj._vkBuffer, &obj._vmaAllocation, &allocInfo));
 		if (memFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
-			vmaMapMemory(_vmaAllocator, obj._vmaAllocation, &obj._mappedPtr);
+			obj._mappedPtr = allocInfo.pMappedData;
+			VkMemoryPropertyFlags actualFlags = 0;
+			vmaGetAllocationMemoryProperties(_vmaAllocator, obj._vmaAllocation, &actualFlags);
+			obj._isCoherentMemory = actualFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 		}
 
 		ASSERT_MSG(obj._vkBuffer != VK_NULL_HANDLE, "VkBuffer is VK_NULL_HANDLE after creation!");
@@ -1243,10 +1233,6 @@ namespace mythril {
 			LOG_SYSTEM(LogType::Warning, "'resizeBuffer' called with a smaller size then it already has has.");
 		}
 
-		// unmap before destroying
-		if (buffer->_mappedPtr) {
-			vmaUnmapMemory(_vmaAllocator, buffer->_vmaAllocation);
-		}
 		deferTask(std::packaged_task<void()>([vma = _vmaAllocator, vkBuf = buffer->_vkBuffer, allocation = buffer->_vmaAllocation]() {
 			vmaDestroyBuffer(vma, vkBuf, allocation);
 		}));
@@ -2234,9 +2220,6 @@ namespace mythril {
 		AllocatedBuffer* buf = _bufferPool.get(handle);
 		if (!buf) {
 			return;
-		}
-		if (buf->_mappedPtr) {
-			vmaUnmapMemory(_vmaAllocator, buf->_vmaAllocation);
 		}
 		deferTask(std::packaged_task<void()>([vma = _vmaAllocator, buffer = buf->_vkBuffer, allocation = buf->_vmaAllocation]() { vmaDestroyBuffer(vma, buffer, allocation); }));
 		_bufferPool.destroy(handle);
