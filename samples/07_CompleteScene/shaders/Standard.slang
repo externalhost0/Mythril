@@ -124,14 +124,10 @@ float DirectionalSC(float4 lightspacepos) {
     return push.shadowTexture.SampleCmpLevelZero(push.shadowSamplerComparison, projCoords.xy, projCoords.z);
 }
 
-#define kNumOfSamples 12
-static const float3 sampleOffsetDirections[12] = {
-    float3(1, 1, 1), float3(1, -1, 1),
-    float3(-1, -1, 1), float3(-1, 1, 1),
-    float3(1, 1, -1), float3(1, -1, -1),
-    float3(-1, -1, -1), float3(-1, 1, -1),
-    float3(1, 0, 0), float3(-1, 0, 0),
-    float3(0, 1, 0), float3(0, -1, 0)
+#define kNumOfSamples 6
+static const float2 kHexOffsets[kNumOfSamples] = {
+    float2(1, 0), float2(0.5, 0.866025), float2(-0.5, 0.866025),
+    float2(-1, 0), float2(-0.5, -0.866025), float2(0.5, -0.866025)
 };
 float PointSCEXT(float3 worldPos, float3 lightPos, TextureCube<float> shadowCubemap, float farPlane) {
     float3 fragToLight = worldPos - lightPos;
@@ -146,10 +142,15 @@ float PointSCEXT(float3 worldPos, float3 lightPos, TextureCube<float> shadowCube
     float texelWorldSize = dist * texelAngularSize;
     float diskRadius = clamp(texelWorldSize * 2.0, 0.001, farPlane * 0.1);
 
+    // offsets along the ray don't change a cube lookup, so spread taps on the perpendicular disk
+    float3 n = fragToLight / dist;
+    float3 tangent = normalize(cross(abs(n.y) < 0.999 ? float3(0, 1, 0) : float3(1, 0, 0), n));
+    float3 bitangent = cross(n, tangent);
+
     float shadow = 0.0;
     [unroll(kNumOfSamples)]
     for (int i = 0; i < kNumOfSamples; i++) {
-        float3 sampleDir = fragToLight + sampleOffsetDirections[i] * diskRadius;
+        float3 sampleDir = fragToLight + (kHexOffsets[i].x * tangent + kHexOffsets[i].y * bitangent) * diskRadius;
 
         shadow += shadowCubemap.SampleCmpLevelZero(
             push.shadowSamplerComparison,
