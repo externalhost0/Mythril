@@ -868,6 +868,7 @@ namespace mythril {
 		// aliases
 		ComputePipelineSpec& spec = pipeline._spec;
 		AllocatedShader* shader = _shaderPool.get(spec.shader);
+		ASSERT_MSG(shader, "The shader for compute pipeline: '{}' was destroyed or moved.", spec.debugName);
 
 		// resolvement and assignment
 		PipelineCoreData common = this->buildPipelineCommonDataExceptVkPipelineImpl(shader->_pipelineSignature);
