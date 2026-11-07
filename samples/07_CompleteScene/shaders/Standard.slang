@@ -102,7 +102,7 @@ FSOutput fs_main(v2f input) {
     for (int i = 0; i < kNumLights; ++i) {
         float3 pointLightContribution = push.frame.lighting.pointLights[i].illuminate(input.WorldPosition, Nworld, brdf, viewDir);
 
-        float pointShadowFactor = PointShadowCalculation(
+        float pointShadowFactor = PointSCEXT(
             input.WorldPosition,
             push.frame.lighting.pointLights[i].position,
             push.pointLightCubemaps[i],
@@ -133,35 +133,11 @@ static const float3 sampleOffsetDirections[12] = {
     float3(1, 0, 0), float3(-1, 0, 0),
     float3(0, 1, 0), float3(0, -1, 0)
 };
-float PointShadowSingle(float3 fragToLight, TextureCube shadowCubemap, float farPlane, float dist) {
-    fragToLight.y = -fragToLight.y;
-    float closestDepth = farPlane * shadowCubemap.Sample(push.linearSampler, fragToLight).r;
-    float currentDepth = length(fragToLight);
-    float bias = max(0.005, 0.001 * dist);
-    return currentDepth - bias > closestDepth ? 0.0 : 1.0;
-}
-float PointShadowCalculation(float3 worldPos, float3 lightPos, TextureCube shadowCubemap, float farPlane) {
-    float3 fragToLight = worldPos - lightPos;
-    float factor = 0.f;
-    float dist = length(fragToLight);
-
-    float2 dims;
-    shadowCubemap.GetDimensions(dims.x, dims.y);
-    float texelAngularSize = kPID2 / dims.x; // pi/2 / resolution
-    float texelWorldSize = dist * texelAngularSize;
-    float diskRadius = texelWorldSize * 2.0; // 2.0 is the softness multiplier
-    diskRadius = clamp(diskRadius, 0.001, farPlane * 0.1);
-    [unroll(kNumOfSamples)]
-    for (int i = 0; i < kNumOfSamples; i++) {
-        float3 dir = fragToLight + sampleOffsetDirections[i] * diskRadius;
-        factor += PointShadowSingle(dir, shadowCubemap, farPlane, dist);
-    }
-    return factor / kNumOfSamples;
-}
 float PointSCEXT(float3 worldPos, float3 lightPos, TextureCube<float> shadowCubemap, float farPlane) {
     float3 fragToLight = worldPos - lightPos;
     float dist = length(fragToLight);
-    float referenceDepth = dist / farPlane;
+    float bias = max(0.005, 0.001 * dist);
+    float referenceDepth = (dist - bias) / farPlane;
     fragToLight.y = -fragToLight.y;
 
     float2 dims;

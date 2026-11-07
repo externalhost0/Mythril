@@ -1122,6 +1122,7 @@ int main() {
 			.storeOp = mythril::StoreOp::STORE,
 		})
 		.dependency(shadowMap, mythril::TextureAccess::Sampled)
+		.dependency(&pointLightShadowTex[0], kNumPointLights, mythril::TextureAccess::Sampled)
 		.dependency(frameDataHandle, mythril::BufferAccess::ShaderRead)
 		.execute([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdBindGraphicsPipeline(transparentPipeline);
@@ -1149,6 +1150,12 @@ int main() {
 						.shadowTexture = shadowMap.index(),
 						.shadowSampler = shadowSampler.index(),
 						.lightSpaceMatrix = lightSpaceMatrix,
+						.pointLightShadowTextures = {
+							pointLightShadowTex[0].index(),
+							pointLightShadowTex[1].index(),
+							pointLightShadowTex[2].index(),
+							pointLightShadowTex[3].index()
+						}
 				};
 				cmd.cmdPushConstants(push);
 				cmd.cmdBindIndexBuffer(mesh.indexBufHandle);

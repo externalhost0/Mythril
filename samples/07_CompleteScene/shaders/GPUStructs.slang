@@ -191,5 +191,5 @@ struct GeometryPushConstants
     DescriptorHandle<Texture2D<float>> shadowTexture;
     DescriptorHandle<SamplerComparisonState> shadowSamplerComparison;
     float4x4 lightSpaceMatrix;
-    DescriptorHandle<TextureCube> pointLightCubemaps[4];
+    DescriptorHandle<TextureCube<float>> pointLightCubemaps[4];
 };
