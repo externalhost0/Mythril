@@ -10,6 +10,7 @@
 
 #include <array>
 #include <memory_resource>
+#include <numeric>
 #include <cstdlib>
 #include <fstream>
 #include <queue>
@@ -411,6 +412,7 @@ namespace mythril {
 			    .storeOp = toVulkan(attachment_desc.storeOp),
 			    .clearValue = isDepthAttachment ? clear_value.getDepthStencilValue() : clear_value.getColorValue(),
 			};
+			attachment_info.texture = attachment_desc.texDesc.texture.handle();
 			if (attachment_desc.resolveTexDesc.has_value()) {
 				const TextureDesc& resolve_desc = attachment_desc.resolveTexDesc.value();
 				const AllocatedTexture resolve_texture = resolve_desc.texture.getContext()->view(resolve_desc.texture.handle());
@@ -483,14 +485,16 @@ namespace mythril {
 		for (const CompiledPass& pass: _compiledPasses) {
 			if (pass.type == PassDesc::Type::Intermediate)
 				continue;
-			// by default CommandBuffer will have _isDryRun = true
-			CommandBuffer dryCmd;
-			dryCmd._ctx = &rCtx;
-			dryCmd._activePass = &pass;
-			dryCmd._viewMask = pass.viewMask;
-			rCtx._currentCommandBuffer = dryCmd;
-			ASSERT_PASS(pass.executeCallback != nullptr, pass, "doesn't have an execute callback, something went horribly wrong!");
-			pass.executeCallback(dryCmd);
+			ASSERT_PASS(!pass.members.empty(), pass, "doesn't have an execute callback, something went horribly wrong!");
+			for (const auto& member: pass.members) {
+				// by default CommandBuffer will have _isDryRun = true
+				CommandBuffer dryCmd;
+				dryCmd._ctx = &rCtx;
+				dryCmd._activePass = &pass;
+				dryCmd._viewMask = pass.viewMask;
+				rCtx._currentCommandBuffer = dryCmd;
+				member(dryCmd);
+			}
 		}
 		rCtx._currentCommandBuffer = saved;
 	}
@@ -502,67 +506,173 @@ namespace mythril {
 		return access == BufferAccess::ShaderReadWrite || access == BufferAccess::ShaderWrite || access == BufferAccess::TransferWrite;
 	}
 
+	static bool SameAttachmentImage(const AttachmentInfo& a, const AttachmentInfo& b) {
+		return a.isSwapchainImage ? b.isSwapchainImage : !b.isSwapchainImage && a.imageView == b.imageView;
+	}
+	// resolves run at EndRendering, so a later member may not keep drawing into an attachment the group already resolves
+	static bool CanContinueAttachment(const AttachmentInfo& group, const AttachmentInfo& next) {
+		return SameAttachmentImage(group, next) && next.loadOp != VK_ATTACHMENT_LOAD_OP_CLEAR && group.resolveImageView == VK_NULL_HANDLE;
+	}
 
-	// unweighted, directed
-	// fixed vertex amount
-	template<size_t Vertices>
-	struct AdjacencyMatrix {
-		void addEdge(size_t x, size_t y) {
-			if (x >= Vertices || y >= Vertices) return;
-			size_t bitIndex = (y * Vertices) + x;
-			data.set(bitIndex);
+	struct PassResourceUse {
+		std::unordered_set<TextureHandle> attachments;
+		// non-attachment accesses, true when written
+		std::unordered_map<TextureHandle, bool> textures;
+		std::unordered_map<BufferHandle, bool> buffers;
+
+		void add(const PassDesc& desc) {
+			for (const AttachmentDesc& attachment: desc.attachmentOperations) {
+				attachments.insert(attachment.texDesc.texture.handle());
+				if (attachment.resolveTexDesc.has_value())
+					attachments.insert(attachment.resolveTexDesc->texture.handle());
+			}
+			for (const TextureDependencyDesc& dependency: desc.textureDependencyOperations)
+				textures[dependency.texDesc.texture.handle()] |= isWrite(dependency.access);
+			for (const BufferDependencyDesc& dependency: desc.bufferDependencyOperations)
+				buffers[dependency.buffer.handle()] |= isWrite(dependency.access);
 		}
-		void removeEdge(size_t x, size_t y) {
-			if (x >= Vertices || y >= Vertices) return;
-			size_t bitIndex = (y * Vertices) + x;
-			data.reset(bitIndex);
-		}
-		bool hasEdge(size_t x, size_t y) {
-			if (x >= Vertices || y >= Vertices) return false;
-			return data.test((y * Vertices) + x);
-		}
-		std::bitset<Vertices * Vertices> data;
 	};
 
+	// any of these would need a barrier between members, which a single rendering scope cannot hold
+	static bool HasMemberHazard(const PassResourceUse& group, const PassResourceUse& next) {
+		const auto writeConflict = [](const auto& a, const auto& b) {
+			for (const auto& [handle, written]: a) {
+				if (const auto it = b.find(handle); it != b.end() && (written || it->second))
+					return true;
+			}
+			return false;
+		};
+		for (const auto& [handle, written]: next.textures) {
+			if (group.attachments.contains(handle))
+				return true;
+		}
+		for (const auto& [handle, written]: group.textures) {
+			if (next.attachments.contains(handle))
+				return true;
+		}
+		return writeConflict(next.textures, group.textures) || writeConflict(next.buffers, group.buffers);
+	}
+
+	struct CompilingPass {
+		CompiledPass pass;
+		PassResourceUse use;
+		std::vector<uint32_t> passIndices;
+	};
+
+	// leaves both records untouched when it returns false, the hoist lookahead relies on that
+	static bool TryMergeInto(CompilingPass& groupRecord, CompilingPass& nextRecord) {
+		CompiledPass& group = groupRecord.pass;
+		CompiledPass& next = nextRecord.pass;
+		const bool hasAttachments = !group.colorAttachments.empty() || group.depthAttachment.has_value();
+		const bool compatible = hasAttachments && group.type == PassDesc::Type::Graphics && next.type == group.type && next.queue == group.queue &&
+		                        !group.conditionCallback && !next.conditionCallback && !group.inOrderBarrier && !next.inOrderBarrier &&
+		                        next.layerCount == group.layerCount && next.viewMask == group.viewMask &&
+		                        next.renderArea.offset.x == group.renderArea.offset.x && next.renderArea.offset.y == group.renderArea.offset.y &&
+		                        next.renderArea.extent.width == group.renderArea.extent.width && next.renderArea.extent.height == group.renderArea.extent.height &&
+		                        next.colorAttachments.size() == group.colorAttachments.size() &&
+		                        // pipelines that bring their own formats (ImGui) cannot draw with an attachment they never declared
+		                        next.depthAttachment.has_value() == group.depthAttachment.has_value();
+		if (!compatible)
+			return false;
+		for (size_t i = 0; i < group.colorAttachments.size(); ++i) {
+			if (!CanContinueAttachment(group.colorAttachments[i], next.colorAttachments[i]))
+				return false;
+		}
+		if (group.depthAttachment.has_value() && !CanContinueAttachment(*group.depthAttachment, *next.depthAttachment))
+			return false;
+		if (HasMemberHazard(groupRecord.use, nextRecord.use))
+			return false;
+
+		const auto findImageBarrier = [&](const CompiledImageBarrier& request) {
+			return std::ranges::find_if(group.imageBarriers, [&](const CompiledImageBarrier& existing) { return existing.handle == request.handle && existing.isSwapchain == request.isSwapchain; });
+		};
+		for (const CompiledImageBarrier& request: next.imageBarriers) {
+			const auto it = findImageBarrier(request);
+			if (it != group.imageBarriers.end() && (it->range != request.range || it->dstLayout != request.dstLayout))
+				return false;
+		}
+
+		for (const CompiledImageBarrier& request: next.imageBarriers) {
+			if (const auto it = findImageBarrier(request); it != group.imageBarriers.end()) {
+				it->dstMask.stage |= request.dstMask.stage;
+				it->dstMask.access |= request.dstMask.access;
+			} else {
+				group.imageBarriers.push_back(request);
+			}
+		}
+		for (const CompiledBufferBarrier& request: next.bufferBarriers) {
+			const auto it = std::ranges::find_if(group.bufferBarriers, [&](const CompiledBufferBarrier& existing) { return existing.handle == request.handle; });
+			if (it != group.bufferBarriers.end()) {
+				it->dstMask.stage |= request.dstMask.stage;
+				it->dstMask.access |= request.dstMask.access;
+			} else {
+				group.bufferBarriers.push_back(request);
+			}
+		}
+		const auto continueAttachment = [](AttachmentInfo& into, const AttachmentInfo& from) {
+			into.storeOp = from.storeOp;
+			into.resolveImageView = from.resolveImageView;
+			into.resolveImageLayout = from.resolveImageLayout;
+		};
+		for (size_t i = 0; i < group.colorAttachments.size(); ++i)
+			continueAttachment(group.colorAttachments[i], next.colorAttachments[i]);
+		if (group.depthAttachment.has_value())
+			continueAttachment(*group.depthAttachment, *next.depthAttachment);
+		group.name += " + " + next.name;
+		std::ranges::move(next.members, std::back_inserter(group.members));
+		PassResourceUse& groupUse = groupRecord.use;
+		groupUse.attachments.insert(nextRecord.use.attachments.begin(), nextRecord.use.attachments.end());
+		for (const auto& [handle, written]: nextRecord.use.textures)
+			groupUse.textures[handle] |= written;
+		for (const auto& [handle, written]: nextRecord.use.buffers)
+			groupUse.buffers[handle] |= written;
+		groupRecord.passIndices.insert(groupRecord.passIndices.end(), nextRecord.passIndices.begin(), nextRecord.passIndices.end());
+		return true;
+	}
+
+	static bool TryHoistIntoGroup(std::vector<CompilingPass>& compiled, std::vector<CompilingPass>& pending, size_t& pendingIdx, const std::vector<std::unordered_set<uint32_t>>& predecessors, bool logMerges) {
+		CompilingPass& group = compiled.back();
+		if (group.pass.type != PassDesc::Type::Graphics)
+			return false;
+		const auto dependsOnGroup = [&](const CompilingPass& candidate) {
+			for (const uint32_t pass_idx: candidate.passIndices) {
+				for (const uint32_t pred: predecessors[pass_idx]) {
+					if (std::ranges::find(group.passIndices, pred) != group.passIndices.end())
+						return true;
+				}
+			}
+			return false;
+		};
+		for (size_t joinIdx = pendingIdx; joinIdx < pending.size(); ++joinIdx) {
+			if (joinIdx > pendingIdx && TryMergeInto(group, pending[joinIdx])) {
+				if (logMerges) {
+					for (size_t hoistIdx = pendingIdx; hoistIdx < joinIdx; ++hoistIdx)
+						LOG_PASS(LogType::Info, pending[hoistIdx].pass, "moved ahead of '{}' so it renders as one scope.", group.pass.name);
+				}
+				group.pass.hoistedAheadCount += static_cast<uint32_t>(joinIdx - pendingIdx);
+				compiled.insert(compiled.end() - 1, std::make_move_iterator(pending.begin() + static_cast<std::ptrdiff_t>(pendingIdx)), std::make_move_iterator(pending.begin() + static_cast<std::ptrdiff_t>(joinIdx)));
+				pendingIdx = joinIdx;
+				return true;
+			}
+			// only unconditional intermediate passes move, their upload data is checked in debug execute
+			const CompiledPass& candidate = pending[joinIdx].pass;
+			if (candidate.type != PassDesc::Type::Intermediate || candidate.conditionCallback || dependsOnGroup(pending[joinIdx]))
+				return false;
+		}
+		return false;
+	}
+
 	struct DirectedGraph {
-		size_t nodeCount;
 		// indicies represent original pass index
 		// predecessors[2] = {0, 1} represents the third pass that must wait until first and second run
 		// will always be same size vector as the # of passes
 		std::vector<std::unordered_set<uint32_t>> predecessors;
-		std::vector<std::vector<uint32_t>> successors;
-		std::vector<uint32_t> inDegree;
 
-		explicit DirectedGraph(uint32_t vertexCount) : nodeCount(vertexCount), predecessors(vertexCount), successors(vertexCount), inDegree(vertexCount) {}
+		explicit DirectedGraph(uint32_t vertexCount) : predecessors(vertexCount) {}
 
 		void addEdge(uint32_t from, uint32_t to) {
 			if (from == to) return;
 			predecessors.at(to).insert(from);
-		}
-
-		std::optional<std::vector<uint32_t>> topologicalSort() const {
-			std::vector<uint32_t> local_in_degrees = inDegree;
-			std::queue<uint32_t> ready;
-			std::vector<uint32_t> sorted_order;
-			sorted_order.reserve(this->nodeCount);
-
-			// get root nodes, aka a node with no degrees incoming
-			for (uint32_t i = 0; i < nodeCount; ++i) {
-				if (local_in_degrees[i] == 0)
-					ready.push(i);
-			}
-			// process from root nodes
-			while (!ready.empty()) {
-				uint32_t node = ready.front(); ready.pop();
-				sorted_order.push_back(node);
-				for (uint32_t successor : successors[node]) {
-					if (--local_in_degrees[successor] == 0)
-						ready.push(successor);
-				}
-			}
-			// if size is not the same than cycles exist, thus cant be topo sorted
-			if (sorted_order.size() != nodeCount) return std::nullopt;
-			return sorted_order;
 		}
 	};
 
@@ -637,48 +747,6 @@ namespace mythril {
 			}
 		}
 		return result;
-	}
-
-	void report_cycle_and_assert(const DirectedGraph& graph, const std::vector<PassDesc>& pass_descs) {
-		const size_t node_count = graph.nodeCount;
-		// copy this
-		std::vector<uint32_t> local_in_degree = graph.inDegree;
-		std::queue<uint32_t> ready;
-		std::vector resolved(node_count, false);
-		size_t resolved_count = 0;
-
-		for (uint32_t i = 0; i < node_count; ++i) {
-			if (local_in_degree[i] == 0) {
-				ready.push(i);
-			}
-		}
-		while (!ready.empty()) {
-			const uint32_t node = ready.front();
-			ready.pop();
-			resolved[node] = true;
-			resolved_count++;
-
-			for (uint32_t succ : graph.successors[node]) {
-				if (--local_in_degree[succ] == 0) {
-					ready.push(succ);
-				}
-			}
-		}
-		// this should never happen :p
-		if (resolved_count == node_count) return;
-		// actually perform reporting now
-		std::string report_string;
-		for (uint32_t i = 0; i < node_count; ++i) {
-			if (!resolved[i]) {
-				report_string += fmt::format("\n- '{}' is stuck waiting on:", pass_descs[i].name);
-				for (uint32_t pred : graph.predecessors[i]) {
-					if (!resolved[pred]) {
-						report_string += fmt::format(" '{}'", pass_descs[pred].name);
-					}
-				}
-			}
-		}
-		ASSERT_MSG(false, "RenderGraph has a cycle ({} passes unresolved): {}", (node_count - resolved_count), report_string);
 	}
 
 	std::vector<uint32_t> cull_unused_passes(
@@ -761,29 +829,12 @@ namespace mythril {
 		std::erase_if(_resourceTrackers, [&rCtx](const auto& entry) { return rCtx._texturePool.get(entry.first) == nullptr; });
 		this->_bufferTrackers.clear();
 
-		std::vector<uint32_t> culled_order;
-		ExecutionSchedule schedule;
-		{
-			const DirectedGraph directed_graph = build_directed_graph(this->_passDescriptions);
-
-			// yeah i know this is doing more work then necessary but its way better to understand
-			const std::vector<std::unordered_set<uint32_t>>& passPredecessors = directed_graph.predecessors;
-			const std::optional<std::vector<uint32_t>>& sortedOrderOptional = directed_graph.topologicalSort();
-			if (!sortedOrderOptional.has_value()) {
-				// who cares about the recalculation overhead
-				report_cycle_and_assert(directed_graph, this->_passDescriptions);
-			}
-			culled_order = cull_unused_passes(sortedOrderOptional.value(), passPredecessors, _passDescriptions);
-
-			schedule = calculate_execution_schedule(culled_order, passPredecessors);
-			this->_schedule = schedule;
-		}
-
-		// map from passDescription to _compiledPasses, reversed basically
-		std::unordered_map<uint32_t, uint32_t> passToCompiled;
-		passToCompiled.reserve(culled_order.size());
-		for (uint32_t i = 0; i < static_cast<uint32_t>(culled_order.size()); ++i)
-			passToCompiled[culled_order[i]] = i;
+		const DirectedGraph directed_graph = build_directed_graph(this->_passDescriptions);
+		const std::vector<std::unordered_set<uint32_t>>& passPredecessors = directed_graph.predecessors;
+		// edges only point from earlier to later passes, so declaration order is already topological
+		std::vector<uint32_t> declaration_order(this->_passDescriptions.size());
+		std::iota(declaration_order.begin(), declaration_order.end(), 0u);
+		const std::vector<uint32_t> culled_order = cull_unused_passes(declaration_order, passPredecessors, _passDescriptions);
 
 		// assign and warn queues for each pass
 		const bool canUseAC = rCtx._immAsyncCompute != nullptr;
@@ -806,15 +857,16 @@ namespace mythril {
 		};
 
 		// compile works in this order
-		this->_compiledPasses.reserve(culled_order.size());
+		std::vector<CompilingPass> pending;
+		pending.reserve(culled_order.size());
 		for (const uint32_t pass_idx : culled_order) {
 			const PassDesc& pass_desc = this->_passDescriptions[pass_idx];
 			CompiledPass compiled_pass;
 			compiled_pass.name = pass_desc.name;
-			compiled_pass.passIndex = pass_idx;
 			compiled_pass.queue = sanitizeQueue(pass_desc.queue, pass_desc);
 			compiled_pass.type = pass_desc.type;
-			compiled_pass.executeCallback = pass_desc.executeCallback;
+			if (pass_desc.executeCallback)
+				compiled_pass.members.push_back(pass_desc.executeCallback);
 			compiled_pass.intermediateOps = pass_desc.intermediateOps;
 			compiled_pass.layerCount = pass_desc.layerCount;
 			compiled_pass.viewMask = pass_desc.viewMask;
@@ -827,16 +879,79 @@ namespace mythril {
 			if (pass_desc.executeInOrder)
 				compiled_pass.inOrderBarrier = BuildInOrderBarrier(compiled_pass);
 
-			this->_compiledPasses.push_back(std::move(compiled_pass));
+			CompilingPass& record = pending.emplace_back(std::move(compiled_pass));
+			record.use.add(pass_desc);
+			record.passIndices.push_back(pass_idx);
 		}
 
+		// recompiles on every resize, so only the first compile reports what it merged
+		const bool logMerges = !this->_hasCompiled;
+		std::vector<CompilingPass> compiled;
+		compiled.reserve(pending.size());
+		for (size_t pendingIdx = 0; pendingIdx < pending.size(); ++pendingIdx) {
+			if (!compiled.empty() && (TryMergeInto(compiled.back(), pending[pendingIdx]) || TryHoistIntoGroup(compiled, pending, pendingIdx, passPredecessors, logMerges)))
+				continue;
+			compiled.push_back(std::move(pending[pendingIdx]));
+		}
+#ifdef DEBUG
+		{
+			// memoryless attachments have no backing memory, so their contents must begin and end inside one rendering scope
+			std::unordered_map<TextureHandle, uint32_t> passesUsing;
+			for (const CompilingPass& record: compiled) {
+				for (const TextureHandle handle: record.use.attachments)
+					++passesUsing[handle];
+				for (const auto& [handle, written]: record.use.textures)
+					++passesUsing[handle];
+			}
+			for (const CompilingPass& record: compiled) {
+				const auto validate = [&](const AttachmentInfo& attachment) {
+					if (attachment.isSwapchainImage)
+						return;
+					const AllocatedTexture& texture = rCtx.view(attachment.texture);
+					const bool confined = passesUsing[attachment.texture] == 1 && attachment.loadOp != VK_ATTACHMENT_LOAD_OP_LOAD && attachment.storeOp == VK_ATTACHMENT_STORE_OP_DONT_CARE;
+					if (texture.isMemoryless()) {
+						ASSERT_PASS(confined, record.pass, "Memoryless attachment '{}' must be used by a single rendering scope that clears or discards it on load and discards it on store.", texture.getDebugName());
+					} else if (confined && logMerges && !texture.isSampledImage() && !texture.isStorageImage()) {
+						LOG_PASS(LogType::Suggestion, record.pass, "Attachment '{}' never leaves this rendering scope and can be StorageType::Memoryless.", texture.getDebugName());
+					}
+				};
+				for (const AttachmentInfo& color: record.pass.colorAttachments)
+					validate(color);
+				if (record.pass.depthAttachment.has_value())
+					validate(*record.pass.depthAttachment);
+			}
+		}
+#endif
 
-		// build _layerByQueue from post cleaned _compiledPassses
+		constexpr uint32_t kUnscheduled = UINT32_MAX;
+		std::vector<uint32_t> descToCompiled(this->_passDescriptions.size(), kUnscheduled);
+		this->_compiledPasses.reserve(compiled.size());
+		for (CompilingPass& record: compiled) {
+			for (const uint32_t pass_idx: record.passIndices)
+				descToCompiled[pass_idx] = static_cast<uint32_t>(this->_compiledPasses.size());
+			if (logMerges && record.pass.members.size() > 1)
+				LOG_PASS(LogType::Info, record.pass, "merged {} passes into one rendering scope.", record.pass.members.size());
+			this->_compiledPasses.push_back(std::move(record.pass));
+		}
+
+		// schedule over compiled passes so a merged group occupies a single node
+		std::vector<std::unordered_set<uint32_t>> compiledPredecessors(this->_compiledPasses.size());
+		for (const uint32_t pass_idx : culled_order) {
+			const uint32_t compiled_idx = descToCompiled[pass_idx];
+			for (const uint32_t pred : passPredecessors[pass_idx]) {
+				const uint32_t compiled_pred = descToCompiled[pred];
+				if (compiled_pred != kUnscheduled && compiled_pred != compiled_idx)
+					compiledPredecessors[compiled_idx].insert(compiled_pred);
+			}
+		}
+		std::vector<uint32_t> compiled_order(this->_compiledPasses.size());
+		std::iota(compiled_order.begin(), compiled_order.end(), 0u);
+		this->_schedule = calculate_execution_schedule(compiled_order, compiledPredecessors);
+
 		// requires that correct queues have already been selected
-		this->_layerByQueue.assign(schedule.layers.size(), {});
-		for (size_t depth = 0; depth < schedule.layers.size(); ++depth) {
-			for (const uint32_t pass_idx : schedule.layers[depth]) {
-				const uint32_t compiled_idx = passToCompiled[pass_idx];
+		this->_layerByQueue.assign(this->_schedule.layers.size(), {});
+		for (size_t depth = 0; depth < this->_schedule.layers.size(); ++depth) {
+			for (const uint32_t compiled_idx : this->_schedule.layers[depth]) {
 				const auto q = static_cast<size_t>(_compiledPasses[compiled_idx].queue);
 				this->_layerByQueue[depth][q].push_back(compiled_idx);
 			}
@@ -969,6 +1084,29 @@ namespace mythril {
 		rCtx.submitCommand(cmd);
 	}
 
+#ifdef DEBUG
+	static uint64_t FingerprintUploadData(const CompiledPass& pass) {
+		uint64_t hash = 14695981039346656037ull;
+		const auto mix = [&hash](const void* bytes, size_t size) {
+			for (size_t i = 0; i < size; ++i)
+				hash = (hash ^ static_cast<const uint8_t*>(bytes)[i]) * 1099511628211ull;
+		};
+		for (const IntermediateOp& op: pass.intermediateOps) {
+			UploadData data{};
+			if (const auto* update = std::get_if<UpdateOp>(&op))
+				data = update->dataCb();
+			else if (const auto* upload = std::get_if<UploadOp>(&op))
+				data = upload->dataCb();
+			else
+				continue;
+			mix(&data.size, sizeof(data.size));
+			if (data.data)
+				mix(data.data, data.size);
+		}
+		return hash;
+	}
+#endif
+
 	void RenderGraph::execute(CommandBuffer& cmd) {
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_RENDERGRAPH);
 		ASSERT_MSG(!cmd.isDrying(), "You cannot call RenderGraph::execute inside an execution callback!");
@@ -979,10 +1117,17 @@ namespace mythril {
 			compile(*cmd._ctx);
 		}
 
-		for (CompiledPass& pass: _compiledPasses) {
+		for (size_t passIdx = 0; passIdx < _compiledPasses.size(); ++passIdx) {
+			CompiledPass& pass = _compiledPasses[passIdx];
 			if (pass.conditionCallback && !pass.conditionCallback())
 				continue;
 			const bool isGraphics = pass.type == PassDesc::Type::Graphics;
+#ifdef DEBUG
+			// hoisted uploads ran before this group's callbacks, they must not read CPU state those callbacks write
+			std::vector<uint64_t> hoistedFingerprints;
+			for (uint32_t i = 0; i < pass.hoistedAheadCount; ++i)
+				hoistedFingerprints.push_back(FingerprintUploadData(_compiledPasses[passIdx - pass.hoistedAheadCount + i]));
+#endif
 			// perform batched vkCmdPipelineBarrier
 			PerformBarrierTransitions(cmd, pass);
 			// keep GPU zones per pass, timestamps inside a render pass split Metal encoders on MoltenVK
@@ -997,18 +1142,30 @@ namespace mythril {
 				if (pass.depthAttachment && pass.depthAttachment->isSwapchainImage)
 					pass.depthAttachment->imageView = pass.depthAttachment->swapchainImageViews[swapIdx];
 			}
-			// reset current states
-			cmd._currentPipelineInfo = nullptr;
-			cmd._currentPipelineHandle = {};
 			cmd._activePass = &pass;
-			cmd._hasDispatchedInPass = false;
+			// clear the previous pass's pipeline before begin rendering inspects it
+			cmd.resetMemberStateImpl();
 			if (isGraphics) cmd.cmdBeginRenderingEXT(pass.layerCount, pass.viewMask);
 			if (pass.type == PassDesc::Type::Intermediate)
 				RecordIntermediateOps(cmd, pass);
-			else
-				// we already checked if it has an execute callback so it should be guaranteed
-				pass.executeCallback(cmd);
+			for (size_t i = 0; i < pass.members.size(); ++i) {
+				if (i > 0)
+					cmd.resetMemberStateImpl();
+				pass.members[i](cmd);
+			}
 			if (isGraphics) cmd.cmdEndRenderingEXT();
+#ifdef DEBUG
+			for (uint32_t i = 0; i < pass.hoistedAheadCount; ++i) {
+				const CompiledPass& hoisted = _compiledPasses[passIdx - pass.hoistedAheadCount + i];
+				ASSERT_PASS(
+				        FingerprintUploadData(hoisted) == hoistedFingerprints[i],
+				        hoisted,
+				        "was moved ahead of '{}' to share its rendering scope, but its upload data changed while that scope recorded. Declare it before '{}' or prepare its data before RenderGraph::execute.",
+				        pass.name,
+				        pass.name
+				);
+			}
+#endif
 		}
 		if (!cmd._ctx->isHeadless()) {
 			// fixme: make this cleaner im so lazy right now

@@ -1003,6 +1003,9 @@ namespace mythril {
 		if (current_pass_info.depthAttachment.has_value()) {
 			builder.set_depth_format(current_pass_info.depthAttachment->imageFormat);
 		}
+		pipeline._builtColorFormats = colorFormats;
+		pipeline._builtDepthFormat = current_pass_info.depthAttachment.has_value() ? current_pass_info.depthAttachment->imageFormat : VK_FORMAT_UNDEFINED;
+		pipeline._builtViewMask = viewMask;
 		// manually resolve the # of spec constants user gave
 		uint32_t sc_count = 0;
 		while (sc_count < 16 && spec.specConstants[sc_count].size) {

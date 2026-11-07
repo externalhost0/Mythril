@@ -481,6 +481,15 @@ namespace mythril {
 		// the dry run hits this first so pipelines are built at graph compile, not mid frame
 		if (pipeline->_shared.core._vkPipeline == VK_NULL_HANDLE)
 			_ctx->resolveGraphicsPipelineImpl(*pipeline, _viewMask);
+#ifdef DEBUG
+		if (_activePass) {
+			bool matches = pipeline->_builtViewMask == _viewMask && pipeline->_builtColorFormats.size() == _activePass->colorAttachments.size() &&
+			               pipeline->_builtDepthFormat == (_activePass->depthAttachment.has_value() ? _activePass->depthAttachment->imageFormat : VK_FORMAT_UNDEFINED);
+			for (size_t i = 0; matches && i < _activePass->colorAttachments.size(); ++i)
+				matches = pipeline->_builtColorFormats[i] == _activePass->colorAttachments[i].imageFormat;
+			ASSERT_MSG(matches, "Graphics pipeline '{}' was built for another pass's attachment formats or view mask and cannot draw in '{}', create one pipeline per attachment layout.", pipeline->getDebugName(), _activePass->name);
+		}
+#endif
 		if (_isDryRun)
 			return;
 		this->_currentPipelineHandle = handle;
@@ -669,15 +678,24 @@ namespace mythril {
 		    .pDepthAttachment = hasDepth ? &vk_depth_attachment_info : nullptr,
 		    .pStencilAttachment = nullptr
 		};
-		cmdSetViewportImpl(renderArea.extent);
-		cmdSetScissorImpl(renderArea.extent);
-		cmdBindDepthState({});
-
 		_ctx->checkAndUpdateBindlessDescriptorSetImpl();
 
-		vkCmdSetDepthBiasEnable(_wrapper->_cmdBuf, VK_FALSE);
 		vkCmdBeginRendering(_wrapper->_cmdBuf, &info);
 		_isRendering = true;
+		resetMemberStateImpl();
+	}
+
+	void CommandBuffer::resetMemberStateImpl() {
+		_currentPipelineInfo = nullptr;
+		_currentPipelineHandle = {};
+		_hasDispatchedInPass = false;
+		if (!_isRendering)
+			return;
+		const VkExtent2D extent = _activePass->renderArea.extent;
+		cmdSetViewportImpl(extent);
+		cmdSetScissorImpl(extent);
+		cmdBindDepthState({});
+		vkCmdSetDepthBiasEnable(_wrapper->_cmdBuf, VK_FALSE);
 	}
 
 	void CommandBuffer::cmdEndRenderingImpl() {

@@ -37,6 +37,7 @@ namespace mythril {
         VkAttachmentStoreOp storeOp;
 
         VkClearValue clearValue;
+        TextureHandle texture;
 
         // will need to handle the special case of using a swapchain image as an attachment
         bool isSwapchainImage = false;
@@ -88,13 +89,15 @@ namespace mythril {
     struct CompiledPass {
         // transferred info from source
         std::string name;
-        uint32_t passIndex;
         PassDesc::Type type;
 
         std::vector<CompiledImageBarrier> imageBarriers;
         std::vector<CompiledBufferBarrier> bufferBarriers;
-        std::function<void(CommandBuffer&)> executeCallback;
+        // callbacks recorded in order inside this pass's barriers and rendering scope, empty for intermediate passes
+        std::vector<std::function<void(CommandBuffer&)>> members;
         std::vector<IntermediateOp> intermediateOps;
+        // the passes right before this one were moved ahead of it so it could merge
+        uint32_t hoistedAheadCount = 0;
         std::function<bool()> conditionCallback;
         std::optional<VkMemoryBarrier2> inOrderBarrier;
 

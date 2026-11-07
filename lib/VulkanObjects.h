@@ -64,6 +64,7 @@ namespace mythril {
 		[[nodiscard]] VkImage getImage() const { return _vkImage; }
 		[[nodiscard]] VkImageView getImageView() const { return _vkImageView; }
 		[[nodiscard]] VkFormat getFormat() const { return _vkFormat; }
+		[[nodiscard]] bool isMemoryless() const { return _vkMemoryPropertyFlags & VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT; }
 
 		[[nodiscard]] std::string_view getDebugName() const { return _debugName; }
 

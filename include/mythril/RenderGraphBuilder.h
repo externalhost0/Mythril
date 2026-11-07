@@ -234,7 +234,7 @@ namespace mythril {
 	struct CrossQueueSync {};
 
 	struct ExecutionSchedule {
-		// maps a pass index to its depth level: passDepth[passIdx] = depth
+		// maps a compiled pass index to its depth level: passDepth[passIdx] = depth
 		std::unordered_map<uint32_t, uint32_t> pass_depths;
 		// groups pass indices together by layer, indices are of _compiledPasses:
 		// layers[0] = { passA, passB }

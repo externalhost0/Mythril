@@ -12,6 +12,7 @@
 #include <volk.h>
 
 #include <variant>
+#include <vector>
 
 #include "mythril/Objects.h"
 
@@ -133,6 +134,10 @@ namespace mythril {
 	private:
 		GraphicsPipelineSpec _spec;
 		SharedPipelineInfo _shared;
+		// dynamic rendering requires these to match the scope the pipeline draws in
+		std::vector<VkFormat> _builtColorFormats;
+		VkFormat _builtDepthFormat = VK_FORMAT_UNDEFINED;
+		uint32_t _builtViewMask = 0;
 		friend class ::mythril::CTX;
 		friend class ::mythril::CommandBuffer;
 	};

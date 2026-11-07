@@ -143,6 +143,7 @@ namespace mythril {
 		// all functions that still have equivalent Vulkan commands but should be abstracted away from user
 		void cmdBeginRenderingImpl(uint32_t layerCount, uint32_t viewMask);
 		void cmdEndRenderingImpl();
+		void resetMemberStateImpl();
 
 
 		void cmdCopyImageImpl(TextureHandle source, TextureHandle destination, VkExtent2D size);

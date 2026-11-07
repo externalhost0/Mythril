@@ -1034,6 +1034,13 @@ int main() {
 			.loadOp    = mythril::LoadOp::CLEAR,
 			.storeOp   = mythril::StoreOp::STORE,
 		})
+		.attachment({
+			.texDesc = msaaDepthTarget,
+			// clear to 0, we do reverse depth buffering
+			.clearValue = mythril::ClearValue::depth(0.f, 0),
+			.loadOp = mythril::LoadOp::CLEAR,
+			.storeOp = mythril::StoreOp::STORE,
+		})
 		.dependency(frameDataHandle, mythril::BufferAccess::ShaderRead)
 		.execute([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdBindGraphicsPipeline(skyPipeline);
@@ -1057,9 +1064,7 @@ int main() {
 		})
 		.attachment({
 			.texDesc = msaaDepthTarget,
-			// clear to 0, we do reverse depth buffering
-			.clearValue = mythril::ClearValue::depth(0.f, 0),
-			.loadOp = mythril::LoadOp::CLEAR,
+			.loadOp = mythril::LoadOp::LOAD,
 			.storeOp = mythril::StoreOp::STORE,
 		})
 		.dependency(shadowMap, mythril::TextureAccess::Sampled)
