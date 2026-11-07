@@ -557,7 +557,7 @@ namespace mythril {
 		MYTH_PROFILER_GPU_COMMAND_ZONE("cmdUpdateBuffer()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
 		vkCmdUpdateBuffer(_wrapper->_cmdBuf, buf->_vkBuffer, offset, size, data);
 
-		bufferBarrierImpl(handle, VK_PIPELINE_STAGE_2_TRANSFER_BIT, vkutil::BufferConsumerStages2(buf->_vkUsageFlags));
+		bufferBarrierImpl(handle, VK_PIPELINE_STAGE_2_TRANSFER_BIT, vkutil::BufferConsumerStages2(buf->_vkUsageFlags, _ctx->isExtensionEnabled(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME)));
 	}
 	void CommandBuffer::cmdCopyImageToBuffer(TextureHandle source, BufferHandle destination, const VkBufferImageCopy& region) {
 		DRY_RETURN()

@@ -197,7 +197,7 @@ mythril::Sampler aniso = ctx->createSampler({
 
 ## Shaders
 
-Shaders are written in [Slang](https://shader-slang.com/) and compiled to SPIR-V at load time. Create one with `CTX::createShader()`.
+Shaders are written in [Slang](https://shader-slang.com/) and compiled to SPIR-V at runtime. Create one with `CTX::createShader()`.
 
 ```cpp
 mythril::Shader defaultShader = ctx->createShader({

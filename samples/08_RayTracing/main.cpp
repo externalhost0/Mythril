@@ -177,20 +177,10 @@ int main() {
 		})
 		.build();
 
-		mythril::Shader fullscreenShader = ctx->createShader({
-			.source = kDataDir / "fullscreen.slang",
-			.debugName = "Fullscreen Shader"
-		});
 		mythril::Shader raytraceShader = ctx->createShader({
 			.source = kDataDir / "raytrace.slang",
 			.debugName = "Raytrace Shader"
 		});
-		mythril::GraphicsPipeline fullscreenPipeline = ctx->createGraphicsPipeline({
-			.vertexShader = {fullscreenShader},
-			.fragmentShader = {fullscreenShader},
-			.debugName = "Fullscreen Pipeline"
-		});
-
 
 		mythril::Buffer frameBuffer = ctx->createBuffer({
 			.size = sizeof(GPU::PerFrame),
@@ -319,13 +309,13 @@ int main() {
 			.debugName = "TLAS Accel"
 		});
 
-		// framebuffer sized since fullscreen.slang does a pixel-exact load
+		// framebuffer sized so the present blit is 1:1
 		const uint32_t kTraceWidth = initialWindowSize.width, kTraceHeight = initialWindowSize.height;
 		mythril::Texture tracedShadowOutput = ctx->createTexture({
 			.dimension = { kTraceWidth, kTraceHeight },
 			.type = mythril::TextureType::Type_2D,
 			.format = VK_FORMAT_R8G8B8A8_UNORM,
-			.usage = mythril::TextureUsageBits::TextureUsageBits_Sampled | mythril::TextureUsageBits_Storage,
+			.usage = mythril::TextureUsageBits::TextureUsageBits_Storage,
 			.debugName = "Raytraced output"
 		});
 
@@ -383,20 +373,9 @@ int main() {
 			cmd.cmdTraceRays({kTraceWidth, kTraceHeight, 1});
 
 		});
-		graph.addGraphicsPass("final")
-		.attachment({
-			.texDesc = ctx->getBackBufferTexture(),
-			.clearValue = mythril::ClearValue::color(0.2f, 0.2f, 0.2f, 1.f),
-			.loadOp = mythril::LoadOp::CLEAR,
-			.storeOp = mythril::StoreOp::STORE
-		})
-		.dependency(tracedShadowOutput, mythril::TextureAccess::Sampled)
-		.execute([&](mythril::CommandBuffer& cmd) {
-			cmd.cmdBindGraphicsPipeline(fullscreenPipeline);
-			const GPU::FullscreenPushConstant push = { .rayTracedImage = tracedShadowOutput.index() };
-			cmd.cmdPushConstants(push);
-			cmd.cmdDraw(3);
-		});
+		graph.addIntermediate("present")
+		.blit(tracedShadowOutput, ctx->getBackBufferTexture())
+		.finish();
 		graph.compile(*ctx);
 
 		bool focused = false;

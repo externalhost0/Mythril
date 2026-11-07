@@ -85,10 +85,12 @@ namespace mythril::vkutil {
 	void ImageMemoryBarrier2(VkCommandBuffer cmd, VkImage image, StageAccess src, StageAccess dst, VkImageLayout oldLayout, VkImageLayout newLayout, VkImageSubresourceRange range);
 
 	// pipeline stages that take in buffers or post transfer
-	constexpr VkPipelineStageFlags2 BufferConsumerStages2(VkBufferUsageFlags usage) {
+	constexpr VkPipelineStageFlags2 BufferConsumerStages2(VkBufferUsageFlags usage, bool rayTracingEnabled) {
 		VkPipelineStageFlags2 stages = 0;
 		if (usage & (VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_TEXEL_BUFFER_BIT)) {
 			stages |= VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+			if (rayTracingEnabled)
+				stages |= VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR;
 		}
 		if (usage & (VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)) {
 			stages |= VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT;

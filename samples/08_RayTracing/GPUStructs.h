@@ -30,8 +30,5 @@ struct ShadowPushConstant {
     uint32_t enableShadows;
     uint32_t debugMode;
 };
-struct FullscreenPushConstant {
-	DescriptorHandle<Texture2D> rayTracedImage;
-};
 
 NAMESPACE_END()

@@ -96,8 +96,7 @@ namespace mythril::vkutil {
 
 	constexpr const TextureFormatProperties* GetFormatProperties(VkFormat format) {
 		auto cmp = [](const TextureFormatProperties& a, VkFormat b) { return a.format < b; };
-		auto it = std::lower_bound(kTextureFormatTable.begin(), kTextureFormatTable.end(), format, cmp);
-		if (it != kTextureFormatTable.end() && it->format == format) {
+		if (auto it = std::lower_bound(kTextureFormatTable.begin(), kTextureFormatTable.end(), format, cmp); it != kTextureFormatTable.end() && it->format == format) {
 			return &(*it);
 		}
 		ASSERT_MSG(false, "VkFormat '{}' not currently supported!", vkstring::VulkanFormatToString(format));
