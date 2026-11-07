@@ -1500,9 +1500,24 @@ namespace mythril {
 
 		VmaAllocationCreateInfo allocation_ci = {};
 		allocation_ci.usage = (memFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) ? VMA_MEMORY_USAGE_CPU_TO_GPU : VMA_MEMORY_USAGE_AUTO;
+		const bool wantsLazy = memFlags & VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT;
+		if (wantsLazy) {
+			// VMA only forces dedicated for lazy memory under GPU_LAZILY_ALLOCATED usage, which has no fallback
+			allocation_ci.preferredFlags = VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT;
+			allocation_ci.flags |= VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
+		}
 
 		AllocatedTexture obj = {};
 		VK_CHECK(vmaCreateImage(_vmaAllocator, &image_ci, &allocation_ci, &obj._vkImage, &obj._vmaAllocation, nullptr));
+		if (wantsLazy) {
+			VmaAllocationInfo alloc_info;
+			vmaGetAllocationInfo(_vmaAllocator, obj._vmaAllocation, &alloc_info);
+			VkMemoryPropertyFlags granted;
+			vmaGetMemoryTypeProperties(_vmaAllocator, alloc_info.memoryType, &granted);
+			if (!(granted & VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT)) {
+				LOG_SYSTEM(LogType::Info, "Memoryless texture fell back to regular device memory, no compatible lazily allocated memory type on this device.");
+			}
+		}
 		obj._vkExtent = extent3D;
 		obj._vkUsageFlags = usageFlags;
 		obj._sampleCount = sampleCountFlagBits;
