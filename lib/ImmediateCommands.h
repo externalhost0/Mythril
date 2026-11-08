@@ -57,7 +57,8 @@ namespace mythril {
 		VkCommandPool _vkCommandPool = VK_NULL_HANDLE;
 
 		VkSemaphoreSubmitInfo _lastSubmitSemaphore = {.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO, .stageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT};
-		VkSemaphoreSubmitInfo _waitSemaphore = {.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO, .stageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT};
+		// only the swapchain acquire uses this, and swapchain images are only written by attachments or transfers (never bindless)
+		VkSemaphoreSubmitInfo _waitSemaphore = {.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO, .stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT};
 		VkSemaphoreSubmitInfo _signalSemaphore = {.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO, .stageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT};
 
 		VkQueue _vkQueue = VK_NULL_HANDLE;
