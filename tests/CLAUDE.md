@@ -1,6 +1,6 @@
 # mythril tests
 
-Two tiers. Pure tests (everything here today) check library logic exhaustively with no device. The device tier (planned, headless on lavapipe) checks API misuse through validation messages as hard failures, and rendering correctness through buffer readback and reference images. It is weak at barrier hazards: lavapipe executes close to serially, so a missing barrier rarely corrupts output, and syncval cannot see bindless or BDA accesses. So barrier coverage lives in the pure tier, a passing device test is never proof that a barrier is right, and a pure test is never proof that rendering is right. Tests build in any top-level configure (`MYTH_BUILD_TESTS` defaults to `PROJECT_IS_TOP_LEVEL`); run `ctest --test-dir build/debug`. Sync rules come from `vk_sync_tables.h`, generated from the SDK's `vk.xml` at configure time by `gen_sync_tables.py`; never hand-copy stage or access tables.
+Two tiers. Pure tests (everything in this folder) check library logic exhaustively with no device and run anywhere. The device tier is running the real samples under validation, which today lives outside the repo as a per-machine check. It is weak at barrier hazards: lavapipe executes close to serially, so a missing barrier rarely corrupts output, and syncval cannot see bindless or BDA accesses. So barrier coverage lives in the pure tier, a passing device test is never proof that a barrier is right, and a pure test is never proof that rendering is right. Tests build in any top-level configure (`MYTH_BUILD_TESTS` defaults to `PROJECT_IS_TOP_LEVEL`); run `ctest --test-dir build/debug`. Sync rules come from `vk_sync_tables.h`, generated from the SDK's `vk.xml` at configure time by `gen_sync_tables.py`; never hand-copy stage or access tables.
 
 Every new pure sync test follows the shape of `test_buffer_barriers.cpp`:
 
@@ -15,7 +15,3 @@ Known limits of the pure tier: no queue family dimension (narrowed masks use gra
 ## Scope
 
 Tests cover the code as it is and the inputs the samples actually produce. Never add or widen library functionality (new parameters, new result types, offscreen modes, sample hooks) just to make something testable. Extracting existing inline logic into a pure function the library then calls is fine. Add a test when a change is about to touch logic the samples run, or when a real bug is found.
-
-## Planned
-
-1. Sample run check, proposed, not agreed: a ctest that runs sample 07 (and 08 on lavapipe) for a few seconds under validation with syncval, using the layer log file the verify skill already uses, and fails on any message. It needs no change to the samples.
