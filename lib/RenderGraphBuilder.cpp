@@ -244,34 +244,6 @@ namespace mythril {
 		const bool desiredWrites = (desiredStageAccess.access & write_flags2) != 0;
 		return currentWrites || desiredWrites;
 	}
-	static constexpr bool IsBufferWriteAccess(VkAccessFlags2 access) {
-		constexpr VkAccessFlags2 writeFlags = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT | VK_ACCESS_2_HOST_WRITE_BIT;
-		return (access & writeFlags) != 0;
-	}
-	static constexpr bool NeedsBufferBarrier(const vkutil::StageAccess& currentState, const vkutil::StageAccess& desiredStageAccess) {
-		if (currentState.stage == 0 && currentState.access == 0)
-			return false;
-
-		const bool currentWrites = IsBufferWriteAccess(currentState.access);
-		const bool desiredWrites = IsBufferWriteAccess(desiredStageAccess.access);
-		if (!currentWrites && !desiredWrites)
-			return false;
-
-		return true;
-	}
-	static constexpr VkPipelineStageFlags2 GetPassShaderStages(PassDesc::Type passType) {
-		switch (passType) {
-			case PassDesc::Type::Graphics:
-				return VK_PIPELINE_STAGE_2_PRE_RASTERIZATION_SHADERS_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
-			case PassDesc::Type::Compute:
-				return VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-			case PassDesc::Type::Intermediate:
-				return VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-			case PassDesc::Type::RayTracing:
-				return VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR;
-		}
-		return VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-	}
 	static constexpr VkImageLayout GetTextureLayout(TextureAccess access) {
 		switch (access) {
 			case TextureAccess::Sampled:
@@ -288,7 +260,7 @@ namespace mythril {
 		ASSERT_MSG(false, "Unsupported TextureAccess value.");
 	}
 	static vkutil::StageAccess GetTextureStageAccess(TextureAccess access, PassDesc::Type passType) {
-		const VkPipelineStageFlags2 shaderStages = GetPassShaderStages(passType);
+		const VkPipelineStageFlags2 shaderStages = vkutil::GetPassShaderStages(passType);
 		// SHADER_READ covers bindless handles that end up sampled rather than loaded
 		switch (access) {
 			case TextureAccess::Sampled:
@@ -305,27 +277,6 @@ namespace mythril {
 		}
 		ASSERT_MSG(false, "Unsupported TextureAccess value.");
 	}
-	static vkutil::StageAccess GetBufferStageAccess(BufferAccess access, PassDesc::Type passType) {
-		const VkPipelineStageFlags2 shaderStages = GetPassShaderStages(passType);
-		switch (access) {
-			case BufferAccess::ShaderRead:
-				return {.stage = shaderStages, .access = VK_ACCESS_2_SHADER_STORAGE_READ_BIT};
-			case BufferAccess::ShaderWrite:
-				return {.stage = shaderStages, .access = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT};
-			case BufferAccess::ShaderReadWrite:
-				return {.stage = shaderStages, .access = VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT};
-			case BufferAccess::IndexRead:
-				return {.stage = VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT, .access = VK_ACCESS_2_INDEX_READ_BIT};
-			case BufferAccess::IndirectRead:
-				return {.stage = VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT, .access = VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT};
-			case BufferAccess::TransferRead:
-				return {.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = VK_ACCESS_2_TRANSFER_READ_BIT};
-			case BufferAccess::TransferWrite:
-				return {.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = VK_ACCESS_2_TRANSFER_WRITE_BIT};
-		}
-		ASSERT_MSG(false, "Unsupported BufferAccess value.");
-	}
-
 	void RenderGraph::processResourceAccess(const TextureDesc& texDesc, VkImageLayout desiredLayout, const StageAccess& dstMask, CompiledPass& outPass, const PassDesc& pass) {
 		const AllocatedTexture& texture = texDesc.texture.getContext()->view(texDesc.texture.handle());
 		const bool isSwapchain = texture.isSwapchainImage();
@@ -352,7 +303,7 @@ namespace mythril {
 			}
 		}
 		for (const BufferDependencyDesc& dependency_desc: passDesc.bufferDependencyOperations) {
-			outPass.bufferBarriers.push_back({.handle = dependency_desc.buffer.handle(), .dstMask = GetBufferStageAccess(dependency_desc.access, passDesc.type)});
+			outPass.bufferBarriers.push_back({.handle = dependency_desc.buffer.handle(), .dstMask = vkutil::GetBufferStageAccess(dependency_desc.access, passDesc.type)});
 		}
 	}
 
@@ -1033,24 +984,22 @@ namespace mythril {
 			cache.layoutVersion = activeTexture.getLayoutVersion();
 		}
 		for (const CompiledBufferBarrier& req: compiledPass.bufferBarriers) {
+			const std::optional<vkutil::BufferBarrier> barrier = vkutil::TrackBufferAccess(_bufferTrackers[req.handle], req.dstMask);
+			if (!barrier)
+				continue;
 			const AllocatedBuffer& buffer = cmd._ctx->view(req.handle);
-			vkutil::StageAccess& tracked = _bufferTrackers[req.handle];
-			const vkutil::StageAccess currentState = tracked;
-			if (NeedsBufferBarrier(currentState, req.dstMask)) {
-				vkBufferBarriers.push_back({
-					.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
-					.srcStageMask = currentState.stage,
-					.srcAccessMask = currentState.access,
-					.dstStageMask = req.dstMask.stage,
-					.dstAccessMask = req.dstMask.access,
-					.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-					.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-					.buffer = buffer._vkBuffer,
-					.offset = 0,
-					.size = VK_WHOLE_SIZE}
-				);
-			}
-			tracked = req.dstMask;
+			vkBufferBarriers.push_back({
+				.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
+				.srcStageMask = barrier->src.stage,
+				.srcAccessMask = barrier->src.access,
+				.dstStageMask = barrier->dst.stage,
+				.dstAccessMask = barrier->dst.access,
+				.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+				.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+				.buffer = buffer._vkBuffer,
+				.offset = 0,
+				.size = VK_WHOLE_SIZE}
+			);
 		}
 		if (!vkImageBarriers.empty() || !vkBufferBarriers.empty()) {
 			const VkDependencyInfo dependencyInfo = {

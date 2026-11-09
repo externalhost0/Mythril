@@ -29,6 +29,7 @@ namespace mythril {
     struct AttachmentInfo;
     struct SubresourceRange;
     struct TextureAccessCache;
+    namespace vkutil { struct BufferAccessTracker; }
     struct CompiledImageBarrier;
     struct CompiledBufferBarrier;
     struct UploadData;
@@ -283,7 +284,7 @@ namespace mythril {
         void performDryRun(CTX& rCtx);
         // last recorded stage/access per subresource, layouts themselves live on the texture
         std::unordered_map<TextureHandle, TextureAccessCache> _resourceTrackers;
-        std::unordered_map<BufferHandle, StageAccess> _bufferTrackers;
+        std::unordered_map<BufferHandle, vkutil::BufferAccessTracker> _bufferTrackers;
     	// qol feature so that textures that are always supposed to be based off size of the screen are auto updated
         struct WindowSizedTexture {
             Texture* texture = nullptr;

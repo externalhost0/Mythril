@@ -4,8 +4,10 @@
 
 #pragma once
 #include "mythril/RenderGraphBuilder.h"
+#include "HelperMacros.h"
 
 #include <cstdint>
+#include <optional>
 #include <volk.h>
 
 namespace mythril::vkutil {
@@ -180,6 +182,62 @@ namespace mythril::vkutil {
 	}
 	constexpr BufferBarrier GetUploadBufferBarrier(VkBufferUsageFlags usage, BufferSyncFeatures features) {
 		return {.src = {.stage = VK_PIPELINE_STAGE_2_COPY_BIT, .access = VK_ACCESS_2_TRANSFER_WRITE_BIT}, .dst = GetBufferConsumers(usage, features)};
+	}
+
+	constexpr VkPipelineStageFlags2 GetPassShaderStages(PassDesc::Type passType) {
+		switch (passType) {
+			case PassDesc::Type::Graphics:
+				return VK_PIPELINE_STAGE_2_PRE_RASTERIZATION_SHADERS_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+			case PassDesc::Type::Compute:
+				return VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+			case PassDesc::Type::Intermediate:
+				return VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+			case PassDesc::Type::RayTracing:
+				return VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR;
+		}
+		return VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+	}
+	inline StageAccess GetBufferStageAccess(BufferAccess access, PassDesc::Type passType) {
+		const VkPipelineStageFlags2 shaderStages = GetPassShaderStages(passType);
+		switch (access) {
+			case BufferAccess::ShaderRead:
+				return {.stage = shaderStages, .access = VK_ACCESS_2_SHADER_STORAGE_READ_BIT};
+			case BufferAccess::ShaderWrite:
+				return {.stage = shaderStages, .access = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT};
+			case BufferAccess::ShaderReadWrite:
+				return {.stage = shaderStages, .access = VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT};
+			case BufferAccess::IndexRead:
+				return {.stage = VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT, .access = VK_ACCESS_2_INDEX_READ_BIT};
+			case BufferAccess::IndirectRead:
+				return {.stage = VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT, .access = VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT};
+			case BufferAccess::TransferRead:
+				return {.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = VK_ACCESS_2_TRANSFER_READ_BIT};
+			case BufferAccess::TransferWrite:
+				return {.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = VK_ACCESS_2_TRANSFER_WRITE_BIT};
+		}
+		ASSERT_MSG(false, "Unsupported BufferAccess value.");
+	}
+
+	struct BufferAccessTracker {
+		StageAccess write;
+		StageAccess visible;
+		VkPipelineStageFlags2 readStages;
+	};
+	constexpr std::optional<BufferBarrier> TrackBufferAccess(BufferAccessTracker& tracker, StageAccess access) {
+		if (access.access & kWriteAccess) {
+			// readers since the write were all ordered after it, so waiting on them chains to the write
+			const StageAccess src = tracker.readStages ? StageAccess{.stage = tracker.readStages, .access = 0} : tracker.write;
+			tracker = {.write = {.stage = access.stage, .access = access.access & kWriteAccess}};
+			if (src.stage == 0)
+				return std::nullopt;
+			return BufferBarrier{.src = src, .dst = access};
+		}
+		tracker.readStages |= access.stage;
+		const bool covered = (access.stage & ~tracker.visible.stage) == 0 && (access.access & ~tracker.visible.access) == 0;
+		if (tracker.write.stage == 0 || covered)
+			return std::nullopt;
+		tracker.visible = {.stage = tracker.visible.stage | access.stage, .access = tracker.visible.access | access.access};
+		return BufferBarrier{.src = tracker.write, .dst = access};
 	}
 
 	// uint32_t FindMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFilter, VkMemoryPropertyFlags properties);

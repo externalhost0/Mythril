@@ -36,6 +36,7 @@ CPMAddPackage(
 add_executable(mythril_tests
         main.cpp
         test_buffer_barriers.cpp
+        test_buffer_tracking.cpp
 )
 target_include_directories(mythril_tests PRIVATE "${_gen_dir}" "${mythril_SOURCE_DIR}/lib")
 target_link_libraries(mythril_tests PRIVATE mythril doctest::doctest)
