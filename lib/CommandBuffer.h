@@ -152,7 +152,7 @@ namespace mythril {
 		void cmdSetViewportImpl(VkExtent2D extent2D);
 		void cmdSetScissorImpl(VkExtent2D extent2D);
 
-		void bufferBarrierImpl(BufferHandle bufhandle, VkPipelineStageFlags2 srcStage, VkPipelineStageFlags2 dstStage);
+		void bufferBarrierImpl(const detail::AllocatedBuffer& buf, vkutil::StageAccess src, vkutil::StageAccess dst);
 		void orderAfterPreviousDispatchImpl();
 
 		// helpers

@@ -561,12 +561,18 @@ namespace mythril {
 			return;
 		}
 
-		bufferBarrierImpl(handle, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT);
+		const VkBufferUsageFlags usage = buf->_vkUsageFlags;
+		const VkPipelineStageFlags2 consumerStages = vkutil::BufferConsumerStages2(usage, _ctx->isExtensionEnabled(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME));
+		const VkAccessFlags2 consumerAccess = vkutil::BufferConsumerAccess2(usage);
+		const VkAccessFlags2 priorWrites = VK_ACCESS_2_TRANSFER_WRITE_BIT | (consumerAccess & VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT);
+		const vkutil::StageAccess transferWrite = {.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = VK_ACCESS_2_TRANSFER_WRITE_BIT};
+
+		bufferBarrierImpl(*buf, {.stage = consumerStages | VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = priorWrites}, transferWrite);
 
 		MYTH_PROFILER_GPU_COMMAND_ZONE("cmdUpdateBuffer()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
 		vkCmdUpdateBuffer(_wrapper->_cmdBuf, buf->_vkBuffer, offset, size, data);
 
-		bufferBarrierImpl(handle, VK_PIPELINE_STAGE_2_TRANSFER_BIT, vkutil::BufferConsumerStages2(buf->_vkUsageFlags, _ctx->isExtensionEnabled(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME)));
+		bufferBarrierImpl(*buf, transferWrite, {.stage = consumerStages, .access = consumerAccess});
 	}
 	void CommandBuffer::cmdCopyImageToBuffer(TextureHandle source, BufferHandle destination, const VkBufferImageCopy& region) {
 		DRY_RETURN()
@@ -703,37 +709,19 @@ namespace mythril {
 		vkCmdEndRendering(_wrapper->_cmdBuf);
 		_isRendering = false;
 	}
-	void CommandBuffer::bufferBarrierImpl(BufferHandle bufhandle, VkPipelineStageFlags2 srcStage, VkPipelineStageFlags2 dstStage) {
-		auto& buf = _ctx->view(bufhandle);
-
-		VkBufferMemoryBarrier2 barrier = {
+	void CommandBuffer::bufferBarrierImpl(const AllocatedBuffer& buf, vkutil::StageAccess src, vkutil::StageAccess dst) {
+		const VkBufferMemoryBarrier2 barrier = {
 		    .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
-		    .srcStageMask = srcStage,
-		    .srcAccessMask = 0,
-		    .dstStageMask = dstStage,
-		    .dstAccessMask = 0,
+		    .srcStageMask = src.stage,
+		    .srcAccessMask = src.access,
+		    .dstStageMask = dst.stage,
+		    .dstAccessMask = dst.access,
 		    .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
 		    .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
 		    .buffer = buf._vkBuffer,
 		    .offset = 0,
 		    .size = VK_WHOLE_SIZE,
 		};
-		if (srcStage & VK_PIPELINE_STAGE_2_TRANSFER_BIT) {
-			barrier.srcAccessMask |= VK_ACCESS_2_TRANSFER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT;
-		} else {
-			barrier.srcAccessMask |= VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT;
-		}
-		if (dstStage & VK_PIPELINE_STAGE_2_TRANSFER_BIT) {
-			barrier.dstAccessMask |= VK_ACCESS_2_TRANSFER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT;
-		} else {
-			barrier.dstAccessMask |= VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT;
-		}
-		if (dstStage & VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT) {
-			barrier.dstAccessMask |= VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT;
-		}
-		if (buf._vkUsageFlags & VK_BUFFER_USAGE_INDEX_BUFFER_BIT) {
-			barrier.dstAccessMask |= VK_ACCESS_2_INDEX_READ_BIT;
-		}
 		const VkDependencyInfo depInfo = {
 		    .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
 		    .bufferMemoryBarrierCount = 1,
