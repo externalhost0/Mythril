@@ -11,6 +11,7 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 # ==================== User Options ====================
 option(MYTH_BUILD_SAMPLES "Build sample applications" OFF)
+option(MYTH_BUILD_TESTS "Build unit tests" ${PROJECT_IS_TOP_LEVEL})
 option(MYTH_ENABLE_IMGUI_STANDARD "Enable ImGui plugin (main branch)" OFF)
 option(MYTH_ENABLE_IMGUI_DOCKING "Enable ImGui plugin (docking branch)" OFF)
 option(MYTH_ENABLE_TRACY "Enable Tracy profiling" OFF)
@@ -360,6 +361,12 @@ if(MYTH_BUILD_SAMPLES)
     endforeach()
     set(MYTH_SAMPLES_TO_BUILD "${_samples_to_build}" CACHE INTERNAL "")
     add_subdirectory(samples)
+endif()
+
+# ==================== Tests ====================
+if(MYTH_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
 endif()
 
 ## ==================== Install Rules ====================
