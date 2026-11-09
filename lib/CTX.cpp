@@ -1147,20 +1147,7 @@ namespace mythril {
 	}
 	Buffer CTX::createBuffer(BufferSpec spec) {
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_CREATE);
-		VkBufferUsageFlags usage_flags = (spec.storage == StorageType::Device) ? VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT : 0;
-
-		if (spec.usage & BufferUsageBits::BufferUsageBits_Index)
-			usage_flags |= VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
-		if (spec.usage & BufferUsageBits::BufferUsageBits_Storage)
-			usage_flags |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-		if (spec.usage & BufferUsageBits::BufferUsageBits_Indirect)
-			usage_flags |= VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-		if (spec.usage & BufferUsageBits::BufferUsageBits_AccelerationStructureInputReadOnly)
-			usage_flags |= VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-		if (spec.usage & BufferUsageBits::BufferUsageBits_AccelerationStructureStorage)
-			usage_flags |= VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-		if (spec.usage & BufferUsageBits::BufferUsageBits_ShaderBindingTable)
-			usage_flags |= VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+		const VkBufferUsageFlags usage_flags = vkutil::ToVkBufferUsage(spec.usage, spec.storage);
 
 		ASSERT_MSG(usage_flags, "Invalid buffer creation specification!");
 		const VkMemoryPropertyFlags mem_flags = StorageTypeToVkMemoryPropertyFlags(spec.storage);

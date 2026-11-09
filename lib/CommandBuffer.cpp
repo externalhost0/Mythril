@@ -561,18 +561,17 @@ namespace mythril {
 			return;
 		}
 
-		const VkBufferUsageFlags usage = buf->_vkUsageFlags;
-		const VkPipelineStageFlags2 consumerStages = vkutil::BufferConsumerStages2(usage, _ctx->isExtensionEnabled(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME));
-		const VkAccessFlags2 consumerAccess = vkutil::BufferConsumerAccess2(usage);
-		const VkAccessFlags2 priorWrites = VK_ACCESS_2_TRANSFER_WRITE_BIT | (consumerAccess & VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT);
-		const vkutil::StageAccess transferWrite = {.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = VK_ACCESS_2_TRANSFER_WRITE_BIT};
-
-		bufferBarrierImpl(*buf, {.stage = consumerStages | VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = priorWrites}, transferWrite);
+		const vkutil::BufferSyncFeatures features = {
+		    .accelerationStructure = _ctx->isExtensionEnabled(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME),
+		    .rayTracingPipeline = _ctx->isExtensionEnabled(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME),
+		};
+		const vkutil::UpdateBufferBarriers barriers = vkutil::GetUpdateBufferBarriers(buf->_vkUsageFlags, features);
+		bufferBarrierImpl(*buf, barriers.before.src, barriers.before.dst);
 
 		MYTH_PROFILER_GPU_COMMAND_ZONE("cmdUpdateBuffer()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
 		vkCmdUpdateBuffer(_wrapper->_cmdBuf, buf->_vkBuffer, offset, size, data);
 
-		bufferBarrierImpl(*buf, transferWrite, {.stage = consumerStages, .access = consumerAccess});
+		bufferBarrierImpl(*buf, barriers.after.src, barriers.after.dst);
 	}
 	void CommandBuffer::cmdCopyImageToBuffer(TextureHandle source, BufferHandle destination, const VkBufferImageCopy& region) {
 		DRY_RETURN()

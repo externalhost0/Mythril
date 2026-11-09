@@ -84,47 +84,94 @@ namespace mythril::vkutil {
 	StageAccess GetPipelineStageAccess(VkImageLayout layout);
 	void ImageMemoryBarrier2(VkCommandBuffer cmd, VkImage image, StageAccess src, StageAccess dst, VkImageLayout oldLayout, VkImageLayout newLayout, VkImageSubresourceRange range);
 
-	// pipeline stages that take in buffers or post transfer
-	constexpr VkPipelineStageFlags2 BufferConsumerStages2(VkBufferUsageFlags usage, bool rayTracingEnabled) {
-		VkPipelineStageFlags2 stages = 0;
-		if (usage & (VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_TEXEL_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT)) {
-			stages |= VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-			if (rayTracingEnabled)
-				stages |= VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR;
-		}
-		if (usage & (VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)) {
-			stages |= VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT;
-		}
-		if (usage & VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT) {
-			stages |= VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT;
-		}
-		if (usage & VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR) {
-			stages |= VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR;
-		}
-		if (usage & VK_BUFFER_USAGE_TRANSFER_SRC_BIT) {
-			stages |= VK_PIPELINE_STAGE_2_TRANSFER_BIT;
-		}
-		return stages ? stages : VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+	constexpr VkBufferUsageFlags ToVkBufferUsage(uint8_t usageBits, StorageType storage) {
+		VkBufferUsageFlags usage = (storage == StorageType::Device) ? VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT : 0;
+		if (usageBits & BufferUsageBits_Index)
+			usage |= VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
+		if (usageBits & BufferUsageBits_Storage)
+			usage |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+		if (usageBits & BufferUsageBits_Indirect)
+			usage |= VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+		if (usageBits & BufferUsageBits_AccelerationStructureInputReadOnly)
+			usage |= VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+		if (usageBits & BufferUsageBits_AccelerationStructureStorage)
+			usage |= VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+		if (usageBits & BufferUsageBits_ShaderBindingTable)
+			usage |= VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+		return usage;
 	}
-	constexpr VkAccessFlags2 BufferConsumerAccess2(VkBufferUsageFlags usage) {
-		VkAccessFlags2 access = 0;
-		if (usage & VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT)
-			access |= VK_ACCESS_2_UNIFORM_READ_BIT;
-		if (usage & (VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_TEXEL_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT))
-			access |= VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
-		if (usage & VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT)
-			access |= VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
-		if (usage & VK_BUFFER_USAGE_TRANSFER_SRC_BIT)
-			access |= VK_ACCESS_2_TRANSFER_READ_BIT;
-		if (usage & VK_BUFFER_USAGE_INDEX_BUFFER_BIT)
-			access |= VK_ACCESS_2_INDEX_READ_BIT;
-		if (usage & VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)
-			access |= VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT;
-		if (usage & VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT)
-			access |= VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT;
-		if (usage & VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR)
-			access |= VK_ACCESS_2_MEMORY_READ_BIT;
-		return access ? access : VK_ACCESS_2_MEMORY_READ_BIT;
+
+	// ray tracing pipeline requires acceleration structure, so {false, true} is never valid
+	struct BufferSyncFeatures {
+		bool accelerationStructure;
+		bool rayTracingPipeline;
+	};
+	enum class BufferUseGate : uint8_t {
+		None,
+		AccelerationStructure,
+		RayTracingPipeline,
+	};
+	struct BufferUse {
+		VkBufferUsageFlags usage;
+		VkPipelineStageFlags2 stages;
+		VkAccessFlags2 access;
+		BufferUseGate gate;
+	};
+	constexpr VkPipelineStageFlags2 kAnyShaderStage = VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR;
+	constexpr VkAccessFlags2 kWriteAccess = VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_HOST_WRITE_BIT |
+	                                        VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR | VK_ACCESS_2_MEMORY_WRITE_BIT;
+	// every way a buffer made by CTX::createBuffer can be accessed on the device
+	constexpr BufferUse kBufferUses[] = {
+	    {VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, kAnyShaderStage, VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT, BufferUseGate::None},
+	    {VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR | VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR, BufferUseGate::AccelerationStructure},
+	    {VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_PIPELINE_STAGE_2_INDEX_INPUT_BIT, VK_ACCESS_2_INDEX_READ_BIT, BufferUseGate::None},
+	    {VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT, VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT, VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT, BufferUseGate::None},
+	    {VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT, VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT, BufferUseGate::AccelerationStructure},
+	    {VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR, VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, VK_ACCESS_2_SHADER_READ_BIT, BufferUseGate::AccelerationStructure},
+	    {VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR, VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR | VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_COPY_BIT_KHR, VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR | VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR, BufferUseGate::AccelerationStructure},
+	    {VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR, kAnyShaderStage, VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR, BufferUseGate::AccelerationStructure},
+	    {VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR, VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR, VK_ACCESS_2_SHADER_BINDING_TABLE_READ_BIT_KHR, BufferUseGate::RayTracingPipeline},
+	    {VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, BufferUseGate::None},
+	    {VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_PIPELINE_STAGE_2_COPY_BIT | VK_PIPELINE_STAGE_2_CLEAR_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, BufferUseGate::None},
+	};
+	constexpr VkBufferUsageFlags kHandledBufferUsage = [] {
+		VkBufferUsageFlags usage = 0;
+		for (const BufferUse& use : kBufferUses)
+			usage |= use.usage;
+		return usage;
+	}();
+
+	struct BufferBarrier {
+		StageAccess src;
+		StageAccess dst;
+	};
+	struct UpdateBufferBarriers {
+		BufferBarrier before;
+		BufferBarrier after;
+	};
+	constexpr UpdateBufferBarriers GetUpdateBufferBarriers(VkBufferUsageFlags usage, BufferSyncFeatures features) {
+		const auto gateOpen = [&](BufferUseGate gate) {
+			switch (gate) {
+				case BufferUseGate::None: return true;
+				case BufferUseGate::AccelerationStructure: return features.accelerationStructure;
+				case BufferUseGate::RayTracingPipeline: return features.rayTracingPipeline;
+			}
+			return false;
+		};
+		const VkPipelineStageFlags2 enabledStages = features.rayTracingPipeline ? ~VkPipelineStageFlags2{0} : ~VkPipelineStageFlags2{VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR};
+
+		StageAccess consumers = {};
+		for (const BufferUse& use : kBufferUses) {
+			if (!(use.usage & usage) || !gateOpen(use.gate))
+				continue;
+			consumers.stage |= use.stages & enabledStages;
+			consumers.access |= use.access;
+		}
+		const StageAccess update = {.stage = VK_PIPELINE_STAGE_2_COPY_BIT | VK_PIPELINE_STAGE_2_CLEAR_BIT, .access = VK_ACCESS_2_TRANSFER_WRITE_BIT};
+		return {
+		    .before = {.src = {.stage = consumers.stage, .access = consumers.access & kWriteAccess}, .dst = update},
+		    .after = {.src = update, .dst = consumers},
+		};
 	}
 
 	// uint32_t FindMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFilter, VkMemoryPropertyFlags properties);
