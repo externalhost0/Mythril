@@ -4,7 +4,7 @@ Two tiers. Pure tests (everything here today) check library logic exhaustively w
 
 Every new pure sync test follows the shape of `test_buffer_barriers.cpp`:
 
-1. Test the function the library actually calls. If the logic is composed inline in a `cmd*` method, extract it into a pure `vkutil` function first and have the method call it.
+1. Test the function the library actually calls. If the logic is composed inline in a `cmd*` method, extract it into a pure `vkutil` function first and have the method call it. Only do this for logic the samples run.
 2. The oracle (what accesses are possible for a given input) is written from the Vulkan spec, never from the code under test. Failure example: an oracle built from `kBufferUses` would agree with it if a row dropped BDA shader writes.
 3. Enumerate the whole input space through the same mapping the library uses (`ToVkBufferUsage` over every usage bit subset and storage type, every valid feature set) instead of picking examples, and check the case count so an empty loop cannot pass.
 4. Check validity against the vk.xml tables (no unknown bits), coverage against the oracle on both sides of each barrier, and tightness (every emitted stage and access bit is justified by some required use). ALL_COMMANDS, MEMORY_READ and MEMORY_WRITE are banned outright.
@@ -12,8 +12,10 @@ Every new pure sync test follows the shape of `test_buffer_barriers.cpp`:
 
 Known limits of the pure tier: no queue family dimension (narrowed masks use graphics-only stages, fine while every `CommandBuffer` records on the graphics queue) and no feature gating beyond acceleration structures and ray tracing.
 
-## Planned, in order
+## Scope
 
-1. Render graph sync policy in `lib/RenderGraphBuilder.cpp` (`GetBufferStageAccess`, `GetTextureStageAccess`, `NeedsBarrier`, `NeedsBufferBarrier`, `IsBufferWriteAccess`). Extract to a pure header first. Known leads: `IsBufferWriteAccess` misses SHADER_WRITE and ACCELERATION_STRUCTURE_WRITE, and `NeedsBufferBarrier` emits nothing when the tracked state is empty, which skips any write the graph did not track (unverified whether that is reachable).
-2. `GetPipelineStageAccess` (`lib/vkutil.cpp`) takes only a layout and asserts on any layout it does not list, so exhaustive enumeration would abort. Widen its inputs (image usage, features) and give it an explicit unsupported result before testing it.
-3. Device tier. First deliverable: remove one barrier on purpose and record whether validation reports it, so the tier's blind spots are measured rather than assumed. Then sample 07's graph offscreen against a reference image.
+Tests cover the code as it is and the inputs the samples actually produce. Never add or widen library functionality (new parameters, new result types, offscreen modes, sample hooks) just to make something testable. Extracting existing inline logic into a pure function the library then calls is fine. Add a test when a change is about to touch logic the samples run, or when a real bug is found.
+
+## Planned
+
+1. Sample run check, proposed, not agreed: a ctest that runs sample 07 (and 08 on lavapipe) for a few seconds under validation with syncval, using the layer log file the verify skill already uses, and fails on any message. It needs no change to the samples.
