@@ -301,7 +301,7 @@ namespace {
 } // namespace
 
 template <typename Fn>
-size_t checkEveryBuffer(Fn fn, bool includeHostVisible) {
+static size_t checkEveryBuffer(Fn fn, bool includeHostVisible) {
 	size_t checked = 0;
 	for (uint32_t bits = 0; bits < (1u << kUsageBitCount); ++bits) {
 		for (StorageType storage : kStorageTypes) {

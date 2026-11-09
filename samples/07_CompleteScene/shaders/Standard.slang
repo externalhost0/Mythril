@@ -106,6 +106,7 @@ FSOutput fs_main(v2f input) {
             input.WorldPosition,
             push.frame.lighting.pointLights[i].position,
             push.pointLightCubemaps[i],
+            N,
             60 // farPlane, just hardcode for now
         );
         omni += pointLightContribution * pointShadowFactor;
@@ -129,12 +130,10 @@ static const float2 kHexOffsets[kNumOfSamples] = {
     float2(1, 0), float2(0.5, 0.866025), float2(-0.5, 0.866025),
     float2(-1, 0), float2(-0.5, -0.866025), float2(0.5, -0.866025)
 };
-float PointSCEXT(float3 worldPos, float3 lightPos, TextureCube<float> shadowCubemap, float farPlane) {
+float PointSCEXT(float3 worldPos, float3 lightPos, TextureCube<float> shadowCubemap, float3 geomNormal, float farPlane) {
     float3 fragToLight = worldPos - lightPos;
     float dist = length(fragToLight);
     float bias = max(0.005, 0.001 * dist);
-    float referenceDepth = (dist - bias) / farPlane;
-    fragToLight.y = -fragToLight.y;
 
     float2 dims;
     shadowCubemap.GetDimensions(dims.x, dims.y);
@@ -147,15 +146,22 @@ float PointSCEXT(float3 worldPos, float3 lightPos, TextureCube<float> shadowCube
     float3 tangent = normalize(cross(abs(n.y) < 0.999 ? float3(0, 1, 0) : float3(1, 0, 0), n));
     float3 bitangent = cross(n, tangent);
 
+    // each tap compares against where its own ray hits the receiver plane, else offset taps self shadow on slopes
+    float planeDist = dot(fragToLight, geomNormal);
+    float maxDelta = diskRadius * 10.0;
+
     float shadow = 0.0;
     [unroll(kNumOfSamples)]
     for (int i = 0; i < kNumOfSamples; i++) {
         float3 sampleDir = fragToLight + (kHexOffsets[i].x * tangent + kHexOffsets[i].y * bitangent) * diskRadius;
+        float denom = dot(normalize(sampleDir), geomNormal);
+        float tapDist = abs(denom) > 1e-4 ? planeDist / denom : dist;
+        tapDist = clamp(tapDist, dist - maxDelta, dist + maxDelta);
 
         shadow += shadowCubemap.SampleCmpLevelZero(
             push.shadowSamplerComparison,
-            sampleDir,
-            referenceDepth
+            sampleDir * float3(1, -1, 1),
+            (tapDist - bias) / farPlane
         );
     }
     return shadow / kNumOfSamples;

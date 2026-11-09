@@ -36,5 +36,7 @@ float fs_main(v2f input) : SV_Depth {
     float distance = length(input.WorldPos - push.lightPos);
     // Normalize to [0, 1] using far plane
     float farPlane = 60.0; // Must match pointlight_farplane
-    return distance / farPlane;
+    // slope bias: hardware pcf compares raw texels, so each can be off by the per-texel distance change
+    float slopeBias = min(fwidth(distance), 0.5);
+    return (distance + slopeBias) / farPlane;
 }
