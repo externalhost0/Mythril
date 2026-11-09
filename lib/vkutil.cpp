@@ -190,6 +190,22 @@ namespace mythril::vkutil {
 		const VkDependencyInfo di = {.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO, .pNext = nullptr, .imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &barrier};
 		vkCmdPipelineBarrier2(cmd, &di);
 	}
+	void BufferMemoryBarrier2(VkCommandBuffer cmd, VkBuffer buffer, StageAccess src, StageAccess dst, VkDeviceSize offset, VkDeviceSize size) {
+		const VkBufferMemoryBarrier2 barrier = {
+		    .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
+		    .srcStageMask = src.stage,
+		    .srcAccessMask = src.access,
+		    .dstStageMask = dst.stage,
+		    .dstAccessMask = dst.access,
+		    .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+		    .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+		    .buffer = buffer,
+		    .offset = offset,
+		    .size = size,
+		};
+		const VkDependencyInfo di = {.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO, .bufferMemoryBarrierCount = 1, .pBufferMemoryBarriers = &barrier};
+		vkCmdPipelineBarrier2(cmd, &di);
+	}
 	StageAccess GetPipelineStageAccess(VkImageLayout layout) {
 		switch (layout) {
 			// todo: https://docs.vulkan.org/guide/latest/extensions/VK_KHR_synchronization2.html

@@ -23,6 +23,11 @@ namespace mythril {
 		}
 		AllocatedBuffer* stagingBuffer = _ctx._bufferPool.get(_stagingBuffer);
 		ASSERT(stagingBuffer);
+		const vkutil::BufferSyncFeatures features = {
+		    .accelerationStructure = _ctx.isExtensionEnabled(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME),
+		    .rayTracingPipeline = _ctx.isExtensionEnabled(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME),
+		};
+		const vkutil::BufferBarrier barrier = vkutil::GetUploadBufferBarrier(buffer._vkUsageFlags, features);
 
 		while (size) {
 			// get next staging buffer free offset
@@ -41,40 +46,7 @@ namespace mythril {
 
 			const ImmediateCommands::CommandBufferWrapper& wrapper = _ctx._immGraphics->acquire();
 			vkCmdCopyBuffer(wrapper._cmdBuf, stagingBuffer->_vkBuffer, buffer._vkBuffer, 1, &copy);
-			VkBufferMemoryBarrier barrier = {
-			    .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-			    .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-			    .dstAccessMask = 0,
-			    .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-			    .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-			    .buffer = buffer._vkBuffer,
-			    .offset = dstOffset,
-			    .size = chunkSize,
-			};
-			VkPipelineStageFlags dstMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
-			if (buffer._vkUsageFlags & VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT) {
-				dstMask |= VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT;
-				barrier.dstAccessMask |= VK_ACCESS_INDIRECT_COMMAND_READ_BIT;
-			}
-			if (buffer._vkUsageFlags & VK_BUFFER_USAGE_INDEX_BUFFER_BIT) {
-				dstMask |= VK_PIPELINE_STAGE_VERTEX_INPUT_BIT;
-				barrier.dstAccessMask |= VK_ACCESS_INDEX_READ_BIT;
-			}
-			if (buffer._vkUsageFlags & VK_BUFFER_USAGE_VERTEX_BUFFER_BIT) {
-				dstMask |= VK_PIPELINE_STAGE_VERTEX_INPUT_BIT;
-				barrier.dstAccessMask |= VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT;
-			}
-			if (buffer._vkUsageFlags & VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT) {
-				barrier.dstAccessMask |= VK_ACCESS_UNIFORM_READ_BIT;
-			}
-			if (buffer._vkUsageFlags & VK_BUFFER_USAGE_STORAGE_BUFFER_BIT) {
-				barrier.dstAccessMask |= VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
-			}
-			if (buffer._vkUsageFlags & VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR) {
-				dstMask |= VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR;
-				barrier.dstAccessMask |= VK_ACCESS_MEMORY_READ_BIT;
-			}
-			vkCmdPipelineBarrier(wrapper._cmdBuf, VK_PIPELINE_STAGE_TRANSFER_BIT, dstMask, VkDependencyFlags{}, 0, nullptr, 1, &barrier, 0, nullptr);
+			vkutil::BufferMemoryBarrier2(wrapper._cmdBuf, buffer._vkBuffer, barrier.src, barrier.dst, dstOffset, chunkSize);
 			desc.handle_ = _ctx._immGraphics->submit(wrapper);
 			desc.state_ = MemoryRegionDesc::State::Busy;
 			_regions.push_back(desc);

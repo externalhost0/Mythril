@@ -15,6 +15,5 @@ Known limits of the pure tier: no queue family dimension (narrowed masks use gra
 ## Planned, in order
 
 1. Render graph sync policy in `lib/RenderGraphBuilder.cpp` (`GetBufferStageAccess`, `GetTextureStageAccess`, `NeedsBarrier`, `NeedsBufferBarrier`, `IsBufferWriteAccess`). Extract to a pure header first. Known leads: `IsBufferWriteAccess` misses SHADER_WRITE and ACCELERATION_STRUCTURE_WRITE, and `NeedsBufferBarrier` emits nothing when the tracked state is empty, which skips any write the graph did not track (unverified whether that is reachable).
-2. StagingDevice upload barrier (`lib/StagingDevice.cpp` ~44-77) is a live bug: a BDA-read indirect buffer only gets INDIRECT_COMMAND_READ. Fix it as a sync2 port that reuses the consumer half of `kBufferUses`, not as another copy of the mapping.
-3. `GetPipelineStageAccess` (`lib/vkutil.cpp`) takes only a layout and asserts on any layout it does not list, so exhaustive enumeration would abort. Widen its inputs (image usage, features) and give it an explicit unsupported result before testing it.
-4. Device tier. First deliverable: remove one barrier on purpose and record whether validation reports it, so the tier's blind spots are measured rather than assumed. Then sample 07's graph offscreen against a reference image.
+2. `GetPipelineStageAccess` (`lib/vkutil.cpp`) takes only a layout and asserts on any layout it does not list, so exhaustive enumeration would abort. Widen its inputs (image usage, features) and give it an explicit unsupported result before testing it.
+3. Device tier. First deliverable: remove one barrier on purpose and record whether validation reports it, so the tier's blind spots are measured rather than assumed. Then sample 07's graph offscreen against a reference image.

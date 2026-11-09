@@ -709,25 +709,8 @@ namespace mythril {
 		_isRendering = false;
 	}
 	void CommandBuffer::bufferBarrierImpl(const AllocatedBuffer& buf, vkutil::StageAccess src, vkutil::StageAccess dst) {
-		const VkBufferMemoryBarrier2 barrier = {
-		    .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
-		    .srcStageMask = src.stage,
-		    .srcAccessMask = src.access,
-		    .dstStageMask = dst.stage,
-		    .dstAccessMask = dst.access,
-		    .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-		    .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-		    .buffer = buf._vkBuffer,
-		    .offset = 0,
-		    .size = VK_WHOLE_SIZE,
-		};
-		const VkDependencyInfo depInfo = {
-		    .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-		    .bufferMemoryBarrierCount = 1,
-		    .pBufferMemoryBarriers = &barrier,
-		};
 		MYTH_PROFILER_GPU_COMMAND_ZONE("cmdPipelineBarrier2()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
-		vkCmdPipelineBarrier2(_wrapper->_cmdBuf, &depInfo);
+		vkutil::BufferMemoryBarrier2(_wrapper->_cmdBuf, buf._vkBuffer, src, dst, 0, VK_WHOLE_SIZE);
 	}
 	void CommandBuffer::cmdCopyImageImpl(TextureHandle source, TextureHandle destination, VkExtent2D size) {
 		auto& sourceTex = _ctx->view(source);

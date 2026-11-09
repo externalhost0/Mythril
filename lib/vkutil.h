@@ -83,6 +83,7 @@ namespace mythril::vkutil {
 
 	StageAccess GetPipelineStageAccess(VkImageLayout layout);
 	void ImageMemoryBarrier2(VkCommandBuffer cmd, VkImage image, StageAccess src, StageAccess dst, VkImageLayout oldLayout, VkImageLayout newLayout, VkImageSubresourceRange range);
+	void BufferMemoryBarrier2(VkCommandBuffer cmd, VkBuffer buffer, StageAccess src, StageAccess dst, VkDeviceSize offset, VkDeviceSize size);
 
 	constexpr VkBufferUsageFlags ToVkBufferUsage(uint8_t usageBits, StorageType storage) {
 		VkBufferUsageFlags usage = (storage == StorageType::Device) ? VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT : 0;
@@ -149,7 +150,7 @@ namespace mythril::vkutil {
 		BufferBarrier before;
 		BufferBarrier after;
 	};
-	constexpr UpdateBufferBarriers GetUpdateBufferBarriers(VkBufferUsageFlags usage, BufferSyncFeatures features) {
+	constexpr StageAccess GetBufferConsumers(VkBufferUsageFlags usage, BufferSyncFeatures features) {
 		const auto gateOpen = [&](BufferUseGate gate) {
 			switch (gate) {
 				case BufferUseGate::None: return true;
@@ -167,11 +168,18 @@ namespace mythril::vkutil {
 			consumers.stage |= use.stages & enabledStages;
 			consumers.access |= use.access;
 		}
+		return consumers;
+	}
+	constexpr UpdateBufferBarriers GetUpdateBufferBarriers(VkBufferUsageFlags usage, BufferSyncFeatures features) {
+		const StageAccess consumers = GetBufferConsumers(usage, features);
 		const StageAccess update = {.stage = VK_PIPELINE_STAGE_2_COPY_BIT | VK_PIPELINE_STAGE_2_CLEAR_BIT, .access = VK_ACCESS_2_TRANSFER_WRITE_BIT};
 		return {
 		    .before = {.src = {.stage = consumers.stage, .access = consumers.access & kWriteAccess}, .dst = update},
 		    .after = {.src = update, .dst = consumers},
 		};
+	}
+	constexpr BufferBarrier GetUploadBufferBarrier(VkBufferUsageFlags usage, BufferSyncFeatures features) {
+		return {.src = {.stage = VK_PIPELINE_STAGE_2_COPY_BIT, .access = VK_ACCESS_2_TRANSFER_WRITE_BIT}, .dst = GetBufferConsumers(usage, features)};
 	}
 
 	// uint32_t FindMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFilter, VkMemoryPropertyFlags properties);
