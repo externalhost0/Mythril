@@ -148,6 +148,8 @@ int main() {
 		.rayQuery = VK_TRUE,
 	};
 	{
+		Uint32 sdlExtensionCount = 0;
+		const char* const* sdlExtensions = SDL_Vulkan_GetInstanceExtensions(&sdlExtensionCount);
 		auto ctx = mythril::CTXBuilder{}
 		.set_vulkan_cfg({
 			.app_name = "Cool App Name",
@@ -159,13 +161,16 @@ int main() {
 			.additionalDeviceFeatures = { .shaderInt64 = VK_TRUE },
 			.deviceExtensionFeatureChain = &rayQueryFeatures
 		})
-		.set_window_surface([sdlWindow](VkInstance instance) {
-			VkSurfaceKHR surface;
-			SDL_Vulkan_CreateSurface(sdlWindow, instance, nullptr, &surface);
-			return surface;
-		},
-		[](VkInstance instance, VkSurfaceKHR surface_khr) {
-			SDL_Vulkan_DestroySurface(instance, surface_khr, nullptr);
+		.set_window_surface({
+			.instanceExtensions = std::span(sdlExtensions, sdlExtensionCount),
+			.createFunc = [sdlWindow](VkInstance instance) {
+				VkSurfaceKHR surface;
+				SDL_Vulkan_CreateSurface(sdlWindow, instance, nullptr, &surface);
+				return surface;
+			},
+			.destroyFunc = [](VkInstance instance, VkSurfaceKHR surface) {
+				SDL_Vulkan_DestroySurface(instance, surface, nullptr);
+			}
 		})
 		.set_slang_cfg({
 			.searchpaths = slang_searchpaths

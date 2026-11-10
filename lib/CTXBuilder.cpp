@@ -5,6 +5,8 @@
 
 #include "mythril/CTXBuilder.h"
 
+#include <algorithm>
+#include <cstring>
 #include <set>
 
 #include "mythril/CTX.h"
@@ -25,7 +27,18 @@ namespace mythril {
 		const char* appName = nullptr;
 		const char* engineName = nullptr;
 	};
-	static vkb::Instance CreateVulkanInstance(VulkanInstanceInputs inputs, bool enableValidation, bool enableHeadless, std::span<const char*> instance_extensions) {
+	static std::vector<const char*> MergeExtensions(std::span<const char* const> a, std::span<const char* const> b) {
+		std::vector<const char*> merged;
+		merged.reserve(a.size() + b.size());
+		for (const auto list : {a, b}) {
+			for (const char* name : list) {
+				const bool seen = std::ranges::any_of(merged, [name](const char* m) { return std::strcmp(m, name) == 0; });
+				if (!seen) merged.push_back(name);
+			}
+		}
+		return merged;
+	}
+	static vkb::Instance CreateVulkanInstance(VulkanInstanceInputs inputs, bool enableValidation, std::span<const char*> instance_extensions) {
 		vkb::InstanceBuilder instanceBuilder;
 		{
 			auto systemInfoResult = vkb::SystemInfo::get_system_info(vkGetInstanceProcAddr);
@@ -72,12 +85,12 @@ namespace mythril {
 			.set_minimum_instance_version(1, 4, 335)
 			.request_validation_layers(enableValidation)
 			.add_layer_setting(kValidateSyc)
-			.set_headless(enableHeadless)
+			.set_headless(true) // stops vk-bootstrap guessing surface extensions, SurfaceSpec supplies them
 #if defined __APPLE__ && DEBUG
 			.add_layer_setting(kMvkDebugLevel)
 #endif
 #ifdef DEBUG
-		// we dont need to worry about conditionally having this be called or not depending on enableValidation, its handled internally
+			// we dont need to worry about conditionally having this be called or not depending on enableValidation, its handled internally
 			.use_default_debug_messenger()
 #endif
 		.build();
@@ -88,10 +101,29 @@ namespace mythril {
 		return vkb_instance;
 	}
 
-	struct VulkanPhysicalDeviceInputs {
-		vkb::Instance vkbInstance = {};
-		VkSurfaceKHR vkSurface = VK_NULL_HANDLE;
-	};
+	namespace {
+		struct VulkanPhysicalDeviceInputs {
+			vkb::Instance vkbInstance = {};
+			VkSurfaceKHR vkSurface = VK_NULL_HANDLE;
+		};
+		struct VulkanQueueOutputs {
+			VkQueue vkGraphicsQueue = VK_NULL_HANDLE;
+			uint32_t graphicsQueueFamilyIndex = -1;
+			VkQueue vkPresentQueue = VK_NULL_HANDLE;
+			uint32_t presentQueueFamilyIndex = -1;
+			VkQueue vkComputeQueue = VK_NULL_HANDLE;
+			uint32_t computeQueueFamilyIndex = -1;
+			VkQueue vkTransferQueue = VK_NULL_HANDLE;
+			uint32_t transferQueueFamilyIndex = -1;
+		};
+		struct VulkanMemoryAllocatorInputs {
+			VkInstance vkInstance;
+			VkPhysicalDevice vkPhysicalDevice;
+			VkDevice vkDevice;
+		};
+
+	}
+
 	static vkb::PhysicalDevice SelectVulkanPhysicalDevice(VulkanPhysicalDeviceInputs inputs) {
 		ASSERT(inputs.vkbInstance.instance != VK_NULL_HANDLE);
 
@@ -99,20 +131,11 @@ namespace mythril {
 		vkb::Result<vkb::PhysicalDevice> physicalDeviceResult = physicalDeviceSelector
 		.set_minimum_version(1, 3)
 		.set_surface(inputs.vkSurface)
+		.require_present(inputs.vkSurface != VK_NULL_HANDLE)
 		.select();
 		ASSERT_MSG(physicalDeviceResult.has_value(), "Failed to select Physical Device (VkPhysicalDevice). Error: {}", physicalDeviceResult.error().message());
 		return physicalDeviceResult.value();
 	}
-	struct VulkanQueueOutputs {
-		VkQueue vkGraphicsQueue = VK_NULL_HANDLE;
-		uint32_t graphicsQueueFamilyIndex = -1;
-		VkQueue vkPresentQueue = VK_NULL_HANDLE;
-		uint32_t presentQueueFamilyIndex = -1;
-		VkQueue vkComputeQueue = VK_NULL_HANDLE;
-		uint32_t computeQueueFamilyIndex = -1;
-		VkQueue vkTransferQueue = VK_NULL_HANDLE;
-		uint32_t transferQueueFamilyIndex = -1;
-	};
 
 	static VkDevice CreateVulkanLogicalDevice(
 	        vkb::PhysicalDevice& vkbPhysicalDevice,
@@ -563,11 +586,6 @@ missing_features.append("\n\t(" version ") " #feature);
 		return device;
 	}
 
-	struct VulkanMemoryAllocatorInputs {
-		VkInstance vkInstance;
-		VkPhysicalDevice vkPhysicalDevice;
-		VkDevice vkDevice;
-	};
 	static VmaAllocator CreateVulkanMemoryAllocator(const VulkanMemoryAllocatorInputs& inputs) {
 		VmaAllocatorCreateInfo allocatorInfo = {
 		    .flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT | VMA_ALLOCATOR_CREATE_KHR_DEDICATED_ALLOCATION_BIT,
@@ -595,10 +613,11 @@ missing_features.append("\n\t(" version ") " #feature);
 
 		const VkResult volk_result = volkInitialize();
 		ASSERT_MSG(volk_result == VK_SUCCESS, "Volk failed to initialize!");
-		const bool isHeadless = !(this->_surfaceCreateFunc && this->_surfaceDestroyFunc);
+		// if we resolve headless automatically
+		const bool hasSurface = static_cast<bool>(this->_surfaceSpec.createFunc);
 
 		// fill in user instance extensions & resolve based on cfg
-		std::vector instance_extensions(std::begin(this->_vulkanCfg.instanceExtensions), std::end(this->_vulkanCfg.instanceExtensions));
+		std::vector<const char*> instance_extensions = MergeExtensions(this->_vulkanCfg.instanceExtensions, this->_surfaceSpec.instanceExtensions);
 		vkb::Instance vkb_instance = CreateVulkanInstance(
 		        {
 		            .appVersion = this->_vulkanCfg.app_version,
@@ -607,12 +626,11 @@ missing_features.append("\n\t(" version ") " #feature);
 		            .engineName = this->_vulkanCfg.engine_name,
 		        },
 		        this->_vulkanCfg.enableValidation,
-		        isHeadless,
 		        instance_extensions
 		);
 		VkSurfaceKHR vk_surface = VK_NULL_HANDLE;
-		if (!isHeadless) {
-			vk_surface = this->_surfaceCreateFunc(vkb_instance.instance);
+		if (hasSurface) {
+			vk_surface = this->_surfaceSpec.createFunc(vkb_instance.instance);
 		}
 
 		// do not pass features or extensions here, do that to the vkb::PhysicalDevice
@@ -636,7 +654,7 @@ missing_features.append("\n\t(" version ") " #feature);
 		ctx->_vkInstance = vkb_instance.instance;
 		ctx->_vkDebugMessenger = vkb_instance.debug_messenger;
 		ctx->_vkSurfaceKHR = vk_surface;
-		ctx->_surfaceDestroyFunc = this->_surfaceDestroyFunc;
+		ctx->_surfaceDestroyFunc = this->_surfaceSpec.destroyFunc;
 		ctx->_vkPhysicalDevice = vkb_physical_device.physical_device;
 		ctx->_vkDevice = vk_device;
 		ctx->_vmaAllocator = vma_allocator;

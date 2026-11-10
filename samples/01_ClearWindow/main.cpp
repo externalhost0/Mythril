@@ -15,19 +15,23 @@ int main() {
 	SDL_Window* sdlWindow = BuildSDLWindow(false);
 	const auto [width, height] = GetSDLWindowFramebufferSize(sdlWindow);
 	{
+		Uint32 sdlExtensionCount = 0;
+		const char* const* sdlExtensions = SDL_Vulkan_GetInstanceExtensions(&sdlExtensionCount);
 		const auto ctx = mythril::CTXBuilder{}
 		.set_vulkan_cfg({
 			.app_name = "Cool App Name",
 			.engine_name = "Cool Engine Name"
 		})
-		.set_window_surface(
-		[sdlWindow](VkInstance instance) {
-			VkSurfaceKHR surface;
-			SDL_Vulkan_CreateSurface(sdlWindow, instance, nullptr, &surface);
-			return surface;
-		},
-		[](VkInstance instance, VkSurfaceKHR surface_khr) {
-			SDL_Vulkan_DestroySurface(instance, surface_khr, nullptr);
+		.set_window_surface({
+			.instanceExtensions = std::span(sdlExtensions, sdlExtensionCount),
+			.createFunc = [sdlWindow](VkInstance instance) {
+				VkSurfaceKHR surface;
+				SDL_Vulkan_CreateSurface(sdlWindow, instance, nullptr, &surface);
+				return surface;
+			},
+			.destroyFunc = [](VkInstance instance, VkSurfaceKHR surface) {
+				SDL_Vulkan_DestroySurface(instance, surface, nullptr);
+			}
 		})
 		.with_default_swapchain({
 			.width = width,
