@@ -267,7 +267,7 @@ namespace mythril {
         bool declaredSizesStale(const CTX& rCtx) const;
         ResolvedTexture resolve(const CTX& rCtx, const CompiledPass& pass, const PassMember& member, GraphTexture texture) const;
         void PerformBarrierTransitions(CommandBuffer& cmd, std::span<const CompiledImageBarrier> imageBarriers, std::span<const CompiledBufferBarrier> bufferBarriers);
-        void realizeDeclared(CTX& rCtx, const std::vector<uint32_t>& culledOrder);
+        void realizeDeclared(CTX& rCtx, const std::vector<uint32_t>& culledOrder, const std::vector<bool>& confined);
         void RecordIntermediateOps(CommandBuffer& cmd, const CompiledPass& pass) const;
         TextureShape shapeOf(const CTX& rCtx, GraphTexture texture) const;
         void planResourceAccess(const CTX& rCtx, const TextureDesc& texDesc, VkImageLayout desiredLayout, const StageAccess& dstMask, CompiledPass& outPass, const PassDesc& pass) const;

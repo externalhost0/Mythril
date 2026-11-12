@@ -549,7 +549,7 @@ namespace mythril {
 			bindAttachment(*pass.depthAttachment);
 	}
 
-	void RenderGraph::realizeDeclared(CTX& rCtx, const std::vector<uint32_t>& culledOrder) {
+	void RenderGraph::realizeDeclared(CTX& rCtx, const std::vector<uint32_t>& culledOrder, const std::vector<bool>& confined) {
 		std::vector<std::optional<TextureUses>> uses(_textures.size());
 		const auto useOf = [&uses](const GraphTexture texture) -> TextureUses& {
 			std::optional<TextureUses>& use = uses[IdOf(texture)];
@@ -569,7 +569,7 @@ namespace mythril {
 			auto* declared = std::get_if<DeclaredTexture>(&_textures[id].source);
 			if (!declared || !uses[id].has_value())
 				continue;
-			const Realization wanted = InferRealization(sizeOf(rCtx, declared->spec), *uses[id], declared->exported);
+			const Realization wanted = InferRealization(sizeOf(rCtx, declared->spec), *uses[id], declared->exported, confined[id]);
 			ASSERT_MSG(wanted.usage != 0, "Graph texture '{}' is only touched by transfers, nothing samples, stores to or renders into it.", declared->spec.debugName);
 			if (!declared->texture.valid()) {
 				declared->texture = rCtx.createTexture(ToTextureSpec(declared->spec, wanted));
@@ -1050,39 +1050,6 @@ namespace mythril {
 				continue;
 			compiled.push_back(std::move(pending[pendingIdx]));
 		}
-		realizeDeclared(rCtx, culled_order);
-		for (CompilingPass& record: compiled)
-			bindPass(rCtx, record.pass);
-#ifdef DEBUG
-		{
-			// memoryless attachments have no backing memory, so their contents must begin and end inside one rendering scope
-			std::unordered_map<GraphTexture, uint32_t, GraphTextureHash> passesUsing;
-			for (const CompilingPass& record: compiled) {
-				for (const GraphTexture texture: record.use.attachments)
-					++passesUsing[texture];
-				for (const auto& [texture, written]: record.use.textures)
-					++passesUsing[texture];
-			}
-			for (const CompilingPass& record: compiled) {
-				const auto validate = [&](const AttachmentInfo& attachment) {
-					if (attachment.isSwapchainImage)
-						return;
-					const AllocatedTexture& texture = rCtx.view(attachment.texture);
-					const bool confined = passesUsing[attachment.target.resource] == 1 && attachment.loadOp != VK_ATTACHMENT_LOAD_OP_LOAD && attachment.storeOp == VK_ATTACHMENT_STORE_OP_DONT_CARE;
-					if (texture.isMemoryless()) {
-						ASSERT_PASS(confined, record.pass, "Memoryless attachment '{}' must be used by a single rendering scope that clears or discards it on load and discards it on store.", texture.getDebugName());
-					} else if (confined && logMerges && !texture.isSampledImage() && !texture.isStorageImage()) {
-						LOG_PASS(LogType::Suggestion, record.pass, "Attachment '{}' never leaves this rendering scope and can be StorageType::Memoryless.", texture.getDebugName());
-					}
-				};
-				for (const AttachmentInfo& color: record.pass.colorAttachments)
-					validate(color);
-				if (record.pass.depthAttachment.has_value())
-					validate(*record.pass.depthAttachment);
-			}
-		}
-#endif
-
 		constexpr uint32_t kUnscheduled = UINT32_MAX;
 		std::vector<uint32_t> descToCompiled(this->_passDescriptions.size(), kUnscheduled);
 		this->_compiledPasses.reserve(compiled.size());
@@ -1093,6 +1060,25 @@ namespace mythril {
 				LOG_PASS(LogType::Info, record.pass, "merged {} passes into one rendering scope.", record.pass.members.size());
 			this->_compiledPasses.push_back(std::move(record.pass));
 		}
+
+		const std::vector<bool> confined = ConfinedToOneScope(this->_compiledPasses, this->_textures.size());
+		realizeDeclared(rCtx, culled_order, confined);
+		for (CompiledPass& pass: this->_compiledPasses)
+			bindPass(rCtx, pass);
+#ifdef DEBUG
+		for (const CompiledPass& pass: this->_compiledPasses) {
+			const auto validate = [&](const AttachmentInfo& attachment) {
+				if (attachment.isSwapchainImage)
+					return;
+				const AllocatedTexture& texture = rCtx.view(attachment.texture);
+				ASSERT_PASS(!texture.isMemoryless() || confined[IdOf(attachment.target.resource)], pass, "Memoryless attachment '{}' must be used by a single rendering scope that clears or discards it on load and discards it on store.", texture.getDebugName());
+			};
+			for (const AttachmentInfo& color: pass.colorAttachments)
+				validate(color);
+			if (pass.depthAttachment.has_value())
+				validate(*pass.depthAttachment);
+		}
+#endif
 
 		// schedule over compiled passes so a merged group occupies a single node
 		std::vector<std::unordered_set<uint32_t>> compiledPredecessors(this->_compiledPasses.size());

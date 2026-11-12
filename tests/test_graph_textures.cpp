@@ -4,6 +4,7 @@
 #include <vulkan/vk_enum_string_helper.h>
 
 #include <algorithm>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -39,7 +40,7 @@ namespace {
 		return 0;
 	}
 
-	using InferFn = Realization (*)(Dimensions, const TextureUses&, bool);
+	using InferFn = Realization (*)(Dimensions, const TextureUses&, bool, bool);
 
 	std::vector<std::string> check(InferFn infer, uint32_t subset, VkFormat format, bool exported) {
 		const GraphTextureSpec spec = {.size = Dimensions{64, 32}, .format = format};
@@ -59,11 +60,19 @@ namespace {
 		if (exported)
 			required |= VK_IMAGE_USAGE_SAMPLED_BIT;
 
-		const Realization realization = infer(std::get<Dimensions>(spec.size), uses, exported);
+		const Realization realization = infer(std::get<Dimensions>(spec.size), uses, exported, false);
+		const Realization confinedRealization = infer(std::get<Dimensions>(spec.size), uses, exported, true);
 		const TextureSpec created = ToTextureSpec(spec, realization);
+		std::vector<std::string> failures;
+		if (confinedRealization.usage != realization.usage || confinedRealization.dimensions != realization.dimensions)
+			failures.emplace_back("confinement changed more than storage");
+		if (confinedRealization.storage == StorageType::Memoryless) {
+			if (const VkImageUsageFlags missing = required & ~vkutil::ToVkImageUsage(confinedRealization.usage, StorageType::Memoryless, format))
+				failures.push_back("memoryless drops " + string_VkImageUsageFlags(missing));
+		}
+
 		const VkImageUsageFlags usage = vkutil::ToVkImageUsage(created.usage, created.storage, created.format);
 
-		std::vector<std::string> failures;
 		constexpr VkImageUsageFlags kPolicy = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 		if ((required & ~kPolicy) == 0) {
 			if (realization.usage != 0)
@@ -105,11 +114,11 @@ namespace {
 	}
 
 	namespace known_bad {
-		Realization superset(const Dimensions dimensions, const TextureUses&, bool) {
+		Realization superset(const Dimensions dimensions, const TextureUses&, bool, bool) {
 			return {.dimensions = dimensions, .usage = TextureUsageBits_Attachment | TextureUsageBits_Sampled | TextureUsageBits_Storage};
 		}
-		Realization exportNotSampled(const Dimensions dimensions, const TextureUses& uses, bool) {
-			return InferRealization(dimensions, uses, false);
+		Realization exportNotSampled(const Dimensions dimensions, const TextureUses& uses, bool, const bool confined) {
+			return InferRealization(dimensions, uses, false, confined);
 		}
 	}
 
@@ -167,4 +176,100 @@ TEST_CASE("relative sizes floor each axis and never reach zero") {
 	}
 	CHECK(checked == std::size(kExtents) * 8);
 	CHECK(ScaleExtent({1280, 720, 1}, 0.75f) == Dimensions{960, 540, 1});
+}
+
+namespace {
+	AttachmentInfo Attachment(const GraphTexture texture, const VkAttachmentLoadOp loadOp, const VkAttachmentStoreOp storeOp, const std::optional<GraphTexture> resolve = std::nullopt) {
+		AttachmentInfo attachment{};
+		attachment.target.resource = texture;
+		attachment.loadOp = loadOp;
+		attachment.storeOp = storeOp;
+		if (resolve.has_value())
+			attachment.resolveTarget = AttachmentTarget{.resource = *resolve};
+		return attachment;
+	}
+
+	CompiledPass Group(std::vector<AttachmentInfo> colors, std::vector<GraphTexture> alsoDeclared = {}) {
+		CompiledPass group;
+		std::vector<GraphTexture> declared = std::move(alsoDeclared);
+		for (const AttachmentInfo& color: colors) {
+			declared.push_back(color.target.resource);
+			if (color.resolveTarget.has_value())
+				declared.push_back(color.resolveTarget->resource);
+		}
+		std::ranges::sort(declared, {}, GraphTextureAccess::index);
+		declared.erase(std::ranges::unique(declared).begin(), declared.end());
+		group.members.push_back({.name = "member", .sortedDeclaredTextures = std::move(declared)});
+		group.colorAttachments = std::move(colors);
+		return group;
+	}
+
+	constexpr VkAttachmentLoadOp kClear = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	constexpr VkAttachmentLoadOp kLoad = VK_ATTACHMENT_LOAD_OP_LOAD;
+	constexpr VkAttachmentStoreOp kStore = VK_ATTACHMENT_STORE_OP_STORE;
+	constexpr VkAttachmentStoreOp kDiscard = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+
+	struct ConfinedFixture {
+		RenderGraph graph;
+		GraphTexture msaa = graph.createTexture({.size = Dimensions{16, 16}, .format = VK_FORMAT_R8G8B8A8_UNORM, .debugName = "msaa"});
+		GraphTexture resolve = graph.createTexture({.size = Dimensions{16, 16}, .format = VK_FORMAT_R8G8B8A8_UNORM, .debugName = "resolve"});
+
+		std::vector<bool> run(const std::vector<CompiledPass>& groups) const { return ConfinedToOneScope(groups, 2); }
+		static bool isConfined(const std::vector<bool>& confined, const GraphTexture texture) { return confined[GraphTextureAccess::index(texture)]; }
+	};
+}
+
+TEST_CASE("an attachment cleared and discarded inside one scope is confined") {
+	ConfinedFixture f;
+	std::vector<CompiledPass> groups;
+	groups.push_back(Group({Attachment(f.msaa, kClear, kDiscard)}));
+	CHECK(ConfinedFixture::isConfined(f.run(groups), f.msaa));
+}
+
+TEST_CASE("an attachment stored in one scope and loaded in the next is not confined") {
+	ConfinedFixture f;
+	std::vector<CompiledPass> groups;
+	groups.push_back(Group({Attachment(f.msaa, kClear, kStore)}));
+	groups.push_back(Group({Attachment(f.msaa, kLoad, kDiscard)}));
+	CHECK_FALSE(ConfinedFixture::isConfined(f.run(groups), f.msaa));
+}
+
+TEST_CASE("a resolve target is never confined") {
+	ConfinedFixture f;
+	std::vector<CompiledPass> groups;
+	groups.push_back(Group({Attachment(f.msaa, kClear, kDiscard, f.resolve)}));
+	const std::vector<bool> confined = f.run(groups);
+	CHECK(ConfinedFixture::isConfined(confined, f.msaa));
+	CHECK_FALSE(ConfinedFixture::isConfined(confined, f.resolve));
+}
+
+TEST_CASE("an attachment another scope declares as a dependency is not confined") {
+	ConfinedFixture f;
+	std::vector<CompiledPass> groups;
+	groups.push_back(Group({Attachment(f.msaa, kClear, kDiscard)}));
+	groups.push_back(Group({Attachment(f.resolve, kClear, kDiscard)}, {f.msaa}));
+	const std::vector<bool> confined = f.run(groups);
+	CHECK_FALSE(ConfinedFixture::isConfined(confined, f.msaa));
+	CHECK(ConfinedFixture::isConfined(confined, f.resolve));
+}
+
+TEST_CASE("an attachment whose contents are stored or loaded is not confined") {
+	ConfinedFixture f;
+	for (const auto [loadOp, storeOp]: {std::pair{kClear, kStore}, std::pair{kLoad, kDiscard}, std::pair{kLoad, kStore}}) {
+		std::vector<CompiledPass> groups;
+		groups.push_back(Group({Attachment(f.msaa, loadOp, storeOp)}));
+		CHECK_FALSE(ConfinedFixture::isConfined(f.run(groups), f.msaa));
+	}
+}
+
+TEST_CASE("only an attachment-only confined texture is inferred memoryless") {
+	TextureUses attachmentOnly;
+	attachmentOnly.addAttachment();
+	TextureUses sampled = attachmentOnly;
+	sampled.add(TextureAccess::Sampled);
+	constexpr Dimensions kSize{16, 16};
+	CHECK(InferRealization(kSize, attachmentOnly, false, true).storage == StorageType::Memoryless);
+	CHECK(InferRealization(kSize, attachmentOnly, false, false).storage == StorageType::Device);
+	CHECK(InferRealization(kSize, attachmentOnly, true, true).storage == StorageType::Device);
+	CHECK(InferRealization(kSize, sampled, false, true).storage == StorageType::Device);
 }

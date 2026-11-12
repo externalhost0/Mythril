@@ -161,7 +161,7 @@ TextureHandle viewHandle = texture.handle(viewKey);
 - Swapchain images are not user-owned, never call `CTX::destroy()` on a handle retrieved from the swapchain.
 - Cubemaps must set `type = TextureType::Type_Cube` **and** `numLayers = 6`. Missing either will produce incorrect results.
 - MSAA textures (`samples > X1`) used as attachments typically need a resolve step before sampling.
-- Utilize `StorageType::Memoryless` for transient attachments, usually for MSAA targets.
+- Graph textures infer `StorageType::Memoryless` for attachments that never leave one rendering scope. Only textures you create yourself with `CTX::createTexture` need it set by hand, usually for MSAA targets.
 ---
 
 ## Samplers

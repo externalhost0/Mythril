@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <functional>
 #include <optional>
+#include <span>
 #include <string>
 #include <unordered_set>
 #include <variant>
@@ -38,6 +39,7 @@ namespace mythril {
         bool attachment = false;
         bool sampled = false;
         bool storage = false;
+        bool transfer = false;
 
         void addAttachment() { attachment = true; }
         void add(const TextureAccess access) {
@@ -52,6 +54,7 @@ namespace mythril {
                     break;
                 case TextureAccess::TransferRead:
                 case TextureAccess::TransferWrite:
+                    transfer = true;
                     break;
             }
         }
@@ -66,7 +69,7 @@ namespace mythril {
         const auto scaled = [scale](const uint32_t v) { return std::max(1u, static_cast<uint32_t>(static_cast<float>(v) * scale)); };
         return {scaled(extent.width), scaled(extent.height), 1};
     }
-    inline Realization InferRealization(const Dimensions dimensions, const TextureUses& uses, const bool exported) {
+    inline Realization InferRealization(const Dimensions dimensions, const TextureUses& uses, const bool exported, const bool confined) {
         uint8_t usage = 0;
         if (uses.attachment)
             usage |= TextureUsageBits_Attachment;
@@ -74,7 +77,8 @@ namespace mythril {
             usage |= TextureUsageBits_Sampled;
         if (uses.storage)
             usage |= TextureUsageBits_Storage;
-        return {.dimensions = dimensions, .usage = usage, .storage = StorageType::Device};
+        const bool memoryless = usage == TextureUsageBits_Attachment && !uses.transfer && confined;
+        return {.dimensions = dimensions, .usage = usage, .storage = memoryless ? StorageType::Memoryless : StorageType::Device};
     }
     inline TextureSpec ToTextureSpec(const GraphTextureSpec& spec, const Realization& realization) {
         return {
@@ -213,6 +217,43 @@ namespace mythril {
         uint32_t viewMask = 0;
     	QueueAffinity queue = QueueAffinity::Graphics;
     };
+
+    // indexed by GraphTexture id
+    inline std::vector<bool> ConfinedToOneScope(const std::span<const CompiledPass> groups, const size_t textureCount) {
+        constexpr size_t kNoGroup = SIZE_MAX;
+        std::vector<uint32_t> groupsUsing(textureCount, 0);
+        std::vector<size_t> lastGroup(textureCount, kNoGroup);
+        std::vector<bool> isAttachment(textureCount, false);
+        std::vector<bool> disqualified(textureCount, false);
+        for (size_t groupIdx = 0; groupIdx < groups.size(); ++groupIdx) {
+            const CompiledPass& group = groups[groupIdx];
+            for (const PassMember& member: group.members) {
+                for (const GraphTexture texture: member.sortedDeclaredTextures) {
+                    const uint32_t id = GraphTextureAccess::index(texture);
+                    if (lastGroup[id] != groupIdx) {
+                        lastGroup[id] = groupIdx;
+                        ++groupsUsing[id];
+                    }
+                }
+            }
+            const auto visit = [&](const AttachmentInfo& attachment) {
+                const uint32_t id = GraphTextureAccess::index(attachment.target.resource);
+                isAttachment[id] = true;
+                if (attachment.isSwapchainImage || attachment.loadOp == VK_ATTACHMENT_LOAD_OP_LOAD || attachment.storeOp != VK_ATTACHMENT_STORE_OP_DONT_CARE)
+                    disqualified[id] = true;
+                if (attachment.resolveTarget.has_value())
+                    disqualified[GraphTextureAccess::index(attachment.resolveTarget->resource)] = true;
+            };
+            for (const AttachmentInfo& color: group.colorAttachments)
+                visit(color);
+            if (group.depthAttachment.has_value())
+                visit(*group.depthAttachment);
+        }
+        std::vector<bool> confined(textureCount, false);
+        for (size_t id = 0; id < textureCount; ++id)
+            confined[id] = groupsUsing[id] == 1 && isAttachment[id] && !disqualified[id];
+        return confined;
+    }
 
     std::vector<uint32_t> cull_unused_passes(const std::vector<uint32_t>& topo_sorted_order, const std::vector<std::unordered_set<uint32_t>>& predecessors, const std::vector<PassDesc>& pass_descs, const std::vector<GraphResource>& textures);
 
