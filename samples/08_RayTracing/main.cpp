@@ -314,17 +314,6 @@ int main() {
 			.debugName = "TLAS Accel"
 		});
 
-		// framebuffer sized so the present blit is 1:1
-		const uint32_t kTraceWidth = initialWindowSize.width, kTraceHeight = initialWindowSize.height;
-		mythril::Texture tracedShadowOutput = ctx->createTexture({
-			.dimension = { kTraceWidth, kTraceHeight },
-			.type = mythril::TextureType::Type_2D,
-			.format = VK_FORMAT_R8G8B8A8_UNORM,
-			.usage = mythril::TextureUsageBits::TextureUsageBits_Storage,
-			.debugName = "Raytraced output"
-		});
-
-
 		const auto initalSize = GetSDLWindowFramebufferSize(sdlWindow);
 		Camera camera = {
 			.position = { 0.f, 0.f, 5.f },
@@ -351,12 +340,17 @@ int main() {
 		applyDebugMode(0);
 
 		mythril::RenderGraph graph;
-		const mythril::GraphTexture rgTracedShadowOutput = graph.importTexture(tracedShadowOutput);
+		const mythril::GraphTexture rgTracedShadowOutput = graph.createTexture({
+			.size = mythril::RelativeSize{},
+			.format = VK_FORMAT_R8G8B8A8_UNORM,
+			.debugName = "Raytraced output"
+		});
 		graph.addRayTracingPass("trace shadows")
 		.dependency(rgTracedShadowOutput, mythril::TextureAccess::StorageReadWrite)
 		.dependency(frameBuffer, mythril::BufferAccess::ShaderRead)
 		.execute([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdBindRayTracingPipeline(mainPipeline);
+			const mythril::ResolvedTexture tracedOutput = cmd.texture(rgTracedShadowOutput);
 			const GPU::PerFrame frameData = {
 				.viewInverse = glm::inverse(calculateViewMatrix(camera)),
 				.projInverse = glm::inverse(calculateProjectionMatrix(camera)),
@@ -369,14 +363,14 @@ int main() {
 				.lightDir = glm::vec4(1.5, 2.0, 1.0, 0),
 				.vertices = ctx->gpuAddress(sceneVertexBuffer.handle()),
 				.indices = ctx->gpuAddress(sceneIndexBuffer.handle()),
-				.outTexture = tracedShadowOutput.index(),
+				.outTexture = tracedOutput.index(),
 				.tlas = tlas.index(),
 				.enableShadows = static_cast<uint32_t>(true),
 				.debugMode = debugMode
 			};
 			cmd.cmdPushConstants(push);
 			// must match the output texture, out of bounds image stores are not discarded without robustness
-			cmd.cmdTraceRays({kTraceWidth, kTraceHeight, 1});
+			cmd.cmdTraceRays({tracedOutput.dimensions.width, tracedOutput.dimensions.height, 1});
 
 		});
 		graph.addIntermediate("present")

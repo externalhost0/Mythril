@@ -128,20 +128,6 @@ int main() {
 		})
 		.build();
 
-		const mythril::Dimensions dims = {initialWindowSize.width, initialWindowSize.height, 1};
-		mythril::Texture colorTarget = ctx->createTexture({
-			.dimension = dims,
-			.format = VK_FORMAT_R8G8B8A8_UNORM,
-			.usage = mythril::TextureUsageBits::TextureUsageBits_Attachment,
-			.debugName = "Color Texture"
-		});
-		mythril::Texture depthTarget = ctx->createTexture({
-			.dimension = dims,
-			.format = VK_FORMAT_D32_SFLOAT_S8_UINT,
-			.usage = mythril::TextureUsageBits::TextureUsageBits_Attachment,
-			.debugName = "Depth Texture"
-		});
-
 		mythril::Shader standardShader = ctx->createShader({
 			.source = kDataDir / "BasicRed.slang",
 			.debugName = "Red Object Shader"
@@ -175,8 +161,16 @@ int main() {
 		auto startTime = std::chrono::high_resolution_clock::now();
 
 		mythril::RenderGraph graph;
-		const mythril::GraphTexture rgColorTarget = graph.importTexture(colorTarget);
-		const mythril::GraphTexture rgDepthTarget = graph.importTexture(depthTarget);
+		const mythril::GraphTexture rgColorTarget = graph.createTexture({
+			.size = mythril::RelativeSize{},
+			.format = VK_FORMAT_R8G8B8A8_UNORM,
+			.debugName = "Color Texture"
+		});
+		const mythril::GraphTexture rgDepthTarget = graph.createTexture({
+			.size = mythril::RelativeSize{},
+			.format = VK_FORMAT_D32_SFLOAT_S8_UINT,
+			.debugName = "Depth Texture"
+		});
 		graph.addGraphicsPass("main")
 		.attachment({
 			.texDesc = rgColorTarget,

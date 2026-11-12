@@ -96,7 +96,7 @@ static glm::mat4 calculateProjectionMatrix(const Camera& camera) {
 
 
 namespace mythril {
-	const char* GetFieldKindString(FieldKind kind) {
+	static const char* GetFieldKindString(FieldKind kind) {
 		switch (kind) {
 			case FieldKind::OpaqueHandle:
 				return "OpaqueHandle";
@@ -115,9 +115,10 @@ namespace mythril {
 			case FieldKind::Unknown:
 				return "Unknown";
 		}
+		ASSERT(false);
 	}
 
-	const char* GetScalarKindString(ScalarKind kind) {
+	static const char* GetScalarKindString(ScalarKind kind) {
 		switch (kind) {
 			case ScalarKind::None:
 				return "None";
@@ -136,7 +137,7 @@ namespace mythril {
 		}
 	}
 
-	const char* GetOpaqueKindString(OpaqueKind kind) {
+	static const char* GetOpaqueKindString(OpaqueKind kind) {
 		switch (kind) {
 			case OpaqueKind::Sampler:
 				return "Sampler";
@@ -159,7 +160,7 @@ namespace mythril {
 		}
 	}
 
-	const char* VkDescriptorTypeToString(VkDescriptorType type) {
+	static const char* VkDescriptorTypeToString(VkDescriptorType type) {
 		switch (type) {
 			case VK_DESCRIPTOR_TYPE_SAMPLER:
 				return "VK_DESCRIPTOR_TYPE_SAMPLER";

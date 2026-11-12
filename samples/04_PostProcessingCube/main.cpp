@@ -128,37 +128,6 @@ int main() {
 		})
 		.build();
 
-		const mythril::Dimensions dims = {initialWindowSize.width, initialWindowSize.height, 1};
-		mythril::Texture colorTarget = ctx->createTexture({
-			.dimension = dims,
-			.format = VK_FORMAT_R8G8B8A8_UNORM,
-			.samples = mythril::SampleCount::X4,
-			.usage = mythril::TextureUsageBits::TextureUsageBits_Attachment,
-			.storage = mythril::StorageType::Memoryless,
-			.debugName = "Color Texture"
-		});
-		mythril::Texture resolveColorTarget = ctx->createTexture({
-			.dimension = dims,
-			.format = VK_FORMAT_R8G8B8A8_UNORM,
-			.samples = mythril::SampleCount::X1,
-			.usage = mythril::TextureUsageBits::TextureUsageBits_Attachment | mythril::TextureUsageBits_Sampled,
-			.debugName = "Color Resolve Texture"
-		});
-		mythril::Texture postColorTarget = ctx->createTexture({
-			.dimension = dims,
-			.format = VK_FORMAT_R8G8B8A8_UNORM,
-			.usage = mythril::TextureUsageBits::TextureUsageBits_Attachment,
-			.debugName = "Post Process Texture"
-		});
-		mythril::Texture depthTarget = ctx->createTexture({
-			.dimension = dims,
-			.format = VK_FORMAT_D32_SFLOAT_S8_UINT,
-			.samples = mythril::SampleCount::X4,
-			.usage = mythril::TextureUsageBits::TextureUsageBits_Attachment,
-			.storage = mythril::StorageType::Memoryless,
-			.debugName = "Depth Texture"
-		});
-
 		mythril::Shader standardShader = ctx->createShader({
 			.source = kDataDir / "BasicRed.slang",
 			.debugName = "Red Object Shader"
@@ -199,10 +168,28 @@ int main() {
 		auto startTime = std::chrono::high_resolution_clock::now();
 
 		mythril::RenderGraph graph;
-		const mythril::GraphTexture rgColorTarget = graph.importTexture(colorTarget);
-		const mythril::GraphTexture rgResolveColorTarget = graph.importTexture(resolveColorTarget);
-		const mythril::GraphTexture rgDepthTarget = graph.importTexture(depthTarget);
-		const mythril::GraphTexture rgPostColorTarget = graph.importTexture(postColorTarget);
+		const mythril::GraphTexture rgColorTarget = graph.createTexture({
+			.size = mythril::RelativeSize{},
+			.format = VK_FORMAT_R8G8B8A8_UNORM,
+			.samples = mythril::SampleCount::X4,
+			.debugName = "Color Texture"
+		});
+		const mythril::GraphTexture rgResolveColorTarget = graph.createTexture({
+			.size = mythril::RelativeSize{},
+			.format = VK_FORMAT_R8G8B8A8_UNORM,
+			.debugName = "Color Resolve Texture"
+		});
+		const mythril::GraphTexture rgDepthTarget = graph.createTexture({
+			.size = mythril::RelativeSize{},
+			.format = VK_FORMAT_D32_SFLOAT_S8_UINT,
+			.samples = mythril::SampleCount::X4,
+			.debugName = "Depth Texture"
+		});
+		const mythril::GraphTexture rgPostColorTarget = graph.createTexture({
+			.size = mythril::RelativeSize{},
+			.format = VK_FORMAT_R8G8B8A8_UNORM,
+			.debugName = "Post Process Texture"
+		});
 		graph.addGraphicsPass("main")
 		.attachment({
 			.texDesc = rgColorTarget,
@@ -255,7 +242,7 @@ int main() {
 			auto currentTime = std::chrono::high_resolution_clock::now();
 			float time = std::chrono::duration<float>(currentTime - startTime).count();
 			GPU::FullscreenPushConstant push {
-				.colorTexture = resolveColorTarget.index(),
+				.colorTexture = cmd.texture(rgResolveColorTarget).index(),
 				.linearSampler = 0,
 				.time = time
 			};
