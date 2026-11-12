@@ -190,10 +190,6 @@ namespace mythril {
 			ASSERT_MSG(_swapchain, "Swapchain has not been created!");
 			return _swapchain->getCurrentSwapchainTextureHandle();
 		}
-		const Texture& getBackBufferTexture() {
-			wrappedBackBuffer.updateHandle(*this, _swapchain->getCurrentSwapchainTextureHandle());
-			return wrappedBackBuffer;
-		}
 		Dimensions getSwapchainDimensions() const {
 			if (!_swapchain)
 				return {lastSwapchainSpec.width, lastSwapchainSpec.height, 1};
@@ -449,8 +445,6 @@ namespace mythril {
 		std::unique_ptr<Swapchain> _swapchain = nullptr;
 		std::unique_ptr<StagingDevice> _staging = nullptr;
 
-		Texture wrappedBackBuffer;
-		// defaults
 		SwapchainSpec lastSwapchainSpec{
 		    .width = 1280,
 		    .height = 720,
@@ -486,11 +480,9 @@ namespace mythril {
 		friend class CTXBuilder;
 		friend class detail::AllocatedBuffer;
 		friend class detail::AllocatedTexture;
-		// plugins are usually friends
 		friend class ImGuiPlugin;
 		friend class TracyGPUPlugin;
 
-		// wrappers need destroy()/updateHandle()
 		template<typename T>
 		friend class detail::Holder;
 	};

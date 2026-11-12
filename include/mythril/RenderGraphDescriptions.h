@@ -64,13 +64,27 @@ namespace mythril {
 	};
 
 
+	class RenderGraph;
+	struct GraphTextureAccess;
+	// a texture as one RenderGraph knows it, only the graph can mint a valid one
+	class GraphTexture {
+	public:
+		constexpr GraphTexture() = default;
+		constexpr bool valid() const { return _index != kInvalid; }
+		constexpr bool operator==(const GraphTexture&) const = default;
+	private:
+		static constexpr uint32_t kInvalid = UINT32_MAX;
+		explicit constexpr GraphTexture(uint32_t index) : _index(index) {}
+		uint32_t _index = kInvalid;
+		friend class RenderGraph;
+		friend struct GraphTextureAccess;
+	};
+
 	struct TextureDesc {
 		TextureDesc() = delete;
-		TextureDesc(Texture& tex) :
+		TextureDesc(GraphTexture tex) :
 		    texture(tex) {}
-		TextureDesc(const Texture& tex) :
-		    texture(const_cast<Texture&>(tex)) {}
-		Texture& texture;
+		GraphTexture texture;
 		std::optional<uint32_t> baseLevel;
 		std::optional<uint32_t> numLevels;
 		std::optional<uint32_t> baseLayer;
@@ -113,14 +127,12 @@ namespace mythril {
 
 	struct UploadData;
 	struct CopyOp {
-		TextureHandle src;
-		TextureHandle dst;
-		bool toSwapchain = false;
+		GraphTexture src;
+		GraphTexture dst;
 	};
 	struct BlitOp {
-		TextureHandle src;
-		TextureHandle dst;
-		bool toSwapchain = false;
+		GraphTexture src;
+		GraphTexture dst;
 	};
 	struct UpdateOp {
 		BufferHandle dst;

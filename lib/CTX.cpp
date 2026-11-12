@@ -287,9 +287,7 @@ namespace mythril {
 		waitDeferredTasks();
 		this->_swapchain = std::make_unique<Swapchain>(*this, new_swapchain_spec);
 		this->_timelineSemaphore = vkutil::CreateTimelineSemaphore(_vkDevice, this->_swapchain->getNumOfSwapchainImages() - 1);
-		// we need to store in the situation where the swapcahin is deleted and we want to use the last swapchains settings
 		lastSwapchainSpec = new_swapchain_spec;
-		wrappedBackBuffer.updateHandle(*this, _swapchain->getCurrentSwapchainTextureHandle());
 		++_resourceEpoch;
 	}
 
@@ -2071,7 +2069,6 @@ namespace mythril {
 		if (type == CommandBuffer::Type::Graphics) {
 			VkSemaphore acquire_semaphore = _swapchain->acquire();
 			_immGraphics->waitSemaphore(acquire_semaphore);
-			wrappedBackBuffer.updateHandle(*this, _swapchain->getCurrentSwapchainTextureHandle());
 		}
 		_currentCommandBuffer = CommandBuffer(this, type);
 		return _currentCommandBuffer;

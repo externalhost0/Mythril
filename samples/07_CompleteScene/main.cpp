@@ -826,7 +826,18 @@ int main() {
 		}
 
 		constexpr float kMODELSCALE = 0.05f;
+		constexpr float kReverseZFarDepth = 0.f;
 		mythril::RenderGraph graph;
+		const mythril::GraphTexture rgShadowMap = graph.importTexture(shadowMap);
+		const mythril::GraphTexture rgMsaaColorTarget = graph.importTexture(msaaColorTarget);
+		const mythril::GraphTexture rgMsaaDepthTarget = graph.importTexture(msaaDepthTarget);
+		const mythril::GraphTexture rgOffscreenColorTarget = graph.importTexture(offscreenColorTarget);
+		const mythril::GraphTexture rgDepthTarget = graph.importTexture(depthTarget);
+		const mythril::GraphTexture rgFinalColorTarget = graph.importTexture(finalColorTarget);
+		const mythril::GraphTexture rgAdaptedLuminanceTextures[2] = {
+			graph.importTexture(adaptedLuminanceTextures[0]),
+			graph.importTexture(adaptedLuminanceTextures[1]),
+		};
 		graph.trackWindowSized(msaaColorTarget);
 		graph.trackWindowSized(offscreenColorTarget);
 		graph.trackWindowSized(msaaDepthTarget);
@@ -852,10 +863,9 @@ int main() {
 		glm::vec3 eulerAngles = glm::radians(glm::vec3(-40.f, -60.f, 0.f));
 		auto sun_quaternion = glm::quat(eulerAngles);
 
-		// depth prepass for shadows from directional light
 		graph.addGraphicsPass("shadow_map")
 		.attachment({
-			.texDesc = {shadowMap},
+			.texDesc = {rgShadowMap},
 			.clearValue = mythril::ClearValue::depth(1.f, 0),
 			.loadOp = mythril::LoadOp::CLEAR,
 			.storeOp = mythril::StoreOp::STORE
@@ -905,6 +915,7 @@ int main() {
 
 		static constexpr uint32_t pointLightShadowResolution = 512;
 		mythril::Texture pointLightShadowTex[kNumPointLights];
+		mythril::GraphTexture rgPointLightShadowTex[kNumPointLights];
 		for (int i = 0; i < kNumPointLights; i++) {
 			char debug_name[128];
 			snprintf(debug_name, sizeof(debug_name), "Point Light Shadow Tex %d", i);
@@ -915,6 +926,7 @@ int main() {
 				.usage = mythril::TextureUsageBits_Attachment | mythril::TextureUsageBits_Sampled,
 				.debugName = debug_name
 			});
+			rgPointLightShadowTex[i] = graph.importTexture(pointLightShadowTex[i]);
 		}
 		mythril::Shader pointshadowShader = ctx->createShader({
 			.source = kDataDir / "shaders/PointShadow.slang",
@@ -966,7 +978,7 @@ int main() {
 		for (int i = 0; i < kNumPointLights; i++) {
 			graph.addGraphicsPass(fmt::format("pointlight_shadow_{}", i).c_str())
 			.attachment({
-				.texDesc = pointLightShadowTex[i],
+				.texDesc = rgPointLightShadowTex[i],
 				.clearValue = mythril::ClearValue::depth(1.f, 1),
 				.loadOp = mythril::LoadOp::CLEAR,
 				.storeOp = mythril::StoreOp::STORE,
@@ -1034,15 +1046,14 @@ int main() {
 		});
 		graph.addGraphicsPass("sky")
 		.attachment({
-			.texDesc   = msaaColorTarget,
+			.texDesc   = rgMsaaColorTarget,
 			.clearValue = mythril::ClearValue::color(0.f, 0.f, 0.f, 1.f),
 			.loadOp    = mythril::LoadOp::CLEAR,
 			.storeOp   = mythril::StoreOp::STORE,
 		})
 		.attachment({
-			.texDesc = msaaDepthTarget,
-			// clear to 0, we do reverse depth buffering
-			.clearValue = mythril::ClearValue::depth(0.f, 0),
+			.texDesc = rgMsaaDepthTarget,
+			.clearValue = mythril::ClearValue::depth(kReverseZFarDepth, 0),
 			.loadOp = mythril::LoadOp::CLEAR,
 			.storeOp = mythril::StoreOp::STORE,
 		})
@@ -1063,17 +1074,17 @@ int main() {
 
 		graph.addGraphicsPass("geometry_opaque")
 		.attachment({
-			.texDesc = msaaColorTarget,
+			.texDesc = rgMsaaColorTarget,
 			.loadOp  = mythril::LoadOp::LOAD,
 			.storeOp = mythril::StoreOp::STORE,
 		})
 		.attachment({
-			.texDesc = msaaDepthTarget,
+			.texDesc = rgMsaaDepthTarget,
 			.loadOp = mythril::LoadOp::LOAD,
 			.storeOp = mythril::StoreOp::STORE,
 		})
-		.dependency(shadowMap, mythril::TextureAccess::Sampled)
-		.dependency(&pointLightShadowTex[0], kNumPointLights, mythril::TextureAccess::Sampled)
+		.dependency(rgShadowMap, mythril::TextureAccess::Sampled)
+		.dependency(rgPointLightShadowTex, mythril::TextureAccess::Sampled)
 		.dependency(frameDataHandle, mythril::BufferAccess::ShaderRead)
 		.execute([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdBindGraphicsPipeline(opaquePipeline);
@@ -1122,17 +1133,17 @@ int main() {
 
 		graph.addGraphicsPass("geometry_transparent")
 		.attachment({
-			.texDesc = msaaColorTarget,
+			.texDesc = rgMsaaColorTarget,
 			.loadOp = mythril::LoadOp::LOAD,
 			.storeOp = mythril::StoreOp::STORE,
 		})
 		.attachment({
-			.texDesc = msaaDepthTarget,
+			.texDesc = rgMsaaDepthTarget,
 			.loadOp = mythril::LoadOp::LOAD,
 			.storeOp = mythril::StoreOp::STORE,
 		})
-		.dependency(shadowMap, mythril::TextureAccess::Sampled)
-		.dependency(&pointLightShadowTex[0], kNumPointLights, mythril::TextureAccess::Sampled)
+		.dependency(rgShadowMap, mythril::TextureAccess::Sampled)
+		.dependency(rgPointLightShadowTex, mythril::TextureAccess::Sampled)
 		.dependency(frameDataHandle, mythril::BufferAccess::ShaderRead)
 		.execute([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdBindGraphicsPipeline(transparentPipeline);
@@ -1231,16 +1242,16 @@ int main() {
 
 		graph.addGraphicsPass("Ambient Particles")
 		.attachment({
-			.texDesc = msaaColorTarget,
+			.texDesc = rgMsaaColorTarget,
 			.loadOp = mythril::LoadOp::LOAD,
 			.storeOp = mythril::StoreOp::DONT_CARE,
-			.resolveTexDesc = offscreenColorTarget
+			.resolveTexDesc = rgOffscreenColorTarget
 		})
 		.attachment({
-			.texDesc = msaaDepthTarget,
+			.texDesc = rgMsaaDepthTarget,
 			.loadOp = mythril::LoadOp::LOAD,
 			.storeOp = mythril::StoreOp::DONT_CARE,
-			.resolveTexDesc = depthTarget
+			.resolveTexDesc = rgDepthTarget
 		})
 		.dependency(particles_buffer, mythril::BufferAccess::ShaderRead)
 		.dependency(frameDataHandle, mythril::BufferAccess::ShaderRead)
@@ -1269,6 +1280,7 @@ int main() {
 
 		constexpr unsigned int kNumColorMips = 8;
 		mythril::Texture offscreenColorTexs[kNumColorMips];
+		mythril::GraphTexture rgOffscreenColorTexs[kNumColorMips];
 		mythril::Dimensions colorbloomdimensions = ctx->getTextureDimensions(offscreenColorTarget.handle());
 		for (int i = 0; i < kNumColorMips; i++) {
 			char namebuf[64];
@@ -1279,6 +1291,7 @@ int main() {
 				.usage = mythril::TextureUsageBits_Sampled | mythril::TextureUsageBits_Storage,
 				.debugName = namebuf
 			});
+			rgOffscreenColorTexs[i] = graph.importTexture(offscreenColorTexs[i]);
 			graph.trackWindowSized(offscreenColorTexs[i], [i](const mythril::Dimensions& dims) {
 				return dims.divide2D(1u << i);
 			});
@@ -1293,11 +1306,11 @@ int main() {
 			.debugName = "Downsample Compute Pipeline"
 		});
 		graph.addIntermediate("copy offscreen to toplevel mipmap color")
-		.copy(offscreenColorTarget, offscreenColorTexs[0])
+		.copy(rgOffscreenColorTarget, rgOffscreenColorTexs[0])
 		.finish();
 
 		graph.addComputePass("Downsampling")
-		.dependency(&offscreenColorTexs[0], kNumColorMips, mythril::TextureAccess::StorageReadWrite)
+		.dependency(rgOffscreenColorTexs, mythril::TextureAccess::StorageReadWrite)
 		.executeCmdsInOrder()
 		.execute([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdBindComputePipeline(downsampleComputePipeline);
@@ -1339,9 +1352,10 @@ int main() {
 			.components = red_swizzle,
 			.debugName = "Luminance Current Texture"
 		});
+		const mythril::GraphTexture rgCurrentLuminanceTex = graph.importTexture(currentLuminanceTex);
 		graph.addComputePass("convert into current lum")
-		.dependency(offscreenColorTexs[7], mythril::TextureAccess::Sampled)
-		.dependency(currentLuminanceTex, mythril::TextureAccess::StorageReadWrite)
+		.dependency(rgOffscreenColorTexs[7], mythril::TextureAccess::Sampled)
+		.dependency(rgCurrentLuminanceTex, mythril::TextureAccess::StorageReadWrite)
 		.execute([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdBindComputePipeline(conversionLuminancePipeline);
 			struct PushConstant {
@@ -1372,7 +1386,7 @@ int main() {
 		float filter_radius = 0.002f;
 		float blend = 1.f;
 		graph.addComputePass("Upsampling")
-		.dependency(&offscreenColorTexs[0], kNumColorMips)
+		.dependency(rgOffscreenColorTexs)
 		.executeCmdsInOrder()
 		.execute([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdBindComputePipeline(upsampleComputePipeline);
@@ -1414,9 +1428,9 @@ int main() {
 		float adaptationSpeed = 1.5f;
 		auto st = std::chrono::steady_clock::now();
 		graph.addComputePass("adaptation")
-		.dependency(currentLuminanceTex, mythril::TextureAccess::StorageReadWrite)
-		.dependency(adaptedLuminanceTextures[0], mythril::TextureAccess::StorageReadWrite)
-		.dependency(adaptedLuminanceTextures[1], mythril::TextureAccess::StorageReadWrite)
+		.dependency(rgCurrentLuminanceTex, mythril::TextureAccess::StorageReadWrite)
+		.dependency(rgAdaptedLuminanceTextures[0], mythril::TextureAccess::StorageReadWrite)
+		.dependency(rgAdaptedLuminanceTextures[1], mythril::TextureAccess::StorageReadWrite)
 		.execute([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdBindComputePipeline(adaptationComputePipeline);
 			const auto ct = std::chrono::steady_clock::now();
@@ -1464,17 +1478,17 @@ int main() {
 		float saturation = 1.f;
 		graph.addGraphicsPass("composite")
 		.attachment({
-			.texDesc = finalColorTarget,
+			.texDesc = rgFinalColorTarget,
 			.clearValue = mythril::ClearValue::color(0.f, 0.f, 0.f, 1.f),
 			.loadOp = mythril::LoadOp::CLEAR,
 			.storeOp = mythril::StoreOp::STORE
 		})
-		.dependency(offscreenColorTarget, mythril::TextureAccess::Sampled)
-		.dependency(offscreenColorTexs[0], mythril::TextureAccess::Sampled)
-		.dependency(adaptedLuminanceTextures[1], mythril::TextureAccess::Sampled)
+		.dependency(rgOffscreenColorTarget, mythril::TextureAccess::Sampled)
+		.dependency(rgOffscreenColorTexs[0], mythril::TextureAccess::Sampled)
+		.dependency(rgAdaptedLuminanceTextures[1], mythril::TextureAccess::Sampled)
 		.execute([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdBindGraphicsPipeline(fullscreenCompositePipeline);
-			struct PushConstant { // 32 + 48 = 80 bytes total
+			struct PushConstant {
 				uint64_t colorTex; // 32 bytes
 				uint64_t avgLuminanceTex;
 				uint64_t bloomTex;
@@ -1528,7 +1542,7 @@ int main() {
 
 		graph.addGraphicsPass("shadow_pos_debug")
 		.attachment({
-			.texDesc = finalColorTarget,
+			.texDesc = rgFinalColorTarget,
 			.loadOp = mythril::LoadOp::LOAD,
 			.storeOp = mythril::StoreOp::STORE
 		})
@@ -1559,19 +1573,19 @@ int main() {
 
 		graph.addGraphicsPass("gui")
 		.attachment({
-			.texDesc = finalColorTarget,
+			.texDesc = rgFinalColorTarget,
 			.loadOp = mythril::LoadOp::LOAD,
 			.storeOp = mythril::StoreOp::STORE
 		})
-		.dependency(shadowMap, mythril::TextureAccess::Sampled)
-		.dependency(adaptedLuminanceTextures[0], mythril::TextureAccess::Sampled)
-		.dependency(&offscreenColorTexs[0], kNumColorMips, mythril::TextureAccess::Sampled)
+		.dependency(rgShadowMap, mythril::TextureAccess::Sampled)
+		.dependency(rgAdaptedLuminanceTextures[0], mythril::TextureAccess::Sampled)
+		.dependency(rgOffscreenColorTexs, mythril::TextureAccess::Sampled)
 		.execute([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdDrawImGui();
 		});
 
 		graph.addIntermediate("present")
-		.blit(finalColorTarget, ctx->getBackBufferTexture())
+		.blit(rgFinalColorTarget, graph.backBuffer())
 		.finish();
 		graph.compile(*ctx);
 

@@ -316,6 +316,9 @@ We use the words framegraph and rendergraph interchangably in the docs.
 
 It's a three step process:
 - Instiantate a `RenderGraph` object;
+- Tell the graph which textures it works with. Passes name textures by `GraphTexture` ids, not by `Texture` objects.
+  - `graph.importTexture(texture)` hands the graph a texture you created and keep alive. Importing the same texture twice returns the same id.
+  - `graph.backBuffer()` is the swapchain image, whichever one is current when the graph records.
 - Add as many passes as you want via `add*Pass`. 
   - `addGraphicsPass`: Used alongside a `GraphicsPipeline` 
   - `addComputePass`: Used alongside a `ComputePipeline`

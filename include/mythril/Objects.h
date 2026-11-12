@@ -42,11 +42,6 @@ namespace mythril {
 		template<typename InternalHandle>
 		class Holder {
 			friend class ::mythril::CTX;
-			// basically for swapchain only
-			void updateHandle(CTX& ctx, InternalHandle handle) {
-				_pCtx = &ctx;
-				_handle = handle;
-			}
 		public:
 			Holder() = default;
 			Holder(CTX* ctx, InternalHandle handle) : _handle(handle), _pCtx(ctx) {}

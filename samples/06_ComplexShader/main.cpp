@@ -496,15 +496,17 @@ int main() {
 
 		auto startTime = std::chrono::high_resolution_clock::now();
 		mythril::RenderGraph graph;
+		const mythril::GraphTexture rgColorTarget = graph.importTexture(colorTarget);
+		const mythril::GraphTexture rgDepthTarget = graph.importTexture(depthTarget);
 		graph.addGraphicsPass("geometry")
 		.attachment({
-			.texDesc = colorTarget,
+			.texDesc = rgColorTarget,
 			.clearValue = mythril::ClearValue::color(0.2f, 0.2f, 0.2f, 1.f),
 			.loadOp = mythril::LoadOp::CLEAR,
 			.storeOp = mythril::StoreOp::STORE
 		})
 		.attachment({
-			.texDesc = depthTarget,
+			.texDesc = rgDepthTarget,
 			.clearValue = mythril::ClearValue::depth(1.f, 0),
 			.loadOp = mythril::LoadOp::CLEAR
 		})
@@ -529,7 +531,7 @@ int main() {
 
 		graph.addGraphicsPass("gui")
 		.attachment({
-			.texDesc = {colorTarget},
+			.texDesc = {rgColorTarget},
 			.loadOp = mythril::LoadOp::LOAD,
 			.storeOp = mythril::StoreOp::STORE
 		})
@@ -538,7 +540,7 @@ int main() {
 		});
 
 		graph.addIntermediate("presentation")
-		.blit(colorTarget, ctx->getBackBufferTexture())
+		.blit(rgColorTarget, graph.backBuffer())
 		.finish();
 
 		graph.compile(*ctx);

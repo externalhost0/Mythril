@@ -199,16 +199,20 @@ int main() {
 		auto startTime = std::chrono::high_resolution_clock::now();
 
 		mythril::RenderGraph graph;
+		const mythril::GraphTexture rgColorTarget = graph.importTexture(colorTarget);
+		const mythril::GraphTexture rgResolveColorTarget = graph.importTexture(resolveColorTarget);
+		const mythril::GraphTexture rgDepthTarget = graph.importTexture(depthTarget);
+		const mythril::GraphTexture rgPostColorTarget = graph.importTexture(postColorTarget);
 		graph.addGraphicsPass("main")
 		.attachment({
-			.texDesc = colorTarget,
+			.texDesc = rgColorTarget,
 			.clearValue = mythril::ClearValue::color(0.2f, 0.2f, 0.2f, 1.f),
 			.loadOp = mythril::LoadOp::CLEAR,
 			.storeOp = mythril::StoreOp::DONT_CARE,
-			.resolveTexDesc = resolveColorTarget
+			.resolveTexDesc = rgResolveColorTarget
 		})
 		.attachment({
-			.texDesc = depthTarget,
+			.texDesc = rgDepthTarget,
 			.clearValue = mythril::ClearValue::depth(1.f, 0),
 			.loadOp = mythril::LoadOp::CLEAR
 		})
@@ -240,11 +244,11 @@ int main() {
 		});
 		graph.addGraphicsPass("post_processing")
 		.attachment({
-			.texDesc = postColorTarget,
+			.texDesc = rgPostColorTarget,
 			.loadOp = mythril::LoadOp::DONT_CARE,
 			.storeOp = mythril::StoreOp::STORE
 		})
-		.dependency(resolveColorTarget, mythril::TextureAccess::Sampled)
+		.dependency(rgResolveColorTarget, mythril::TextureAccess::Sampled)
 		.execute([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdBindGraphicsPipeline(postPipeline);
 
@@ -259,7 +263,7 @@ int main() {
 			cmd.cmdDraw(3);
 		});
 		graph.addIntermediate("present")
-		.blit(postColorTarget, ctx->getBackBufferTexture())
+		.blit(rgPostColorTarget, graph.backBuffer())
 		.finish();
 		graph.compile(*ctx);
 

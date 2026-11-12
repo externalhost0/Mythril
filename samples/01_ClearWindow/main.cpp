@@ -44,7 +44,7 @@ int main() {
 		mythril::RenderGraph graph;
 		graph.addGraphicsPass("main")
 		.attachment({
-			.texDesc = ctx->getBackBufferTexture(),
+			.texDesc = graph.backBuffer(),
 			.clearValue = mythril::ClearValue::color(1.f, 0.f, 0.f, 1.f),
 			.loadOp = mythril::LoadOp::CLEAR,
 			.storeOp = mythril::StoreOp::STORE

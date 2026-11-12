@@ -28,10 +28,45 @@ namespace mythril {
 	RenderGraph::RenderGraph(RenderGraph&&) noexcept = default;
 	RenderGraph& RenderGraph::operator=(RenderGraph&&) noexcept = default;
 
+	static uint32_t IdOf(const GraphTexture texture) {
+		return GraphTextureAccess::index(texture);
+	}
+	static const GraphResource& ResourceOf(const std::vector<GraphResource>& textures, const GraphTexture texture) {
+		ASSERT_MSG(texture.valid() && IdOf(texture) < textures.size(), "GraphTexture does not belong to this RenderGraph.");
+		return textures[IdOf(texture)];
+	}
+	static bool IsBackBuffer(const std::vector<GraphResource>& textures, const GraphTexture texture) {
+		return std::holds_alternative<SwapchainTexture>(ResourceOf(textures, texture).source);
+	}
+	static TextureHandle ResolveHandle(const std::vector<GraphResource>& textures, const CTX& rCtx, const GraphTexture texture) {
+		if (const auto* imported = std::get_if<ImportedTexture>(&ResourceOf(textures, texture).source))
+			return imported->handle;
+		return rCtx.getCurrentSwapchainTexHandle();
+	}
+
+	GraphTexture RenderGraph::importTexture(const Texture& texture) {
+		ASSERT_MSG(texture.valid(), "RenderGraph::importTexture called with an invalid texture.");
+		ASSERT_MSG(!texture.getContext()->isSwapchainTexture(texture.handle()), "Swapchain images are not imported, use RenderGraph::backBuffer().");
+		for (uint32_t i = 0; i < _textures.size(); ++i) {
+			if (const auto* imported = std::get_if<ImportedTexture>(&_textures[i].source); imported && imported->handle == texture.handle())
+				return GraphTexture{i};
+		}
+		_textures.push_back({ImportedTexture{texture.handle()}});
+		return GraphTexture{static_cast<uint32_t>(_textures.size() - 1)};
+	}
+
+	GraphTexture RenderGraph::backBuffer() {
+		for (uint32_t i = 0; i < _textures.size(); ++i) {
+			if (std::holds_alternative<SwapchainTexture>(_textures[i].source))
+				return GraphTexture{i};
+		}
+		_textures.push_back({SwapchainTexture{}});
+		return GraphTexture{static_cast<uint32_t>(_textures.size() - 1)};
+	}
+
 	BasePassBuilder::BasePassBuilder(RenderGraph& rGraph, const char* pName, const PassDesc::Type type)
 		: _rGraph(rGraph), _passSource(pName, type) {
 		ASSERT(!_passSource.name.empty());
-		// set default queue solely based on type, will change during compile
 		_passSource.queue = [](PassDesc::Type type) {
 			switch (type) {
 				case PassDesc::Type::Graphics:
@@ -64,33 +99,16 @@ namespace mythril {
 	IntermediateBuilder& IntermediateBuilder::blit(TextureDesc src, TextureDesc dst) {
 		add(base._passSource, src, TextureAccess::TransferRead);
 		add(base._passSource, dst, TextureAccess::TransferWrite);
-		const bool toSwapchain = dst.texture.getContext()->view(dst.texture.handle()).isSwapchainImage();
-		base._passSource.intermediateOps.emplace_back(BlitOp{src.texture.handle(), dst.texture.handle(), toSwapchain});
+		base._passSource.intermediateOps.emplace_back(BlitOp{src.texture, dst.texture});
 		return *this;
 	}
 	IntermediateBuilder& IntermediateBuilder::copy(TextureDesc src, TextureDesc dst) {
 		add(base._passSource, src, TextureAccess::TransferRead);
 		add(base._passSource, dst, TextureAccess::TransferWrite);
-		const bool toSwapchain = dst.texture.getContext()->view(dst.texture.handle()).isSwapchainImage();
-		base._passSource.intermediateOps.emplace_back(CopyOp{src.texture.handle(), dst.texture.handle(), toSwapchain});
+		base._passSource.intermediateOps.emplace_back(CopyOp{src.texture, dst.texture});
 		return *this;
 	}
 
-	// todo: i have no clue how this just works immediately besides the fact we dont actually touch the base image + restore its original layout
-	//IntermediateBuilder& IntermediateBuilder::generateMipmaps(const Texture& texture) {
-	//	TextureHandle handle = texture.handle();
-	//	auto oldCallback = base._passSource.executeCallback;
-	//	base._passSource.executeCallback = [oldCallback, handle](CommandBuffer& cmd) {
-	//		if (oldCallback)
-	//			oldCallback(cmd);
-	//		cmd.cmdGenerateMipmap(handle);
-	//	};
-	//	return *this;
-	//}
-	//IntermediateBuilder& IntermediateBuilder::dependency(Buffer& buffer, BufferAccess access) {
-	//	add(base._passSource, buffer, access);
-	//	return *this;
-	//}
 	IntermediateBuilder& IntermediateBuilder::update(Buffer& buffer, std::function<UploadData()> dataCb, size_t dstOffset) {
 		add(base._passSource, buffer, BufferAccess::TransferWrite);
 		base._passSource.intermediateOps.emplace_back(UpdateOp{buffer.handle(), dstOffset, std::move(dataCb)});
@@ -114,18 +132,18 @@ namespace mythril {
 		this->base._rGraph._hasCompiled = false;
 	}
 
-	void RenderGraph::RecordIntermediateOps(CommandBuffer& cmd, const CompiledPass& pass) {
+	void RenderGraph::RecordIntermediateOps(CommandBuffer& cmd, const CompiledPass& pass) const {
 		for (const IntermediateOp& op: pass.intermediateOps) {
 			if (const auto* copy = std::get_if<CopyOp>(&op)) {
-				if (copy->toSwapchain)
-					cmd.cmdCopyImageToSwapchain(copy->src);
+				if (IsBackBuffer(_textures, copy->dst))
+					cmd.cmdCopyImageToSwapchain(ResolveHandle(_textures, *cmd._ctx, copy->src));
 				else
-					cmd.cmdCopyImage(copy->src, copy->dst);
+					cmd.cmdCopyImage(ResolveHandle(_textures, *cmd._ctx, copy->src), ResolveHandle(_textures, *cmd._ctx, copy->dst));
 			} else if (const auto* blit = std::get_if<BlitOp>(&op)) {
-				if (blit->toSwapchain)
-					cmd.cmdBlitImageToSwapchain(blit->src);
+				if (IsBackBuffer(_textures, blit->dst))
+					cmd.cmdBlitImageToSwapchain(ResolveHandle(_textures, *cmd._ctx, blit->src));
 				else
-					cmd.cmdBlitImage(blit->src, blit->dst);
+					cmd.cmdBlitImage(ResolveHandle(_textures, *cmd._ctx, blit->src), ResolveHandle(_textures, *cmd._ctx, blit->dst));
 			} else if (const auto* update = std::get_if<UpdateOp>(&op)) {
 				const UploadData data = update->dataCb();
 				ASSERT_PASS(data.data, pass, "IntermediateBuilder::update called with null data.");
@@ -211,7 +229,7 @@ namespace mythril {
 		return {baseMip, numMips, baseLayer, numLayers};
 	}
 
-	static VkImageView ResolveImageView(const TextureDesc& texDesc, const AllocatedTexture& allocatedTexture, const PassDesc& pass) {
+	static VkImageView ResolveImageView(CTX& rCtx, const TextureHandle handle, const TextureDesc& texDesc, const AllocatedTexture& allocatedTexture, const PassDesc& pass) {
 		const bool needsCustomView = texDesc.baseLayer.has_value() || texDesc.baseLevel.has_value() || texDesc.numLayers.has_value() || texDesc.numLevels.has_value();
 		if (!needsCustomView) {
 			return allocatedTexture.getImageView();
@@ -222,15 +240,14 @@ namespace mythril {
 		if (range.numLayers == 1 && viewType == VK_IMAGE_VIEW_TYPE_CUBE) {
 			viewType = VK_IMAGE_VIEW_TYPE_2D;
 		}
-		CTX* ctx = texDesc.texture.getContext();
-		const TextureViewKey viewKey = ctx->createTextureView(texDesc.texture.handle(), {
+		const TextureViewKey viewKey = rCtx.createTextureView(handle, {
 		    .type = viewType,
 		    .mipLevel = range.baseMip,
 		    .numMipLevels = range.numMips,
 		    .layer = range.baseLayer,
 		    .numLayers = range.numLayers,
 		});
-		return ctx->getTextureView(texDesc.texture.handle(), viewKey);
+		return rCtx.getTextureView(handle, viewKey);
 	}
 
 	static constexpr bool NeedsBarrier(VkImageLayout currentLayout, const vkutil::StageAccess& currentStageAccess, VkImageLayout desiredLayout, const vkutil::StageAccess& desiredStageAccess) {
@@ -277,29 +294,28 @@ namespace mythril {
 		}
 		ASSERT_MSG(false, "Unsupported TextureAccess value.");
 	}
-	void RenderGraph::processResourceAccess(const TextureDesc& texDesc, VkImageLayout desiredLayout, const StageAccess& dstMask, CompiledPass& outPass, const PassDesc& pass) {
-		const AllocatedTexture& texture = texDesc.texture.getContext()->view(texDesc.texture.handle());
-		const bool isSwapchain = texture.isSwapchainImage();
+	void RenderGraph::processResourceAccess(const CTX& rCtx, const TextureDesc& texDesc, VkImageLayout desiredLayout, const StageAccess& dstMask, CompiledPass& outPass, const PassDesc& pass) const {
+		const TextureHandle handle = ResolveHandle(_textures, rCtx, texDesc.texture);
+		const AllocatedTexture& texture = rCtx.view(handle);
 		const SubresourceRange& range = ResolveSubresourceRange(texDesc, texture, pass);
-		outPass.imageBarriers.push_back({.handle = texDesc.texture.handle(), .range = range, .dstLayout = desiredLayout, .dstMask = dstMask, .isSwapchain = isSwapchain});
+		outPass.imageBarriers.push_back({.handle = handle, .range = range, .dstLayout = desiredLayout, .dstMask = dstMask, .isSwapchain = IsBackBuffer(_textures, texDesc.texture)});
 	}
 
-	void RenderGraph::processPassResources(const PassDesc& passDesc, CompiledPass& outPass) {
-		// we expect to use a max of this
+	void RenderGraph::processPassResources(const CTX& rCtx, const PassDesc& passDesc, CompiledPass& outPass) const {
 		outPass.imageBarriers.reserve(passDesc.textureDependencyOperations.size() + passDesc.attachmentOperations.size());
 		outPass.bufferBarriers.reserve(passDesc.bufferDependencyOperations.size());
 		for (const TextureDependencyDesc& dependency_desc: passDesc.textureDependencyOperations) {
-			processResourceAccess(dependency_desc.texDesc, GetTextureLayout(dependency_desc.access), GetTextureStageAccess(dependency_desc.access, passDesc.type), outPass, passDesc);
+			processResourceAccess(rCtx, dependency_desc.texDesc, GetTextureLayout(dependency_desc.access), GetTextureStageAccess(dependency_desc.access, passDesc.type), outPass, passDesc);
 		}
 		for (const AttachmentDesc& attachment_desc: passDesc.attachmentOperations) {
-			const AllocatedTexture& texture = attachment_desc.texDesc.texture.getContext()->view(attachment_desc.texDesc.texture.handle());
+			const AllocatedTexture& texture = rCtx.view(ResolveHandle(_textures, rCtx, attachment_desc.texDesc.texture));
 			const VkImageLayout layout = texture.isDepthAttachment() ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-			processResourceAccess(attachment_desc.texDesc, layout, vkutil::GetPipelineStageAccess(layout), outPass, passDesc);
+			processResourceAccess(rCtx, attachment_desc.texDesc, layout, vkutil::GetPipelineStageAccess(layout), outPass, passDesc);
 
 			if (attachment_desc.resolveTexDesc.has_value()) {
 				// resolves always write in color attachment output, even for depth/stencil
 				constexpr StageAccess resolveMask = {.stage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, .access = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT};
-				processResourceAccess(attachment_desc.resolveTexDesc.value(), layout, resolveMask, outPass, passDesc);
+				processResourceAccess(rCtx, attachment_desc.resolveTexDesc.value(), layout, resolveMask, outPass, passDesc);
 			}
 		}
 		for (const BufferDependencyDesc& dependency_desc: passDesc.bufferDependencyOperations) {
@@ -334,21 +350,22 @@ namespace mythril {
 		};
 	}
 
-	void RenderGraph::processAttachments(const CTX& rCtx, const PassDesc& pass_desc, CompiledPass& outPass) {
+	void RenderGraph::processAttachments(CTX& rCtx, const PassDesc& pass_desc, CompiledPass& outPass) const {
 		if (pass_desc.attachmentOperations.empty())
 			return;
 		uint32_t max_width = 0, max_height = 0;
 		bool hasDepthAttachment = false;
 		for (const AttachmentDesc& attachment_desc: pass_desc.attachmentOperations) {
 			const TextureDesc& texDesc = attachment_desc.texDesc;
-			const AllocatedTexture& allocatedTexture = attachment_desc.texDesc.texture.getContext()->view(attachment_desc.texDesc.texture.handle());
+			const TextureHandle handle = ResolveHandle(_textures, rCtx, texDesc.texture);
+			const AllocatedTexture& allocatedTexture = rCtx.view(handle);
 
 			const bool isDepthAttachment = vkutil::IsFormatDepth(allocatedTexture.getFormat());
 			if (isDepthAttachment) {
 				ASSERT_PASS(!hasDepthAttachment, pass_desc, "Multiple depth attachments not allowed (found '{}' to be a second depth attachment)", allocatedTexture.getDebugName());
 				hasDepthAttachment = true;
 			}
-			VkImageView imageView = ResolveImageView(texDesc, allocatedTexture, pass_desc);
+			VkImageView imageView = ResolveImageView(rCtx, handle, texDesc, allocatedTexture, pass_desc);
 
 			const ClearValue& clear_value = attachment_desc.clearValue;
 			AttachmentInfo attachment_info = {
@@ -363,10 +380,11 @@ namespace mythril {
 			    .storeOp = toVulkan(attachment_desc.storeOp),
 			    .clearValue = isDepthAttachment ? clear_value.getDepthStencilValue() : clear_value.getColorValue(),
 			};
-			attachment_info.texture = attachment_desc.texDesc.texture.handle();
+			attachment_info.texture = handle;
 			if (attachment_desc.resolveTexDesc.has_value()) {
 				const TextureDesc& resolve_desc = attachment_desc.resolveTexDesc.value();
-				const AllocatedTexture resolve_texture = resolve_desc.texture.getContext()->view(resolve_desc.texture.handle());
+				const TextureHandle resolve_handle = ResolveHandle(_textures, rCtx, resolve_desc.texture);
+				const AllocatedTexture& resolve_texture = rCtx.view(resolve_handle);
 				ASSERT_PASS(
 				        resolve_texture.getSampleCount() == VK_SAMPLE_COUNT_1_BIT,
 				        pass_desc,
@@ -394,11 +412,10 @@ namespace mythril {
 					        resolve_texture.getDebugName()
 					);
 
-				// set the fields we left empty previously
 				attachment_info.resolveImageLayout = attachment_info.imageLayout;
-				attachment_info.resolveImageView = ResolveImageView(resolve_desc, resolve_texture, pass_desc);
+				attachment_info.resolveImageView = ResolveImageView(rCtx, resolve_handle, resolve_desc, resolve_texture, pass_desc);
 			}
-			if (allocatedTexture.isSwapchainImage()) {
+			if (IsBackBuffer(_textures, texDesc.texture)) {
 				attachment_info.isSwapchainImage = true;
 				const auto& swapchain = rCtx._swapchain;
 				const uint32_t numImages = swapchain->getNumOfSwapchainImages();
@@ -466,19 +483,18 @@ namespace mythril {
 	}
 
 	struct PassResourceUse {
-		std::unordered_set<TextureHandle> attachments;
-		// non-attachment accesses, true when written
-		std::unordered_map<TextureHandle, bool> textures;
+		std::unordered_set<uint32_t> attachments;
+		std::unordered_map<uint32_t, bool> textures;
 		std::unordered_map<BufferHandle, bool> buffers;
 
 		void add(const PassDesc& desc) {
 			for (const AttachmentDesc& attachment: desc.attachmentOperations) {
-				attachments.insert(attachment.texDesc.texture.handle());
+				attachments.insert(IdOf(attachment.texDesc.texture));
 				if (attachment.resolveTexDesc.has_value())
-					attachments.insert(attachment.resolveTexDesc->texture.handle());
+					attachments.insert(IdOf(attachment.resolveTexDesc->texture));
 			}
 			for (const TextureDependencyDesc& dependency: desc.textureDependencyOperations)
-				textures[dependency.texDesc.texture.handle()] |= isWrite(dependency.access);
+				textures[IdOf(dependency.texDesc.texture)] |= isWrite(dependency.access);
 			for (const BufferDependencyDesc& dependency: desc.bufferDependencyOperations)
 				buffers[dependency.buffer.handle()] |= isWrite(dependency.access);
 		}
@@ -623,24 +639,24 @@ namespace mythril {
 
 		void addEdge(uint32_t from, uint32_t to) {
 			if (from == to) return;
+			ASSERT_MSG(from < to, "render graph edges must point from an earlier pass to a later one, compile relies on declaration order being topological");
 			predecessors.at(to).insert(from);
 		}
 	};
 
-	DirectedGraph build_directed_graph(const std::vector<PassDesc>& pass_descs) {
+	DirectedGraph build_directed_graph(const std::vector<PassDesc>& pass_descs, const size_t texture_count) {
 		const size_t pass_desc_count = pass_descs.size();
 
 		auto collectTexAccess = [](const PassDesc& desc) {
-			std::vector<std::pair<TextureHandle, bool>> result;
+			std::vector<std::pair<uint32_t, bool>> result;
 			result.reserve(desc.textureDependencyOperations.size() + desc.attachmentOperations.size());
 			for (const auto& texDep : desc.textureDependencyOperations) {
-				result.emplace_back(texDep.texDesc.texture.handle(), isWrite(texDep.access));
+				result.emplace_back(IdOf(texDep.texDesc.texture), isWrite(texDep.access));
 			}
 			for (const auto& attachDep : desc.attachmentOperations) {
-				// an attachment is always written to
-				result.emplace_back(attachDep.texDesc.texture.handle(), true);
+				result.emplace_back(IdOf(attachDep.texDesc.texture), true);
 				if (attachDep.resolveTexDesc.has_value())
-					result.emplace_back(attachDep.resolveTexDesc->texture.handle(), true);
+					result.emplace_back(IdOf(attachDep.resolveTexDesc->texture), true);
 			}
 			return result;
 		};
@@ -653,10 +669,9 @@ namespace mythril {
 			return result;
 		};
 
-		// build our tracking vars
-		// where a handle represents a resource, the integar represents its pass_id
-		std::unordered_map<TextureHandle, uint32_t> lastTexWriter;
-		std::unordered_map<TextureHandle, std::vector<uint32_t>> lastTexReaders;
+		constexpr uint32_t kNoWriter = UINT32_MAX;
+		std::vector<uint32_t> lastTexWriter(texture_count, kNoWriter);
+		std::vector<std::vector<uint32_t>> lastTexReaders(texture_count);
 
 		std::unordered_map<BufferHandle, uint32_t> lastBufWriter;
 		std::unordered_map<BufferHandle, std::vector<uint32_t>> lastBufReaders;
@@ -665,15 +680,11 @@ namespace mythril {
 		// first collect all edges from the graph sequentially
 		for (int i = 0; i < pass_desc_count; i++) {
 			const PassDesc& desc = pass_descs[i];
-			// h = handle
-			// go through textures
 			for (const auto& [h, isWrite] : collectTexAccess(desc)) {
-				// if the resource isnt added already
-				if (auto it = lastTexWriter.find(h); it != lastTexWriter.end())
-					result.addEdge(it->second, i);
+				if (lastTexWriter[h] != kNoWriter)
+					result.addEdge(lastTexWriter[h], i);
 
 				if (isWrite) {
-					// WAW
 					for (const uint32_t reader : lastTexReaders[h])
 						result.addEdge(reader, i);
 					lastTexWriter[h] = i;
@@ -703,23 +714,21 @@ namespace mythril {
 	std::vector<uint32_t> cull_unused_passes(
 		const std::vector<uint32_t>& topo_sorted_order,
 		const std::vector<std::unordered_set<uint32_t>>& predecessors,
-		const std::vector<PassDesc>& pass_descs) {
+		const std::vector<PassDesc>& pass_descs,
+		const std::vector<GraphResource>& textures) {
 
 		const size_t node_count = topo_sorted_order.size();
-		// now that sortedOrder is topologically sorted, we can perform culling from the swapchain pass
-		// todo: this only walks back from a swapchain image, headless will mean everything is culled
 		std::unordered_set<uint32_t> sinkPasses;
 		for (uint32_t i = 0; i < node_count; i++) {
 			const PassDesc& pass_desc = pass_descs[i];
 			for (const auto& attachDesc : pass_desc.attachmentOperations) {
-				if (attachDesc.texDesc.texture.getContext()->isSwapchainTexture(attachDesc.texDesc.texture.handle())) {
+				if (IsBackBuffer(textures, attachDesc.texDesc.texture)) {
 					sinkPasses.insert(i);
 					break;
 				}
 			}
-			// verify that it is a write to swapchain not a read for some reason
 			for (const auto& texDesc : pass_desc.textureDependencyOperations) {
-				if (texDesc.texDesc.texture.getContext()->isSwapchainTexture(texDesc.texDesc.texture.handle()) && isWrite(texDesc.access)) {
+				if (IsBackBuffer(textures, texDesc.texDesc.texture) && isWrite(texDesc.access)) {
 					sinkPasses.insert(i);
 					break;
 				}
@@ -779,15 +788,17 @@ namespace mythril {
 		this->_compiledPasses.clear();
 		std::erase_if(_resourceTrackers, [&rCtx](const auto& entry) { return rCtx._texturePool.get(entry.first) == nullptr; });
 		this->_bufferTrackers.clear();
+		for (const GraphResource& resource: _textures) {
+			if (const auto* imported = std::get_if<ImportedTexture>(&resource.source))
+				ASSERT_MSG(rCtx._texturePool.get(imported->handle) != nullptr, "A texture imported into the RenderGraph was destroyed while the graph still uses it.");
+		}
 
-		const DirectedGraph directed_graph = build_directed_graph(this->_passDescriptions);
+		const DirectedGraph directed_graph = build_directed_graph(this->_passDescriptions, _textures.size());
 		const std::vector<std::unordered_set<uint32_t>>& passPredecessors = directed_graph.predecessors;
-		// edges only point from earlier to later passes, so declaration order is already topological
 		std::vector<uint32_t> declaration_order(this->_passDescriptions.size());
 		std::iota(declaration_order.begin(), declaration_order.end(), 0u);
-		const std::vector<uint32_t> culled_order = cull_unused_passes(declaration_order, passPredecessors, _passDescriptions);
+		const std::vector<uint32_t> culled_order = cull_unused_passes(declaration_order, passPredecessors, _passDescriptions, _textures);
 
-		// assign and warn queues for each pass
 		const bool canUseAC = rCtx._immAsyncCompute != nullptr;
 		const bool canUseAT = rCtx._immAsyncTransfer != nullptr;
 		auto sanitizeQueue = [canUseAC, canUseAT](const QueueAffinity requested_queue, const PassDesc& pass) {
@@ -823,9 +834,7 @@ namespace mythril {
 			compiled_pass.viewMask = pass_desc.viewMask;
 			compiled_pass.conditionCallback = pass_desc.conditionCallback;
 
-			// do not worry about the return value,
-			// every type of process should run for every pass
-			processPassResources(pass_desc, compiled_pass);
+			processPassResources(rCtx, pass_desc, compiled_pass);
 			processAttachments(rCtx, pass_desc, compiled_pass);
 			if (pass_desc.executeInOrder)
 				compiled_pass.inOrderBarrier = BuildInOrderBarrier(compiled_pass);
@@ -848,11 +857,15 @@ namespace mythril {
 		{
 			// memoryless attachments have no backing memory, so their contents must begin and end inside one rendering scope
 			std::unordered_map<TextureHandle, uint32_t> passesUsing;
+			const auto countUse = [&](const uint32_t id) {
+				if (const auto* imported = std::get_if<ImportedTexture>(&_textures[id].source))
+					++passesUsing[imported->handle];
+			};
 			for (const CompilingPass& record: compiled) {
-				for (const TextureHandle handle: record.use.attachments)
-					++passesUsing[handle];
-				for (const auto& [handle, written]: record.use.textures)
-					++passesUsing[handle];
+				for (const uint32_t id: record.use.attachments)
+					countUse(id);
+				for (const auto& [id, written]: record.use.textures)
+					countUse(id);
 			}
 			for (const CompilingPass& record: compiled) {
 				const auto validate = [&](const AttachmentInfo& attachment) {

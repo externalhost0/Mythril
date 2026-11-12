@@ -351,8 +351,9 @@ int main() {
 		applyDebugMode(0);
 
 		mythril::RenderGraph graph;
+		const mythril::GraphTexture rgTracedShadowOutput = graph.importTexture(tracedShadowOutput);
 		graph.addRayTracingPass("trace shadows")
-		.dependency(tracedShadowOutput, mythril::TextureAccess::StorageReadWrite)
+		.dependency(rgTracedShadowOutput, mythril::TextureAccess::StorageReadWrite)
 		.dependency(frameBuffer, mythril::BufferAccess::ShaderRead)
 		.execute([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdBindRayTracingPipeline(mainPipeline);
@@ -379,7 +380,7 @@ int main() {
 
 		});
 		graph.addIntermediate("present")
-		.blit(tracedShadowOutput, ctx->getBackBufferTexture())
+		.blit(rgTracedShadowOutput, graph.backBuffer())
 		.finish();
 		graph.compile(*ctx);
 

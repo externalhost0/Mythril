@@ -58,9 +58,10 @@ int main() {
 		});
 
 		mythril::RenderGraph graph;
+		const mythril::GraphTexture rgColorTarget = graph.importTexture(colorTarget);
 		graph.addGraphicsPass("main")
 		.attachment({
-			.texDesc = colorTarget,
+			.texDesc = rgColorTarget,
 			.clearValue = mythril::ClearValue::color(1.f, 0.f, 0.f, 1.f),
 			.loadOp = mythril::LoadOp::CLEAR,
 			.storeOp = mythril::StoreOp::STORE
@@ -69,7 +70,7 @@ int main() {
 			cmd.cmdDrawImGui();
 		});
 		graph.addIntermediate("present")
-		.blit(colorTarget, ctx->getBackBufferTexture())
+		.blit(rgColorTarget, graph.backBuffer())
 		.finish();
 		graph.compile(*ctx);
 

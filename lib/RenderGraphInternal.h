@@ -18,6 +18,7 @@
 #include <functional>
 #include <optional>
 #include <string>
+#include <variant>
 #include <vector>
 
 #include <volk.h>
@@ -25,11 +26,22 @@
 
 namespace mythril {
 
+    struct GraphTextureAccess {
+        static constexpr uint32_t index(GraphTexture texture) { return texture._index; }
+    };
+
+    struct ImportedTexture {
+        TextureHandle handle;
+    };
+    struct SwapchainTexture {};
+    struct GraphResource {
+        std::variant<ImportedTexture, SwapchainTexture> source;
+    };
+
     struct AttachmentInfo {
-        VkFormat imageFormat; // the only field that RenderingAttachmentInfo doesnt need but GraphcsPipeline does
+        VkFormat imageFormat;
         VkImageView imageView;
         VkImageLayout imageLayout;
-        // optional resolve target
         VkImageView resolveImageView;
         VkImageLayout resolveImageLayout;
 

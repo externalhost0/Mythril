@@ -183,16 +183,19 @@ int main() {
 		auto startTime = std::chrono::high_resolution_clock::now();
 
 		mythril::RenderGraph graph;
+		const mythril::GraphTexture rgColorTarget = graph.importTexture(colorTarget);
+		const mythril::GraphTexture rgResolveColorTarget = graph.importTexture(resolveColorTarget);
+		const mythril::GraphTexture rgDepthTarget = graph.importTexture(depthTarget);
 		graph.addGraphicsPass("main")
 		.attachment({
-			.texDesc = colorTarget,
+			.texDesc = rgColorTarget,
 			.clearValue = mythril::ClearValue::color(0.2f, 0.2f, 0.2f, 1.f),
 			.loadOp = mythril::LoadOp::CLEAR,
 			.storeOp = mythril::StoreOp::DONT_CARE,
-			.resolveTexDesc = resolveColorTarget
+			.resolveTexDesc = rgResolveColorTarget
 		})
 		.attachment({
-			.texDesc = depthTarget,
+			.texDesc = rgDepthTarget,
 			.clearValue = mythril::ClearValue::depth(1.f, 0),
 			.loadOp = mythril::LoadOp::CLEAR
 		})
@@ -222,7 +225,7 @@ int main() {
 			cmd.cmdDrawIndexed(cubeIndices.size());
 		});
 		graph.addIntermediate("present")
-		.blit(resolveColorTarget, ctx->getBackBufferTexture())
+		.blit(rgResolveColorTarget, graph.backBuffer())
 		.finish();
 
 		graph.compile(*ctx);

@@ -34,9 +34,8 @@ namespace mythril {
     struct CompiledBufferBarrier;
     struct UploadData;
     struct CompiledPass;
+    struct GraphResource;
 
-    // builders are how the user interacts with a capability
-    // BasePassBuilder is a blueprint for other PassBuilders only
     struct BasePassBuilder {
         BasePassBuilder() = delete;
         BasePassBuilder(RenderGraph& rGraph, const char* pName, PassDesc::Type type);
@@ -80,25 +79,15 @@ namespace mythril {
             add(this->base._passSource, texDesc, access);
             return *this;
         }
-    	// dependency for buffer
         [[nodiscard]] GraphicsPassBuilder& dependency(Buffer& buffer, const BufferAccess access) {
             add(this->base._passSource, buffer, access);
             return *this;
         }
-    	// c style overload
-        [[nodiscard]] GraphicsPassBuilder& dependency(Texture* tex, int count, const TextureAccess access = TextureAccess::Sampled) {
-            for (int i = 0; i < count; i++) {
-                add(this->base._passSource, tex[i], access);
-            }
-            return *this;
-        }
-    	// span overload
-    	[[nodiscard]] GraphicsPassBuilder& dependency(std::span<Texture* const> textures, const TextureAccess access = TextureAccess::Sampled) {
-            for (auto* tex : textures)
-                add(this->base._passSource, *tex, access);
+    	[[nodiscard]] GraphicsPassBuilder& dependency(const std::span<const GraphTexture> textures, const TextureAccess access = TextureAccess::Sampled) {
+            for (const GraphTexture tex : textures)
+                add(this->base._passSource, tex, access);
 	        return *this;
         }
-    	// span overload
         [[nodiscard]] GraphicsPassBuilder& attachments(const std::span<const AttachmentDesc> descs) {
             for (const auto& desc : descs)
                 add(this->base._passSource, desc);
@@ -139,17 +128,9 @@ namespace mythril {
             add(this->base._passSource, buffer, access);
             return *this;
         }
-    	// c style overload
-        [[nodiscard]] ComputePassBuilder& dependency(Texture* tex, int count, const TextureAccess access = TextureAccess::StorageReadWrite) {
-            for (int i = 0; i < count; i++) {
-                add(this->base._passSource, tex[i], access);
-            }
-            return *this;
-        }
-    	// span overload
-        [[nodiscard]] ComputePassBuilder& dependency(const std::span<Texture* const> textures, const TextureAccess access = TextureAccess::StorageReadWrite) {
-            for (auto* tex : textures)
-                add(this->base._passSource, *tex, access);
+        [[nodiscard]] ComputePassBuilder& dependency(const std::span<const GraphTexture> textures, const TextureAccess access = TextureAccess::StorageReadWrite) {
+            for (const GraphTexture tex : textures)
+                add(this->base._passSource, tex, access);
             return *this;
         }
 
@@ -188,17 +169,9 @@ namespace mythril {
 			add(this->base._passSource, buffer, access);
 			return *this;
 		}
-		// c style overload
-		[[nodiscard]] RayTracingPassBuilder& dependency(Texture* tex, int count, const TextureAccess access = TextureAccess::StorageReadWrite) {
-			for (int i = 0; i < count; i++) {
-				add(this->base._passSource, tex[i], access);
-			}
-			return *this;
-		}
-		// span overload
-		[[nodiscard]] RayTracingPassBuilder& dependency(const std::span<Texture* const> textures, const TextureAccess access = TextureAccess::StorageReadWrite) {
-			for (auto* tex : textures)
-				add(this->base._passSource, *tex, access);
+		[[nodiscard]] RayTracingPassBuilder& dependency(const std::span<const GraphTexture> textures, const TextureAccess access = TextureAccess::StorageReadWrite) {
+			for (const GraphTexture tex : textures)
+				add(this->base._passSource, tex, access);
 			return *this;
 		}
 		[[nodiscard]] RayTracingPassBuilder& executeCmdsInOrder() {
@@ -271,29 +244,31 @@ namespace mythril {
     	void executeEXT(CTX& rCtx);
 
     	void execute(CommandBuffer& cmd);
+
+        // non-owning, the caller keeps the texture alive for the graph's lifetime, importing the same texture twice returns the same id
+        [[nodiscard]] GraphTexture importTexture(const Texture& texture);
+        // whichever swapchain image is current when the graph records
+        [[nodiscard]] GraphTexture backBuffer();
+
         void trackWindowSized(Texture& texture);
         void trackWindowSized(Texture& texture, std::function<Dimensions(Dimensions)> scaleFn);
         void resizeTrackedWindowSized(const Dimensions& swapchainDimensions) const;
     private:
         void PerformBarrierTransitions(CommandBuffer& cmd, const CompiledPass& compiledPass);
-        static void RecordIntermediateOps(CommandBuffer& cmd, const CompiledPass& pass);
-        static void processResourceAccess(const TextureDesc& texDesc, VkImageLayout desiredLayout, const StageAccess& dstMask, CompiledPass& outPass, const PassDesc& pass);
-        static void processPassResources(const PassDesc& passDesc, CompiledPass& outPass);
-		static void processAttachments(const CTX& rCtx, const PassDesc& pass_desc, CompiledPass& outPass);
-    	// this should not be const lol
+        void RecordIntermediateOps(CommandBuffer& cmd, const CompiledPass& pass) const;
+        void processResourceAccess(const CTX& rCtx, const TextureDesc& texDesc, VkImageLayout desiredLayout, const StageAccess& dstMask, CompiledPass& outPass, const PassDesc& pass) const;
+        void processPassResources(const CTX& rCtx, const PassDesc& passDesc, CompiledPass& outPass) const;
+		void processAttachments(CTX& rCtx, const PassDesc& pass_desc, CompiledPass& outPass) const;
         void performDryRun(CTX& rCtx);
-        // last recorded stage/access per subresource, layouts themselves live on the texture
         std::unordered_map<TextureHandle, TextureAccessCache> _resourceTrackers;
         std::unordered_map<BufferHandle, vkutil::BufferAccessTracker> _bufferTrackers;
-    	// qol feature so that textures that are always supposed to be based off size of the screen are auto updated
         struct WindowSizedTexture {
             Texture* texture = nullptr;
             std::function<Dimensions(Dimensions)> scaleFn;
         };
         std::vector<WindowSizedTexture> _windowSizedTextures;
-        // data used during compilation
+        std::vector<GraphResource> _textures;
         std::vector<PassDesc> _passDescriptions;
-        // data fetched during execution
         std::vector<CompiledPass> _compiledPasses;
 
         bool _hasCompiled = false;
