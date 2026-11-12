@@ -39,8 +39,13 @@ namespace mythril {
 		return std::holds_alternative<SwapchainTexture>(ResourceOf(textures, texture).source);
 	}
 	static TextureHandle ResolveHandle(const std::vector<GraphResource>& textures, const CTX& rCtx, const GraphTexture texture) {
-		if (const auto* imported = std::get_if<ImportedTexture>(&ResourceOf(textures, texture).source))
+		const GraphResource& resource = ResourceOf(textures, texture);
+		if (const auto* imported = std::get_if<ImportedTexture>(&resource.source))
 			return imported->handle;
+		if (const auto* declared = std::get_if<DeclaredTexture>(&resource.source)) {
+			ASSERT_MSG(declared->texture.valid(), "Graph texture '{}' has no image, no surviving pass uses it.", declared->spec.debugName);
+			return declared->texture.handle();
+		}
 		return rCtx.getCurrentSwapchainTexHandle();
 	}
 
@@ -61,6 +66,30 @@ namespace mythril {
 		}
 		_textures.push_back({ImportedTexture{texture.handle()}});
 		return GraphTexture{static_cast<uint32_t>(_textures.size() - 1)};
+	}
+
+	GraphTexture RenderGraph::createTexture(GraphTextureSpec spec) {
+		ASSERT_MSG(spec.format != VK_FORMAT_UNDEFINED, "RenderGraph::createTexture: '{}' needs a format.", spec.debugName);
+		ASSERT_MSG(spec.size.width > 0 && spec.size.height > 0 && spec.size.depth > 0, "RenderGraph::createTexture: '{}' has a zero dimension.", spec.debugName);
+		ASSERT_MSG(spec.numMipLevels > 0 && spec.numLayers > 0, "RenderGraph::createTexture: '{}' needs at least one mip level and layer.", spec.debugName);
+		_textures.push_back({DeclaredTexture{.spec = std::move(spec)}});
+		_hasCompiled = false;
+		return GraphTexture{static_cast<uint32_t>(_textures.size() - 1)};
+	}
+
+	void RenderGraph::exportTexture(const GraphTexture texture) {
+		ResourceOf(_textures, texture);
+		auto* declared = std::get_if<DeclaredTexture>(&_textures[IdOf(texture)].source);
+		ASSERT_MSG(declared, "RenderGraph::exportTexture only takes textures from RenderGraph::createTexture, imports are already reachable outside the graph.");
+		declared->exported = true;
+		_hasCompiled = false;
+	}
+
+	TextureHandle RenderGraph::exported(const GraphTexture texture) const {
+		const auto* declared = std::get_if<DeclaredTexture>(&ResourceOf(_textures, texture).source);
+		ASSERT_MSG(declared && declared->exported, "RenderGraph::exported called on a texture that was never passed to RenderGraph::exportTexture.");
+		ASSERT_MSG(declared->texture.valid(), "RenderGraph::exported: '{}' has no image until the graph compiles.", declared->spec.debugName);
+		return declared->texture.handle();
 	}
 
 	GraphTexture RenderGraph::backBuffer() {
@@ -208,6 +237,17 @@ namespace mythril {
 		return {vkutil::AspectMaskFromFormat(fmt), range.baseMip, range.numMips, range.baseLayer, range.numLayers};
 	}
 	TextureShape RenderGraph::shapeOf(const CTX& rCtx, const GraphTexture texture) const {
+		if (const auto* declared = std::get_if<DeclaredTexture>(&ResourceOf(_textures, texture).source)) {
+			const GraphTextureSpec& spec = declared->spec;
+			return {
+			    .debugName = spec.debugName,
+			    .format = spec.format,
+			    .sampleCount = static_cast<uint8_t>(toVulkan(spec.samples)),
+			    .dimensions = spec.size,
+			    .numMips = spec.numMipLevels,
+			    .numLayers = spec.type == TextureType::Type_Cube ? 6 * spec.numLayers : spec.numLayers,
+			};
+		}
 		const AllocatedTexture& live = rCtx.view(ResolveHandle(_textures, rCtx, texture));
 		return {
 		    .debugName = live.getDebugName(),
@@ -438,6 +478,8 @@ namespace mythril {
 			if (!barrier.isSwapchain)
 				barrier.handle = ResolveHandle(_textures, rCtx, barrier.resource);
 		}
+		for (CompiledImageBarrier& barrier: pass.exitBarriers)
+			barrier.handle = ResolveHandle(_textures, rCtx, barrier.resource);
 		const auto bindView = [&](const TextureHandle handle, const AttachmentTarget& target) {
 			const AllocatedTexture& texture = rCtx.view(handle);
 			if (!target.subresourceView)
@@ -470,6 +512,37 @@ namespace mythril {
 			bindAttachment(color);
 		if (pass.depthAttachment.has_value())
 			bindAttachment(*pass.depthAttachment);
+	}
+
+	void RenderGraph::realizeDeclared(CTX& rCtx, const std::vector<uint32_t>& culledOrder) {
+		std::vector<std::optional<TextureUses>> uses(_textures.size());
+		const auto useOf = [&uses](const GraphTexture texture) -> TextureUses& {
+			std::optional<TextureUses>& use = uses[IdOf(texture)];
+			return use.has_value() ? *use : use.emplace();
+		};
+		for (const uint32_t pass_idx: culledOrder) {
+			const PassDesc& desc = _passDescriptions[pass_idx];
+			for (const AttachmentDesc& attachment: desc.attachmentOperations) {
+				useOf(attachment.texDesc.texture).addAttachment();
+				if (attachment.resolveTexDesc.has_value())
+					useOf(attachment.resolveTexDesc->texture).addAttachment();
+			}
+			for (const TextureDependencyDesc& dependency: desc.textureDependencyOperations)
+				useOf(dependency.texDesc.texture).add(dependency.access);
+		}
+		for (uint32_t id = 0; id < _textures.size(); ++id) {
+			auto* declared = std::get_if<DeclaredTexture>(&_textures[id].source);
+			if (!declared || !uses[id].has_value())
+				continue;
+			const Realization wanted = InferRealization(declared->spec, *uses[id], declared->exported);
+			ASSERT_MSG(wanted.usage != 0, "Graph texture '{}' is only touched by transfers, nothing samples, stores to or renders into it.", declared->spec.debugName);
+			if (declared->texture.valid()) {
+				ASSERT_MSG(declared->realized == wanted, "Graph texture '{}' needs different usage than it was created with, recreating graph textures is not supported yet.", declared->spec.debugName);
+				continue;
+			}
+			declared->texture = rCtx.createTexture(ToTextureSpec(declared->spec, wanted));
+			declared->realized = wanted;
+		}
 	}
 
 	void RenderGraph::performDryRun(CTX& rCtx) {
@@ -630,6 +703,7 @@ namespace mythril {
 			continueAttachment(*group.depthAttachment, *next.depthAttachment);
 		group.name += " + " + next.name;
 		std::ranges::move(next.members, std::back_inserter(group.members));
+		std::ranges::move(next.exitBarriers, std::back_inserter(group.exitBarriers));
 		PassResourceUse& groupUse = groupRecord.use;
 		groupUse.attachments.insert(nextRecord.use.attachments.begin(), nextRecord.use.attachments.end());
 		for (const auto& [handle, written]: nextRecord.use.textures)
@@ -754,6 +828,22 @@ namespace mythril {
 		return result;
 	}
 
+	static std::optional<uint32_t> LastWriter(const std::vector<PassDesc>& pass_descs, const uint32_t id) {
+		std::optional<uint32_t> writer;
+		for (uint32_t i = 0; i < pass_descs.size(); ++i) {
+			const PassDesc& desc = pass_descs[i];
+			for (const AttachmentDesc& attachment: desc.attachmentOperations) {
+				if (IdOf(attachment.texDesc.texture) == id || (attachment.resolveTexDesc.has_value() && IdOf(attachment.resolveTexDesc->texture) == id))
+					writer = i;
+			}
+			for (const TextureDependencyDesc& dependency: desc.textureDependencyOperations) {
+				if (IdOf(dependency.texDesc.texture) == id && isWrite(dependency.access))
+					writer = i;
+			}
+		}
+		return writer;
+	}
+
 	std::vector<uint32_t> cull_unused_passes(
 		const std::vector<uint32_t>& topo_sorted_order,
 		const std::vector<std::unordered_set<uint32_t>>& predecessors,
@@ -776,6 +866,14 @@ namespace mythril {
 					break;
 				}
 			}
+		}
+		for (uint32_t id = 0; id < textures.size(); ++id) {
+			const auto* declared = std::get_if<DeclaredTexture>(&textures[id].source);
+			if (!declared || !declared->exported)
+				continue;
+			const std::optional<uint32_t> writer = LastWriter(pass_descs, id);
+			ASSERT_MSG(writer.has_value(), "Exported graph texture '{}' is never written by a pass.", declared->spec.debugName);
+			sinkPasses.insert(*writer);
 		}
 		// now reverse BFS
 		std::unordered_set<uint32_t> reachablePasses;
@@ -861,6 +959,12 @@ namespace mythril {
 			return requested_queue;
 		};
 
+		std::vector<std::pair<uint32_t, GraphTexture>> exportWriters;
+		for (uint32_t id = 0; id < _textures.size(); ++id) {
+			if (const auto* declared = std::get_if<DeclaredTexture>(&_textures[id].source); declared && declared->exported)
+				exportWriters.emplace_back(*LastWriter(_passDescriptions, id), GraphTexture{id});
+		}
+
 		// compile works in this order
 		std::vector<CompilingPass> pending;
 		pending.reserve(culled_order.size());
@@ -881,6 +985,17 @@ namespace mythril {
 			planAttachments(rCtx, pass_desc, compiled_pass);
 			if (pass_desc.executeInOrder)
 				compiled_pass.inOrderBarrier = BuildInOrderBarrier(compiled_pass);
+			for (const auto& [writer, texture]: exportWriters) {
+				if (writer != pass_idx)
+					continue;
+				const TextureShape shape = shapeOf(rCtx, texture);
+				compiled_pass.exitBarriers.push_back({
+				    .resource = texture,
+				    .range = {0, shape.numMips, 0, shape.numLayers},
+				    .dstLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+				    .dstMask = {.stage = vkutil::GetPassShaderStages(PassDesc::Type::Graphics) | vkutil::GetPassShaderStages(PassDesc::Type::Compute), .access = VK_ACCESS_2_SHADER_READ_BIT},
+				});
+			}
 
 			CompilingPass& record = pending.emplace_back(std::move(compiled_pass));
 			record.use.add(pass_desc);
@@ -896,6 +1011,7 @@ namespace mythril {
 				continue;
 			compiled.push_back(std::move(pending[pendingIdx]));
 		}
+		realizeDeclared(rCtx, culled_order);
 		for (CompilingPass& record: compiled)
 			bindPass(rCtx, record.pass);
 #ifdef DEBUG
@@ -983,8 +1099,8 @@ namespace mythril {
 		}
 	}
 
-	void RenderGraph::PerformBarrierTransitions(CommandBuffer& cmd, const CompiledPass& compiledPass) {
-		if (compiledPass.imageBarriers.empty() && compiledPass.bufferBarriers.empty())
+	void RenderGraph::PerformBarrierTransitions(CommandBuffer& cmd, const std::span<const CompiledImageBarrier> imageBarriers, const std::span<const CompiledBufferBarrier> bufferBarriers) {
+		if (imageBarriers.empty() && bufferBarriers.empty())
 			return;
 		ASSERT(cmd._wrapper->_cmdBuf);
 
@@ -992,11 +1108,11 @@ namespace mythril {
 		std::array<std::byte, 8192> scratch;
 		std::pmr::monotonic_buffer_resource arena{scratch.data(), scratch.size()};
 		std::pmr::vector<VkImageMemoryBarrier2> vkImageBarriers{&arena};
-		vkImageBarriers.reserve(compiledPass.imageBarriers.size());
+		vkImageBarriers.reserve(imageBarriers.size());
 		std::pmr::vector<VkBufferMemoryBarrier2> vkBufferBarriers{&arena};
-		vkBufferBarriers.reserve(compiledPass.bufferBarriers.size());
+		vkBufferBarriers.reserve(bufferBarriers.size());
 		std::pmr::vector<SubresourceMap<StageAccess>::Entry> mergedReads{&arena};
-		for (const CompiledImageBarrier& req: compiledPass.imageBarriers) {
+		for (const CompiledImageBarrier& req: imageBarriers) {
 			// we have to update the image associated if its a swapchain image
 			// as it changes every frame
 			const TextureHandle activeHandle = req.isSwapchain ? cmd._ctx->getCurrentSwapchainTexHandle() : req.handle;
@@ -1037,7 +1153,7 @@ namespace mythril {
 			activeTexture.setLayout(req.range, req.dstLayout);
 			cache.layoutVersion = activeTexture.getLayoutVersion();
 		}
-		for (const CompiledBufferBarrier& req: compiledPass.bufferBarriers) {
+		for (const CompiledBufferBarrier& req: bufferBarriers) {
 			const std::optional<vkutil::BufferBarrier> barrier = vkutil::TrackBufferAccess(_bufferTrackers[req.handle], req.dstMask);
 			if (!barrier)
 				continue;
@@ -1132,7 +1248,7 @@ namespace mythril {
 				hoistedFingerprints.push_back(FingerprintUploadData(_compiledPasses[passIdx - pass.hoistedAheadCount + i]));
 #endif
 			// perform batched vkCmdPipelineBarrier
-			PerformBarrierTransitions(cmd, pass);
+			PerformBarrierTransitions(cmd, pass.imageBarriers, pass.bufferBarriers);
 			// keep GPU zones per pass, timestamps inside a render pass split Metal encoders on MoltenVK
 			MYTH_PROFILER_GPU_ZONE(cmd._ctx, pass.name.c_str(), cmd._wrapper->_cmdBuf);
 			// switch color attachment imageViews for Swapchain
@@ -1159,6 +1275,7 @@ namespace mythril {
 				pass.members[i].callback(cmd);
 			}
 			if (isGraphics) cmd.cmdEndRenderingEXT();
+			PerformBarrierTransitions(cmd, pass.exitBarriers, {});
 #ifdef DEBUG
 			for (uint32_t i = 0; i < pass.hoistedAheadCount; ++i) {
 				const CompiledPass& hoisted = _compiledPasses[passIdx - pass.hoistedAheadCount + i];

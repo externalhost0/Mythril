@@ -18,6 +18,7 @@
 #include <functional>
 #include <optional>
 #include <string>
+#include <unordered_set>
 #include <variant>
 #include <vector>
 
@@ -33,12 +34,74 @@ namespace mythril {
         size_t operator()(const GraphTexture texture) const { return std::hash<uint32_t>{}(GraphTextureAccess::index(texture)); }
     };
 
+    // how the surviving passes touch one created texture, transfers need nothing since Device storage always carries both transfer bits
+    struct TextureUses {
+        bool attachment = false;
+        bool sampled = false;
+        bool storage = false;
+
+        void addAttachment() { attachment = true; }
+        void add(const TextureAccess access) {
+            switch (access) {
+                case TextureAccess::Sampled:
+                    sampled = true;
+                    break;
+                case TextureAccess::StorageRead:
+                case TextureAccess::StorageWrite:
+                case TextureAccess::StorageReadWrite:
+                    storage = true;
+                    break;
+                case TextureAccess::TransferRead:
+                case TextureAccess::TransferWrite:
+                    break;
+            }
+        }
+    };
+    struct Realization {
+        Dimensions dimensions;
+        uint8_t usage = 0;
+        StorageType storage = StorageType::Device;
+        bool operator==(const Realization&) const = default;
+    };
+    // exports are sampled outside the graph, so they always need Sampled
+    inline Realization InferRealization(const GraphTextureSpec& spec, const TextureUses& uses, const bool exported) {
+        uint8_t usage = 0;
+        if (uses.attachment)
+            usage |= TextureUsageBits_Attachment;
+        if (uses.sampled || exported)
+            usage |= TextureUsageBits_Sampled;
+        if (uses.storage)
+            usage |= TextureUsageBits_Storage;
+        return {.dimensions = spec.size, .usage = usage, .storage = StorageType::Device};
+    }
+    inline TextureSpec ToTextureSpec(const GraphTextureSpec& spec, const Realization& realization) {
+        return {
+            .dimension = realization.dimensions,
+            .type = spec.type,
+            .format = spec.format,
+            .samples = spec.samples,
+            .usage = realization.usage,
+            .storage = realization.storage,
+            .numMipLevels = spec.numMipLevels,
+            .numLayers = spec.numLayers,
+            .components = spec.components,
+            .debugName = spec.debugName.c_str(),
+        };
+    }
+
+    struct DeclaredTexture {
+        GraphTextureSpec spec;
+        // empty until the first compile that keeps a pass using it
+        Texture texture;
+        Realization realized;
+        bool exported = false;
+    };
     struct ImportedTexture {
         TextureHandle handle;
     };
     struct SwapchainTexture {};
     struct GraphResource {
-        std::variant<ImportedTexture, SwapchainTexture> source;
+        std::variant<DeclaredTexture, ImportedTexture, SwapchainTexture> source;
     };
 
     struct TextureShape {
@@ -132,6 +195,8 @@ namespace mythril {
 
         std::vector<CompiledImageBarrier> imageBarriers;
         std::vector<CompiledBufferBarrier> bufferBarriers;
+        // recorded after the pass, leaves exported textures it last writes shader readable
+        std::vector<CompiledImageBarrier> exitBarriers;
         // callbacks recorded in order inside this pass's barriers and rendering scope, empty for intermediate passes
         std::vector<PassMember> members;
         std::vector<IntermediateOp> intermediateOps;
@@ -148,6 +213,9 @@ namespace mythril {
         uint32_t viewMask = 0;
     	QueueAffinity queue = QueueAffinity::Graphics;
     };
+
+    // sinks are passes that write the back buffer or last write an exported texture
+    std::vector<uint32_t> cull_unused_passes(const std::vector<uint32_t>& topo_sorted_order, const std::vector<std::unordered_set<uint32_t>>& predecessors, const std::vector<PassDesc>& pass_descs, const std::vector<GraphResource>& textures);
 
     // only pass types resolve here so LOG_PASS and ASSERT_PASS can't be handed a loose string
     inline std::string_view PassLogName(const PassDesc& pass) { return pass.name; }

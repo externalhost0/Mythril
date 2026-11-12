@@ -642,12 +642,6 @@ int main() {
 
 		constexpr uint32_t shadow_map_size = 4096;
 		static constexpr VkFormat kShadowFormat = VK_FORMAT_D16_UNORM;
-		mythril::Texture shadowMap = ctx->createTexture({
-			.dimension = {shadow_map_size, shadow_map_size},
-			.format = kShadowFormat,
-			.usage = mythril::TextureUsageBits::TextureUsageBits_Attachment | mythril::TextureUsageBits::TextureUsageBits_Sampled,
-			.debugName = "Shadow Map Texture"
-		});
 		// we combine results of a single channel (red) into all in order to have a grayscale image
 		constexpr mythril::ComponentMapping red_swizzle = {
 			.r = mythril::Swizzle::Swizzle_R,
@@ -828,7 +822,12 @@ int main() {
 		constexpr float kMODELSCALE = 0.05f;
 		constexpr float kReverseZFarDepth = 0.f;
 		mythril::RenderGraph graph;
-		const mythril::GraphTexture rgShadowMap = graph.importTexture(shadowMap);
+		const mythril::GraphTexture rgShadowMap = graph.createTexture({
+			.size = {shadow_map_size, shadow_map_size},
+			.format = kShadowFormat,
+			.debugName = "Shadow Map Texture"
+		});
+		graph.exportTexture(rgShadowMap);
 		const mythril::GraphTexture rgMsaaColorTarget = graph.importTexture(msaaColorTarget);
 		const mythril::GraphTexture rgMsaaDepthTarget = graph.importTexture(msaaDepthTarget);
 		const mythril::GraphTexture rgOffscreenColorTarget = graph.importTexture(offscreenColorTarget);
@@ -1360,14 +1359,12 @@ int main() {
 			.shader = luminanceConversionShader.handle(),
 			.debugName = "Luminance Conversion Pipeline"
 		});
-		mythril::Texture currentLuminanceTex = ctx->createTexture({
-			.dimension = {1, 1, 1},
+		const mythril::GraphTexture rgCurrentLuminanceTex = graph.createTexture({
+			.size = {1, 1, 1},
 			.format = VK_FORMAT_R8_UNORM,
-			.usage = mythril::TextureUsageBits::TextureUsageBits_Storage,
 			.components = red_swizzle,
 			.debugName = "Luminance Current Texture"
 		});
-		const mythril::GraphTexture rgCurrentLuminanceTex = graph.importTexture(currentLuminanceTex);
 		graph.addComputePass("convert into current lum")
 		.dependency(rgOffscreenColorTexs[7], mythril::TextureAccess::Sampled)
 		.dependency(rgCurrentLuminanceTex, mythril::TextureAccess::StorageReadWrite)
@@ -1593,7 +1590,6 @@ int main() {
 			.loadOp = mythril::LoadOp::LOAD,
 			.storeOp = mythril::StoreOp::STORE
 		})
-		.dependency(rgShadowMap, mythril::TextureAccess::Sampled)
 		.dependency(rgAdaptedLuminanceTextures, mythril::TextureAccess::Sampled)
 		.dependency(rgOffscreenColorTexs, mythril::TextureAccess::Sampled)
 		.execute([&](mythril::CommandBuffer& cmd) {
@@ -1769,7 +1765,7 @@ int main() {
 
 			ImGuiWindowFlags window_flags = focused ? ImGuiWindowFlags_NoMouseInputs : ImGuiWindowFlags_None;
 			ImGui::Begin("Previews", nullptr, window_flags);
-			ImGui::Image(shadowMap, {200, 200});
+			ImGui::Image(graph.exported(rgShadowMap), {200, 200});
 			ImGui::Text("Average Luminance");
 			ImGui::Image(adaptedLuminanceTextures[lumFlip], {100, 100});
 			// for (int face = 0; face < 6; face++) {

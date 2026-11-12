@@ -1308,27 +1308,9 @@ namespace mythril {
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_CREATE);
 		ASSERT_MSG(spec.usage, "The usage field for TextureSpec is required, however '{}' was not given one!", spec.debugName);
 		ASSERT_MSG(!(spec.generateMipmaps && spec.initialData == nullptr), "'generateMipMaps' can only be true when 'initialData' is non-null!");
-		// resolve usage flags
-		VkImageUsageFlags usage_flags = (spec.storage == StorageType::Device) ? VK_IMAGE_USAGE_TRANSFER_DST_BIT : 0;
-
-		if (spec.usage & TextureUsageBits::TextureUsageBits_Sampled) {
-			ASSERT_MSG(!vkutil::IsFormatDepthAndStencil(spec.format), "VkFormat cannot have both depth & stencil components and be used for sampling! Occurs because of texture '{}'", spec.debugName);
-			usage_flags |= VK_IMAGE_USAGE_SAMPLED_BIT;
-		}
-		if (spec.usage & TextureUsageBits::TextureUsageBits_Storage) {
-			ASSERT_MSG(spec.samples == SampleCount::X1, "Storage images cannot be multisampled!");
-			usage_flags |= VK_IMAGE_USAGE_STORAGE_BIT;
-		}
-		if (spec.usage & TextureUsageBits::TextureUsageBits_Attachment) {
-			usage_flags |= vkutil::IsFormatDepthOrStencil(spec.format) ? VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT : VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-			if (spec.storage == StorageType::Memoryless) {
-				usage_flags |= VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT;
-			}
-		}
-		if (spec.storage != StorageType::Memoryless) {
-			// for now, always set this flag so we can read it back
-			usage_flags |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
-		}
+		ASSERT_MSG(!(spec.usage & TextureUsageBits_Sampled) || !vkutil::IsFormatDepthAndStencil(spec.format), "VkFormat cannot have both depth & stencil components and be used for sampling! Occurs because of texture '{}'", spec.debugName);
+		ASSERT_MSG(!(spec.usage & TextureUsageBits_Storage) || spec.samples == SampleCount::X1, "Storage images cannot be multisampled!");
+		const VkImageUsageFlags usage_flags = vkutil::ToVkImageUsage(spec.usage, spec.storage, spec.format);
 		if (spec.numMipLevels < 1) {
 			LOG_SYSTEM(LogType::Warning, "The number of mip levels specified must be greater than 0!");
 			spec.numMipLevels = 1;

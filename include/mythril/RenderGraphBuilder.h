@@ -247,6 +247,12 @@ namespace mythril {
 
     	void execute(CommandBuffer& cmd);
 
+        // owned by the graph, created at compile with the usage its surviving passes need
+        [[nodiscard]] GraphTexture createTexture(GraphTextureSpec spec);
+        // makes a created texture readable outside the graph (ImGui), its last writer is never culled and leaves it shader readable
+        void exportTexture(GraphTexture texture);
+        // valid after compile
+        [[nodiscard]] TextureHandle exported(GraphTexture texture) const;
         // non-owning, the caller keeps the texture alive for the graph's lifetime, importing the same texture twice returns the same id
         [[nodiscard]] GraphTexture importTexture(const Texture& texture);
         // whichever swapchain image is current when the graph records
@@ -257,7 +263,8 @@ namespace mythril {
         void resizeTrackedWindowSized(const Dimensions& swapchainDimensions) const;
     private:
         ResolvedTexture resolve(const CTX& rCtx, const CompiledPass& pass, const PassMember& member, GraphTexture texture) const;
-        void PerformBarrierTransitions(CommandBuffer& cmd, const CompiledPass& compiledPass);
+        void PerformBarrierTransitions(CommandBuffer& cmd, std::span<const CompiledImageBarrier> imageBarriers, std::span<const CompiledBufferBarrier> bufferBarriers);
+        void realizeDeclared(CTX& rCtx, const std::vector<uint32_t>& culledOrder);
         void RecordIntermediateOps(CommandBuffer& cmd, const CompiledPass& pass) const;
         TextureShape shapeOf(const CTX& rCtx, GraphTexture texture) const;
         void planResourceAccess(const CTX& rCtx, const TextureDesc& texDesc, VkImageLayout desiredLayout, const StageAccess& dstMask, CompiledPass& outPass, const PassDesc& pass) const;

@@ -8,6 +8,7 @@
 
 #include <functional>
 #include <optional>
+#include <string>
 #include <variant>
 #include <vector>
 #include <volk.h>
@@ -78,6 +79,19 @@ namespace mythril {
 		uint32_t _index = kInvalid;
 		friend class RenderGraph;
 		friend struct GraphTextureAccess;
+	};
+
+	// the part of TextureSpec the graph cannot infer, usage and storage come from the passes that use it
+	struct GraphTextureSpec {
+		Dimensions size;
+		TextureType type = TextureType::Type_2D;
+		VkFormat format = VK_FORMAT_UNDEFINED;
+		SampleCount samples = SampleCount::X1;
+		uint32_t numMipLevels = 1;
+		uint32_t numLayers = 1;
+		ComponentMapping components = {};
+		// owned, the texture is created at compile long after a caller's buffer is gone
+		std::string debugName = "Unnamed Graph Texture";
 	};
 
 	// what CommandBuffer::texture returns, valid for the pass being recorded including the dry run

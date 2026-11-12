@@ -104,6 +104,23 @@ namespace mythril::vkutil {
 		return usage;
 	}
 
+	constexpr VkImageUsageFlags ToVkImageUsage(uint8_t usageBits, StorageType storage, VkFormat format) {
+		VkImageUsageFlags usage = (storage == StorageType::Device) ? VK_IMAGE_USAGE_TRANSFER_DST_BIT : 0;
+		if (usageBits & TextureUsageBits_Sampled)
+			usage |= VK_IMAGE_USAGE_SAMPLED_BIT;
+		if (usageBits & TextureUsageBits_Storage)
+			usage |= VK_IMAGE_USAGE_STORAGE_BIT;
+		if (usageBits & TextureUsageBits_Attachment) {
+			usage |= IsFormatDepthOrStencil(format) ? VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT : VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+			if (storage == StorageType::Memoryless)
+				usage |= VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT;
+		}
+		// always readable back unless memoryless
+		if (storage != StorageType::Memoryless)
+			usage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+		return usage;
+	}
+
 	// ray tracing pipeline requires acceleration structure, so {false, true} is never valid
 	struct BufferSyncFeatures {
 		bool accelerationStructure;
