@@ -101,15 +101,17 @@ FSOutput fs_main(v2f input) {
     [unroll(kNumLights)]
     for (int i = 0; i < kNumLights; ++i) {
         float3 pointLightContribution = push.frame.lighting.pointLights[i].illuminate(input.WorldPosition, Nworld, brdf, viewDir);
-
-        float pointShadowFactor = PointSCEXT(
-            input.WorldPosition,
-            push.frame.lighting.pointLights[i].position,
-            push.pointLightCubemaps[i],
-            N,
-            60 // farPlane, just hardcode for now
-        );
-        omni += pointLightContribution * pointShadowFactor;
+        
+        if (any(pointLightContribution > 0.0)) {
+            float pointShadowFactor = PointSCEXT(
+                input.WorldPosition,
+                push.frame.lighting.pointLights[i].position,
+                push.pointLightCubemaps[i],
+                N,
+                60 // farPlane, just hardcode for now
+            );
+            omni += pointLightContribution * pointShadowFactor;
+        }
     }
 
     float shadowFactor = DirectionalSC(input.LightSpacePos);
@@ -126,6 +128,7 @@ float DirectionalSC(float4 lightspacepos) {
 }
 
 #define kNumOfSamples 6
+#define kPointShadowResolution 512.0 // must match pointLightShadowResolution in main.cpp
 static const float2 kHexOffsets[kNumOfSamples] = {
     float2(1, 0), float2(0.5, 0.866025), float2(-0.5, 0.866025),
     float2(-1, 0), float2(-0.5, -0.866025), float2(0.5, -0.866025)
@@ -135,33 +138,29 @@ float PointSCEXT(float3 worldPos, float3 lightPos, TextureCube<float> shadowCube
     float dist = length(fragToLight);
     float bias = max(0.005, 0.001 * dist);
 
-    float2 dims;
-    shadowCubemap.GetDimensions(dims.x, dims.y);
-    float texelAngularSize = kPID2 / dims.x;
+    float texelAngularSize = kPID2 / kPointShadowResolution;
     float texelWorldSize = dist * texelAngularSize;
     float diskRadius = clamp(texelWorldSize * 2.0, 0.001, farPlane * 0.1);
 
-    // offsets along the ray don't change a cube lookup, so spread taps on the perpendicular disk
     float3 n = fragToLight / dist;
     float3 tangent = normalize(cross(abs(n.y) < 0.999 ? float3(0, 1, 0) : float3(1, 0, 0), n));
     float3 bitangent = cross(n, tangent);
 
-    // each tap compares against where its own ray hits the receiver plane, else offset taps self shadow on slopes
     float planeDist = dot(fragToLight, geomNormal);
-    float maxDelta = diskRadius * 10.0;
+    float tN = dot(tangent, geomNormal) * diskRadius;
+    float bN = dot(bitangent, geomNormal) * diskRadius;
+    float slopeBias = dist * length(float2(tN, bN)) / max(abs(planeDist), 0.1 * dist);
+    float refDepth = (dist - bias - min(slopeBias, diskRadius * 10.0)) / farPlane;
 
     float shadow = 0.0;
-    [unroll(kNumOfSamples)]
+    // [unroll(kNumOfSamples)]
+    [loop]
     for (int i = 0; i < kNumOfSamples; i++) {
         float3 sampleDir = fragToLight + (kHexOffsets[i].x * tangent + kHexOffsets[i].y * bitangent) * diskRadius;
-        float denom = dot(normalize(sampleDir), geomNormal);
-        float tapDist = abs(denom) > 1e-4 ? planeDist / denom : dist;
-        tapDist = clamp(tapDist, dist - maxDelta, dist + maxDelta);
-
         shadow += shadowCubemap.SampleCmpLevelZero(
             push.shadowSamplerComparison,
             sampleDir * float3(1, -1, 1),
-            (tapDist - bias) / farPlane
+            refDepth
         );
     }
     return shadow / kNumOfSamples;
