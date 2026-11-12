@@ -90,7 +90,6 @@ namespace mythril {
 		uint32_t numMipLevels = 1;
 		uint32_t numLayers = 1;
 		ComponentMapping components = {};
-		// owned, the texture is created at compile long after a caller's buffer is gone
 		std::string debugName = "Unnamed Graph Texture";
 	};
 

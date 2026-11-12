@@ -115,7 +115,6 @@ namespace mythril::vkutil {
 			if (storage == StorageType::Memoryless)
 				usage |= VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT;
 		}
-		// always readable back unless memoryless
 		if (storage != StorageType::Memoryless)
 			usage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
 		return usage;

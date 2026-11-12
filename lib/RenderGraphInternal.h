@@ -34,7 +34,6 @@ namespace mythril {
         size_t operator()(const GraphTexture texture) const { return std::hash<uint32_t>{}(GraphTextureAccess::index(texture)); }
     };
 
-    // how the surviving passes touch one created texture, transfers need nothing since Device storage always carries both transfer bits
     struct TextureUses {
         bool attachment = false;
         bool sampled = false;
@@ -63,7 +62,6 @@ namespace mythril {
         StorageType storage = StorageType::Device;
         bool operator==(const Realization&) const = default;
     };
-    // exports are sampled outside the graph, so they always need Sampled
     inline Realization InferRealization(const GraphTextureSpec& spec, const TextureUses& uses, const bool exported) {
         uint8_t usage = 0;
         if (uses.attachment)
@@ -91,7 +89,6 @@ namespace mythril {
 
     struct DeclaredTexture {
         GraphTextureSpec spec;
-        // empty until the first compile that keeps a pass using it
         Texture texture;
         Realization realized;
         bool exported = false;
@@ -195,7 +192,6 @@ namespace mythril {
 
         std::vector<CompiledImageBarrier> imageBarriers;
         std::vector<CompiledBufferBarrier> bufferBarriers;
-        // recorded after the pass, leaves exported textures it last writes shader readable
         std::vector<CompiledImageBarrier> exitBarriers;
         // callbacks recorded in order inside this pass's barriers and rendering scope, empty for intermediate passes
         std::vector<PassMember> members;
@@ -214,7 +210,6 @@ namespace mythril {
     	QueueAffinity queue = QueueAffinity::Graphics;
     };
 
-    // sinks are passes that write the back buffer or last write an exported texture
     std::vector<uint32_t> cull_unused_passes(const std::vector<uint32_t>& topo_sorted_order, const std::vector<std::unordered_set<uint32_t>>& predecessors, const std::vector<PassDesc>& pass_descs, const std::vector<GraphResource>& textures);
 
     // only pass types resolve here so LOG_PASS and ASSERT_PASS can't be handed a loose string

@@ -25,7 +25,6 @@ namespace {
 	constexpr VkImageUsageFlags kSampledBit = VK_IMAGE_USAGE_SAMPLED_BIT;
 	constexpr VkImageUsageFlags kStorageBit = VK_IMAGE_USAGE_STORAGE_BIT;
 
-	// every distinct (usage, storage, format class) createTexture is called with, flags as created before the extraction
 	constexpr SampleTexture kSampleTextures[] = {
 		{"03/04/07 msaa color", kAttach, StorageType::Memoryless, VK_FORMAT_R16G16B16A16_SFLOAT, kColor | kTransient},
 		{"04/07 msaa depth", kAttach, StorageType::Memoryless, VK_FORMAT_D32_SFLOAT_S8_UINT, kDepth | kTransient},
@@ -38,7 +37,7 @@ namespace {
 		{"07 luminance adaptation, bloom", kSampled | kStorage, StorageType::Device, VK_FORMAT_R16_SFLOAT, kDst | kSampledBit | kStorageBit | kSrc},
 		{"07 current luminance, 08 traced shadow", kStorage, StorageType::Device, VK_FORMAT_R8_UNORM, kDst | kStorageBit | kSrc},
 	};
-} // namespace
+}
 
 TEST_CASE("ToVkImageUsage reproduces the flags createTexture gave every sample texture") {
 	for (const SampleTexture& t : kSampleTextures) {
@@ -49,7 +48,7 @@ TEST_CASE("ToVkImageUsage reproduces the flags createTexture gave every sample t
 }
 
 TEST_CASE("memoryless sample textures only carry attachment usage") {
-	// VUID-VkImageCreateInfo-usage-00966, transient images may only add color, depth stencil or input attachment usage
+	// VUID-VkImageCreateInfo-usage-00963, transient images may only add color, depth stencil or input attachment usage
 	constexpr VkImageUsageFlags allowed = kTransient | kColor | kDepth | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT;
 	size_t checked = 0;
 	for (const SampleTexture& t : kSampleTextures) {

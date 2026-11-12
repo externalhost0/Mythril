@@ -844,15 +844,9 @@ namespace mythril {
 		return writer;
 	}
 
-	std::vector<uint32_t> cull_unused_passes(
-		const std::vector<uint32_t>& topo_sorted_order,
-		const std::vector<std::unordered_set<uint32_t>>& predecessors,
-		const std::vector<PassDesc>& pass_descs,
-		const std::vector<GraphResource>& textures) {
-
-		const size_t node_count = topo_sorted_order.size();
+	static std::unordered_set<uint32_t> BackBufferAndExportWriters(const std::vector<PassDesc>& pass_descs, const std::vector<GraphResource>& textures) {
 		std::unordered_set<uint32_t> sinkPasses;
-		for (uint32_t i = 0; i < node_count; i++) {
+		for (uint32_t i = 0; i < pass_descs.size(); i++) {
 			const PassDesc& pass_desc = pass_descs[i];
 			for (const auto& attachDesc : pass_desc.attachmentOperations) {
 				if (IsBackBuffer(textures, attachDesc.texDesc.texture)) {
@@ -875,6 +869,15 @@ namespace mythril {
 			ASSERT_MSG(writer.has_value(), "Exported graph texture '{}' is never written by a pass.", declared->spec.debugName);
 			sinkPasses.insert(*writer);
 		}
+		return sinkPasses;
+	}
+
+	std::vector<uint32_t> cull_unused_passes(
+		const std::vector<uint32_t>& topo_sorted_order,
+		const std::vector<std::unordered_set<uint32_t>>& predecessors,
+		const std::vector<PassDesc>& pass_descs,
+		const std::vector<GraphResource>& textures) {
+		const std::unordered_set<uint32_t> sinkPasses = BackBufferAndExportWriters(pass_descs, textures);
 		// now reverse BFS
 		std::unordered_set<uint32_t> reachablePasses;
 		std::queue<uint32_t> worklist;

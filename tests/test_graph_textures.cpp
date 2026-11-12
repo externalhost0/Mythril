@@ -23,7 +23,6 @@ namespace {
 	constexpr uint32_t kUseSubsets = kResolveBit << 1;
 	constexpr VkFormat kFormats[] = {VK_FORMAT_R16G16B16A16_SFLOAT, VK_FORMAT_D32_SFLOAT};
 
-	// the usage a layout demands, from the VkImageMemoryBarrier2 newLayout and VkRenderingAttachmentInfo VUIDs
 	VkImageUsageFlags RequiredBy(TextureAccess access) {
 		switch (access) {
 			case TextureAccess::Sampled:
@@ -57,7 +56,6 @@ namespace {
 			uses.addAttachment();
 			required |= attachmentBit;
 		}
-		// sampled outside the graph, and the exit barrier leaves it in SHADER_READ_ONLY
 		if (exported)
 			required |= VK_IMAGE_USAGE_SAMPLED_BIT;
 
@@ -66,7 +64,6 @@ namespace {
 		const VkImageUsageFlags usage = vkutil::ToVkImageUsage(created.usage, created.storage, created.format);
 
 		std::vector<std::string> failures;
-		// Device storage always carries both transfer bits so the texture can be uploaded to and read back
 		constexpr VkImageUsageFlags kPolicy = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 		if ((required & ~kPolicy) == 0) {
 			if (realization.usage != 0)
@@ -108,21 +105,20 @@ namespace {
 	}
 
 	namespace known_bad {
-		// what 07 picked by hand for its offscreen color target, Storage it never uses
 		Realization superset(const GraphTextureSpec& spec, const TextureUses&, bool) {
 			return {.dimensions = spec.size, .usage = TextureUsageBits_Attachment | TextureUsageBits_Sampled | TextureUsageBits_Storage};
 		}
 		Realization exportNotSampled(const GraphTextureSpec& spec, const TextureUses& uses, bool) {
 			return InferRealization(spec, uses, false);
 		}
-	} // namespace known_bad
+	}
 
 	bool anyFailureContains(InferFn infer, const char* needle) {
 		std::vector<std::string> failures;
 		checkEverySubset(infer, &failures);
 		return std::ranges::any_of(failures, [&](const std::string& failure) { return failure.find(needle) != std::string::npos; });
 	}
-} // namespace
+}
 
 TEST_CASE("inferred graph texture usage covers every declared access and nothing else") {
 	CHECK(checkEverySubset(InferRealization) == kUseSubsets * std::size(kFormats) * 2);
