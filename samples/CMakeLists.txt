@@ -1,8 +1,6 @@
 cmake_minimum_required(VERSION 3.28)
 project(mythril_samples LANGUAGES C CXX)
 
-option(FORCE_REBUILD_SAMPLES "Always recompile samples" ON)
-
 CPMAddPackage(
         NAME SDL3
         GITHUB_REPOSITORY "libsdl-org/SDL"
@@ -40,22 +38,20 @@ macro(ADD_SAMPLE sample_name)
         endif()
     endforeach()
 
-    add_custom_command(TARGET ${sample_name} POST_BUILD
+    file(GLOB_RECURSE _sample_assets CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/${sample_name}/*")
+    list(FILTER _sample_assets EXCLUDE REGEX "\\.(cpp|cxx|cc|c)$")
+    set(_assets_stamp "${CMAKE_CURRENT_BINARY_DIR}/${sample_name}_assets.stamp")
+    add_custom_command(OUTPUT "${_assets_stamp}"
             COMMAND ${CMAKE_COMMAND}
             -DSRC_DIR="${CMAKE_CURRENT_SOURCE_DIR}/${sample_name}"
             -DDST_DIR="$<TARGET_FILE_DIR:${sample_name}>/${sample_name}_data"
             -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/CopyAssets.cmake"
+            COMMAND ${CMAKE_COMMAND} -E touch "${_assets_stamp}"
+            DEPENDS ${_sample_assets} "${CMAKE_CURRENT_SOURCE_DIR}/cmake/CopyAssets.cmake"
             COMMENT "Copying ${sample_name} assets to isolated runtime directory"
             COMMAND_EXPAND_LISTS
     )
-
-    if(FORCE_REBUILD_SAMPLES)
-        add_custom_command(TARGET ${sample_name} PRE_BUILD
-            COMMAND ${CMAKE_COMMAND} -E echo "Forcing rebuild for ${sample_name}"
-            COMMAND ${CMAKE_COMMAND} -E touch "${CMAKE_CURRENT_SOURCE_DIR}/${sample_file}"
-            COMMENT "Touching source to trigger rebuild"
-        )
-    endif()
+    target_sources(${sample_name} PRIVATE "${_assets_stamp}")
 
     set_target_properties(${sample_name} PROPERTIES FOLDER "Samples")
 endmacro()
