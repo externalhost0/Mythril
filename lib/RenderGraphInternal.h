@@ -62,7 +62,11 @@ namespace mythril {
         StorageType storage = StorageType::Device;
         bool operator==(const Realization&) const = default;
     };
-    inline Realization InferRealization(const GraphTextureSpec& spec, const TextureUses& uses, const bool exported) {
+    inline Dimensions ScaleExtent(const Dimensions extent, const float scale) {
+        const auto scaled = [scale](const uint32_t v) { return std::max(1u, static_cast<uint32_t>(static_cast<float>(v) * scale)); };
+        return {scaled(extent.width), scaled(extent.height), 1};
+    }
+    inline Realization InferRealization(const Dimensions dimensions, const TextureUses& uses, const bool exported) {
         uint8_t usage = 0;
         if (uses.attachment)
             usage |= TextureUsageBits_Attachment;
@@ -70,7 +74,7 @@ namespace mythril {
             usage |= TextureUsageBits_Sampled;
         if (uses.storage)
             usage |= TextureUsageBits_Storage;
-        return {.dimensions = spec.size, .usage = usage, .storage = StorageType::Device};
+        return {.dimensions = dimensions, .usage = usage, .storage = StorageType::Device};
     }
     inline TextureSpec ToTextureSpec(const GraphTextureSpec& spec, const Realization& realization) {
         return {

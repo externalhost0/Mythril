@@ -258,10 +258,13 @@ namespace mythril {
         // whichever swapchain image is current when the graph records
         [[nodiscard]] GraphTexture backBuffer();
 
-        void trackWindowSized(Texture& texture);
-        void trackWindowSized(Texture& texture, std::function<Dimensions(Dimensions)> scaleFn);
-        void resizeTrackedWindowSized(const Dimensions& swapchainDimensions) const;
+        [[nodiscard]] GraphExtent createExtent(Dimensions dimensions);
+        // textures following this extent resize at the next execute
+        void setExtent(GraphExtent extent, Dimensions dimensions);
     private:
+        Dimensions extentOf(const CTX& rCtx, GraphExtent extent) const;
+        Dimensions sizeOf(const CTX& rCtx, const GraphTextureSpec& spec) const;
+        bool declaredSizesStale(const CTX& rCtx) const;
         ResolvedTexture resolve(const CTX& rCtx, const CompiledPass& pass, const PassMember& member, GraphTexture texture) const;
         void PerformBarrierTransitions(CommandBuffer& cmd, std::span<const CompiledImageBarrier> imageBarriers, std::span<const CompiledBufferBarrier> bufferBarriers);
         void realizeDeclared(CTX& rCtx, const std::vector<uint32_t>& culledOrder);
@@ -274,12 +277,9 @@ namespace mythril {
         void performDryRun(CTX& rCtx);
         std::unordered_map<TextureHandle, TextureAccessCache> _resourceTrackers;
         std::unordered_map<BufferHandle, vkutil::BufferAccessTracker> _bufferTrackers;
-        struct WindowSizedTexture {
-            Texture* texture = nullptr;
-            std::function<Dimensions(Dimensions)> scaleFn;
-        };
-        std::vector<WindowSizedTexture> _windowSizedTextures;
         std::vector<GraphResource> _textures;
+        // nullopt follows the swapchain
+        std::vector<std::optional<Dimensions>> _extents{std::nullopt};
         std::vector<PassDesc> _passDescriptions;
         std::vector<CompiledPass> _compiledPasses;
 

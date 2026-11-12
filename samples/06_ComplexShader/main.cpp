@@ -421,29 +421,6 @@ int main() {
 		})
 		.build();
 
-		const mythril::Dimensions dims = { initialWindowSize.width, initialWindowSize.height, 1};
-		mythril::Texture colorTarget = ctx->createTexture({
-			.dimension = dims,
-			.format = VK_FORMAT_R8G8B8A8_UNORM,
-			.usage = mythril::TextureUsageBits::TextureUsageBits_Attachment | mythril::TextureUsageBits_Sampled,
-			.storage = mythril::StorageType::Device,
-			.debugName = "Color Texture"
-		});
-		mythril::Texture finalColorTarget = ctx->createTexture({
-			.dimension = dims,
-			.format = VK_FORMAT_R8G8B8A8_UNORM,
-			.usage = mythril::TextureUsageBits::TextureUsageBits_Attachment,
-			.storage = mythril::StorageType::Device,
-			.debugName = "Final Color Texture"
-		});
-		mythril::Texture depthTarget = ctx->createTexture({
-			.dimension = dims,
-			.format = VK_FORMAT_D32_SFLOAT_S8_UINT,
-			.samples = mythril::SampleCount::X1,
-			.usage = mythril::TextureUsageBits::TextureUsageBits_Attachment,
-			.debugName = "Depth Texture"
-		});
-
 		mythril::Shader standardShader = ctx->createShader({
 			.source = kDataDir / "Marble.slang",
 			.debugName = "Example Shader"
@@ -496,8 +473,8 @@ int main() {
 
 		auto startTime = std::chrono::high_resolution_clock::now();
 		mythril::RenderGraph graph;
-		const mythril::GraphTexture rgColorTarget = graph.importTexture(colorTarget);
-		const mythril::GraphTexture rgDepthTarget = graph.importTexture(depthTarget);
+		const mythril::GraphTexture rgColorTarget = graph.createTexture({.size = mythril::RelativeSize{}, .format = VK_FORMAT_R8G8B8A8_UNORM, .debugName = "Color Texture"});
+		const mythril::GraphTexture rgDepthTarget = graph.createTexture({.size = mythril::RelativeSize{}, .format = VK_FORMAT_D32_SFLOAT_S8_UINT, .debugName = "Depth Texture"});
 		graph.addGraphicsPass("geometry")
 		.attachment({
 			.texDesc = rgColorTarget,
@@ -567,12 +544,6 @@ int main() {
 					.width = currentWindowSize.width,
 					.height = currentWindowSize.height
 				});
-
-				// get framebuffer size for correct resolution, not windowsize which might not scale to your monitor dpi correctly
-				mythril::Dimensions applied_dimensions = { currentWindowSize.width, currentWindowSize.height, 1};
-				ctx->resizeTexture(colorTarget.handle(), applied_dimensions);
-				ctx->resizeTexture(depthTarget.handle(), applied_dimensions);
-				ctx->resizeTexture(finalColorTarget.handle(), applied_dimensions);
 			}
 
 			ImGui_ImplVulkan_NewFrame();

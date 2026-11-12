@@ -604,42 +604,7 @@ int main() {
 		})
 		.build();
 
-		const mythril::Dimensions windowDimensions = { initialWindowSize.width, initialWindowSize.height, 1 };
-		mythril::Texture offscreenColorTarget = ctx->createTexture({
-			.dimension = windowDimensions,
-			.format = kOffscreenFormat,
-			.samples = mythril::SampleCount::X1,
-			.usage = mythril::TextureUsageBits::TextureUsageBits_Attachment | mythril::TextureUsageBits_Sampled | mythril::TextureUsageBits::TextureUsageBits_Storage,
-			.storage = mythril::StorageType::Device,
-			.debugName = "Offscreen Color Texture"
-		});
-		mythril::Texture msaaColorTarget = ctx->createTexture({
-			.dimension = windowDimensions,
-			.format = kOffscreenFormat,
-			.samples = mythril::SampleCount::X4,
-			.usage = mythril::TextureUsageBits::TextureUsageBits_Attachment,
-			.storage = mythril::StorageType::Memoryless,
-			.debugName = "MSAA Color Texture"
-		});
-
 		static constexpr VkFormat kDepthFormat = VK_FORMAT_D32_SFLOAT;
-		mythril::Texture msaaDepthTarget = ctx->createTexture({
-			.dimension = windowDimensions,
-			.format = kDepthFormat,
-			.samples = mythril::SampleCount::X4,
-			.usage = mythril::TextureUsageBits::TextureUsageBits_Attachment,
-			.storage = mythril::StorageType::Memoryless,
-			.debugName = "MSAA Depth Texture"
-		});
-		mythril::Texture depthTarget = ctx->createTexture({
-			.dimension = windowDimensions,
-			.format = kDepthFormat,
-			.samples = mythril::SampleCount::X1,
-			.usage = mythril::TextureUsageBits::TextureUsageBits_Attachment | mythril::TextureUsageBits_Sampled,
-			.storage = mythril::StorageType::Device,
-			.debugName = "Offscreen Depth Texture"
-		});
-
 		constexpr uint32_t shadow_map_size = 4096;
 		static constexpr VkFormat kShadowFormat = VK_FORMAT_D16_UNORM;
 		// we combine results of a single channel (red) into all in order to have a grayscale image
@@ -725,15 +690,6 @@ int main() {
 			ctx->createTexture(lumtexspec0),
 			ctx->createTexture(lumtexspec1)
 		};
-
-		mythril::Texture finalColorTarget = ctx->createTexture({
-			.dimension = windowDimensions,
-			.format = kOffscreenFormat,
-			.usage = mythril::TextureUsageBits::TextureUsageBits_Attachment,
-			.storage = mythril::StorageType::Device,
-			.debugName = "Final Color Target (Takes in OffscreenColor)"
-		});
-
 
 		// load gltf asset
 		AssetData sponzaData = loadGLTFAsset(kDataDir / "meshes/sponza/Sponza.gltf");
@@ -823,25 +779,30 @@ int main() {
 		constexpr float kReverseZFarDepth = 0.f;
 		mythril::RenderGraph graph;
 		const mythril::GraphTexture rgShadowMap = graph.createTexture({
-			.size = {shadow_map_size, shadow_map_size},
+			.size = mythril::Dimensions{shadow_map_size, shadow_map_size},
 			.format = kShadowFormat,
 			.debugName = "Shadow Map Texture"
 		});
 		graph.exportTexture(rgShadowMap);
-		const mythril::GraphTexture rgMsaaColorTarget = graph.importTexture(msaaColorTarget);
-		const mythril::GraphTexture rgMsaaDepthTarget = graph.importTexture(msaaDepthTarget);
-		const mythril::GraphTexture rgOffscreenColorTarget = graph.importTexture(offscreenColorTarget);
-		const mythril::GraphTexture rgDepthTarget = graph.importTexture(depthTarget);
-		const mythril::GraphTexture rgFinalColorTarget = graph.importTexture(finalColorTarget);
+		const mythril::GraphTexture rgMsaaColorTarget = graph.createTexture({
+			.size = mythril::RelativeSize{},
+			.format = kOffscreenFormat,
+			.samples = mythril::SampleCount::X4,
+			.debugName = "MSAA Color Texture"
+		});
+		const mythril::GraphTexture rgMsaaDepthTarget = graph.createTexture({
+			.size = mythril::RelativeSize{},
+			.format = kDepthFormat,
+			.samples = mythril::SampleCount::X4,
+			.debugName = "MSAA Depth Texture"
+		});
+		const mythril::GraphTexture rgOffscreenColorTarget = graph.createTexture({.size = mythril::RelativeSize{}, .format = kOffscreenFormat, .debugName = "Offscreen Color Texture"});
+		const mythril::GraphTexture rgDepthTarget = graph.createTexture({.size = mythril::RelativeSize{}, .format = kDepthFormat, .debugName = "Offscreen Depth Texture"});
+		const mythril::GraphTexture rgFinalColorTarget = graph.createTexture({.size = mythril::RelativeSize{}, .format = kOffscreenFormat, .debugName = "Final Color Target (Takes in OffscreenColor)"});
 		const mythril::GraphTexture rgAdaptedLuminanceTextures[2] = {
 			graph.importTexture(adaptedLuminanceTextures[0]),
 			graph.importTexture(adaptedLuminanceTextures[1]),
 		};
-		graph.trackWindowSized(msaaColorTarget);
-		graph.trackWindowSized(offscreenColorTarget);
-		graph.trackWindowSized(msaaDepthTarget);
-		graph.trackWindowSized(depthTarget);
-		graph.trackWindowSized(finalColorTarget);
 
 		GPU::LightingData lightingData = {};
 		lightingData.directionalLights.color     = {1.0f, 1.0f, 0.97f};
@@ -1292,23 +1253,16 @@ int main() {
 		});
 
 		constexpr unsigned int kNumColorMips = 8;
-		mythril::Texture offscreenColorTexs[kNumColorMips];
 		mythril::GraphTexture rgOffscreenColorTexs[kNumColorMips];
-		mythril::Dimensions colorbloomdimensions = ctx->getTextureDimensions(offscreenColorTarget.handle());
 		for (int i = 0; i < kNumColorMips; i++) {
 			char namebuf[64];
 			snprintf(namebuf, sizeof(namebuf), "Color Bloom Tex %i", i);
-			offscreenColorTexs[i] = ctx->createTexture({
-				.dimension = colorbloomdimensions,
+			rgOffscreenColorTexs[i] = graph.createTexture({
+				.size = mythril::RelativeSize{.scale = 1.f / static_cast<float>(1u << i)},
 				.format = kOffscreenFormat,
-				.usage = mythril::TextureUsageBits_Sampled | mythril::TextureUsageBits_Storage,
 				.debugName = namebuf
 			});
-			rgOffscreenColorTexs[i] = graph.importTexture(offscreenColorTexs[i]);
-			graph.trackWindowSized(offscreenColorTexs[i], [i](const mythril::Dimensions& dims) {
-				return dims.divide2D(1u << i);
-			});
-			colorbloomdimensions = colorbloomdimensions.divide2D(2);
+			graph.exportTexture(rgOffscreenColorTexs[i]);
 		}
 		mythril::Shader downsampleComputeShader = ctx->createShader({
 			.source = kDataDir / "shaders/Downsample.slang",
@@ -1360,7 +1314,7 @@ int main() {
 			.debugName = "Luminance Conversion Pipeline"
 		});
 		const mythril::GraphTexture rgCurrentLuminanceTex = graph.createTexture({
-			.size = {1, 1, 1},
+			.size = mythril::Dimensions{1, 1, 1},
 			.format = VK_FORMAT_R8_UNORM,
 			.components = red_swizzle,
 			.debugName = "Luminance Current Texture"
@@ -1659,7 +1613,6 @@ int main() {
 					.width = width,
 					.height = height
 				});
-				graph.resizeTrackedWindowSized(ctx->getSwapchainDimensions());
 			}
 
 			static float yaw = 0, pitch = 0;
@@ -1774,7 +1727,7 @@ int main() {
 			ImGui::Text("Progressively Blurred Color Targets");
 			for (int i = 0; i < kNumColorMips; i++) {
 				mythril::Dimensions dims = {320, 240};
-				ImGui::Image(offscreenColorTexs[kNumColorMips-1-i], {static_cast<float>(dims.width), static_cast<float>(dims.height)});
+				ImGui::Image(graph.exported(rgOffscreenColorTexs[kNumColorMips-1-i]), {static_cast<float>(dims.width), static_cast<float>(dims.height)});
 			}
 			ImGui::End();
 

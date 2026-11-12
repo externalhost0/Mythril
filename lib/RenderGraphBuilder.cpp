@@ -70,7 +70,12 @@ namespace mythril {
 
 	GraphTexture RenderGraph::createTexture(GraphTextureSpec spec) {
 		ASSERT_MSG(spec.format != VK_FORMAT_UNDEFINED, "RenderGraph::createTexture: '{}' needs a format.", spec.debugName);
-		ASSERT_MSG(spec.size.width > 0 && spec.size.height > 0 && spec.size.depth > 0, "RenderGraph::createTexture: '{}' has a zero dimension.", spec.debugName);
+		if (const auto* fixed = std::get_if<Dimensions>(&spec.size))
+			ASSERT_MSG(fixed->width > 0 && fixed->height > 0 && fixed->depth > 0, "RenderGraph::createTexture: '{}' has a zero dimension.", spec.debugName);
+		if (const auto* relative = std::get_if<RelativeSize>(&spec.size)) {
+			ASSERT_MSG(relative->scale > 0.f, "RenderGraph::createTexture: '{}' needs a positive scale.", spec.debugName);
+			ASSERT_MSG(relative->extent._index < _extents.size(), "RenderGraph::createTexture: '{}' follows an extent from another RenderGraph.", spec.debugName);
+		}
 		ASSERT_MSG(spec.numMipLevels > 0 && spec.numLayers > 0, "RenderGraph::createTexture: '{}' needs at least one mip level and layer.", spec.debugName);
 		_textures.push_back({DeclaredTexture{.spec = std::move(spec)}});
 		_hasCompiled = false;
@@ -99,6 +104,36 @@ namespace mythril {
 		}
 		_textures.push_back({SwapchainTexture{}});
 		return GraphTexture{static_cast<uint32_t>(_textures.size() - 1)};
+	}
+
+	GraphExtent RenderGraph::createExtent(const Dimensions dimensions) {
+		ASSERT_MSG(dimensions.width > 0 && dimensions.height > 0, "RenderGraph::createExtent needs a non zero extent.");
+		_extents.emplace_back(Dimensions{dimensions.width, dimensions.height, 1});
+		return GraphExtent{static_cast<uint32_t>(_extents.size() - 1)};
+	}
+
+	void RenderGraph::setExtent(const GraphExtent extent, const Dimensions dimensions) {
+		ASSERT_MSG(extent != GraphExtent::swapchain(), "The swapchain extent follows CTX::recreateSwapchain and cannot be set.");
+		ASSERT_MSG(extent._index < _extents.size(), "GraphExtent does not belong to this RenderGraph.");
+		ASSERT_MSG(dimensions.width > 0 && dimensions.height > 0, "RenderGraph::setExtent needs a non zero extent.");
+		_extents[extent._index] = Dimensions{dimensions.width, dimensions.height, 1};
+	}
+
+	Dimensions RenderGraph::extentOf(const CTX& rCtx, const GraphExtent extent) const {
+		return _extents[extent._index].value_or(rCtx.getSwapchainDimensions());
+	}
+
+	Dimensions RenderGraph::sizeOf(const CTX& rCtx, const GraphTextureSpec& spec) const {
+		if (const auto* relative = std::get_if<RelativeSize>(&spec.size))
+			return ScaleExtent(extentOf(rCtx, relative->extent), relative->scale);
+		return std::get<Dimensions>(spec.size);
+	}
+
+	bool RenderGraph::declaredSizesStale(const CTX& rCtx) const {
+		return std::ranges::any_of(_textures, [&](const GraphResource& resource) {
+			const auto* declared = std::get_if<DeclaredTexture>(&resource.source);
+			return declared && declared->texture.valid() && sizeOf(rCtx, declared->spec) != declared->realized.dimensions;
+		});
 	}
 
 	BasePassBuilder::BasePassBuilder(RenderGraph& rGraph, const char* pName, const PassDesc::Type type)
@@ -243,7 +278,7 @@ namespace mythril {
 			    .debugName = spec.debugName,
 			    .format = spec.format,
 			    .sampleCount = static_cast<uint8_t>(toVulkan(spec.samples)),
-			    .dimensions = spec.size,
+			    .dimensions = sizeOf(rCtx, spec),
 			    .numMips = spec.numMipLevels,
 			    .numLayers = spec.type == TextureType::Type_Cube ? 6 * spec.numLayers : spec.numLayers,
 			};
@@ -534,13 +569,14 @@ namespace mythril {
 			auto* declared = std::get_if<DeclaredTexture>(&_textures[id].source);
 			if (!declared || !uses[id].has_value())
 				continue;
-			const Realization wanted = InferRealization(declared->spec, *uses[id], declared->exported);
+			const Realization wanted = InferRealization(sizeOf(rCtx, declared->spec), *uses[id], declared->exported);
 			ASSERT_MSG(wanted.usage != 0, "Graph texture '{}' is only touched by transfers, nothing samples, stores to or renders into it.", declared->spec.debugName);
-			if (declared->texture.valid()) {
-				ASSERT_MSG(declared->realized == wanted, "Graph texture '{}' needs different usage than it was created with, recreating graph textures is not supported yet.", declared->spec.debugName);
-				continue;
+			if (!declared->texture.valid()) {
+				declared->texture = rCtx.createTexture(ToTextureSpec(declared->spec, wanted));
+			} else if (declared->realized != wanted) {
+				ASSERT_MSG(declared->realized.usage == wanted.usage && declared->realized.storage == wanted.storage, "Graph texture '{}' needs different usage than it was created with, recreating graph textures is not supported yet.", declared->spec.debugName);
+				rCtx.resizeTextureImpl(declared->texture.handle(), wanted.dimensions);
 			}
-			declared->texture = rCtx.createTexture(ToTextureSpec(declared->spec, wanted));
 			declared->realized = wanted;
 		}
 	}
@@ -1085,23 +1121,6 @@ namespace mythril {
 		this->_compiledEpoch = rCtx._resourceEpoch;
 	}
 
-	void RenderGraph::trackWindowSized(Texture& texture) {
-		trackWindowSized(texture, [](const Dimensions& dims) { return dims; });
-	}
-
-	void RenderGraph::trackWindowSized(Texture& texture, std::function<Dimensions(Dimensions)> scaleFn) {
-		ASSERT_MSG(texture.valid(), "RenderGraph::trackWindowSized called with an invalid texture.");
-		_windowSizedTextures.push_back({.texture = &texture, .scaleFn = std::move(scaleFn)});
-	}
-
-	void RenderGraph::resizeTrackedWindowSized(const Dimensions& swapchainDimensions) const {
-		for (const WindowSizedTexture& tracked: _windowSizedTextures) {
-			ASSERT(tracked.texture);
-			const Dimensions nextDimensions = tracked.scaleFn ? tracked.scaleFn(swapchainDimensions) : swapchainDimensions;
-			tracked.texture->getContext()->resizeTexture(tracked.texture->handle(), nextDimensions);
-		}
-	}
-
 	void RenderGraph::PerformBarrierTransitions(CommandBuffer& cmd, const std::span<const CompiledImageBarrier> imageBarriers, const std::span<const CompiledBufferBarrier> bufferBarriers) {
 		if (imageBarriers.empty() && bufferBarriers.empty())
 			return;
@@ -1196,7 +1215,7 @@ namespace mythril {
 
 		// auto-recompile if any resource topology changed since last compile
 		// (texture resize, swapchain recreate/destroy).
-		if (_compiledEpoch != rCtx._resourceEpoch) {
+		if (_compiledEpoch != rCtx._resourceEpoch || declaredSizesStale(rCtx)) {
 			LOG_SYSTEM(LogType::Info, "Now performing recompile on rendergraph...");
 			compile(rCtx);
 		}
@@ -1233,9 +1252,7 @@ namespace mythril {
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_RENDERGRAPH);
 		ASSERT_MSG(!cmd.isDrying(), "You cannot call RenderGraph::execute inside an execution callback!");
 		ASSERT_MSG(_hasCompiled, "RenderGraph must be compiled before it can be executed!");
-		// auto-recompile if any resource topology changed since last compile (texture resize, swapchain recreate/destroy).
-		// single uint64 compare on the hot path; recompile only runs when actually stale (typically window-resize frames).
-		if (_compiledEpoch != cmd._ctx->_resourceEpoch) {
+		if (_compiledEpoch != cmd._ctx->_resourceEpoch || declaredSizesStale(*cmd._ctx)) {
 			compile(*cmd._ctx);
 		}
 

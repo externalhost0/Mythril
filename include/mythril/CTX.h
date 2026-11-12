@@ -287,6 +287,9 @@ namespace mythril {
 		// advanced functions that user will rarely need to call
 		void generateMipmaps(TextureHandle handle);
 		TextureHandle createTextureViewImpl(TextureHandle handle, TextureViewSpec spec);
+		void createTextureViewObjectsImpl(detail::AllocatedTexture& view, const VkImageSubresourceRange& range);
+		void resizeTextureImpl(TextureHandle handle, Dimensions newDimensions);
+		void rebuildTextureViewsImpl(const detail::AllocatedTexture& image);
 
 		// all things related to our pipeline constructions
 		detail::PipelineCoreData buildPipelineCommonDataExceptVkPipelineImpl(const PipelineLayoutSignature& signature);

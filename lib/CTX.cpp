@@ -1240,8 +1240,20 @@ namespace mythril {
 	}
 
 	void CTX::resizeTexture(TextureHandle handle, Dimensions newDimensions) {
-		MYTH_PROFILER_FUNCTION();
 		ASSERT_MSG(!_currentCommandBuffer._ctx, "Cannot resize a texture while a CommandBuffer is open, already recorded commands reference the old image.");
+		resizeTextureImpl(handle, newDimensions);
+	}
+
+	static VkImageSubresourceRange ViewRangeOf(const TextureViewKey key, const VkImageAspectFlags aspect) {
+		const auto field = [key](const int shift, const uint32_t remaining) {
+			const uint32_t value = static_cast<uint32_t>(key >> shift) & 0xFFFF;
+			return value == 0xFFFF ? remaining : value;
+		};
+		return {aspect, field(48, 0), field(32, VK_REMAINING_MIP_LEVELS), field(16, 0), field(0, VK_REMAINING_ARRAY_LAYERS)};
+	}
+
+	void CTX::resizeTextureImpl(TextureHandle handle, Dimensions newDimensions) {
+		MYTH_PROFILER_FUNCTION();
 		AllocatedTexture* image = _texturePool.get(handle);
 		if (!image) {
 			LOG_SYSTEM(LogType::Warning, "'resizeTexture' called on invalid handle!");
@@ -1302,6 +1314,26 @@ namespace mythril {
 		// the slot is rewritten in place, pending frames may still read the old view through it
 		_immGraphics->wait(_immGraphics->getLastSubmitHandle());
 		writeTextureDescriptorsImpl(handle.index(), 1);
+		rebuildTextureViewsImpl(*image);
+	}
+
+	void CTX::rebuildTextureViewsImpl(const AllocatedTexture& image) {
+		for (const auto& [key, viewHandle]: image._additionalViews) {
+			AllocatedTexture* view = _texturePool.get(viewHandle);
+			deferTask(std::packaged_task<void()>([device = _vkDevice, imageView = view->_vkImageView]() { vkDestroyImageView(device, imageView, nullptr); }));
+			if (view->_vkImageViewStorage)
+				deferTask(std::packaged_task<void()>([device = _vkDevice, imageView = view->_vkImageViewStorage]() { vkDestroyImageView(device, imageView, nullptr); }));
+#ifdef MYTH_ENABLED_IMGUI
+			if (_imguiPlugin.isEnabled())
+				_imguiPlugin.removeImageDescriptor(viewHandle);
+#endif
+			view->_vkImage = image._vkImage;
+			view->_vkExtent = image._vkExtent;
+			view->_vkImageViewStorage = VK_NULL_HANDLE;
+			view->setLayout(view->getWholeRange(), VK_IMAGE_LAYOUT_UNDEFINED);
+			createTextureViewObjectsImpl(*view, ViewRangeOf(key, view->getImageAspectFlags()));
+			writeTextureDescriptorsImpl(viewHandle.index(), 1);
+		}
 	}
 
 	Texture CTX::createTexture(TextureSpec spec) {
@@ -1395,35 +1427,33 @@ namespace mythril {
 		const VkImageAspectFlags texture_aspect_flags = copied_obj.getImageAspectFlags();
 		// lose all data associated with original image
 		memset(&copied_obj._vkImageViewStorage, 0, sizeof(copied_obj._vkImageViewStorage));
-
-		const VkComponentMapping component_mappings = spec.components.toVkComponentMapping();
 		ASSERT_MSG(vkutil::GetNumImagePlanes(copied_obj._vkFormat) == 1, "Unsupported multiplanar image.");
 
-		if (spec.type == VK_IMAGE_VIEW_TYPE_MAX_ENUM)
-			spec.type = copied_obj._vkImageViewType;
-
-		VkImageViewCreateInfo image_view_ci = {
-		    .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-		    .pNext = nullptr,
-		    .image = copied_obj._vkImage,
-		    .viewType = spec.type,
-		    .format = copied_obj._vkFormat,
-		    .components = component_mappings,
-		    .subresourceRange = {.aspectMask = texture_aspect_flags, .baseMipLevel = spec.mipLevel, .levelCount = spec.numMipLevels, .baseArrayLayer = spec.layer, .layerCount = spec.numLayers},
-		};
-		VK_CHECK(vkCreateImageView(_vkDevice, &image_view_ci, nullptr, &copied_obj._vkImageView));
-		if (copied_obj._vkUsageFlags & VK_IMAGE_USAGE_STORAGE_BIT) {
-			if (!vkutil::IsComponentMappingAnIdentity(component_mappings)) {
-				image_view_ci.components = {};
-				VK_CHECK(vkCreateImageView(_vkDevice, &image_view_ci, nullptr, &copied_obj._vkImageViewStorage));
-			}
-		}
-
+		if (spec.type != VK_IMAGE_VIEW_TYPE_MAX_ENUM)
+			copied_obj._vkImageViewType = spec.type;
+		copied_obj._vkComponentMappings = spec.components.toVkComponentMapping();
 		snprintf(copied_obj._debugName, sizeof(copied_obj._debugName), "%s", spec.debugName);
-		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_IMAGE_VIEW, reinterpret_cast<uint64_t>(copied_obj._vkImageView), copied_obj.getDebugName().data());
+		createTextureViewObjectsImpl(copied_obj, {.aspectMask = texture_aspect_flags, .baseMipLevel = spec.mipLevel, .levelCount = spec.numMipLevels, .baseArrayLayer = spec.layer, .layerCount = spec.numLayers});
 		TextureHandle new_handle = this->_texturePool.create(std::move(copied_obj));
 		writeTextureDescriptorsImpl(new_handle.index(), 1);
 		return {new_handle};
+	}
+	void CTX::createTextureViewObjectsImpl(AllocatedTexture& view, const VkImageSubresourceRange& range) {
+		VkImageViewCreateInfo image_view_ci = {
+		    .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+		    .pNext = nullptr,
+		    .image = view._vkImage,
+		    .viewType = view._vkImageViewType,
+		    .format = view._vkFormat,
+		    .components = view._vkComponentMappings,
+		    .subresourceRange = range,
+		};
+		VK_CHECK(vkCreateImageView(_vkDevice, &image_view_ci, nullptr, &view._vkImageView));
+		if (view._vkUsageFlags & VK_IMAGE_USAGE_STORAGE_BIT && !vkutil::IsComponentMappingAnIdentity(view._vkComponentMappings)) {
+			image_view_ci.components = {};
+			VK_CHECK(vkCreateImageView(_vkDevice, &image_view_ci, nullptr, &view._vkImageViewStorage));
+		}
+		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_IMAGE_VIEW, reinterpret_cast<uint64_t>(view._vkImageView), view.getDebugName().data());
 	}
 	AllocatedTexture CTX::createTextureImpl(
 	        VkImageUsageFlags usageFlags,

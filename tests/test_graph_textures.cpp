@@ -39,10 +39,10 @@ namespace {
 		return 0;
 	}
 
-	using InferFn = Realization (*)(const GraphTextureSpec&, const TextureUses&, bool);
+	using InferFn = Realization (*)(Dimensions, const TextureUses&, bool);
 
 	std::vector<std::string> check(InferFn infer, uint32_t subset, VkFormat format, bool exported) {
-		const GraphTextureSpec spec = {.size = {64, 32}, .format = format};
+		const GraphTextureSpec spec = {.size = Dimensions{64, 32}, .format = format};
 		TextureUses uses;
 		VkImageUsageFlags required = 0;
 		for (size_t i = 0; i < std::size(kAccesses); ++i) {
@@ -59,7 +59,7 @@ namespace {
 		if (exported)
 			required |= VK_IMAGE_USAGE_SAMPLED_BIT;
 
-		const Realization realization = infer(spec, uses, exported);
+		const Realization realization = infer(std::get<Dimensions>(spec.size), uses, exported);
 		const TextureSpec created = ToTextureSpec(spec, realization);
 		const VkImageUsageFlags usage = vkutil::ToVkImageUsage(created.usage, created.storage, created.format);
 
@@ -105,11 +105,11 @@ namespace {
 	}
 
 	namespace known_bad {
-		Realization superset(const GraphTextureSpec& spec, const TextureUses&, bool) {
-			return {.dimensions = spec.size, .usage = TextureUsageBits_Attachment | TextureUsageBits_Sampled | TextureUsageBits_Storage};
+		Realization superset(const Dimensions dimensions, const TextureUses&, bool) {
+			return {.dimensions = dimensions, .usage = TextureUsageBits_Attachment | TextureUsageBits_Sampled | TextureUsageBits_Storage};
 		}
-		Realization exportNotSampled(const GraphTextureSpec& spec, const TextureUses& uses, bool) {
-			return InferRealization(spec, uses, false);
+		Realization exportNotSampled(const Dimensions dimensions, const TextureUses& uses, bool) {
+			return InferRealization(dimensions, uses, false);
 		}
 	}
 
@@ -131,7 +131,7 @@ TEST_CASE("usage checker catches hand picked and dropped usage") {
 
 TEST_CASE("an exported texture keeps its last writer alive with no reader in the graph") {
 	RenderGraph graph;
-	const GraphTexture preview = graph.createTexture({.size = {16, 16}, .format = VK_FORMAT_D16_UNORM, .debugName = "preview"});
+	const GraphTexture preview = graph.createTexture({.size = Dimensions{16, 16}, .format = VK_FORMAT_D16_UNORM, .debugName = "preview"});
 	const GraphTexture backBuffer = graph.backBuffer();
 
 	std::vector<PassDesc> passes(2);
@@ -146,9 +146,25 @@ TEST_CASE("an exported texture keeps its last writer alive with no reader in the
 
 	for (const bool exported: {false, true}) {
 		std::vector<GraphResource> textures(2);
-		textures[0].source = DeclaredTexture{.spec = {.size = {16, 16}, .format = VK_FORMAT_D16_UNORM}, .exported = exported};
+		textures[0].source = DeclaredTexture{.spec = {.size = Dimensions{16, 16}, .format = VK_FORMAT_D16_UNORM}, .exported = exported};
 		textures[1].source = SwapchainTexture{};
 		const std::vector<uint32_t> kept = cull_unused_passes(order, predecessors, passes, textures);
 		CHECK_MESSAGE(kept == (exported ? std::vector<uint32_t>{0, 1} : std::vector<uint32_t>{1}), "exported " << exported);
 	}
+}
+
+TEST_CASE("relative sizes floor each axis and never reach zero") {
+	constexpr Dimensions kExtents[] = {{1280, 720, 1}, {2560, 1440, 1}, {1, 1, 1}, {333, 7, 1}};
+	size_t checked = 0;
+	for (const Dimensions extent: kExtents) {
+		for (uint32_t i = 0; i < 8; ++i) {
+			++checked;
+			const Dimensions scaled = ScaleExtent(extent, 1.f / static_cast<float>(1u << i));
+			CHECK(scaled.width == std::max(1u, extent.width >> i));
+			CHECK(scaled.height == std::max(1u, extent.height >> i));
+			CHECK(scaled.depth == 1);
+		}
+	}
+	CHECK(checked == std::size(kExtents) * 8);
+	CHECK(ScaleExtent({1280, 720, 1}, 0.75f) == Dimensions{960, 540, 1});
 }

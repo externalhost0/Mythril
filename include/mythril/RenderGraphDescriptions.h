@@ -81,9 +81,24 @@ namespace mythril {
 		friend struct GraphTextureAccess;
 	};
 
+	class GraphExtent {
+	public:
+		static constexpr GraphExtent swapchain() { return GraphExtent{0}; }
+		constexpr bool operator==(const GraphExtent&) const = default;
+	private:
+		explicit constexpr GraphExtent(uint32_t index) : _index(index) {}
+		uint32_t _index = 0;
+		friend class RenderGraph;
+	};
+	struct RelativeSize {
+		GraphExtent extent = GraphExtent::swapchain();
+		float scale = 1.f;
+	};
+	using TextureSize = std::variant<Dimensions, RelativeSize>;
+
 	// the part of TextureSpec the graph cannot infer, usage and storage come from the passes that use it
 	struct GraphTextureSpec {
-		Dimensions size;
+		TextureSize size;
 		TextureType type = TextureType::Type_2D;
 		VkFormat format = VK_FORMAT_UNDEFINED;
 		SampleCount samples = SampleCount::X1;

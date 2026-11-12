@@ -48,17 +48,9 @@ int main() {
 		})
 		.build();
 
-		const mythril::Dimensions dims = {static_cast<uint32_t>(w), static_cast<uint32_t>(h), 1};
-		mythril::Texture colorTarget = ctx->createTexture({
-			.dimension = dims,
-			.format = VK_FORMAT_R8G8B8A8_UNORM,
-			.usage = mythril::TextureUsageBits::TextureUsageBits_Attachment,
-			.storage = mythril::StorageType::Device,
-			.debugName = "Color Texture"
-		});
-
 		mythril::RenderGraph graph;
-		const mythril::GraphTexture rgColorTarget = graph.importTexture(colorTarget);
+		const mythril::GraphTexture rgColorTarget = graph.createTexture({.size = mythril::RelativeSize{}, .format = VK_FORMAT_R8G8B8A8_UNORM, .debugName = "Color Texture"});
+		graph.exportTexture(rgColorTarget);
 		graph.addGraphicsPass("main")
 		.attachment({
 			.texDesc = rgColorTarget,
@@ -90,8 +82,6 @@ int main() {
 					.width = static_cast<uint32_t>(w),
 					.height = static_cast<uint32_t>(h)
 				});
-
-				ctx->resizeTexture(colorTarget.handle(), {static_cast<uint32_t>(w), static_cast<uint32_t>(h)});
 			}
 
 
@@ -116,7 +106,7 @@ int main() {
 			SDL_GetWindowSize(sdlWindow, &w, &h);
 			ImGui::Text("Windowsize: %u, %u", w, h);
 
-			const mythril::Dimensions colorTargetDims = ctx->getTextureDimensions(colorTarget.handle());
+			const mythril::Dimensions colorTargetDims = ctx->getTextureDimensions(graph.exported(rgColorTarget));
 			ImGui::Text("Color Texture Size: %.1u x %.1u", colorTargetDims.width, colorTargetDims.height);
 
 			const ImGuiIO& io = ImGui::GetIO();
