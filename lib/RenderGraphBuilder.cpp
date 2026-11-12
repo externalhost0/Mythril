@@ -207,55 +207,54 @@ namespace mythril {
 	static constexpr VkImageSubresourceRange MakeVkRange(VkFormat fmt, SubresourceRange range) {
 		return {vkutil::AspectMaskFromFormat(fmt), range.baseMip, range.numMips, range.baseLayer, range.numLayers};
 	}
-	static SubresourceRange ResolveSubresourceRange(const TextureDesc& texDesc, const AllocatedTexture& texture, const PassDesc& pass) {
-		const uint32_t baseMip = texDesc.baseLevel.value_or(0);
-		const uint32_t numMips = texDesc.numLevels.value_or(texDesc.baseLevel.has_value() ? 1 : texture.getNumMips());
-		const uint32_t baseLayer = texDesc.baseLayer.value_or(0);
-		const uint32_t numLayers = texDesc.numLayers.value_or(texDesc.baseLayer.has_value() ? 1 : texture.getNumLayers());
+	TextureShape RenderGraph::shapeOf(const CTX& rCtx, const GraphTexture texture) const {
+		const AllocatedTexture& live = rCtx.view(ResolveHandle(_textures, rCtx, texture));
+		return {
+		    .debugName = live.getDebugName(),
+		    .format = live.getFormat(),
+		    .sampleCount = live.getSampleCount(),
+		    .dimensions = live.getDimensions(),
+		    .numMips = live.getNumMips(),
+		    .numLayers = live.getNumLayers(),
+		};
+	}
 
-		ASSERT_PASS(baseMip < texture.getNumMips(), pass, "Texture '{}' base mip {} is outside the texture's {} mip levels", texture.getDebugName(), baseMip, texture.getNumMips());
+	static SubresourceRange ResolveSubresourceRange(const TextureDesc& texDesc, const TextureShape& shape, const PassDesc& pass) {
+		const uint32_t baseMip = texDesc.baseLevel.value_or(0);
+		const uint32_t numMips = texDesc.numLevels.value_or(texDesc.baseLevel.has_value() ? 1 : shape.numMips);
+		const uint32_t baseLayer = texDesc.baseLayer.value_or(0);
+		const uint32_t numLayers = texDesc.numLayers.value_or(texDesc.baseLayer.has_value() ? 1 : shape.numLayers);
+
+		ASSERT_PASS(baseMip < shape.numMips, pass, "Texture '{}' base mip {} is outside the texture's {} mip levels", shape.debugName, baseMip, shape.numMips);
 		ASSERT_PASS(
-		        numMips > 0 && baseMip + numMips <= texture.getNumMips(),
+		        numMips > 0 && baseMip + numMips <= shape.numMips,
 		        pass,
 		        "Texture '{}' mip range [{}, {}) is outside the texture's {} mip levels",
-		        texture.getDebugName(),
+		        shape.debugName,
 		        baseMip,
 		        baseMip + numMips,
-		        texture.getNumMips()
+		        shape.numMips
 		);
-		ASSERT_PASS(baseLayer < texture.getNumLayers(), pass, "Texture '{}' base layer {} is outside the texture's {} layers", texture.getDebugName(), baseLayer, texture.getNumLayers());
+		ASSERT_PASS(baseLayer < shape.numLayers, pass, "Texture '{}' base layer {} is outside the texture's {} layers", shape.debugName, baseLayer, shape.numLayers);
 		ASSERT_PASS(
-		        numLayers > 0 && baseLayer + numLayers <= texture.getNumLayers(),
+		        numLayers > 0 && baseLayer + numLayers <= shape.numLayers,
 		        pass,
 		        "Texture '{}' layer range [{}, {}) is outside the texture's {} layers",
-		        texture.getDebugName(),
+		        shape.debugName,
 		        baseLayer,
 		        baseLayer + numLayers,
-		        texture.getNumLayers()
+		        shape.numLayers
 		);
 
 		return {baseMip, numMips, baseLayer, numLayers};
 	}
 
-	static VkImageView ResolveImageView(CTX& rCtx, const TextureHandle handle, const TextureDesc& texDesc, const AllocatedTexture& allocatedTexture, const PassDesc& pass) {
-		const bool needsCustomView = texDesc.baseLayer.has_value() || texDesc.baseLevel.has_value() || texDesc.numLayers.has_value() || texDesc.numLevels.has_value();
-		if (!needsCustomView) {
-			return allocatedTexture.getImageView();
-		}
-
-		const SubresourceRange range = ResolveSubresourceRange(texDesc, allocatedTexture, pass);
-		VkImageViewType viewType = allocatedTexture.getViewType();
-		if (range.numLayers == 1 && viewType == VK_IMAGE_VIEW_TYPE_CUBE) {
-			viewType = VK_IMAGE_VIEW_TYPE_2D;
-		}
-		const TextureViewKey viewKey = rCtx.createTextureView(handle, {
-		    .type = viewType,
-		    .mipLevel = range.baseMip,
-		    .numMipLevels = range.numMips,
-		    .layer = range.baseLayer,
-		    .numLayers = range.numLayers,
-		});
-		return rCtx.getTextureView(handle, viewKey);
+	static AttachmentTarget PlanAttachmentTarget(const TextureDesc& texDesc, const TextureShape& shape, const PassDesc& pass) {
+		return {
+		    .resource = texDesc.texture,
+		    .range = ResolveSubresourceRange(texDesc, shape, pass),
+		    .subresourceView = texDesc.baseLayer.has_value() || texDesc.baseLevel.has_value() || texDesc.numLayers.has_value() || texDesc.numLevels.has_value(),
+		};
 	}
 
 	static constexpr bool NeedsBarrier(VkImageLayout currentLayout, const vkutil::StageAccess& currentStageAccess, VkImageLayout desiredLayout, const vkutil::StageAccess& desiredStageAccess) {
@@ -302,28 +301,26 @@ namespace mythril {
 		}
 		ASSERT_MSG(false, "Unsupported TextureAccess value.");
 	}
-	void RenderGraph::processResourceAccess(const CTX& rCtx, const TextureDesc& texDesc, VkImageLayout desiredLayout, const StageAccess& dstMask, CompiledPass& outPass, const PassDesc& pass) const {
-		const TextureHandle handle = ResolveHandle(_textures, rCtx, texDesc.texture);
-		const AllocatedTexture& texture = rCtx.view(handle);
-		const SubresourceRange& range = ResolveSubresourceRange(texDesc, texture, pass);
-		outPass.imageBarriers.push_back({.handle = handle, .range = range, .dstLayout = desiredLayout, .dstMask = dstMask, .isSwapchain = IsBackBuffer(_textures, texDesc.texture)});
+	void RenderGraph::planResourceAccess(const CTX& rCtx, const TextureDesc& texDesc, VkImageLayout desiredLayout, const StageAccess& dstMask, CompiledPass& outPass, const PassDesc& pass) const {
+		const SubresourceRange range = ResolveSubresourceRange(texDesc, shapeOf(rCtx, texDesc.texture), pass);
+		outPass.imageBarriers.push_back({.resource = texDesc.texture, .range = range, .dstLayout = desiredLayout, .dstMask = dstMask, .isSwapchain = IsBackBuffer(_textures, texDesc.texture)});
 	}
 
-	void RenderGraph::processPassResources(const CTX& rCtx, const PassDesc& passDesc, CompiledPass& outPass) const {
+	void RenderGraph::planPassResources(const CTX& rCtx, const PassDesc& passDesc, CompiledPass& outPass) const {
 		outPass.imageBarriers.reserve(passDesc.textureDependencyOperations.size() + passDesc.attachmentOperations.size());
 		outPass.bufferBarriers.reserve(passDesc.bufferDependencyOperations.size());
 		for (const TextureDependencyDesc& dependency_desc: passDesc.textureDependencyOperations) {
-			processResourceAccess(rCtx, dependency_desc.texDesc, GetTextureLayout(dependency_desc.access), GetTextureStageAccess(dependency_desc.access, passDesc.type), outPass, passDesc);
+			planResourceAccess(rCtx, dependency_desc.texDesc, GetTextureLayout(dependency_desc.access), GetTextureStageAccess(dependency_desc.access, passDesc.type), outPass, passDesc);
 		}
 		for (const AttachmentDesc& attachment_desc: passDesc.attachmentOperations) {
-			const AllocatedTexture& texture = rCtx.view(ResolveHandle(_textures, rCtx, attachment_desc.texDesc.texture));
-			const VkImageLayout layout = texture.isDepthAttachment() ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-			processResourceAccess(rCtx, attachment_desc.texDesc, layout, vkutil::GetPipelineStageAccess(layout), outPass, passDesc);
+			const TextureShape shape = shapeOf(rCtx, attachment_desc.texDesc.texture);
+			const VkImageLayout layout = vkutil::IsFormatDepth(shape.format) ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+			planResourceAccess(rCtx, attachment_desc.texDesc, layout, vkutil::GetPipelineStageAccess(layout), outPass, passDesc);
 
 			if (attachment_desc.resolveTexDesc.has_value()) {
 				// resolves always write in color attachment output, even for depth/stencil
 				constexpr StageAccess resolveMask = {.stage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, .access = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT};
-				processResourceAccess(rCtx, attachment_desc.resolveTexDesc.value(), layout, resolveMask, outPass, passDesc);
+				planResourceAccess(rCtx, attachment_desc.resolveTexDesc.value(), layout, resolveMask, outPass, passDesc);
 			}
 		}
 		for (const BufferDependencyDesc& dependency_desc: passDesc.bufferDependencyOperations) {
@@ -358,93 +355,75 @@ namespace mythril {
 		};
 	}
 
-	void RenderGraph::processAttachments(CTX& rCtx, const PassDesc& pass_desc, CompiledPass& outPass) const {
+	void RenderGraph::planAttachments(const CTX& rCtx, const PassDesc& pass_desc, CompiledPass& outPass) const {
 		if (pass_desc.attachmentOperations.empty())
 			return;
 		uint32_t max_width = 0, max_height = 0;
 		bool hasDepthAttachment = false;
 		for (const AttachmentDesc& attachment_desc: pass_desc.attachmentOperations) {
 			const TextureDesc& texDesc = attachment_desc.texDesc;
-			const TextureHandle handle = ResolveHandle(_textures, rCtx, texDesc.texture);
-			const AllocatedTexture& allocatedTexture = rCtx.view(handle);
+			const TextureShape shape = shapeOf(rCtx, texDesc.texture);
 
-			const bool isDepthAttachment = vkutil::IsFormatDepth(allocatedTexture.getFormat());
+			const bool isDepthAttachment = vkutil::IsFormatDepth(shape.format);
 			if (isDepthAttachment) {
-				ASSERT_PASS(!hasDepthAttachment, pass_desc, "Multiple depth attachments not allowed (found '{}' to be a second depth attachment)", allocatedTexture.getDebugName());
+				ASSERT_PASS(!hasDepthAttachment, pass_desc, "Multiple depth attachments not allowed (found '{}' to be a second depth attachment)", shape.debugName);
 				hasDepthAttachment = true;
 			}
-			VkImageView imageView = ResolveImageView(rCtx, handle, texDesc, allocatedTexture, pass_desc);
 
 			const ClearValue& clear_value = attachment_desc.clearValue;
 			AttachmentInfo attachment_info = {
-			    .imageFormat = allocatedTexture.getFormat(),
-			    .imageView = imageView,
+			    .imageFormat = shape.format,
+			    .imageView = VK_NULL_HANDLE,
 			    .imageLayout = isDepthAttachment ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-			    // these fields are "resolved" in the next steps, haha
 			    .resolveImageView = VK_NULL_HANDLE,
 			    .resolveImageLayout = VK_IMAGE_LAYOUT_UNDEFINED,
 
 			    .loadOp = toVulkan(attachment_desc.loadOp),
 			    .storeOp = toVulkan(attachment_desc.storeOp),
 			    .clearValue = isDepthAttachment ? clear_value.getDepthStencilValue() : clear_value.getColorValue(),
+			    .target = PlanAttachmentTarget(texDesc, shape, pass_desc),
 			};
-			attachment_info.texture = handle;
 			if (attachment_desc.resolveTexDesc.has_value()) {
 				const TextureDesc& resolve_desc = attachment_desc.resolveTexDesc.value();
-				const TextureHandle resolve_handle = ResolveHandle(_textures, rCtx, resolve_desc.texture);
-				const AllocatedTexture& resolve_texture = rCtx.view(resolve_handle);
+				const TextureShape resolve_shape = shapeOf(rCtx, resolve_desc.texture);
 				ASSERT_PASS(
-				        resolve_texture.getSampleCount() == VK_SAMPLE_COUNT_1_BIT,
+				        resolve_shape.sampleCount == VK_SAMPLE_COUNT_1_BIT,
 				        pass_desc,
 				        "Resolve Texture must have a sample count of 1 (found '{}' to be of a greater sample count)",
-				        resolve_texture.getDebugName()
+				        resolve_shape.debugName
 				);
+				ASSERT_PASS(shape.sampleCount > VK_SAMPLE_COUNT_1_BIT, pass_desc, "Resolve operation on non-multisampled texture '{}'!", shape.debugName);
 				ASSERT_PASS(
-				        allocatedTexture.getSampleCount() > VK_SAMPLE_COUNT_1_BIT, pass_desc, "Resolve operation on non-multisampled texture '{}'!", allocatedTexture.getDebugName()
-				);
-				ASSERT_PASS(
-				        resolve_texture.getFormat() == allocatedTexture.getFormat(),
+				        resolve_shape.format == shape.format,
 				        pass_desc,
 				        "Resolve texture must have the same format as the texture it resolves from (found texture '{}' to be of format {} while resolve texture '{}' is of format {})",
-				        allocatedTexture.getDebugName(),
-				        vkstring::VulkanFormatToString(allocatedTexture.getFormat()),
-				        resolve_texture.getDebugName(),
-				        vkstring::VulkanFormatToString(resolve_texture.getFormat())
+				        shape.debugName,
+				        vkstring::VulkanFormatToString(shape.format),
+				        resolve_shape.debugName,
+				        vkstring::VulkanFormatToString(resolve_shape.format)
 				);
 				if (attachment_desc.storeOp == StoreOp::STORE)
 					LOG_PASS(
 					        LogType::Suggestion,
 					        pass_desc,
 					        "Attachment of texture '{}' has StoreOp::STORE and resolves into '{}', can be replaced with StoreOp::DONT_CARE.",
-					        allocatedTexture.getDebugName(),
-					        resolve_texture.getDebugName()
+					        shape.debugName,
+					        resolve_shape.debugName
 					);
 
 				attachment_info.resolveImageLayout = attachment_info.imageLayout;
-				attachment_info.resolveImageView = ResolveImageView(rCtx, resolve_handle, resolve_desc, resolve_texture, pass_desc);
+				attachment_info.resolveTarget = PlanAttachmentTarget(resolve_desc, resolve_shape, pass_desc);
 			}
-			if (IsBackBuffer(_textures, texDesc.texture)) {
-				attachment_info.isSwapchainImage = true;
-				const auto& swapchain = rCtx._swapchain;
-				const uint32_t numImages = swapchain->getNumOfSwapchainImages();
-				for (uint32_t i = 0; i < numImages; i++) {
-					const TextureHandle handle = swapchain->getSwapchainTextureHandle(i);
-					attachment_info.swapchainImageViews[i] = rCtx.view(handle).getImageView();
-				}
-			}
+			attachment_info.isSwapchainImage = IsBackBuffer(_textures, texDesc.texture);
 
-			// submit AttachmentInfo
 			if (isDepthAttachment)
 				outPass.depthAttachment.emplace(attachment_info);
 			else
 				outPass.colorAttachments.emplace_back(attachment_info);
 
-			// calculate the necessary dimensions of the vkCmdBeginRendering call
-			// thats all the below code does
-			const Dimensions& baseDims = allocatedTexture.getDimensions();
 			const uint32_t mipLevel = texDesc.baseLevel.value_or(0);
-			const uint32_t width = std::max(1u, baseDims.width >> mipLevel);
-			const uint32_t height = std::max(1u, baseDims.height >> mipLevel);
+			const uint32_t width = std::max(1u, shape.dimensions.width >> mipLevel);
+			const uint32_t height = std::max(1u, shape.dimensions.height >> mipLevel);
 
 			if ((max_width != width || max_height != height) && (max_width != 0 || max_height != 0))
 				LOG_PASS(LogType::Warning, pass_desc, "You have attachments of different dimensions, this is allowed but experimental.");
@@ -452,6 +431,45 @@ namespace mythril {
 			max_height = std::max(max_height, height);
 		}
 		outPass.renderArea = {{0, 0}, {max_width, max_height}};
+	}
+
+	void RenderGraph::bindPass(CTX& rCtx, CompiledPass& pass) const {
+		for (CompiledImageBarrier& barrier: pass.imageBarriers) {
+			if (!barrier.isSwapchain)
+				barrier.handle = ResolveHandle(_textures, rCtx, barrier.resource);
+		}
+		const auto bindView = [&](const TextureHandle handle, const AttachmentTarget& target) {
+			const AllocatedTexture& texture = rCtx.view(handle);
+			if (!target.subresourceView)
+				return texture.getImageView();
+			VkImageViewType viewType = texture.getViewType();
+			if (target.range.numLayers == 1 && viewType == VK_IMAGE_VIEW_TYPE_CUBE)
+				viewType = VK_IMAGE_VIEW_TYPE_2D;
+			const TextureViewKey viewKey = rCtx.createTextureView(handle, {
+			    .type = viewType,
+			    .mipLevel = target.range.baseMip,
+			    .numMipLevels = target.range.numMips,
+			    .layer = target.range.baseLayer,
+			    .numLayers = target.range.numLayers,
+			});
+			return rCtx.getTextureView(handle, viewKey);
+		};
+		const auto bindAttachment = [&](AttachmentInfo& attachment) {
+			attachment.texture = ResolveHandle(_textures, rCtx, attachment.target.resource);
+			attachment.imageView = bindView(attachment.texture, attachment.target);
+			if (attachment.resolveTarget.has_value())
+				attachment.resolveImageView = bindView(ResolveHandle(_textures, rCtx, attachment.resolveTarget->resource), *attachment.resolveTarget);
+			if (attachment.isSwapchainImage) {
+				const auto& swapchain = rCtx._swapchain;
+				const uint32_t numImages = swapchain->getNumOfSwapchainImages();
+				for (uint32_t i = 0; i < numImages; i++)
+					attachment.swapchainImageViews[i] = rCtx.view(swapchain->getSwapchainTextureHandle(i)).getImageView();
+			}
+		};
+		for (AttachmentInfo& color: pass.colorAttachments)
+			bindAttachment(color);
+		if (pass.depthAttachment.has_value())
+			bindAttachment(*pass.depthAttachment);
 	}
 
 	void RenderGraph::performDryRun(CTX& rCtx) {
@@ -485,26 +503,26 @@ namespace mythril {
 	}
 
 	static bool SameAttachmentImage(const AttachmentInfo& a, const AttachmentInfo& b) {
-		return a.isSwapchainImage ? b.isSwapchainImage : !b.isSwapchainImage && a.imageView == b.imageView;
+		return a.target.resource == b.target.resource && a.target.range == b.target.range;
 	}
 	// resolves run at EndRendering, so a later member may not keep drawing into an attachment the group already resolves
 	static bool CanContinueAttachment(const AttachmentInfo& group, const AttachmentInfo& next) {
-		return SameAttachmentImage(group, next) && next.loadOp != VK_ATTACHMENT_LOAD_OP_CLEAR && group.resolveImageView == VK_NULL_HANDLE;
+		return SameAttachmentImage(group, next) && next.loadOp != VK_ATTACHMENT_LOAD_OP_CLEAR && !group.resolveTarget.has_value();
 	}
 
 	struct PassResourceUse {
-		std::unordered_set<uint32_t> attachments;
-		std::unordered_map<uint32_t, bool> textures;
+		std::unordered_set<GraphTexture, GraphTextureHash> attachments;
+		std::unordered_map<GraphTexture, bool, GraphTextureHash> textures;
 		std::unordered_map<BufferHandle, bool> buffers;
 
 		void add(const PassDesc& desc) {
 			for (const AttachmentDesc& attachment: desc.attachmentOperations) {
-				attachments.insert(IdOf(attachment.texDesc.texture));
+				attachments.insert(attachment.texDesc.texture);
 				if (attachment.resolveTexDesc.has_value())
-					attachments.insert(IdOf(attachment.resolveTexDesc->texture));
+					attachments.insert(attachment.resolveTexDesc->texture);
 			}
 			for (const TextureDependencyDesc& dependency: desc.textureDependencyOperations)
-				textures[IdOf(dependency.texDesc.texture)] |= isWrite(dependency.access);
+				textures[dependency.texDesc.texture] |= isWrite(dependency.access);
 			for (const BufferDependencyDesc& dependency: desc.bufferDependencyOperations)
 				buffers[dependency.buffer.handle()] |= isWrite(dependency.access);
 		}
@@ -576,7 +594,7 @@ namespace mythril {
 			return false;
 
 		const auto findImageBarrier = [&](const CompiledImageBarrier& request) {
-			return std::ranges::find_if(group.imageBarriers, [&](const CompiledImageBarrier& existing) { return existing.handle == request.handle && existing.isSwapchain == request.isSwapchain; });
+			return std::ranges::find_if(group.imageBarriers, [&](const CompiledImageBarrier& existing) { return existing.resource == request.resource; });
 		};
 		for (const CompiledImageBarrier& request: next.imageBarriers) {
 			const auto it = findImageBarrier(request);
@@ -603,7 +621,7 @@ namespace mythril {
 		}
 		const auto continueAttachment = [](AttachmentInfo& into, const AttachmentInfo& from) {
 			into.storeOp = from.storeOp;
-			into.resolveImageView = from.resolveImageView;
+			into.resolveTarget = from.resolveTarget;
 			into.resolveImageLayout = from.resolveImageLayout;
 		};
 		for (size_t i = 0; i < group.colorAttachments.size(); ++i)
@@ -859,8 +877,8 @@ namespace mythril {
 			compiled_pass.viewMask = pass_desc.viewMask;
 			compiled_pass.conditionCallback = pass_desc.conditionCallback;
 
-			processPassResources(rCtx, pass_desc, compiled_pass);
-			processAttachments(rCtx, pass_desc, compiled_pass);
+			planPassResources(rCtx, pass_desc, compiled_pass);
+			planAttachments(rCtx, pass_desc, compiled_pass);
 			if (pass_desc.executeInOrder)
 				compiled_pass.inOrderBarrier = BuildInOrderBarrier(compiled_pass);
 
@@ -878,26 +896,24 @@ namespace mythril {
 				continue;
 			compiled.push_back(std::move(pending[pendingIdx]));
 		}
+		for (CompilingPass& record: compiled)
+			bindPass(rCtx, record.pass);
 #ifdef DEBUG
 		{
 			// memoryless attachments have no backing memory, so their contents must begin and end inside one rendering scope
-			std::unordered_map<TextureHandle, uint32_t> passesUsing;
-			const auto countUse = [&](const uint32_t id) {
-				if (const auto* imported = std::get_if<ImportedTexture>(&_textures[id].source))
-					++passesUsing[imported->handle];
-			};
+			std::unordered_map<GraphTexture, uint32_t, GraphTextureHash> passesUsing;
 			for (const CompilingPass& record: compiled) {
-				for (const uint32_t id: record.use.attachments)
-					countUse(id);
-				for (const auto& [id, written]: record.use.textures)
-					countUse(id);
+				for (const GraphTexture texture: record.use.attachments)
+					++passesUsing[texture];
+				for (const auto& [texture, written]: record.use.textures)
+					++passesUsing[texture];
 			}
 			for (const CompilingPass& record: compiled) {
 				const auto validate = [&](const AttachmentInfo& attachment) {
 					if (attachment.isSwapchainImage)
 						return;
 					const AllocatedTexture& texture = rCtx.view(attachment.texture);
-					const bool confined = passesUsing[attachment.texture] == 1 && attachment.loadOp != VK_ATTACHMENT_LOAD_OP_LOAD && attachment.storeOp == VK_ATTACHMENT_STORE_OP_DONT_CARE;
+					const bool confined = passesUsing[attachment.target.resource] == 1 && attachment.loadOp != VK_ATTACHMENT_LOAD_OP_LOAD && attachment.storeOp == VK_ATTACHMENT_STORE_OP_DONT_CARE;
 					if (texture.isMemoryless()) {
 						ASSERT_PASS(confined, record.pass, "Memoryless attachment '{}' must be used by a single rendering scope that clears or discards it on load and discards it on store.", texture.getDebugName());
 					} else if (confined && logMerges && !texture.isSampledImage() && !texture.isStorageImage()) {
@@ -1131,7 +1147,6 @@ namespace mythril {
 			}
 			cmd._activePass = &pass;
 			cmd._graph = this;
-			cmd._activeMember = nullptr;
 			// clear the previous pass's pipeline before begin rendering inspects it
 			cmd.resetMemberStateImpl();
 			if (isGraphics) cmd.cmdBeginRenderingEXT(pass.layerCount, pass.viewMask);

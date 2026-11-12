@@ -35,6 +35,7 @@ namespace mythril {
     struct UploadData;
     struct CompiledPass;
     struct PassMember;
+    struct TextureShape;
     struct GraphResource;
 
     struct BasePassBuilder {
@@ -258,9 +259,11 @@ namespace mythril {
         ResolvedTexture resolve(const CTX& rCtx, const CompiledPass& pass, const PassMember& member, GraphTexture texture) const;
         void PerformBarrierTransitions(CommandBuffer& cmd, const CompiledPass& compiledPass);
         void RecordIntermediateOps(CommandBuffer& cmd, const CompiledPass& pass) const;
-        void processResourceAccess(const CTX& rCtx, const TextureDesc& texDesc, VkImageLayout desiredLayout, const StageAccess& dstMask, CompiledPass& outPass, const PassDesc& pass) const;
-        void processPassResources(const CTX& rCtx, const PassDesc& passDesc, CompiledPass& outPass) const;
-		void processAttachments(CTX& rCtx, const PassDesc& pass_desc, CompiledPass& outPass) const;
+        TextureShape shapeOf(const CTX& rCtx, GraphTexture texture) const;
+        void planResourceAccess(const CTX& rCtx, const TextureDesc& texDesc, VkImageLayout desiredLayout, const StageAccess& dstMask, CompiledPass& outPass, const PassDesc& pass) const;
+        void planPassResources(const CTX& rCtx, const PassDesc& passDesc, CompiledPass& outPass) const;
+        void planAttachments(const CTX& rCtx, const PassDesc& pass_desc, CompiledPass& outPass) const;
+        void bindPass(CTX& rCtx, CompiledPass& pass) const;
         void performDryRun(CTX& rCtx);
         std::unordered_map<TextureHandle, TextureAccessCache> _resourceTrackers;
         std::unordered_map<BufferHandle, vkutil::BufferAccessTracker> _bufferTrackers;

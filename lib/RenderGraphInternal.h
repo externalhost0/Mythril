@@ -29,6 +29,9 @@ namespace mythril {
     struct GraphTextureAccess {
         static constexpr uint32_t index(GraphTexture texture) { return texture._index; }
     };
+    struct GraphTextureHash {
+        size_t operator()(const GraphTexture texture) const { return std::hash<uint32_t>{}(GraphTextureAccess::index(texture)); }
+    };
 
     struct ImportedTexture {
         TextureHandle handle;
@@ -36,6 +39,21 @@ namespace mythril {
     struct SwapchainTexture {};
     struct GraphResource {
         std::variant<ImportedTexture, SwapchainTexture> source;
+    };
+
+    struct TextureShape {
+        std::string_view debugName;
+        VkFormat format;
+        uint8_t sampleCount;
+        Dimensions dimensions;
+        uint32_t numMips;
+        uint32_t numLayers;
+    };
+
+    struct AttachmentTarget {
+        GraphTexture resource;
+        SubresourceRange range;
+        bool subresourceView = false;
     };
 
     struct AttachmentInfo {
@@ -49,6 +67,9 @@ namespace mythril {
         VkAttachmentStoreOp storeOp;
 
         VkClearValue clearValue;
+        AttachmentTarget target;
+        std::optional<AttachmentTarget> resolveTarget;
+        // imageView, resolveImageView, texture and swapchainImageViews are filled by bind after merging
         TextureHandle texture;
 
         // will need to handle the special case of using a swapchain image as an attachment
@@ -79,9 +100,9 @@ namespace mythril {
     };
 
     struct CompiledImageBarrier {
-        // we dont want to only rely on a vkImage as when the texture updates we need to be able to fetch its new version
+        GraphTexture resource;
+        // filled by bind, unused for the swapchain which resolves per frame
         TextureHandle handle;
-        // TextureHandle textureHandle;
         SubresourceRange range{};
         VkImageLayout dstLayout = VK_IMAGE_LAYOUT_UNDEFINED;
         StageAccess dstMask{};
