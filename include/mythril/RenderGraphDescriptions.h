@@ -80,6 +80,13 @@ namespace mythril {
 		friend struct GraphTextureAccess;
 	};
 
+	// what CommandBuffer::texture returns, valid for the pass being recorded including the dry run
+	struct ResolvedTexture {
+		TextureHandle handle;
+		Dimensions dimensions;
+		uint32_t index() const { return handle.index(); }
+	};
+
 	struct TextureDesc {
 		TextureDesc() = delete;
 		TextureDesc(GraphTexture tex) :

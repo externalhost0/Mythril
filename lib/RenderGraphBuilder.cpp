@@ -44,6 +44,14 @@ namespace mythril {
 		return rCtx.getCurrentSwapchainTexHandle();
 	}
 
+	ResolvedTexture RenderGraph::resolve(const CTX& rCtx, const CompiledPass& pass, const PassMember& member, const GraphTexture texture) const {
+		const TextureHandle handle = ResolveHandle(_textures, rCtx, texture);
+#ifdef DEBUG
+		ASSERT_PASS(std::ranges::binary_search(member.sortedDeclaredTextures, IdOf(texture), {}, IdOf), pass, "'{}' reads texture '{}' without declaring it.", member.name, rCtx.view(handle).getDebugName());
+#endif
+		return {handle, rCtx.getTextureDimensions(handle)};
+	}
+
 	GraphTexture RenderGraph::importTexture(const Texture& texture) {
 		ASSERT_MSG(texture.valid(), "RenderGraph::importTexture called with an invalid texture.");
 		ASSERT_MSG(!texture.getContext()->isSwapchainTexture(texture.handle()), "Swapchain images are not imported, use RenderGraph::backBuffer().");
@@ -454,14 +462,16 @@ namespace mythril {
 			if (pass.type == PassDesc::Type::Intermediate)
 				continue;
 			ASSERT_PASS(!pass.members.empty(), pass, "doesn't have an execute callback, something went horribly wrong!");
-			for (const auto& member: pass.members) {
+			for (const PassMember& member: pass.members) {
 				// by default CommandBuffer will have _isDryRun = true
 				CommandBuffer dryCmd;
 				dryCmd._ctx = &rCtx;
 				dryCmd._activePass = &pass;
+				dryCmd._graph = this;
+				dryCmd._activeMember = &member;
 				dryCmd._viewMask = pass.viewMask;
 				rCtx._currentCommandBuffer = dryCmd;
-				member(dryCmd);
+				member.callback(dryCmd);
 			}
 		}
 		rCtx._currentCommandBuffer = saved;
@@ -499,6 +509,21 @@ namespace mythril {
 				buffers[dependency.buffer.handle()] |= isWrite(dependency.access);
 		}
 	};
+
+	static std::vector<GraphTexture> SortedDeclaredTextures(const PassDesc& desc) {
+		std::vector<GraphTexture> declared;
+		for (const AttachmentDesc& attachment: desc.attachmentOperations) {
+			declared.push_back(attachment.texDesc.texture);
+			if (attachment.resolveTexDesc.has_value())
+				declared.push_back(attachment.resolveTexDesc->texture);
+		}
+		for (const TextureDependencyDesc& dependency: desc.textureDependencyOperations)
+			declared.push_back(dependency.texDesc.texture);
+		std::ranges::sort(declared, {}, IdOf);
+		const auto [first, last] = std::ranges::unique(declared);
+		declared.erase(first, last);
+		return declared;
+	}
 
 	// any of these would need a barrier between members, which a single rendering scope cannot hold
 	static bool HasMemberHazard(const PassResourceUse& group, const PassResourceUse& next) {
@@ -828,7 +853,7 @@ namespace mythril {
 			compiled_pass.queue = sanitizeQueue(pass_desc.queue, pass_desc);
 			compiled_pass.type = pass_desc.type;
 			if (pass_desc.executeCallback)
-				compiled_pass.members.push_back(pass_desc.executeCallback);
+				compiled_pass.members.push_back({pass_desc.name, pass_desc.executeCallback, SortedDeclaredTextures(pass_desc)});
 			compiled_pass.intermediateOps = pass_desc.intermediateOps;
 			compiled_pass.layerCount = pass_desc.layerCount;
 			compiled_pass.viewMask = pass_desc.viewMask;
@@ -1105,6 +1130,8 @@ namespace mythril {
 					pass.depthAttachment->imageView = pass.depthAttachment->swapchainImageViews[swapIdx];
 			}
 			cmd._activePass = &pass;
+			cmd._graph = this;
+			cmd._activeMember = nullptr;
 			// clear the previous pass's pipeline before begin rendering inspects it
 			cmd.resetMemberStateImpl();
 			if (isGraphics) cmd.cmdBeginRenderingEXT(pass.layerCount, pass.viewMask);
@@ -1113,7 +1140,8 @@ namespace mythril {
 			for (size_t i = 0; i < pass.members.size(); ++i) {
 				if (i > 0)
 					cmd.resetMemberStateImpl();
-				pass.members[i](cmd);
+				cmd._activeMember = &pass.members[i];
+				pass.members[i].callback(cmd);
 			}
 			if (isGraphics) cmd.cmdEndRenderingEXT();
 #ifdef DEBUG
@@ -1133,5 +1161,7 @@ namespace mythril {
 			// fixme: make this cleaner im so lazy right now
 			cmd.cmdTransitionLayout(cmd._ctx->getCurrentSwapchainTexHandle(), VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
 		}
+		cmd._graph = nullptr;
+		cmd._activeMember = nullptr;
 	}
 } // namespace mythril

@@ -55,6 +55,9 @@ namespace mythril {
 		VkCommandBufferSubmitInfo requestSubmitInfo() const;
 		bool isDrying() const { return _isDryRun; }
 
+		// only valid inside a render graph callback, asserts in DEBUG that the pass being recorded declared it
+		ResolvedTexture texture(GraphTexture texture) const;
+
 	public:
 		// all possible commands user can call inside setExecuteCallback
 		// all commands in this section NEED to detect if they are being called while in a dryRun
@@ -172,7 +175,9 @@ namespace mythril {
 		detail::SharedPipelineInfo* _currentPipelineInfo = nullptr;
 		// todo: kinda sloppy since you have to manually update
 		std::variant<GraphicsPipelineHandle, ComputePipelineHandle, RayTracingPipelineHandle> _currentPipelineHandle;
-		const CompiledPass* _activePass;
+		const CompiledPass* _activePass = nullptr;
+		const RenderGraph* _graph = nullptr;
+		const PassMember* _activeMember = nullptr;
 
 		bool _isRendering = false; // cmdBeginRendering
 		bool _hasDispatchedInPass = false;
@@ -183,7 +188,7 @@ namespace mythril {
 
 		bool _isDryRun = true; // for dummy CommandBuffer
 
-		friend class RenderGraph; // for access to set _activePass
+		friend class RenderGraph;
 		friend class CTX; // for injection of command buffer data
 		friend class IntermediateBuilder;
 	};

@@ -34,6 +34,7 @@ namespace mythril {
     struct CompiledBufferBarrier;
     struct UploadData;
     struct CompiledPass;
+    struct PassMember;
     struct GraphResource;
 
     struct BasePassBuilder {
@@ -254,6 +255,7 @@ namespace mythril {
         void trackWindowSized(Texture& texture, std::function<Dimensions(Dimensions)> scaleFn);
         void resizeTrackedWindowSized(const Dimensions& swapchainDimensions) const;
     private:
+        ResolvedTexture resolve(const CTX& rCtx, const CompiledPass& pass, const PassMember& member, GraphTexture texture) const;
         void PerformBarrierTransitions(CommandBuffer& cmd, const CompiledPass& compiledPass);
         void RecordIntermediateOps(CommandBuffer& cmd, const CompiledPass& pass) const;
         void processResourceAccess(const CTX& rCtx, const TextureDesc& texDesc, VkImageLayout desiredLayout, const StageAccess& dstMask, CompiledPass& outPass, const PassDesc& pass) const;
@@ -286,5 +288,6 @@ namespace mythril {
         friend class ComputePassBuilder;
         friend class IntermediateBuilder;
     	friend class RayTracingPassBuilder;
+        friend class CommandBuffer;
     };
 }

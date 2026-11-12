@@ -1089,6 +1089,13 @@ int main() {
 		.execute([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdBindGraphicsPipeline(opaquePipeline);
 			cmd.cmdBindDepthState({mythril::CompareOp::Greater, true});
+			const uint32_t shadowTexIndex = cmd.texture(rgShadowMap).index();
+			const uint32_t pointShadowTexIndices[kNumPointLights] = {
+				cmd.texture(rgPointLightShadowTex[0]).index(),
+				cmd.texture(rgPointLightShadowTex[1]).index(),
+				cmd.texture(rgPointLightShadowTex[2]).index(),
+				cmd.texture(rgPointLightShadowTex[3]).index(),
+			};
 			for (const MeshCompiled& mesh : sponzaCompiled.meshes) {
 				const MaterialData& material = sponzaCompiled.materials[mesh.materialIndex];
 				if (material.isTransparent) continue;
@@ -1106,14 +1113,14 @@ int main() {
 					.normalTexture = normalTex.index(),
 					.roughnessMetallicTexture = roughnessMetallicTex.index(),
 					.samplerState = repeatSampler.index(),
-					.shadowTexture = shadowMap.index(),
+					.shadowTexture = shadowTexIndex,
 					.shadowSampler = shadowSampler.index(),
 					.lightSpaceMatrix = lightSpaceMatrix,
 					.pointLightShadowTextures = {
-						pointLightShadowTex[0].index(),
-						pointLightShadowTex[1].index(),
-						pointLightShadowTex[2].index(),
-						pointLightShadowTex[3].index()
+						pointShadowTexIndices[0],
+						pointShadowTexIndices[1],
+						pointShadowTexIndices[2],
+						pointShadowTexIndices[3]
 					}
 				};
 				cmd.cmdPushConstants(push);
@@ -1148,6 +1155,13 @@ int main() {
 		.execute([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdBindGraphicsPipeline(transparentPipeline);
 			cmd.cmdBindDepthState({mythril::CompareOp::Greater, true});
+			const uint32_t shadowTexIndex = cmd.texture(rgShadowMap).index();
+			const uint32_t pointShadowTexIndices[kNumPointLights] = {
+				cmd.texture(rgPointLightShadowTex[0]).index(),
+				cmd.texture(rgPointLightShadowTex[1]).index(),
+				cmd.texture(rgPointLightShadowTex[2]).index(),
+				cmd.texture(rgPointLightShadowTex[3]).index(),
+			};
 			auto model = glm::mat4(1.0);
 			model = glm::scale(model, glm::vec3(kMODELSCALE));
 			// what we call a mesh is really a primitive for fastgltf
@@ -1168,14 +1182,14 @@ int main() {
 						.normalTexture = normalTex.index(),
 						.roughnessMetallicTexture = roughnessMetallicTex.index(),
 						.samplerState = repeatSampler.index(),
-						.shadowTexture = shadowMap.index(),
+						.shadowTexture = shadowTexIndex,
 						.shadowSampler = shadowSampler.index(),
 						.lightSpaceMatrix = lightSpaceMatrix,
 						.pointLightShadowTextures = {
-							pointLightShadowTex[0].index(),
-							pointLightShadowTex[1].index(),
-							pointLightShadowTex[2].index(),
-							pointLightShadowTex[3].index()
+							pointShadowTexIndices[0],
+							pointShadowTexIndices[1],
+							pointShadowTexIndices[2],
+							pointShadowTexIndices[3]
 						}
 				};
 				cmd.cmdPushConstants(push);
@@ -1315,20 +1329,21 @@ int main() {
 		.execute([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdBindComputePipeline(downsampleComputePipeline);
 			for (int i = 0; i < kNumColorMips-1; i++) {
+				const mythril::ResolvedTexture out = cmd.texture(rgOffscreenColorTexs[i+1]);
 				struct PushConstants {
 					uint64_t inTex;
 					uint64_t outTex;
 					uint64_t sampler;
 					uint32_t mipLevel;
 				} push {
-					.inTex = offscreenColorTexs[i].index(),
-					.outTex = offscreenColorTexs[i+1].index(),
+					.inTex = cmd.texture(rgOffscreenColorTexs[i]).index(),
+					.outTex = out.index(),
 					.sampler = clampSampler.index(),
 					.mipLevel = static_cast<uint32_t>(i)
 				};
 				cmd.cmdPushConstants(push);
 				static constexpr uint32_t threadNum = 8;
-				const mythril::Dimensions texDims = ctx->getTextureDimensions(offscreenColorTexs[i+1].handle());
+				const mythril::Dimensions texDims = out.dimensions;
 				const mythril::Dimensions roundedDims = {
 					(texDims.width + threadNum - 1) / threadNum,
 					(texDims.height + threadNum - 1) / threadNum,
@@ -1358,17 +1373,18 @@ int main() {
 		.dependency(rgCurrentLuminanceTex, mythril::TextureAccess::StorageReadWrite)
 		.execute([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdBindComputePipeline(conversionLuminancePipeline);
+			const mythril::ResolvedTexture lowResColor = cmd.texture(rgOffscreenColorTexs[7]);
 			struct PushConstant {
 				uint64_t lowResColorTex;
 				uint64_t curLumOutTex;
 				uint64_t sampler;
 			} push {
-				.lowResColorTex = offscreenColorTexs[7].index(),
-				.curLumOutTex = currentLuminanceTex.index(),
+				.lowResColorTex = lowResColor.index(),
+				.curLumOutTex = cmd.texture(rgCurrentLuminanceTex).index(),
 				.sampler = 0
 			};
 			cmd.cmdPushConstants(push);
-			const mythril::Dimensions texDims = ctx->getTextureDimensions(offscreenColorTexs[7].handle());
+			const mythril::Dimensions texDims = lowResColor.dimensions;
 			constexpr glm::vec2 threadsPerGroup = {16, 16};
 			const auto groupX = static_cast<uint32_t>((texDims.width + threadsPerGroup.x - 1) / threadsPerGroup.x);
 			const auto groupY = static_cast<uint32_t>((texDims.height + threadsPerGroup.y - 1) / threadsPerGroup.y);
@@ -1391,7 +1407,8 @@ int main() {
 		.execute([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdBindComputePipeline(upsampleComputePipeline);
 			for (int i = kNumColorMips-1; i > 0; i--) {
-				mythril::Dimensions outdims = ctx->getTextureDimensions(offscreenColorTexs[i-1].handle());
+				const mythril::ResolvedTexture out = cmd.texture(rgOffscreenColorTexs[i-1]);
+				const mythril::Dimensions outdims = out.dimensions;
 				struct PushConstants {
 					uint64_t inTex;
 					uint64_t outTex;
@@ -1399,18 +1416,17 @@ int main() {
 					glm::ivec2 outSize;
 					float filterRadius;
 				} push {
-					.inTex = offscreenColorTexs[i].index(),
-					.outTex = offscreenColorTexs[i-1].index(),
+					.inTex = cmd.texture(rgOffscreenColorTexs[i]).index(),
+					.outTex = out.index(),
 					.sampler = clampSampler.index(),
 					.outSize = {outdims.width, outdims.height},
 					.filterRadius = filter_radius,
 				};
 				cmd.cmdPushConstants(push);
 				static constexpr uint32_t threadNum = 8;
-				const mythril::Dimensions texDims = ctx->getTextureDimensions(offscreenColorTexs[i-1].handle());
 				const mythril::Dimensions roundedDims = {
-					(texDims.width + threadNum - 1) / threadNum,
-					(texDims.height + threadNum - 1) / threadNum,
+					(outdims.width + threadNum - 1) / threadNum,
+					(outdims.height + threadNum - 1) / threadNum,
 					1};
 				cmd.cmdDispatchThreadGroup(roundedDims);
 			}
@@ -1426,11 +1442,11 @@ int main() {
 		});
 
 		float adaptationSpeed = 1.5f;
+		bool lumFlip = false;
 		auto st = std::chrono::steady_clock::now();
 		graph.addComputePass("adaptation")
 		.dependency(rgCurrentLuminanceTex, mythril::TextureAccess::StorageReadWrite)
-		.dependency(rgAdaptedLuminanceTextures[0], mythril::TextureAccess::StorageReadWrite)
-		.dependency(rgAdaptedLuminanceTextures[1], mythril::TextureAccess::StorageReadWrite)
+		.dependency(rgAdaptedLuminanceTextures, mythril::TextureAccess::StorageReadWrite)
 		.execute([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdBindComputePipeline(adaptationComputePipeline);
 			const auto ct = std::chrono::steady_clock::now();
@@ -1443,9 +1459,9 @@ int main() {
 				uint64_t nextAdaptedLumTex;
 				float adaptionSpeed;
 			} push {
-				.currentSceneLumTex = currentLuminanceTex.index(),
-				.prevAdaptedLumTex = adaptedLuminanceTextures[0].index(),
-				.nextAdaptedLumTex = adaptedLuminanceTextures[1].index(),
+				.currentSceneLumTex = cmd.texture(rgCurrentLuminanceTex).index(),
+				.prevAdaptedLumTex = cmd.texture(rgAdaptedLuminanceTextures[lumFlip]).index(),
+				.nextAdaptedLumTex = cmd.texture(rgAdaptedLuminanceTextures[!lumFlip]).index(),
 				.adaptionSpeed = adaptationSpeed * dt
 			};
 			cmd.cmdPushConstants(push);
@@ -1485,7 +1501,7 @@ int main() {
 		})
 		.dependency(rgOffscreenColorTarget, mythril::TextureAccess::Sampled)
 		.dependency(rgOffscreenColorTexs[0], mythril::TextureAccess::Sampled)
-		.dependency(rgAdaptedLuminanceTextures[1], mythril::TextureAccess::Sampled)
+		.dependency(rgAdaptedLuminanceTextures, mythril::TextureAccess::Sampled)
 		.execute([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdBindGraphicsPipeline(fullscreenCompositePipeline);
 			struct PushConstant {
@@ -1514,9 +1530,9 @@ int main() {
 				glm::vec3 power;
 				float saturation;
 			} push {
-				.colorTex = offscreenColorTarget.index(),
-				.avgLuminanceTex = adaptedLuminanceTextures[0].index(),
-				.bloomTex = offscreenColorTexs[0].index(),
+				.colorTex = cmd.texture(rgOffscreenColorTarget).index(),
+				.avgLuminanceTex = cmd.texture(rgAdaptedLuminanceTextures[lumFlip]).index(),
+				.bloomTex = cmd.texture(rgOffscreenColorTexs[0]).index(),
 				.sampler = 0,
 				.exposure = exposure_final,
 				.bloomStrength = bloom_strength,
@@ -1578,7 +1594,7 @@ int main() {
 			.storeOp = mythril::StoreOp::STORE
 		})
 		.dependency(rgShadowMap, mythril::TextureAccess::Sampled)
-		.dependency(rgAdaptedLuminanceTextures[0], mythril::TextureAccess::Sampled)
+		.dependency(rgAdaptedLuminanceTextures, mythril::TextureAccess::Sampled)
 		.dependency(rgOffscreenColorTexs, mythril::TextureAccess::Sampled)
 		.execute([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdDrawImGui();
@@ -1755,7 +1771,7 @@ int main() {
 			ImGui::Begin("Previews", nullptr, window_flags);
 			ImGui::Image(shadowMap, {200, 200});
 			ImGui::Text("Average Luminance");
-			ImGui::Image(adaptedLuminanceTextures[0], {100, 100});
+			ImGui::Image(adaptedLuminanceTextures[lumFlip], {100, 100});
 			// for (int face = 0; face < 6; face++) {
 			// ImGui::Image(pointLightShadowTex[0], pointLightShadowTex[0].getView(0, face), {200, 200});
 			// }
@@ -1885,7 +1901,7 @@ int main() {
 				MYTH_PROFILER_ZONE_END();
 			}
 			lastFramelightingData = lightingData;
-			std::swap(adaptedLuminanceTextures[0], adaptedLuminanceTextures[1]);
+			lumFlip = !lumFlip;
 		}
 	}
 	SDL_DestroyWindow(sdlWindow);

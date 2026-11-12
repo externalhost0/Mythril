@@ -97,6 +97,12 @@ namespace mythril {
         size_t size = 0;
     };
 
+    struct PassMember {
+        std::string name;
+        std::function<void(CommandBuffer&)> callback;
+        std::vector<GraphTexture> sortedDeclaredTextures;
+    };
+
     // hidden information that transforms the PassSource into usable info
     struct CompiledPass {
         // transferred info from source
@@ -106,7 +112,7 @@ namespace mythril {
         std::vector<CompiledImageBarrier> imageBarriers;
         std::vector<CompiledBufferBarrier> bufferBarriers;
         // callbacks recorded in order inside this pass's barriers and rendering scope, empty for intermediate passes
-        std::vector<std::function<void(CommandBuffer&)>> members;
+        std::vector<PassMember> members;
         std::vector<IntermediateOp> intermediateOps;
         // the passes right before this one were moved ahead of it so it could merge
         uint32_t hoistedAheadCount = 0;

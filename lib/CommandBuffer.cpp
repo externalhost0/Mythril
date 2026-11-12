@@ -140,6 +140,11 @@ namespace mythril {
 	    _isDryRun(false) {}
 
 	CommandBuffer::~CommandBuffer() { ASSERT_MSG(!_isRendering, "Please call to end rendering before destroying a Command Buffer!"); }
+	ResolvedTexture CommandBuffer::texture(const GraphTexture texture) const {
+		ASSERT_MSG(_graph && _activePass && _activeMember, "CommandBuffer::texture is only valid inside a render graph callback.");
+		return _graph->resolve(*_ctx, *_activePass, *_activeMember, texture);
+	}
+
 	VkCommandBufferSubmitInfo CommandBuffer::requestSubmitInfo() const {
 		VkCommandBufferSubmitInfo info = {};
 		info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
