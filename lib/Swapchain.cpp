@@ -17,6 +17,15 @@
 
 namespace mythril {
 	using namespace detail;
+	[[maybe_unused]] static const char* PresentModeName(VkPresentModeKHR mode) {
+		switch (mode) {
+			case VK_PRESENT_MODE_IMMEDIATE_KHR: return "IMMEDIATE";
+			case VK_PRESENT_MODE_MAILBOX_KHR: return "MAILBOX";
+			case VK_PRESENT_MODE_FIFO_KHR: return "FIFO";
+			case VK_PRESENT_MODE_FIFO_RELAXED_KHR: return "FIFO_RELAXED";
+			default: return "OTHER";
+		}
+	}
 	Swapchain::Swapchain(CTX& ctx, SwapchainSpec args) :
 	    _ctx(ctx) {
 		ASSERT_MSG(args.width > 0 && args.height > 0, "Swapchain width & height must both be greater than 0!");
@@ -78,6 +87,9 @@ namespace mythril {
 		this->_vkExtent2D = vkbswapchain.extent;
 		this->_vkColorSpace = vkbswapchain.color_space;
 		this->_vkPresentMode = vkbswapchain.present_mode;
+		if (args.presentMode != _vkPresentMode) {
+			LOG_SYSTEM(LogType::Warning, "Requested present mode did not take place! Requested: '{}' vs Actual: '{}'", PresentModeName(args.presentMode), PresentModeName(_vkPresentMode));
+		}
 
 		if (_vkExtent2D.width != width || _vkExtent2D.height != height) {
 			LOG_SYSTEM(LogType::Warning, "Requested swapchain size did not take place! \n Requested: {} x {} vs Actual: {} x {}", width, height, _vkExtent2D.width, _vkExtent2D.height);

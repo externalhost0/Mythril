@@ -865,6 +865,9 @@ namespace mythril {
 
 	void CTX::resolveComputePipelineImpl(AllocatedComputePipeline& pipeline) {
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_CREATE);
+		if (_currentFrameNumber > 0) {
+			LOG_SYSTEM(LogType::Warning, "Building compute pipeline '{}' after the first frame, this stalls the frame it lands in.", pipeline.getDebugName());
+		}
 		// aliases
 		ComputePipelineSpec& spec = pipeline._spec;
 		AllocatedShader* shader = _shaderPool.get(spec.shader);
@@ -879,6 +882,9 @@ namespace mythril {
 	}
 	void CTX::resolveRayTracingPipelineImpl(AllocatedRayTracingPipeline& pipeline) {
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_CREATE);
+		if (_currentFrameNumber > 0) {
+			LOG_SYSTEM(LogType::Warning, "Building ray tracing pipeline '{}' after the first frame, this stalls the frame it lands in.", pipeline.getDebugName());
+		}
 		// aliases
 		RayTracingPipelineSpec& spec = pipeline._spec;
 
@@ -979,6 +985,9 @@ namespace mythril {
 
 	void CTX::resolveGraphicsPipelineImpl(AllocatedGraphicsPipeline& pipeline, uint32_t viewMask) {
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_CREATE);
+		if (_currentFrameNumber > 0) {
+			LOG_SYSTEM(LogType::Warning, "Building graphics pipeline '{}' after the first frame, this stalls the frame it lands in.", pipeline.getDebugName());
+		}
 
 		GraphicsPipelineSpec& spec = pipeline._spec;
 
@@ -1439,6 +1448,15 @@ namespace mythril {
 		obj._vkImageViewType = _imageviewtype;
 		snprintf(obj._debugName, sizeof(obj._debugName), "%s", spec.debugName);
 		vmaSetAllocationName(_vmaAllocator, obj._vmaAllocation, obj._debugName);
+		if (mem_flags & VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT) {
+			VmaAllocationInfo alloc_info;
+			vmaGetAllocationInfo(_vmaAllocator, obj._vmaAllocation, &alloc_info);
+			VkMemoryPropertyFlags granted;
+			vmaGetMemoryTypeProperties(_vmaAllocator, alloc_info.memoryType, &granted);
+			if (!(granted & VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT)) {
+				LOG_SYSTEM(LogType::Warning, "Memoryless texture '{}' fell back to regular device memory, no lazily allocated memory type on this device.", spec.debugName);
+			}
+		}
 		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_IMAGE, reinterpret_cast<uint64_t>(obj._vkImage), obj.getDebugName().data());
 		char d[32];
 		snprintf(d, sizeof(d), "%s - Default View", spec.debugName);
@@ -1557,15 +1575,6 @@ namespace mythril {
 
 		AllocatedTexture obj = {};
 		VK_CHECK(vmaCreateImage(_vmaAllocator, &image_ci, &allocation_ci, &obj._vkImage, &obj._vmaAllocation, nullptr));
-		if (wantsLazy) {
-			VmaAllocationInfo alloc_info;
-			vmaGetAllocationInfo(_vmaAllocator, obj._vmaAllocation, &alloc_info);
-			VkMemoryPropertyFlags granted;
-			vmaGetMemoryTypeProperties(_vmaAllocator, alloc_info.memoryType, &granted);
-			if (!(granted & VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT)) {
-				LOG_SYSTEM(LogType::Info, "Memoryless texture fell back to regular device memory, no compatible lazily allocated memory type on this device.");
-			}
-		}
 		obj._vkExtent = extent3D;
 		obj._vkUsageFlags = usageFlags;
 		obj._sampleCount = sampleCountFlagBits;
