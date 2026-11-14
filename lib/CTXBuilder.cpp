@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cstring>
 #include <set>
+#include <format>
 
 #include "mythril/CTX.h"
 #include "HelperMacros.h"
@@ -38,26 +39,38 @@ namespace mythril {
 		}
 		return merged;
 	}
+	static bool IsInstanceExtensionAvailable(std::span<const VkExtensionProperties> available, const char* name) {
+		return std::ranges::any_of(available, [name](const VkExtensionProperties& p) {
+			return std::strcmp(p.extensionName, name) == 0;
+		});
+	}
+	static std::vector<VkExtensionProperties> EnumerateInstanceExtensions() {
+		uint32_t count = 0;
+		VkResult result = vkEnumerateInstanceExtensionProperties(nullptr, &count, nullptr);
+		ASSERT_MSG(result == VK_SUCCESS, "Failed to enumerate instance extensions.");
+		std::vector<VkExtensionProperties> extensions(count);
+		result = vkEnumerateInstanceExtensionProperties(nullptr, &count, extensions.data());
+		ASSERT_MSG(result == VK_SUCCESS, "Failed to enumerate instance extensions.");
+		return extensions;
+	}
 	static vkb::Instance CreateVulkanInstance(VulkanInstanceInputs inputs, bool enableValidation, std::span<const char*> instance_extensions) {
 		vkb::InstanceBuilder instanceBuilder;
-		{
-			auto systemInfoResult = vkb::SystemInfo::get_system_info(vkGetInstanceProcAddr);
-			ASSERT_MSG(systemInfoResult, "System Information could not be retrieved, Vulkan is not correctly installed on your system. Error: {}", systemInfoResult.error().message());
-			const auto& systemInfo = systemInfoResult.value();
-			std::string missing_extensions;
-			for (const auto& ext: instance_extensions) {
-				if (!systemInfo.is_extension_available(ext)) {
-					missing_extensions += "\n\t" + std::string(ext);
-				} else {
-					instanceBuilder.enable_extension(ext);
-				}
-			}
-			if (!missing_extensions.empty()) {
-				LOG_SYSTEM_NOSOURCE(LogType::FatalError, "System fails to support Vulkan Instance Extensions: {}", missing_extensions.c_str());
-				assert(false);
+		const auto available_instance_extensions = EnumerateInstanceExtensions();
+		std::string missing_extensions;
+		for (const char* ext : instance_extensions) {
+			if (IsInstanceExtensionAvailable(available_instance_extensions, ext)) {
+				instanceBuilder.enable_extension(ext);
+			} else {
+				missing_extensions += "\n\t" + std::string(ext);
 			}
 		}
+		if (!missing_extensions.empty()) {
+			LOG_SYSTEM_NOSOURCE(LogType::FatalError, "System fails to support Vulkan Instance Extensions: {}", missing_extensions.c_str());
+			assert(false);
+		}
+
 #if defined __APPLE__ && DEBUG
+// harmless to use if using KosmicKrisp aswell
 		static constexpr uint32_t kLogLevel = 3;
 		static constexpr VkLayerSettingEXT kMvkDebugLevel = {
 		    .pLayerName = "MoltenVK",
@@ -124,56 +137,101 @@ namespace mythril {
 
 	}
 
-	static vkb::PhysicalDevice SelectVulkanPhysicalDevice(VulkanPhysicalDeviceInputs inputs) {
+	static std::string GetUnsuitableReason(VkPhysicalDevice pd, const VkPhysicalDeviceProperties2& props, VkSurfaceKHR surface) {
+		if (const auto apiv = props.properties.apiVersion; apiv < VK_API_VERSION_1_3) {
+			return std::format("apiVersion ({}.{}) is lower then 1.3", std::to_string(VK_API_VERSION_MAJOR(apiv)), std::to_string(VK_API_VERSION_MINOR(apiv)));
+		}
+		if (surface == VK_NULL_HANDLE) return {};
+		uint32_t familyCount = 0;
+		vkGetPhysicalDeviceQueueFamilyProperties2(pd, &familyCount, nullptr);
+		bool canPresent = false;
+		for (uint32_t i = 0; i < familyCount && !canPresent; i++) {
+			VkBool32 supported = VK_FALSE;
+			vkGetPhysicalDeviceSurfaceSupportKHR(pd, i, surface, &supported);
+			canPresent = (supported == VK_TRUE);
+		}
+		if (!canPresent) return "no queue family can present to the surface";
+
+		uint32_t formatCount = 0, modeCount = 0;
+		vkGetPhysicalDeviceSurfaceFormatsKHR(pd, surface, &formatCount, nullptr);
+		vkGetPhysicalDeviceSurfacePresentModesKHR(pd, surface, &modeCount, nullptr);
+		if (formatCount == 0 || modeCount == 0) return "no surface formats available";
+		return {};
+	}
+
+	static VkPhysicalDevice SelectVulkanPhysicalDevice(VulkanPhysicalDeviceInputs inputs) {
 		ASSERT(inputs.vkbInstance.instance != VK_NULL_HANDLE);
 
-		vkb::PhysicalDeviceSelector physicalDeviceSelector{inputs.vkbInstance};
-		vkb::Result<vkb::PhysicalDevice> physicalDeviceResult = physicalDeviceSelector
-		.set_minimum_version(1, 3)
-		.set_surface(inputs.vkSurface)
-		.require_present(inputs.vkSurface != VK_NULL_HANDLE)
-		.select();
-		ASSERT_MSG(physicalDeviceResult.has_value(), "Failed to select Physical Device (VkPhysicalDevice). Error: {}", physicalDeviceResult.error().message());
-		return physicalDeviceResult.value();
+		uint32_t count = 0;
+		vkEnumeratePhysicalDevices(inputs.vkbInstance.instance, &count, nullptr);
+		std::vector<VkPhysicalDevice> devices(count);
+		vkEnumeratePhysicalDevices(inputs.vkbInstance.instance, &count, devices.data());
+
+		VkPhysicalDevice selectedDevice = VK_NULL_HANDLE;
+		bool isSelectedDiscrete = false;
+		std::string rejections;
+		for (VkPhysicalDevice pd : devices) {
+			VkPhysicalDeviceProperties2 props = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2 };
+			vkGetPhysicalDeviceProperties2(pd, &props);
+			if (const std::string reason = GetUnsuitableReason(pd, props, inputs.vkSurface); !reason.empty()) {
+				rejections += std::string("\n\t") + props.properties.deviceName + ": " + reason;
+			}
+			const bool discrete = props.properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU;
+			if (selectedDevice == VK_NULL_HANDLE || (discrete && !isSelectedDiscrete)) {
+				selectedDevice = pd;
+				isSelectedDiscrete = discrete;
+			}
+		}
+		ASSERT_MSG(selectedDevice != VK_NULL_HANDLE, "Failed to select VkPhysicalDevice. Error: {}", rejections.c_str());
+
+		return selectedDevice;
 	}
 
 	static VkDevice CreateVulkanLogicalDevice(
-	        vkb::PhysicalDevice& vkbPhysicalDevice,
+	        VkPhysicalDevice& vkPhysicalDevice,
+	        VkSurfaceKHR vkSurfaceKHR,
 	        std::span<const char*> user_device_extensions,
 	        const VkPhysicalDeviceFeatures& user_device_features,
 	        void* user_device_extension_features,
 	        VulkanFeatures& outFeatures,
 	        VulkanProperties& outProperties,
-	        VulkanQueueOutputs& outQueues
+	        VulkanQueueOutputs& outQueues,
+	        std::vector<std::string>& outEnabledExtensions
 	) {
 
 		// unfortunately vkb doesnt provide the flexibility we want
 		// so we use some of its features for this step
-		ASSERT(vkbPhysicalDevice.physical_device != VK_NULL_HANDLE);
+		ASSERT(vkPhysicalDevice != VK_NULL_HANDLE);
+
+		uint32_t count = 0;
+		vkEnumerateDeviceExtensionProperties(vkPhysicalDevice, nullptr, &count, nullptr);
+		std::vector<VkExtensionProperties> available(count);
+		vkEnumerateDeviceExtensionProperties(vkPhysicalDevice, nullptr, &count, available.data());
+		auto isAvailable = [&available](const char* name) {
+			return std::ranges::any_of(available, [name](const VkExtensionProperties& p) {
+				return std::strcmp(p.extensionName, name) == 0;
+			});
+		};
+		std::vector<std::string> enabledExtensions;
 		// VALIDATE EXTENSIONS
 		{
-			std::string missing_extensions;
-			for (const auto ext: user_device_extensions) {
-				if (!vkbPhysicalDevice.enable_extension_if_present(ext)) {
-					missing_extensions += "\n\t" + std::string(ext);
-				}
+			auto enableExtension = [&enabledExtensions](const char* name) {
+				if (std::ranges::find(enabledExtensions, name) == enabledExtensions.end())
+					enabledExtensions.emplace_back(name);
+			};
+			std::string missingExtensions;
+			for (const char* ext: user_device_extensions) {
+				if (isAvailable(ext)) enableExtension(ext);
+				else missingExtensions += "\n\t" + std::string(ext);
 			}
-			if (!missing_extensions.empty()) {
-				LOG_SYSTEM_NOSOURCE(LogType::FatalError, "Device fails to support Vulkan Device Extensions: {}", missing_extensions.c_str());
+			if (!missingExtensions.empty()) {
+				LOG_SYSTEM_NOSOURCE(LogType::FatalError, "Device fails to support Vulkan Device Extensions: {}", missingExtensions.c_str());
 				assert(false);
 			}
+			if (vkSurfaceKHR != VK_NULL_HANDLE) enableExtension(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
+			if (isAvailable(VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME)) enableExtension(VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME);
 		}
-		std::vector<const char*> enabledExtensions = {};
-		// get extensions, this will get extensions that were enabled in the last step
-		std::vector<std::string> requestedExtensions = vkbPhysicalDevice.get_extensions();
-		enabledExtensions.reserve(requestedExtensions.size());
-		for (const auto& ext: requestedExtensions) {
-			enabledExtensions.push_back(ext.c_str());
-		}
-		// add swapchain extension if necessary (usually necessary
-		if (vkbPhysicalDevice.surface != VK_NULL_HANDLE) {
-			enabledExtensions.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
-		}
+
 
 
 		// query supported features
@@ -184,7 +242,7 @@ namespace mythril {
 		supportedfeatures10.pNext = &supportedfeatures11;
 		supportedfeatures11.pNext = &supportedfeatures12;
 		supportedfeatures12.pNext = &supportedfeatures13;
-		vkGetPhysicalDeviceFeatures2(vkbPhysicalDevice.physical_device, &supportedfeatures10);
+		vkGetPhysicalDeviceFeatures2(vkPhysicalDevice, &supportedfeatures10);
 
 
 		// the following features that are VK_TRUE are required by Mythril
@@ -404,7 +462,7 @@ missing_features.append("\n\t(" version ") " #feature);
 		};
 
 		// query queue family properties
-		VkPhysicalDevice physical_device = vkbPhysicalDevice.physical_device;
+		VkPhysicalDevice physical_device = vkPhysicalDevice;
 		uint32_t queueFamilyCount = 0;
 		vkGetPhysicalDeviceQueueFamilyProperties2(physical_device, &queueFamilyCount, nullptr);
 		std::vector<VkQueueFamilyProperties2> props(queueFamilyCount);
@@ -476,8 +534,8 @@ missing_features.append("\n\t(" version ") " #feature);
 		uint32_t compute = findBestFamilyIndex(VK_QUEUE_COMPUTE_BIT, VK_QUEUE_GRAPHICS_BIT);
 		uint32_t transfer = findBestFamilyIndex(VK_QUEUE_TRANSFER_BIT, VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT);
 		uint32_t present = 0;
-		if (vkbPhysicalDevice.surface != VK_NULL_HANDLE) {
-			present = findBestPresentFamilyIndex(vkbPhysicalDevice.surface);
+		if (vkSurfaceKHR != VK_NULL_HANDLE) {
+			present = findBestPresentFamilyIndex(vkSurfaceKHR);
 			ASSERT_MSG(present != MYTHRIL_INVALID_U32, "No present queue family found");
 		}
 		ASSERT_MSG(graphics != MYTHRIL_INVALID_U32, "No graphics queue family found");
@@ -528,6 +586,12 @@ missing_features.append("\n\t(" version ") " #feature);
 			});
 		}
 
+		// just to resolve our std::string of enabled to the vulkan friendly format of const char*
+		std::vector<const char*> extensionNames;
+		extensionNames.reserve(enabledExtensions.size());
+		for (const std::string& ext : enabledExtensions) {
+			extensionNames.push_back(ext.c_str());
+		}
 		const VkDeviceCreateInfo device_ci = {
 		    .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
 		    .pNext = &features2,
@@ -535,7 +599,7 @@ missing_features.append("\n\t(" version ") " #feature);
 		    .queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size()),
 		    .pQueueCreateInfos = queueCreateInfos.data(),
 		    .enabledExtensionCount = static_cast<uint32_t>(enabledExtensions.size()),
-		    .ppEnabledExtensionNames = enabledExtensions.data(),
+		    .ppEnabledExtensionNames = extensionNames.data(),
 		};
 		VkDevice device = VK_NULL_HANDLE;
 		vkCreateDevice(physical_device, &device_ci, nullptr, &device);
@@ -570,7 +634,7 @@ missing_features.append("\n\t(" version ") " #feature);
 			props10.pNext = &props11;
 			props11.pNext = &props12;
 			props12.pNext = &props13;
-			vkGetPhysicalDeviceProperties2(vkbPhysicalDevice.physical_device, &props10);
+			vkGetPhysicalDeviceProperties2(vkPhysicalDevice, &props10);
 			// set outProperties
 			outProperties.props10 = props10.properties;
 			outProperties.props11 = props11;
@@ -583,6 +647,7 @@ missing_features.append("\n\t(" version ") " #feature);
 			outFeatures.features12 = requiredfeatures12;
 			outFeatures.features13 = requiredfeatures13;
 		}
+		outEnabledExtensions = std::move(enabledExtensions);
 		return device;
 	}
 
@@ -634,7 +699,7 @@ missing_features.append("\n\t(" version ") " #feature);
 		}
 
 		// do not pass features or extensions here, do that to the vkb::PhysicalDevice
-		vkb::PhysicalDevice vkb_physical_device = SelectVulkanPhysicalDevice({.vkbInstance = vkb_instance, .vkSurface = vk_surface});
+		VkPhysicalDevice vk_physical_device = SelectVulkanPhysicalDevice({.vkbInstance = vkb_instance, .vkSurface = vk_surface});
 
 		// fill in user device extensions & resolve based on cfg
 		std::vector device_extensions(std::begin(this->_vulkanCfg.deviceExtensions), std::end(this->_vulkanCfg.deviceExtensions));
@@ -642,8 +707,9 @@ missing_features.append("\n\t(" version ") " #feature);
 		VulkanProperties properties{};
 		VulkanQueueOutputs queues{};
 		// sets features & properties
-		VkDevice vk_device = CreateVulkanLogicalDevice(vkb_physical_device, device_extensions, this->_vulkanCfg.additionalDeviceFeatures, this->_vulkanCfg.deviceExtensionFeatureChain, features, properties, queues);
-		VmaAllocator vma_allocator = CreateVulkanMemoryAllocator({.vkInstance = vkb_instance.instance, .vkPhysicalDevice = vkb_physical_device.physical_device, .vkDevice = vk_device});
+		std::vector<std::string> enabled_device_extensions;
+		VkDevice vk_device = CreateVulkanLogicalDevice(vk_physical_device, vk_surface, device_extensions, this->_vulkanCfg.additionalDeviceFeatures, this->_vulkanCfg.deviceExtensionFeatureChain, features, properties, queues, enabled_device_extensions);
+		VmaAllocator vma_allocator = CreateVulkanMemoryAllocator({.vkInstance = vkb_instance.instance, .vkPhysicalDevice = vk_physical_device, .vkDevice = vk_device});
 
 		// most of the setup we need to worry about is done in the constructor
 		// this is the same thing as make_unique, ignore the warning
@@ -655,7 +721,7 @@ missing_features.append("\n\t(" version ") " #feature);
 		ctx->_vkDebugMessenger = vkb_instance.debug_messenger;
 		ctx->_vkSurfaceKHR = vk_surface;
 		ctx->_surfaceDestroyFunc = this->_surfaceSpec.destroyFunc;
-		ctx->_vkPhysicalDevice = vkb_physical_device.physical_device;
+		ctx->_vkPhysicalDevice = vk_physical_device;
 		ctx->_vkDevice = vk_device;
 		ctx->_vmaAllocator = vma_allocator;
 		// info
@@ -664,7 +730,7 @@ missing_features.append("\n\t(" version ") " #feature);
 
 		// insert extensions that were properly enabeld
 		ctx->_enabledExtensionNames.clear();
-		for (const auto& ext: vkb_physical_device.get_extensions()) {
+		for (const std::string& ext : enabled_device_extensions) {
 			ctx->_enabledExtensionNames.insert(ext);
 		}
 		// stupid special cases for ray tracnig + as

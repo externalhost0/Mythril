@@ -496,7 +496,7 @@ int main() {
 			// rotating cube!
 			glm::mat4 modelmatrix = glm::rotate(glm::mat4(1.0f), time, glm::vec3(0.0f, 1.0f, 0.0f));
 			modelmatrix = glm::rotate(modelmatrix, time * 0.5f, glm::vec3(1.0f, 0.0f, 0.0f));
-			GPU::GeometryPushConstant push {
+			const GPU::GeometryPushConstant push {
 				.model =  modelmatrix,
 				.vertexBufferAddress = ctx->gpuAddress(cubeVertexBuffer.handle()),
 				.perFrame = ctx->gpuAddress(perFrameDataBuffer.handle()),
@@ -572,14 +572,14 @@ int main() {
 			GPU::ObjectData objects[kNumObjects];
 			for (GPU::ObjectData& object : objects) {
 				glm::vec3 pos = {
-					(std::rand() / (float)RAND_MAX - 0.5f) * 100.0f, // range [-50, 50]
-					(std::rand() / (float)RAND_MAX - 0.5f) * 100.0f,
-					(std::rand() / (float)RAND_MAX - 0.5f) * 100.0f
+					(std::rand() / static_cast<float>(RAND_MAX) - 0.5f) * 100.0f, // range [-50, 50]
+					(std::rand() / static_cast<float>(RAND_MAX) - 0.5f) * 100.0f,
+					(std::rand() / static_cast<float>(RAND_MAX) - 0.5f) * 100.0f
 				};
 				glm::vec3 color = {
-					std::rand() / (float)RAND_MAX, // range [0, 1]
-					std::rand() / (float)RAND_MAX,
-					std::rand() / (float)RAND_MAX
+					std::rand() / static_cast<float>(RAND_MAX), // range [0, 1]
+					std::rand() / static_cast<float>(RAND_MAX),
+					std::rand() / static_cast<float>(RAND_MAX)
 				};
 				object = { pos, color };
 			}
@@ -594,7 +594,7 @@ int main() {
 
 			const Camera camera = {
 				.position = {0.f, 0.f, 5.f},
-				.aspectRatio = (float) currentWindowSize.width / (float) currentWindowSize.height,
+				.aspectRatio = static_cast<float>(currentWindowSize.width) / static_cast<float>(currentWindowSize.height),
 				.fov = 80.f,
 				.nearPlane = 0.1f,
 				.farPlane = 100.f
