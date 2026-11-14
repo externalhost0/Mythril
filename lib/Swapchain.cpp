@@ -96,7 +96,7 @@ namespace mythril {
 		}
 		this->_numSwapchainImages = vkbswapchain.image_count;
 		ASSERT(_numSwapchainImages <= kMAX_SWAPCHAIN_IMAGES);
-		ASSERT((caps.minImageCount <= _numSwapchainImages) && (_numSwapchainImages <= caps.maxImageCount));
+		ASSERT((caps.minImageCount <= _numSwapchainImages) && (caps.maxImageCount == 0 || _numSwapchainImages <= caps.maxImageCount));
 
 		const VkImageUsageFlags usage_flags =
 			VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
