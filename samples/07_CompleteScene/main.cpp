@@ -861,10 +861,10 @@ int main() {
 			lightSpaceMatrix = lightProj * lightView;
 
 			const auto model = glm::scale(glm::mat4(1.0), glm::vec3(kMODELSCALE));
-			struct PushConstant {
+			const struct PushConstant {
 				glm::mat4 mvp;
 				VkDeviceAddress vba;
-			} push{
+			} push {
 				.mvp = lightSpaceMatrix * model,
 				.vba = ctx->gpuAddress(opaqueSponzaVertexBuf.handle())
 			};
@@ -1234,7 +1234,7 @@ int main() {
 		.execute([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdBindGraphicsPipeline(particle_pipeline);
 			cmd.cmdBindDepthState({mythril::CompareOp::Greater, true});
-			struct PushConstant {
+			const struct PushConstant {
 				VkDeviceAddress vba;
 				VkDeviceAddress bufferAddr;
 				VkDeviceAddress frame;
@@ -1325,7 +1325,7 @@ int main() {
 		.execute([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdBindComputePipeline(conversionLuminancePipeline);
 			const mythril::ResolvedTexture lowResColor = cmd.texture(rgOffscreenColorTexs[7]);
-			struct PushConstant {
+			const struct PushConstant {
 				uint64_t lowResColorTex;
 				uint64_t curLumOutTex;
 				uint64_t sampler;
@@ -1455,7 +1455,7 @@ int main() {
 		.dependency(rgAdaptedLuminanceTextures, mythril::TextureAccess::Sampled)
 		.execute([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdBindGraphicsPipeline(fullscreenCompositePipeline);
-			struct PushConstant {
+			const struct PushConstant {
 				uint64_t colorTex; // 32 bytes
 				uint64_t avgLuminanceTex;
 				uint64_t bloomTex;
@@ -1576,9 +1576,9 @@ int main() {
 			const glm::vec3 sunDir = sun_quaternion * glm::vec3(0.f, 0.f, -1.f);
 			const float sunUp = glm::max(0.f, -sunDir.y);
 			const float horizonT = glm::pow(1.f - glm::abs(sunDir.y), 6.f) * sunUp;
-			const glm::vec3 noonColor = {1.00f, 0.97f, 0.90f};
-			const glm::vec3 horizonColor = {1.00f, 0.45f, 0.10f};
-			const glm::vec3 moonColor = {0.55f, 0.62f, 0.78f};
+			constexpr glm::vec3 noonColor = {1.00f, 0.97f, 0.90f};
+			constexpr glm::vec3 horizonColor = {1.00f, 0.45f, 0.10f};
+			constexpr glm::vec3 moonColor = {0.55f, 0.62f, 0.78f};
 			const float moonUp = glm::max(0.f, sunDir.y);
 			const float nightBlend = glm::smoothstep(0.0f, 0.12f, -sunDir.y);
 
@@ -1592,8 +1592,8 @@ int main() {
 				lightingData.directionalLights.direction = -sunDir;
 			}
 
-			const glm::vec3 nightEnv = {0.02f, 0.03f, 0.09f};
-			const glm::vec3 dayEnv   = {0.22f, 0.32f, 0.52f};
+			constexpr glm::vec3 nightEnv = {0.02f, 0.03f, 0.09f};
+			constexpr glm::vec3 dayEnv   = {0.22f, 0.32f, 0.52f};
 			lightingData.environmentLight.color     = glm::mix(nightEnv, dayEnv, sunUp);
 			lightingData.environmentLight.intensity = glm::mix(0.05f, 0.28f, sunUp);
 		};
