@@ -279,9 +279,7 @@ namespace mythril {
 		    .descriptorBindingPartiallyBound = VK_TRUE,
 		    .runtimeDescriptorArray = VK_TRUE,
 		    .scalarBlockLayout = VK_TRUE, // opt
-#if defined MYTH_ENABLED_TRACY_GPU
-		    .hostQueryReset = VK_TRUE, // for tracygpu
-#endif
+		    .hostQueryReset = VK_TRUE,
 		    .timelineSemaphore = VK_TRUE,
 		    .bufferDeviceAddress = VK_TRUE,
 		};

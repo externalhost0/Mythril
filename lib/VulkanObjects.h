@@ -38,6 +38,19 @@ namespace mythril {
 		friend class ::mythril::CTX;
 	};
 
+	class AllocatedQueryPool {
+	public:
+		[[nodiscard]] VkQueryPool getQueryPool() const { return _vkQueryPool; }
+		[[nodiscard]] uint32_t getCount() const { return _count; }
+
+	private:
+		VkQueryPool _vkQueryPool = VK_NULL_HANDLE;
+		uint32_t _count = 0;
+		uint64_t _validBitsMask = 0;
+
+		friend class ::mythril::CTX;
+	};
+
 	class AllocatedTexture {
 	public:
 		[[nodiscard]] bool isSampledImage() const { return (_vkUsageFlags & VK_IMAGE_USAGE_SAMPLED_BIT) > 0; }

@@ -109,6 +109,10 @@ namespace mythril {
 		uint8_t maxAnisotropic = 1;
 		const char* debugName = "Unnamed Sampler";
 	};
+	struct QueryPoolSpec {
+		uint32_t count = 0;
+		const char* debugName = "";
+	};
 	struct BufferSpec {
 		size_t size = 0;
 		uint8_t usage = {};

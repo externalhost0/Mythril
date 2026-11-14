@@ -41,6 +41,7 @@ namespace mythril {
 	using BufferHandle = InternalObjectHandle<struct BufferTag>;
 	using TextureHandle = InternalObjectHandle<struct TextureTag>;
 	using SamplerHandle = InternalObjectHandle<struct SamplerTag>;
+	using QueryPoolHandle = InternalObjectHandle<struct QueryPoolTag>;
 	using ShaderHandle = InternalObjectHandle<struct ShaderTag>;
 	using GraphicsPipelineHandle = InternalObjectHandle<struct GraphicsPipelineTag>;
 	using ComputePipelineHandle = InternalObjectHandle<struct ComputePipelineTag>;

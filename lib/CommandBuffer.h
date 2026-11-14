@@ -118,6 +118,10 @@ namespace mythril {
 		void cmdDrawIndirect(const Buffer& indirectBuffer, VkDeviceSize offset, uint32_t drawCount, uint32_t stride = 0);
 		void cmdDrawIndexedIndirect(const Buffer& indirectBuffer, VkDeviceSize offset, uint32_t drawCount, uint32_t stride = 0);
 
+		void cmdWriteTimestamp(QueryPoolHandle pool, uint32_t query);
+		void cmdWriteTimestamp(const QueryPool& pool, uint32_t query) { cmdWriteTimestamp(pool.handle(), query); }
+		void cmdResetQueryPool(QueryPoolHandle pool, uint32_t first, uint32_t count);
+
 		// plugins
 #ifdef MYTH_ENABLED_IMGUI
 		void cmdDrawImGui();

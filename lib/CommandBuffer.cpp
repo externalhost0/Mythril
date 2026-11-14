@@ -233,6 +233,22 @@ namespace mythril {
 		vkCmdBindIndexBuffer(_wrapper->_cmdBuf, buffer._vkBuffer, 0, VK_INDEX_TYPE_UINT32);
 	}
 
+	void CommandBuffer::cmdWriteTimestamp(QueryPoolHandle handle, uint32_t query) {
+		DRY_RETURN();
+		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_COMMAND);
+		const AllocatedQueryPool& pool = _ctx->view(handle);
+		ASSERT_MSG(query < pool.getCount(), "Query index {} is out of bounds for a pool of {} queries!", query, pool.getCount());
+		vkCmdWriteTimestamp2(_wrapper->_cmdBuf, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, pool.getQueryPool(), query);
+	}
+	void CommandBuffer::cmdResetQueryPool(QueryPoolHandle handle, uint32_t first, uint32_t count) {
+		DRY_RETURN();
+		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_COMMAND);
+		ASSERT_MSG(!_isRendering, "You cannot reset a query pool while rendering! Please move this command either before or after rendering.");
+		const AllocatedQueryPool& pool = _ctx->view(handle);
+		ASSERT_MSG(first + count <= pool.getCount(), "Query range [{}, {}) is out of bounds for a pool of {} queries!", first, first + count, pool.getCount());
+		vkCmdResetQueryPool(_wrapper->_cmdBuf, pool.getQueryPool(), first, count);
+	}
+
 	void CommandBuffer::cmdDispatchThreadGroup(const Dimensions& threadGroupCount) {
 		DRY_RETURN()
 		CHECK_PASS_OPERATION_MISMATCH(PassDesc::Type::Compute);

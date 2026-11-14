@@ -32,6 +32,7 @@ namespace mythril {
 		class AllocatedTexture;
 		class AllocatedBuffer;
 		class AllocatedSampler;
+		class AllocatedQueryPool;
 		class AllocatedShader;
 		class AllocatedGraphicsPipeline;
 		class AllocatedComputePipeline;
@@ -88,6 +89,7 @@ namespace mythril {
 	// public resource wrappers
 	// ref: detail::Allocated*
 	using Sampler = detail::Holder<SamplerHandle>;
+	using QueryPool = detail::Holder<QueryPoolHandle>;
 	using Buffer = detail::Holder<BufferHandle>;
 	using Texture = detail::Holder<TextureHandle>;
 	using Shader = detail::Holder<ShaderHandle>;

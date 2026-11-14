@@ -32,6 +32,7 @@ namespace mythril {
 		template class Holder<TextureHandle>;
 		template class Holder<BufferHandle>;
 		template class Holder<SamplerHandle>;
+		template class Holder<QueryPoolHandle>;
 		template class Holder<ShaderHandle>;
 		template class Holder<GraphicsPipelineHandle>;
 		template class Holder<ComputePipelineHandle>;

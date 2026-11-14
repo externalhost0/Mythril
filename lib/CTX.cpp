@@ -198,6 +198,7 @@ namespace mythril {
 		destroyAll(_computePipelinePool, "compute pipelines");
 		destroyAll(_rayTracingPipelinePool, "raytracing pipelines");
 		destroyAll(_samplerPool, "samplers");
+		destroyAll(_queryPoolPool, "query pools");
 		destroyAll(_texturePool, "textures");
 		destroyAll(_bufferPool, "buffers");
 		destroyAll(_accelerationStructurePool, "acceleration structures");
@@ -209,6 +210,7 @@ namespace mythril {
 		_bufferPool.clear();
 		_texturePool.clear();
 		_samplerPool.clear();
+		_queryPoolPool.clear();
 		_shaderPool.clear();
 		_graphicsPipelinePool.clear();
 		_computePipelinePool.clear();
@@ -1142,6 +1144,55 @@ namespace mythril {
 		SamplerHandle handle = _samplerPool.create(std::move(obj));
 		writeSamplerDescriptorsImpl(handle.index(), 1);
 		return {this, handle};
+	}
+	QueryPool CTX::createQueryPool(const QueryPoolSpec& spec) {
+		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_CREATE);
+		ASSERT_MSG(spec.count > 0, "Query pool '{}' must have a count greater than zero!", spec.debugName);
+
+		uint32_t familyCount = 0;
+		vkGetPhysicalDeviceQueueFamilyProperties(_vkPhysicalDevice, &familyCount, nullptr);
+		std::vector<VkQueueFamilyProperties> families(familyCount);
+		vkGetPhysicalDeviceQueueFamilyProperties(_vkPhysicalDevice, &familyCount, families.data());
+		const uint32_t validBits = families[_graphicsQueueFamilyIndex].timestampValidBits;
+		if (validBits == 0) {
+			LOG_SYSTEM(LogType::Error, "Cannot create query pool '{}', the graphics queue does not support timestamps!", spec.debugName);
+			return {};
+		}
+
+		const VkQueryPoolCreateInfo info = {
+		    .sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
+		    .pNext = nullptr,
+		    .flags = 0,
+		    .queryType = VK_QUERY_TYPE_TIMESTAMP,
+		    .queryCount = spec.count,
+		    .pipelineStatistics = 0,
+		};
+		AllocatedQueryPool obj = {};
+		VK_CHECK(vkCreateQueryPool(_vkDevice, &info, nullptr, &obj._vkQueryPool));
+		obj._count = spec.count;
+		obj._validBitsMask = validBits >= 64 ? ~0ull : (1ull << validBits) - 1;
+		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_QUERY_POOL, reinterpret_cast<uint64_t>(obj._vkQueryPool), spec.debugName);
+		return {this, _queryPoolPool.create(std::move(obj))};
+	}
+	void CTX::resetQueryPool(QueryPoolHandle handle, uint32_t first, uint32_t count) {
+		const AllocatedQueryPool& pool = view(handle);
+		ASSERT_MSG(first + count <= pool._count, "Query range [{}, {}) is out of bounds for a pool of {} queries!", first, first + count, pool._count);
+		vkResetQueryPool(_vkDevice, pool._vkQueryPool, first, count);
+	}
+	bool CTX::getQueryPoolResults(QueryPoolHandle handle, uint32_t first, std::span<uint64_t> outTicks) {
+		const AllocatedQueryPool& pool = view(handle);
+		const uint32_t count = static_cast<uint32_t>(outTicks.size());
+		ASSERT_MSG(first + count <= pool._count, "Query range [{}, {}) is out of bounds for a pool of {} queries!", first, first + count, pool._count);
+		const VkResult result = vkGetQueryPoolResults(_vkDevice, pool._vkQueryPool, first, count, outTicks.size_bytes(), outTicks.data(), sizeof(uint64_t), VK_QUERY_RESULT_64_BIT);
+		if (result == VK_NOT_READY)
+			return false;
+		VK_CHECK(result);
+		for (uint64_t& ticks : outTicks)
+			ticks &= pool._validBitsMask;
+		return true;
+	}
+	double CTX::timestampTicksToNs(uint64_t ticks) const {
+		return static_cast<double>(ticks) * static_cast<double>(_propertiesVulkan.props10.limits.timestampPeriod);
 	}
 	Buffer CTX::createBuffer(BufferSpec spec) {
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_CREATE);
@@ -2284,6 +2335,13 @@ namespace mythril {
 		}));
 		deferTask(std::packaged_task<void()>([device = _vkDevice, sampler = sampler->_vkSampler]() { vkDestroySampler(device, sampler, nullptr); }));
 		_samplerPool.retire(handle);
+	}
+	void CTX::destroy(QueryPoolHandle handle) {
+		AllocatedQueryPool* pool = _queryPoolPool.get(handle);
+		if (!pool)
+			return;
+		deferTask(std::packaged_task<void()>([device = _vkDevice, queryPool = pool->_vkQueryPool]() { vkDestroyQueryPool(device, queryPool, nullptr); }));
+		_queryPoolPool.destroy(handle);
 	}
 	void CTX::destroy(ShaderHandle handle) {
 		AllocatedShader* shader = _shaderPool.get(handle);

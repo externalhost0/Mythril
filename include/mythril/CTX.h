@@ -25,6 +25,7 @@
 #include <deque>
 #include <filesystem>
 #include <future>
+#include <span>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -211,6 +212,12 @@ namespace mythril {
 		VkImageView getTextureView(TextureHandle handle, TextureViewKey key) const;
 		TextureHandle getTextureViewHandle(TextureHandle handle, TextureViewKey key) const;
 		Sampler createSampler(SamplerSpec spec);
+		QueryPool createQueryPool(const QueryPoolSpec& spec);
+		// host reset, caller guarantees the queries are not in flight (true for frame N - kNUM_FRAMES_IN_FLIGHT after acquiring a graphics command)
+		void resetQueryPool(QueryPoolHandle handle, uint32_t first, uint32_t count);
+		// non-blocking, returns false if any query in range is unavailable, values are ticks masked to timestampValidBits
+		bool getQueryPoolResults(QueryPoolHandle handle, uint32_t first, std::span<uint64_t> outTicks);
+		double timestampTicksToNs(uint64_t ticks) const;
 		GraphicsPipeline createGraphicsPipeline(const GraphicsPipelineSpec& spec);
 		ComputePipeline createComputePipeline(const ComputePipelineSpec& spec);
 		RayTracingPipeline createRayTracingPipeline(const RayTracingPipelineSpec& spec);
@@ -232,6 +239,7 @@ namespace mythril {
 		void destroy(BufferHandle handle);
 		void destroy(TextureHandle handle);
 		void destroy(SamplerHandle handle);
+		void destroy(QueryPoolHandle handle);
 		void destroy(ShaderHandle handle);
 		void destroy(GraphicsPipelineHandle handle);
 		void destroy(ComputePipelineHandle handle);
@@ -270,6 +278,7 @@ namespace mythril {
 		const detail::AllocatedTexture& view(TextureHandle h) const { return viewImpl(_texturePool, h); }
 		const detail::AllocatedBuffer& view(BufferHandle h) const { return viewImpl(_bufferPool, h); }
 		const detail::AllocatedSampler& view(SamplerHandle h) const { return viewImpl(_samplerPool, h); }
+		const detail::AllocatedQueryPool& view(QueryPoolHandle h) const { return viewImpl(_queryPoolPool, h); }
 		const detail::AllocatedShader& view(ShaderHandle h) const { return viewImpl(_shaderPool, h); }
 		const detail::AllocatedGraphicsPipeline& view(GraphicsPipelineHandle h) const { return viewImpl(_graphicsPipelinePool, h); }
 		const detail::AllocatedComputePipeline& view(ComputePipelineHandle h) const { return viewImpl(_computePipelinePool, h); }
@@ -278,6 +287,7 @@ namespace mythril {
 		detail::AllocatedTexture& access(TextureHandle h) { return accessImpl(_texturePool, h); }
 		detail::AllocatedBuffer& access(BufferHandle h) { return accessImpl(_bufferPool, h); }
 		detail::AllocatedSampler& access(SamplerHandle h) { return accessImpl(_samplerPool, h); }
+		detail::AllocatedQueryPool& access(QueryPoolHandle h) { return accessImpl(_queryPoolPool, h); }
 		detail::AllocatedShader& access(ShaderHandle h) { return accessImpl(_shaderPool, h); }
 		detail::AllocatedGraphicsPipeline& access(GraphicsPipelineHandle h) { return accessImpl(_graphicsPipelinePool, h); }
 		detail::AllocatedComputePipeline& access(ComputePipelineHandle h) { return accessImpl(_computePipelinePool, h); }
@@ -459,6 +469,7 @@ namespace mythril {
 		HandlePool<BufferHandle, detail::AllocatedBuffer> _bufferPool;
 		HandlePool<TextureHandle, detail::AllocatedTexture> _texturePool;
 		HandlePool<SamplerHandle, detail::AllocatedSampler> _samplerPool;
+		HandlePool<QueryPoolHandle, detail::AllocatedQueryPool> _queryPoolPool;
 		HandlePool<ShaderHandle, detail::AllocatedShader> _shaderPool;
 		HandlePool<GraphicsPipelineHandle, detail::AllocatedGraphicsPipeline> _graphicsPipelinePool;
 		HandlePool<ComputePipelineHandle, detail::AllocatedComputePipeline> _computePipelinePool;
