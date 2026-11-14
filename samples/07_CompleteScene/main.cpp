@@ -38,6 +38,82 @@
 #include "Primitives.h"
 #include "../SDL3Usage.h"
 
+#include <chrono>
+#include <thread>
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#include <psapi.h>
+#else
+#include <sys/resource.h>
+#endif
+#if defined(__APPLE__)
+#include <mach/mach.h>
+#elif defined(__linux__)
+#include <cstdio>
+#endif
+
+// private memory owned by this process in MB, excludes shared library pages and includes swapped/compressed pages
+static float GetMemoryUsageMB() {
+	size_t bytes = 0;
+#if defined(_WIN32)
+	PROCESS_MEMORY_COUNTERS_EX counters{};
+	if (GetProcessMemoryInfo(GetCurrentProcess(), reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&counters), sizeof(counters))) bytes = counters.PrivateUsage;
+#elif defined(__APPLE__)
+	task_vm_info_data_t info{};
+	mach_msg_type_number_t count = TASK_VM_INFO_COUNT;
+	if (task_info(mach_task_self(), TASK_VM_INFO, reinterpret_cast<task_info_t>(&info), &count) == KERN_SUCCESS) bytes = info.phys_footprint;
+#elif defined(__linux__)
+	if (FILE* file = std::fopen("/proc/self/status", "r")) {
+		char line[256];
+		while (std::fgets(line, sizeof(line), file)) {
+			unsigned long kb = 0;
+			if (std::sscanf(line, "RssAnon: %lu kB", &kb) == 1 || std::sscanf(line, "VmSwap: %lu kB", &kb) == 1) bytes += static_cast<size_t>(kb) * 1024;
+		}
+		std::fclose(file);
+	}
+#endif
+	return static_cast<float>(static_cast<double>(bytes) / (1024.0 * 1024.0));
+}
+
+static double GetProcessCPUSeconds() {
+#if defined(_WIN32)
+	FILETIME creation, exit, kernel, user;
+	if (!GetProcessTimes(GetCurrentProcess(), &creation, &exit, &kernel, &user)) return 0.0;
+	auto toU64 = [](const FILETIME& ft) { return (static_cast<uint64_t>(ft.dwHighDateTime) << 32) | ft.dwLowDateTime; };
+	return static_cast<double>(toU64(kernel) + toU64(user)) * 1e-7;
+#else
+	rusage usage{};
+	if (getrusage(RUSAGE_SELF, &usage) != 0) return 0.0;
+	auto toSeconds = [](const timeval& tv) { return static_cast<double>(tv.tv_sec) + static_cast<double>(tv.tv_usec) * 1e-6; };
+	return toSeconds(usage.ru_utime) + toSeconds(usage.ru_stime);
+#endif
+}
+
+// process cpu usage in percent of all logical cores (0-100), resampled at most every 500ms
+static float GetCPUUsage() {
+	using Clock = std::chrono::steady_clock;
+	static Clock::time_point lastWall = Clock::now();
+	static double lastCPU = GetProcessCPUSeconds();
+	static float usage = 0.0f;
+	static const unsigned cores = std::max(1u, std::thread::hardware_concurrency());
+
+	const Clock::time_point nowWall = Clock::now();
+	const double wallSeconds = std::chrono::duration<double>(nowWall - lastWall).count();
+	if (wallSeconds < 0.5) return usage;
+
+	const double nowCPU = GetProcessCPUSeconds();
+	usage = static_cast<float>((nowCPU - lastCPU) / (wallSeconds * cores) * 100.0);
+	lastWall = nowWall;
+	lastCPU = nowCPU;
+	return usage;
+}
+
 struct Camera {
 	glm::vec3 position;
 	glm::vec3 forwardVector;
@@ -577,6 +653,7 @@ int main() {
 			.app_version = {0, 0, 1},
 			.engine_version = {0, 0, 1},
 			.enableValidation = true,
+			.deviceExtensions = {VK_EXT_MEMORY_BUDGET_EXTENSION_NAME},
 		})
 		.set_window_surface({
 			.instanceExtensions = std::span(sdlExtensions, sdlExtensionCount),
@@ -1799,6 +1876,13 @@ int main() {
 				float alpha = 0.05f; // lower = smoother, range from 0.0-1.0
 				smoothedDeltaTime = smoothedDeltaTime * (1.0f - alpha) + deltaTime * alpha;
 				ImGui::Text("EMA Frametime: %.2f ms", smoothedDeltaTime * 1000.0f);
+				ImGui::Text("CPU Usage: %.1f%%", GetCPUUsage());
+				ImGui::Text("Memory Usage: %.1f MB", GetMemoryUsageMB());
+#if defined(__APPLE__)
+				ImGui::Text("GPU Allocations: %.1f MB", static_cast<double>(ctx->getGPUMemoryUsage()) / (1024.0 * 1024.0));
+#else
+				ImGui::Text("GPU Memory Usage: %.1f MB", static_cast<double>(ctx->getGPUMemoryUsage()) / (1024.0 * 1024.0));
+#endif
 				ImGui::Text("ImGui Backend: %s", ImGui::GetIO().BackendRendererName);
 				ImGui::Text("Display Size: %.0fx%.0f", ImGui::GetIO().DisplaySize.x, ImGui::GetIO().DisplaySize.y);
 				ImGui::Text("Display Framebuffer Scale: %.0fx%.0f", ImGui::GetIO().DisplayFramebufferScale.x, ImGui::GetIO().DisplayFramebufferScale.y);

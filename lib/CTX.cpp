@@ -94,6 +94,17 @@ namespace mythril {
 	}
 
 	bool CTX::isExtensionEnabled(const std::string_view extensionName) const { return _enabledExtensionNames.contains(extensionName); }
+	size_t CTX::getGPUMemoryUsage() const {
+		const VkPhysicalDeviceMemoryProperties* memoryProperties = nullptr;
+		vmaGetMemoryProperties(_vmaAllocator, &memoryProperties);
+		VmaBudget budgets[VK_MAX_MEMORY_HEAPS];
+		vmaGetHeapBudgets(_vmaAllocator, budgets);
+		size_t usage = 0;
+		for (uint32_t i = 0; i < memoryProperties->memoryHeapCount; ++i) {
+			if (memoryProperties->memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) usage += budgets[i].usage;
+		}
+		return usage;
+	}
 	void CTX::construct() {
 		ASSERT(this->_vkInstance != VK_NULL_HANDLE);
 		ASSERT(this->_vkPhysicalDevice != VK_NULL_HANDLE);
@@ -2167,6 +2178,7 @@ namespace mythril {
 			_swapchain->present(_immGraphics->acquireLastSubmitSemaphore());
 		}
 		_currentFrameNumber++;
+		vmaSetCurrentFrameIndex(_vmaAllocator, static_cast<uint32_t>(_currentFrameNumber));
 		processDeferredTasks();
 		const SubmitHandle handle = cmd._lastSubmitHandle;
 		_currentCommandBuffer = {};

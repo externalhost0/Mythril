@@ -236,6 +236,7 @@ namespace mythril {
 			VkInstance vkInstance;
 			VkPhysicalDevice vkPhysicalDevice;
 			VkDevice vkDevice;
+			bool memoryBudget;
 		};
 
 	}
@@ -756,7 +757,7 @@ missing_features.append("\n\t(" version ") " #feature);
 
 	static VmaAllocator CreateVulkanMemoryAllocator(const VulkanMemoryAllocatorInputs& inputs) {
 		VmaAllocatorCreateInfo allocatorInfo = {
-		    .flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT | VMA_ALLOCATOR_CREATE_KHR_DEDICATED_ALLOCATION_BIT,
+		    .flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT | VMA_ALLOCATOR_CREATE_KHR_DEDICATED_ALLOCATION_BIT | (inputs.memoryBudget ? VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT : 0u),
 		    .physicalDevice = inputs.vkPhysicalDevice,
 		    .device = inputs.vkDevice,
 		    .instance = inputs.vkInstance,
@@ -817,7 +818,11 @@ missing_features.append("\n\t(" version ") " #feature);
 		std::vector<std::string> enabled_device_extensions;
 		VkDevice vk_device = CreateVulkanLogicalDevice(vk_physical_device, vk_surface, device_extensions, this->_vulkanCfg.additionalDeviceFeatures, this->_vulkanCfg.deviceExtensionFeatureChain, features, properties, queues, enabled_device_extensions);
 		LOG_SYSTEM_NOSOURCE(LogType::Info, "Using device {} (Vulkan {}.{}, driver {} {})", properties.props10.deviceName, VK_API_VERSION_MAJOR(properties.props10.apiVersion), VK_API_VERSION_MINOR(properties.props10.apiVersion), properties.props12.driverName, properties.props12.driverInfo);
-		VmaAllocator vma_allocator = CreateVulkanMemoryAllocator({.vkInstance = vk_instance, .vkPhysicalDevice = vk_physical_device, .vkDevice = vk_device});
+		VmaAllocator vma_allocator = CreateVulkanMemoryAllocator({
+			.vkInstance = vk_instance,
+			.vkPhysicalDevice = vk_physical_device,
+			.vkDevice = vk_device,
+			.memoryBudget = std::ranges::find(enabled_device_extensions, VK_EXT_MEMORY_BUDGET_EXTENSION_NAME) != enabled_device_extensions.end()});
 
 		// most of the setup we need to worry about is done in the constructor
 		// this is the same thing as make_unique, ignore the warning

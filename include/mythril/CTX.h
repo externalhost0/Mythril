@@ -248,6 +248,8 @@ namespace mythril {
 
 		// helpers to query the capabilities of the Vulkan runtime
 		bool isExtensionEnabled(std::string_view extensionName) const;
+		// bytes in device local heaps, process wide driver numbers only when VK_EXT_memory_budget is enabled, otherwise vma allocations only
+		size_t getGPUMemoryUsage() const;
 
 		const VkPhysicalDeviceFeatures& getPhysicalDeviceFeatures10() const { return _featuresVulkan.features10; }
 		const VkPhysicalDeviceVulkan11Features& getPhysicalDeviceFeatures11() const { return _featuresVulkan.features11; }
