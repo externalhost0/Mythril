@@ -1794,6 +1794,11 @@ int main() {
 			{
 				ImGui::Text("Frame %d", ImGui::GetFrameCount());
 				ImGui::Text("Framerate: %.0f", ImGui::GetIO().Framerate);
+				ImGui::Text("Frametime: %.2f ms", deltaTime * 1000.f);
+				static float smoothedDeltaTime = 0.0f;
+				float alpha = 0.05f; // lower = smoother, range from 0.0-1.0
+				smoothedDeltaTime = smoothedDeltaTime * (1.0f - alpha) + deltaTime * alpha;
+				ImGui::Text("EMA Frametime: %.2f ms", smoothedDeltaTime * 1000.0f);
 				ImGui::Text("ImGui Backend: %s", ImGui::GetIO().BackendRendererName);
 				ImGui::Text("Display Size: %.0fx%.0f", ImGui::GetIO().DisplaySize.x, ImGui::GetIO().DisplaySize.y);
 				ImGui::Text("Display Framebuffer Scale: %.0fx%.0f", ImGui::GetIO().DisplayFramebufferScale.x, ImGui::GetIO().DisplayFramebufferScale.y);
