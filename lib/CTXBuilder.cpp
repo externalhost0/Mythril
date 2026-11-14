@@ -441,21 +441,17 @@ missing_features.append("\n\t(" version ") " #feature);
 			}
 		}
 
-#ifdef VK_ENABLE_BETA_EXTENSIONS
 		VkPhysicalDevicePortabilitySubsetFeaturesKHR portability_subset_features = {
 		    .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PORTABILITY_SUBSET_FEATURES_KHR,
 			.pNext = &requiredfeatures13,
 			.imageViewFormatSwizzle = VK_TRUE
 		};
-#endif
 
 		VkPhysicalDeviceFeatures2 features2 = {
 		    .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
-#ifdef VK_ENABLE_BETA_EXTENSIONS
-		    .pNext = &portability_subset_features,
-#else
-		    .pNext = requiredfeatures13
-#endif
+		    .pNext = isAvailable(VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME)
+		        ? static_cast<void*>(&portability_subset_features)
+		        : static_cast<void*>(&requiredfeatures13),
 		    .features = requiredfeatures10
 		};
 
