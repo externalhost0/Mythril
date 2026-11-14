@@ -112,7 +112,8 @@ The `debug` / `release` presets enable `MYTH_BUILD_SAMPLES`,
 | `MYTH_ENABLE_IMGUI_STANDARD` | `OFF`   | Fetch ImGui (main branch) and enable mythril's ImGuiPlugin.            |
 | `MYTH_ENABLE_IMGUI_DOCKING`  | `OFF`   | Fetch ImGui (docking branch) and enable mythril's ImGuiPlugin.         |
 | `MYTH_ENABLE_TRACY`          | `OFF`   | Fetch Tracy and enable CPU profiling.                                  |
-| `MYTH_ENABLE_TRACY_GPU`      | `OFF`   | Requires `MYTH_ENABLE_TRACY=ON`. Enables GPU timings (experimental).   |
+| `MYTH_ENABLE_TRACY_GPU`      | `OFF`   | Requires `MYTH_ENABLE_TRACY=ON`. Enables per-pass GPU zones (experimental). |
+| `MYTH_ENABLE_TRACY_GPU_COMMANDS` | `OFF` | Requires `MYTH_ENABLE_TRACY_GPU=ON`. Adds a GPU zone per command (ignored on Apple). Affects timings, dev only. |
 | `MYTH_USE_LOCAL_SLANG`       | `OFF`   | Use a locally-built Slang (`MYTH_LOCAL_SLANG_DIR`) instead of the SDK. |
 
 > Note: `MYTH_ENABLE_IMGUI_STANDARD` and `MYTH_ENABLE_IMGUI_DOCKING` are mutually exclusive.
