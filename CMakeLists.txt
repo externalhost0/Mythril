@@ -153,12 +153,6 @@ CPMAddPackage(
 )
 
 CPMAddPackage(
-        NAME vk-bootstrap
-        GITHUB_REPOSITORY "charles-lunarg/vk-bootstrap"
-        GIT_TAG v1.4.335
-)
-
-CPMAddPackage(
         NAME fmt
         GITHUB_REPOSITORY "fmtlib/fmt"
         GIT_TAG 12.0.0
@@ -256,7 +250,6 @@ add_library(mythril STATIC
         ${MYTHRIL_SOURCES}
         $<TARGET_OBJECTS:SPIRV-Reflect-objects>
         $<TARGET_OBJECTS:fmt>
-        $<TARGET_OBJECTS:vk-bootstrap>
 )
 # cause we are lazy
 add_library(mythril::mythril ALIAS mythril)
@@ -282,7 +275,6 @@ endif()
 # build only include necessary
 target_include_directories(mythril PRIVATE
         $<BUILD_INTERFACE:$<TARGET_PROPERTY:SPIRV-Reflect-objects,INTERFACE_INCLUDE_DIRECTORIES>>
-        $<BUILD_INTERFACE:$<TARGET_PROPERTY:vk-bootstrap,INTERFACE_INCLUDE_DIRECTORIES>>
         $<BUILD_INTERFACE:${SLANG_INCLUDE_DIR}>
 )
 

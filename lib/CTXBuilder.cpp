@@ -18,7 +18,6 @@
 #include "Plugins.h"
 #include "vkutil.h"
 
-#include <VkBootstrap.h>
 #include <vk_mem_alloc.h>
 #include <volk.h>
 #include <slang/slang.h>
@@ -30,6 +29,11 @@ namespace mythril {
 		const char* appName = nullptr;
 		const char* engineName = nullptr;
 	};
+	struct VulkanInstanceOutputs {
+		VkInstance vkInstance = VK_NULL_HANDLE;
+		VkDebugUtilsMessengerEXT vkDebugMessenger = VK_NULL_HANDLE;
+	};
+
 	static std::vector<const char*> MergeExtensions(std::span<const char* const> a, std::span<const char* const> b) {
 		std::vector<const char*> merged;
 		merged.reserve(a.size() + b.size());
@@ -46,22 +50,71 @@ namespace mythril {
 			return std::strcmp(p.extensionName, name) == 0;
 		});
 	}
-	static std::vector<VkExtensionProperties> EnumerateInstanceExtensions() {
+	static std::vector<VkExtensionProperties> EnumerateInstanceExtensions(const char* layer) {
 		uint32_t count = 0;
-		VkResult result = vkEnumerateInstanceExtensionProperties(nullptr, &count, nullptr);
+		VkResult result = vkEnumerateInstanceExtensionProperties(layer, &count, nullptr);
 		ASSERT_MSG(result == VK_SUCCESS, "Failed to enumerate instance extensions.");
 		std::vector<VkExtensionProperties> extensions(count);
-		result = vkEnumerateInstanceExtensionProperties(nullptr, &count, extensions.data());
+		result = vkEnumerateInstanceExtensionProperties(layer, &count, extensions.data());
 		ASSERT_MSG(result == VK_SUCCESS, "Failed to enumerate instance extensions.");
 		return extensions;
 	}
-	static vkb::Instance CreateVulkanInstance(VulkanInstanceInputs inputs, bool enableValidation, std::span<const char*> instance_extensions) {
-		vkb::InstanceBuilder instanceBuilder;
-		const auto available_instance_extensions = EnumerateInstanceExtensions();
+	static bool IsInstanceLayerAvailable(const char* name) {
+		uint32_t count = 0;
+		vkEnumerateInstanceLayerProperties(&count, nullptr);
+		std::vector<VkLayerProperties> layers(count);
+		vkEnumerateInstanceLayerProperties(&count, layers.data());
+		return std::ranges::any_of(layers, [name](const VkLayerProperties& p) {
+			return std::strcmp(p.layerName, name) == 0;
+		});
+	}
+	static VKAPI_ATTR VkBool32 VKAPI_CALL DebugCallback(
+		VkDebugUtilsMessageSeverityFlagBitsEXT severity,
+		VkDebugUtilsMessageTypeFlagsEXT messageType,
+		const VkDebugUtilsMessengerCallbackDataEXT* data,
+		void*) {
+		const LogType level = (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) ? LogType::Error : LogType::Warning;
+		const char* kind = (messageType & VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT) ? "Validation"
+		: (messageType & VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT) ? "Performance"
+		: "General";
+
+		LOG_SYSTEM_NOSOURCE(level, "[{}] {}\n{}", kind, data->pMessageIdName ? data->pMessageIdName : "", data->pMessage);
+		return VK_FALSE;
+	}
+
+	static VulkanInstanceOutputs CreateVulkanInstance(VulkanInstanceInputs inputs, bool enableValidation, std::span<const char*> instance_extensions) {
+		// VERY IMPORTANT, this is the REQUIRED min version that mythril supports
+		static constexpr uint32_t kMinimumInstanceVersion = VK_MAKE_API_VERSION(0, 1, 4, 335);
+		static constexpr const char* kValidationLayer = "VK_LAYER_KHRONOS_validation";
+
+		uint32_t instanceVersion = 0;
+		vkEnumerateInstanceVersion(&instanceVersion);
+		ASSERT_MSG(instanceVersion >= kMinimumInstanceVersion, "Vulkan loader {}.{}.{} is older then Mythril's required 1.4.335",
+			VK_API_VERSION_MAJOR(instanceVersion),
+			VK_API_VERSION_MINOR(instanceVersion),
+			VK_API_VERSION_PATCH(instanceVersion));
+		const bool useValidation = enableValidation && IsInstanceLayerAvailable(kValidationLayer);
+		if (enableValidation && !useValidation) {
+			LOG_SYSTEM_NOSOURCE(LogType::Warning, "Instance validation requested but {} is not installed, validation will not be enabled.", kValidationLayer);
+		}
+
+		std::vector<VkExtensionProperties> available = EnumerateInstanceExtensions(nullptr);
+		if (useValidation) {
+			const auto layerExtensions = EnumerateInstanceExtensions(kValidationLayer);
+			available.insert(available.end(), layerExtensions.begin(), layerExtensions.end());
+		}
+
+		std::vector<const char*> extensions;
+		auto enable = [&extensions](const char* requestedExtensionName) {
+			if (std::ranges::none_of(extensions, [requestedExtensionName](const char* e) {
+				return std::strcmp(e, requestedExtensionName) == 0;
+			})) extensions.push_back(requestedExtensionName);
+		};
+
 		std::string missing_extensions;
 		for (const char* ext : instance_extensions) {
-			if (IsInstanceExtensionAvailable(available_instance_extensions, ext)) {
-				instanceBuilder.enable_extension(ext);
+			if (IsInstanceExtensionAvailable(available, ext)) {
+				enable(ext);
 			} else {
 				missing_extensions += "\n\t" + std::string(ext);
 			}
@@ -71,54 +124,100 @@ namespace mythril {
 			assert(false);
 		}
 
-#if defined __APPLE__ && DEBUG
-// harmless to use if using KosmicKrisp aswell
-		static constexpr uint32_t kLogLevel = 3;
-		static constexpr VkLayerSettingEXT kMvkDebugLevel = {
-		    .pLayerName = "MoltenVK",
-		    .pSettingName = "MVK_CONFIG_TRACE_VULKAN_CALLS",
-		    .type = VK_LAYER_SETTING_TYPE_UINT32_EXT,
-		    .valueCount = 1,
-		    .pValues = &kLogLevel,
+		auto enableIfAvailable = [&available, enable](const char* requestedExtensionName) {
+			if (!IsInstanceExtensionAvailable(available, requestedExtensionName)) return false;
+			enable(requestedExtensionName);
+			return true;
 		};
-#endif
-		static VkBool32 kBoolSync = VK_FALSE;
-		if (enableValidation) kBoolSync = VK_TRUE;
-		static constexpr VkLayerSettingEXT kValidateSyc = {
-			.pLayerName = "VK_LAYER_KHRONOS_validation",
-			.pSettingName = "validate_sync",
-			.type = VK_LAYER_SETTING_TYPE_BOOL32_EXT,
-			.valueCount = 1,
-			.pValues = &kBoolSync
-		};
-		vkb::Result<vkb::Instance> instanceResult = instanceBuilder
-			.set_app_name(inputs.appName)
-			.set_app_version(inputs.appVersion.getVKVersion())
-			.set_engine_name(inputs.engineName)
-			.set_engine_version(inputs.engineVersion.getVKVersion())
-			.require_api_version(VK_API_VERSION_1_3)
-			.set_minimum_instance_version(1, 4, 335)
-			.request_validation_layers(enableValidation)
-			.add_layer_setting(kValidateSyc)
-			.set_headless(true) // stops vk-bootstrap guessing surface extensions, SurfaceSpec supplies them
-#if defined __APPLE__ && DEBUG
-			.add_layer_setting(kMvkDebugLevel)
-#endif
-#ifdef DEBUG
-			// we dont need to worry about conditionally having this be called or not depending on enableValidation, its handled internally
-			.use_default_debug_messenger()
-#endif
-		.build();
 
-		ASSERT_MSG(instanceResult.has_value(), "Failed to create Instance (VkInstance). Error: {}", instanceResult.error().message());
-		vkb::Instance vkb_instance = instanceResult.value();
-		volkLoadInstance(vkb_instance.instance);
-		return vkb_instance;
+
+		// required for moltenvk/kosmickrisp
+		const bool portability = enableIfAvailable(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
+		const bool layerSettings = enableIfAvailable(VK_EXT_LAYER_SETTINGS_EXTENSION_NAME);
+#ifdef DEBUG
+		const bool debugUtils = enableIfAvailable(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+#else
+		constexpr bool debugUtils = false;
+#endif
+		const VkBool32 validateSync = useValidation ? VK_TRUE : VK_FALSE;
+#if defined __APPLE__ && DEBUG
+		static constexpr uint32_t kMVKLogLevel = 3;
+#endif
+		const VkLayerSettingEXT settings[] = {
+			{
+				.pLayerName = kValidationLayer,
+				.pSettingName = "validate_sync",
+				.type = VK_LAYER_SETTING_TYPE_BOOL32_EXT,
+				.valueCount = 1,
+				.pValues = &validateSync
+			},
+#if defined __APPLE__ && DEBUG
+			{
+				.pLayerName = "MoltenVK",
+				.pSettingName = "MVK_CONFIG_TRACE_VULKAN_CALLS",
+				.type = VK_LAYER_SETTING_TYPE_UINT32_EXT,
+				.valueCount = 1,
+				.pValues = &kMVKLogLevel
+			}
+#endif
+		};
+
+		VkLayerSettingsCreateInfoEXT layerSettingsCI = {
+			.sType = VK_STRUCTURE_TYPE_LAYER_SETTINGS_CREATE_INFO_EXT,
+			.settingCount = static_cast<uint32_t>(std::size(settings)),
+			.pSettings = settings
+		};
+		VkDebugUtilsMessengerCreateInfoEXT messengerCI = {
+			.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
+			.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
+			.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT,
+			.pfnUserCallback = DebugCallback
+		};
+		const void* chain = nullptr;
+		if (layerSettings) {
+			layerSettingsCI.pNext = chain;
+			chain = &layerSettingsCI;
+		}
+		if (debugUtils) {
+			messengerCI.pNext = chain;
+			chain = &messengerCI;
+		}
+
+		const VkApplicationInfo appinfo = {
+			.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
+			.pApplicationName = inputs.appName ? inputs.appName : "",
+			.applicationVersion = inputs.appVersion.getVKVersion(),
+			.pEngineName = inputs.engineName ? inputs.engineName : "",
+			.engineVersion = inputs.engineVersion.getVKVersion(),
+			// mythril hard codes to 1.3
+			.apiVersion = VK_API_VERSION_1_3
+		};
+		const char* layers[] = {kValidationLayer};
+		const VkInstanceCreateInfo instanceCI = {
+			.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
+			.pNext = chain,
+			.flags = portability ? static_cast<VkInstanceCreateFlags>(VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR) : 0u,
+			.pApplicationInfo = &appinfo,
+			.enabledLayerCount = useValidation ? 1u : 0u,
+			.ppEnabledLayerNames = layers,
+			.enabledExtensionCount = static_cast<uint32_t>(extensions.size()),
+			.ppEnabledExtensionNames = extensions.data()
+		};
+		VulkanInstanceOutputs out;
+		const VkResult result = vkCreateInstance(&instanceCI, nullptr, &out.vkInstance);
+		ASSERT_MSG(result == VK_SUCCESS, "Failed to create VkInstance. VkResult: {}", static_cast<int>(result));
+		volkLoadInstance(out.vkInstance);
+		if (debugUtils) {
+			messengerCI.pNext = nullptr;
+			const VkResult messengerResult = vkCreateDebugUtilsMessengerEXT(out.vkInstance, &messengerCI, nullptr, &out.vkDebugMessenger);
+			ASSERT_MSG(messengerResult == VK_SUCCESS, "Failed to create VkDebugUtilsMessengerEXT. VkResult: {}", static_cast<int>(messengerResult));
+		}
+		return out;
 	}
 
 	namespace {
 		struct VulkanPhysicalDeviceInputs {
-			vkb::Instance vkbInstance = {};
+			VkInstance vkInstance = VK_NULL_HANDLE;
 			VkSurfaceKHR vkSurface = VK_NULL_HANDLE;
 			const char* preferredDeviceName = nullptr;
 			bool preferDiscrete = true;
@@ -164,12 +263,12 @@ namespace mythril {
 	}
 
 	static VkPhysicalDevice SelectVulkanPhysicalDevice(VulkanPhysicalDeviceInputs inputs) {
-		ASSERT(inputs.vkbInstance.instance != VK_NULL_HANDLE);
+		ASSERT(inputs.vkInstance != VK_NULL_HANDLE);
 
 		uint32_t count = 0;
-		vkEnumeratePhysicalDevices(inputs.vkbInstance.instance, &count, nullptr);
+		vkEnumeratePhysicalDevices(inputs.vkInstance, &count, nullptr);
 		std::vector<VkPhysicalDevice> devices(count);
-		vkEnumeratePhysicalDevices(inputs.vkbInstance.instance, &count, devices.data());
+		vkEnumeratePhysicalDevices(inputs.vkInstance, &count, devices.data());
 
 		VkPhysicalDevice selectedDevice = VK_NULL_HANDLE;
 		int selectedRank = -1;
@@ -687,7 +786,7 @@ missing_features.append("\n\t(" version ") " #feature);
 
 		// fill in user instance extensions & resolve based on cfg
 		std::vector<const char*> instance_extensions = MergeExtensions(this->_vulkanCfg.instanceExtensions, this->_surfaceSpec.instanceExtensions);
-		vkb::Instance vkb_instance = CreateVulkanInstance(
+		auto [vk_instance, vk_debug_messenger] = CreateVulkanInstance(
 		        {
 		            .appVersion = this->_vulkanCfg.app_version,
 		            .engineVersion = this->_vulkanCfg.engine_version,
@@ -699,11 +798,15 @@ missing_features.append("\n\t(" version ") " #feature);
 		);
 		VkSurfaceKHR vk_surface = VK_NULL_HANDLE;
 		if (hasSurface) {
-			vk_surface = this->_surfaceSpec.createFunc(vkb_instance.instance);
+			vk_surface = this->_surfaceSpec.createFunc(vk_instance);
 		}
 
 		// do not pass features or extensions here, do that to the vkb::PhysicalDevice
-		VkPhysicalDevice vk_physical_device = SelectVulkanPhysicalDevice({.vkbInstance = vkb_instance, .vkSurface = vk_surface, .preferredDeviceName = this->_vulkanCfg.preferredDeviceName, .preferDiscrete = this->_vulkanCfg.preferDiscrete});
+		VkPhysicalDevice vk_physical_device = SelectVulkanPhysicalDevice({
+			.vkInstance = vk_instance,
+			.vkSurface = vk_surface,
+			.preferredDeviceName = this->_vulkanCfg.preferredDeviceName,
+			.preferDiscrete = this->_vulkanCfg.preferDiscrete});
 
 		// fill in user device extensions & resolve based on cfg
 		std::vector device_extensions(std::begin(this->_vulkanCfg.deviceExtensions), std::end(this->_vulkanCfg.deviceExtensions));
@@ -714,7 +817,7 @@ missing_features.append("\n\t(" version ") " #feature);
 		std::vector<std::string> enabled_device_extensions;
 		VkDevice vk_device = CreateVulkanLogicalDevice(vk_physical_device, vk_surface, device_extensions, this->_vulkanCfg.additionalDeviceFeatures, this->_vulkanCfg.deviceExtensionFeatureChain, features, properties, queues, enabled_device_extensions);
 		LOG_SYSTEM_NOSOURCE(LogType::Info, "Using device {} (Vulkan {}.{}, driver {} {})", properties.props10.deviceName, VK_API_VERSION_MAJOR(properties.props10.apiVersion), VK_API_VERSION_MINOR(properties.props10.apiVersion), properties.props12.driverName, properties.props12.driverInfo);
-		VmaAllocator vma_allocator = CreateVulkanMemoryAllocator({.vkInstance = vkb_instance.instance, .vkPhysicalDevice = vk_physical_device, .vkDevice = vk_device});
+		VmaAllocator vma_allocator = CreateVulkanMemoryAllocator({.vkInstance = vk_instance, .vkPhysicalDevice = vk_physical_device, .vkDevice = vk_device});
 
 		// most of the setup we need to worry about is done in the constructor
 		// this is the same thing as make_unique, ignore the warning
@@ -722,8 +825,8 @@ missing_features.append("\n\t(" version ") " #feature);
 		// manually transfer the values recieved previously to ctx
 
 		// important handles
-		ctx->_vkInstance = vkb_instance.instance;
-		ctx->_vkDebugMessenger = vkb_instance.debug_messenger;
+		ctx->_vkInstance = vk_instance;
+		ctx->_vkDebugMessenger = vk_debug_messenger;
 		ctx->_vkSurfaceKHR = vk_surface;
 		ctx->_surfaceDestroyFunc = this->_surfaceSpec.destroyFunc;
 		ctx->_vkPhysicalDevice = vk_physical_device;

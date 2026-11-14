@@ -2,9 +2,8 @@
 // Created by Hayden Rivas on 10/1/25.
 //
 
-#include <VkBootstrap.h>
-
 #include <vector>
+#include <algorithm>
 
 #include "mythril/CTX.h"
 #include "HelperMacros.h"
@@ -26,6 +25,29 @@ namespace mythril {
 			default: return "OTHER";
 		}
 	}
+	[[maybe_unused]] static const char* ColorSpaceName(VkColorSpaceKHR space) {
+		switch (space) {
+			case VK_COLOR_SPACE_SRGB_NONLINEAR_KHR: return "SRGB_NONLINEAR_KHR";
+			case VK_COLOR_SPACE_DISPLAY_P3_NONLINEAR_EXT: return "DISPLAY_P3_NONLINEAR_EXT";
+			case VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT: return "EXTENDED_SRGB_LINEAR_EXT";
+			case VK_COLOR_SPACE_DISPLAY_P3_LINEAR_EXT: return "DISPLAY_P3_LINEAR_EXT";
+			case VK_COLOR_SPACE_DCI_P3_NONLINEAR_EXT: return "DCI_P3_NONLINEAR_EXT";
+			case VK_COLOR_SPACE_BT709_LINEAR_EXT: return "BT709_LINEAR_EXT";
+			case VK_COLOR_SPACE_BT709_NONLINEAR_EXT: return "BT709_NONLINEAR_EXT";
+			case VK_COLOR_SPACE_BT2020_LINEAR_EXT: return "BT2020_LINEAR_EXT";
+			case VK_COLOR_SPACE_HDR10_ST2084_EXT: return "HDR10_ST2084_EXT";
+			case VK_COLOR_SPACE_DOLBYVISION_EXT: return "DOLBYVISION_EXT";
+			case VK_COLOR_SPACE_HDR10_HLG_EXT: return "HDR10_HLG_EXT";
+			case VK_COLOR_SPACE_ADOBERGB_LINEAR_EXT: return "ADOBERGB_LINEAR_EXT";
+			case VK_COLOR_SPACE_ADOBERGB_NONLINEAR_EXT: return "ADOBERGB_NONLINEAR_EXT";
+			case VK_COLOR_SPACE_PASS_THROUGH_EXT: return "PASS_THROUGH_EXT";
+			case VK_COLOR_SPACE_EXTENDED_SRGB_NONLINEAR_EXT: return "EXTENDED_SRGB_NONLINEAR_EXT";
+			case VK_COLOR_SPACE_DISPLAY_NATIVE_AMD: return "DISPLAY_NATIVE_AMD";
+			case VK_COLOR_SPACE_MAX_ENUM_KHR: return "MAX_ENUM_KHR";
+			default: return "UNKNOWN";
+		}
+	}
+
 	Swapchain::Swapchain(CTX& ctx, SwapchainSpec args) :
 	    _ctx(ctx) {
 		ASSERT_MSG(args.width > 0 && args.height > 0, "Swapchain width & height must both be greater than 0!");
@@ -58,6 +80,13 @@ namespace mythril {
 			}
 		}
 
+		if (args.format != VK_FORMAT_MAX_ENUM && surfaceFormat.format != args.format) {
+			LOG_SYSTEM(LogType::Warning, "Requested swapchain format is unsupported by the surface! Requested: '{}' vs Actual: '{}'", vkstring::VulkanFormatToString(args.format), vkstring::VulkanFormatToString(surfaceFormat.format));
+		}
+		if (args.colorSpace != VK_COLOR_SPACE_MAX_ENUM_KHR && surfaceFormat.colorSpace != args.colorSpace) {
+			LOG_SYSTEM(LogType::Warning, "Requested swapchain color space is unsupported by the surface! Requested: '{}' vs Actual: '{}'", ColorSpaceName(args.colorSpace), ColorSpaceName(surfaceFormat.colorSpace));
+		}
+
 		VkSurfaceCapabilitiesKHR caps = {};
 		VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(_ctx._vkPhysicalDevice, _ctx._vkSurfaceKHR, &caps));
 
@@ -67,57 +96,94 @@ namespace mythril {
 			return (supported_usage_flags & VK_IMAGE_USAGE_STORAGE_BIT) != 0 && (formatProps2.formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT) != 0;
 		}(_ctx._vkPhysicalDevice, surfaceFormat.format, caps.supportedUsageFlags);
 
-		// the swapchain needs TRANSFER_DST
-		VkImageUsageFlags extraImageUsage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+		// the swapchain needs TRANSFER_DST since blitting to it requires such
+		VkImageUsageFlags usage_flags = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 		if (storageOk) {
-			extraImageUsage |= VK_IMAGE_USAGE_STORAGE_BIT;
+			usage_flags |= VK_IMAGE_USAGE_STORAGE_BIT;
 		}
 
-		vkb::SwapchainBuilder swapchainBuilder{_ctx._vkPhysicalDevice, _ctx._vkDevice, _ctx._vkSurfaceKHR};
-		auto swapchain_result = swapchainBuilder.set_desired_format(surfaceFormat)
-		                                .set_desired_min_image_count(kNUM_FRAMES_IN_FLIGHT)
-		                                .set_desired_present_mode(args.presentMode) // VERY IMPORTANT, decides framerate/buffer/sync
-		                                .set_desired_extent(width, height)
-		                                .add_image_usage_flags(extraImageUsage)
-		                                .build();
-		ASSERT_MSG(swapchain_result.has_value(), "[VULKAN] {}", swapchain_result.error().message());
-		vkb::Swapchain& vkbswapchain = swapchain_result.value();
-		// things we assign to the class itself
-		this->_vkSwapchain = vkbswapchain.swapchain;
-		this->_vkExtent2D = vkbswapchain.extent;
-		this->_vkColorSpace = vkbswapchain.color_space;
-		this->_vkPresentMode = vkbswapchain.present_mode;
-		if (args.presentMode != _vkPresentMode) {
-			LOG_SYSTEM(LogType::Warning, "Requested present mode did not take place! Requested: '{}' vs Actual: '{}'", PresentModeName(args.presentMode), PresentModeName(_vkPresentMode));
+		const std::vector<VkPresentModeKHR> presentModes = [](VkPhysicalDevice device, VkSurfaceKHR surface) {
+			uint32_t modeCount = 0;
+			VK_CHECK(vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface, &modeCount, nullptr));
+			std::vector<VkPresentModeKHR> result(modeCount);
+			VK_CHECK(vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface, &modeCount, result.data()));
+			return result;
+		}(_ctx._vkPhysicalDevice, _ctx._vkSurfaceKHR);
+		VkPresentModeKHR presentMode = VK_PRESENT_MODE_FIFO_KHR;
+		if (args.presentMode != VK_PRESENT_MODE_MAX_ENUM_KHR) {
+			if (std::ranges::find(presentModes, args.presentMode) != presentModes.end()) {
+				presentMode = args.presentMode;
+			} else {
+				LOG_SYSTEM(LogType::Warning, "Requested present mode is unsupported by the surface, falling back to FIFO! Requested: '{}'", PresentModeName(args.presentMode));
+			}
 		}
 
-		if (_vkExtent2D.width != width || _vkExtent2D.height != height) {
-			LOG_SYSTEM(LogType::Warning, "Requested swapchain size did not take place! \n Requested: {} x {} vs Actual: {} x {}", width, height, _vkExtent2D.width, _vkExtent2D.height);
+		// currentExtent of UINT32_MAX means the swapchain decides the surface size
+		VkExtent2D extent = caps.currentExtent;
+		if (extent.width == UINT32_MAX) {
+			extent.width = std::clamp<uint32_t>(width, caps.minImageExtent.width, caps.maxImageExtent.width);
+			extent.height = std::clamp<uint32_t>(height, caps.minImageExtent.height, caps.maxImageExtent.height);
 		}
-		this->_vkImageFormat = vkbswapchain.image_format;
-		if (args.format != _vkImageFormat) {
-			LOG_SYSTEM(
-			        LogType::Warning,
-			        "Requested swapchain format did not take place! \n Requested: '{}' vs Actual: '{}'",
-			        vkstring::VulkanFormatToString(args.format),
-			        vkstring::VulkanFormatToString(_vkImageFormat)
-			);
+		if (extent.width != width || extent.height != height) {
+			LOG_SYSTEM(LogType::Warning, "Requested swapchain size could not be used! Requested: {} x {} vs Actual: {} x {}", width, height, extent.width, extent.height);
 		}
-		if (vkbswapchain.image_count > kMAX_SWAPCHAIN_IMAGES) {
-			LOG_SYSTEM(LogType::FatalError, "Swapchain image count ({}) exceeds max supported swapchain images ({})!", (int) vkbswapchain.image_count, (int) kMAX_SWAPCHAIN_IMAGES);
+
+		uint32_t minImageCount = std::max<uint32_t>(kNUM_FRAMES_IN_FLIGHT, caps.minImageCount);
+		if (caps.maxImageCount != 0 && minImageCount > caps.maxImageCount) {
+			LOG_SYSTEM(LogType::Warning, "Surface max image count ({}) is below frames in flight ({}), clamping!", caps.maxImageCount, (int) kNUM_FRAMES_IN_FLIGHT);
+			minImageCount = caps.maxImageCount;
 		}
-		this->_numSwapchainImages = vkbswapchain.image_count;
+
+		const uint32_t queueFamilies[] = {_ctx._graphicsQueueFamilyIndex, _ctx._presentQueueFamilyIndex};
+		const bool concurrent = queueFamilies[0] != queueFamilies[1];
+		const VkSwapchainCreateInfoKHR swapchainCI = {
+			.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
+			.surface = _ctx._vkSurfaceKHR,
+			.minImageCount = minImageCount,
+			.imageFormat = surfaceFormat.format,
+			.imageColorSpace = surfaceFormat.colorSpace,
+			.imageExtent = extent,
+			.imageArrayLayers = 1,
+			.imageUsage = usage_flags,
+			.imageSharingMode = concurrent ? VK_SHARING_MODE_CONCURRENT : VK_SHARING_MODE_EXCLUSIVE,
+			.queueFamilyIndexCount = concurrent ? 2u : 0u,
+			.pQueueFamilyIndices = concurrent ? queueFamilies : nullptr,
+			.preTransform = caps.currentTransform,
+			.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
+			.presentMode = presentMode,
+			.clipped = VK_TRUE,
+			.oldSwapchain = VK_NULL_HANDLE,
+		};
+		const VkResult res = vkCreateSwapchainKHR(_ctx._vkDevice, &swapchainCI, nullptr, &_vkSwapchain);
+		ASSERT_MSG(res == VK_SUCCESS, "Failed to create VkSwapchainKHR. VkResult: {}", static_cast<int>(res));
+
+		this->_vkExtent2D = extent;
+		this->_vkColorSpace = surfaceFormat.colorSpace;
+		this->_vkPresentMode = presentMode;
+		this->_vkImageFormat = surfaceFormat.format;
+
+		uint32_t imageCount = 0;
+		VK_CHECK(vkGetSwapchainImagesKHR(_ctx._vkDevice, _vkSwapchain, &imageCount, nullptr));
+		if (imageCount > kMAX_SWAPCHAIN_IMAGES) {
+			LOG_SYSTEM(LogType::FatalError, "Swapchain image count ({}) exceeds max supported swapchain images ({})!", (int) imageCount, (int) kMAX_SWAPCHAIN_IMAGES);
+		}
+		this->_numSwapchainImages = imageCount;
 		ASSERT(_numSwapchainImages <= kMAX_SWAPCHAIN_IMAGES);
 		ASSERT((caps.minImageCount <= _numSwapchainImages) && (caps.maxImageCount == 0 || _numSwapchainImages <= caps.maxImageCount));
 
-		const VkImageUsageFlags usage_flags =
-			VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-				VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
-					VK_IMAGE_USAGE_TRANSFER_DST_BIT |
-						(storageOk ? VK_IMAGE_USAGE_STORAGE_BIT : VkImageUsageFlags{});
-
-		std::vector<VkImage> images = vkbswapchain.get_images().value();
-		std::vector<VkImageView> imageviews = vkbswapchain.get_image_views().value();
+		std::vector<VkImage> images(imageCount);
+		VK_CHECK(vkGetSwapchainImagesKHR(_ctx._vkDevice, _vkSwapchain, &imageCount, images.data()));
+		std::vector<VkImageView> imageviews(imageCount);
+		for (uint32_t i = 0; i < imageCount; i++) {
+			const VkImageViewCreateInfo viewCI = {
+				.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+				.image = images[i],
+				.viewType = VK_IMAGE_VIEW_TYPE_2D,
+				.format = _vkImageFormat,
+				.subresourceRange = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .baseMipLevel = 0, .levelCount = 1, .baseArrayLayer = 0, .layerCount = 1},
+			};
+			VK_CHECK(vkCreateImageView(_ctx._vkDevice, &viewCI, nullptr, &imageviews[i]));
+		}
 		for (uint32_t i = 0; i < _numSwapchainImages; i++) {
 			// give necessary info to texture
 			AllocatedTexture image = {};

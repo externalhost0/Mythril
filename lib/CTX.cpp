@@ -232,9 +232,9 @@ namespace mythril {
 		vmaDestroyAllocator(_vmaAllocator);
 		// destroy pure vk objects
 		vkDestroyDevice(_vkDevice, nullptr);
-#ifdef DEBUG
-		vkDestroyDebugUtilsMessengerEXT(_vkInstance, _vkDebugMessenger, nullptr);
-#endif
+		if (_vkDebugMessenger != VK_NULL_HANDLE) {
+			vkDestroyDebugUtilsMessengerEXT(_vkInstance, _vkDebugMessenger, nullptr);
+		}
 		if (this->_surfaceDestroyFunc) {
 			this->_surfaceDestroyFunc(_vkInstance, _vkSurfaceKHR);
 		}

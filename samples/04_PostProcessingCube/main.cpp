@@ -221,7 +221,7 @@ int main() {
 			float time = std::chrono::duration<float>(currentTime - startTime).count();
 			glm::mat4 model = glm::rotate(glm::mat4(1.0f), time, glm::vec3(0.0f, 1.0f, 0.0f));
 			model = glm::rotate(model, time * 0.5f, glm::vec3(1.0f, 0.0f, 0.0f));
-			GPU::GeometryPushConstant push {
+			mythril::GPU::GeometryPushConstant push {
 				.mvp = calculateProjectionMatrix(camera) * calculateViewMatrix(camera) * model,
 				.vertexBufferAddress = ctx->gpuAddress(cubeVertexBuffer.handle())
 			};
@@ -241,7 +241,7 @@ int main() {
 
 			auto currentTime = std::chrono::high_resolution_clock::now();
 			float time = std::chrono::duration<float>(currentTime - startTime).count();
-			GPU::FullscreenPushConstant push {
+			mythril::GPU::FullscreenPushConstant push {
 				.colorTexture = cmd.texture(rgResolveColorTarget).index(),
 				.linearSampler = 0,
 				.time = time

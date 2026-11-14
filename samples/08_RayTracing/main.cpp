@@ -188,7 +188,7 @@ int main() {
 		});
 
 		mythril::Buffer frameBuffer = ctx->createBuffer({
-			.size = sizeof(GPU::PerFrame),
+			.size = sizeof(mythril::GPU::PerFrame),
 			.usage = mythril::BufferUsageBits::BufferUsageBits_Storage,
 			.storage = mythril::StorageType::Device,
 			.debugName = "Frame Uniforms"
@@ -351,13 +351,13 @@ int main() {
 		.execute([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdBindRayTracingPipeline(mainPipeline);
 			const mythril::ResolvedTexture tracedOutput = cmd.texture(rgTracedShadowOutput);
-			const GPU::PerFrame frameData = {
+			const mythril::GPU::PerFrame frameData = {
 				.viewInverse = glm::inverse(calculateViewMatrix(camera)),
 				.projInverse = glm::inverse(calculateProjectionMatrix(camera)),
 			};
-			cmd.cmdUpdateBuffer(frameBuffer, 0, sizeof(GPU::PerFrame), &frameData);
+			cmd.cmdUpdateBuffer(frameBuffer, 0, sizeof(mythril::GPU::PerFrame), &frameData);
 			
-			const GPU::ShadowPushConstant push = {
+			const mythril::GPU::ShadowPushConstant push = {
 				.frame = ctx->gpuAddress(frameBuffer.handle()),
 				// points toward the light, closestHitMain dots it with the surface normal
 				.lightDir = glm::vec4(1.5, 2.0, 1.0, 0),

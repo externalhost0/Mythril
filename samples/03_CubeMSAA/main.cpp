@@ -207,7 +207,7 @@ int main() {
 			float time = std::chrono::duration<float>(currentTime - startTime).count();
 			glm::mat4 model = glm::rotate(glm::mat4(1.0f), time, glm::vec3(0.0f, 1.0f, 0.0f));
 			model = glm::rotate(model, time * 0.5f, glm::vec3(1.0f, 0.0f, 0.0f));
-			GPU::PushConstant constants = {
+			mythril::GPU::PushConstant constants = {
 					.mvp = calculateProjectionMatrix(camera) * calculateViewMatrix(camera) * model,
 					.vertexBufferAddress = ctx->gpuAddress(cubeVertexBuffer.handle())
 			};

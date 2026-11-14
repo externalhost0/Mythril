@@ -8,7 +8,7 @@
 #include <concepts>
 #include <glm/glm.hpp>
 
-#define NAMESPACE_BEGIN() namespace GPU {
+#define NAMESPACE_BEGIN() namespace mythril::GPU {
 #define NAMESPACE_END() }
 
 NAMESPACE_BEGIN()

@@ -30,7 +30,7 @@ struct Camera {
 	float farPlane;
 };
 
-const std::vector<GPU::Vertex> cubeVertices = {
+const std::vector<mythril::GPU::Vertex> cubeVertices = {
 		// front face
 		{{-1.f, -1.f, -1.f}, {0.f, 0.f, -1.f}, {0.0f, 0.0f}}, // A 0
 		{{ 1.f, -1.f, -1.f}, {0.f, 0.f, -1.f}, {1.0f, 0.0f}}, // B 1
@@ -439,7 +439,7 @@ int main() {
 		});
 
 		mythril::Buffer cubeVertexBuffer = ctx->createBuffer({
-			.size = sizeof(GPU::Vertex) * cubeVertices.size(),
+			.size = sizeof(mythril::GPU::Vertex) * cubeVertices.size(),
 			.usage = mythril::BufferUsageBits::BufferUsageBits_Storage,
 			.storage = mythril::StorageType::Device,
 			.initialData = cubeVertices.data(),
@@ -453,20 +453,20 @@ int main() {
 			.debugName = "Cube Index Buffer"
 		});
 		mythril::Buffer perFrameDataBuffer = ctx->createBuffer({
-			.size = sizeof(GPU::GlobalData),
+			.size = sizeof(mythril::GPU::GlobalData),
 			.usage = mythril::BufferUsageBits::BufferUsageBits_Storage,
 			.storage = mythril::StorageType::Device,
 			.debugName = "PerFrameData Storage Buffer"
 		});
 		mythril::Buffer perMaterialDataBuffer = ctx->createBuffer({
-			.size = sizeof(GPU::MaterialData),
+			.size = sizeof(mythril::GPU::MaterialData),
 			.usage = mythril::BufferUsageBits::BufferUsageBits_Storage,
 			.storage = mythril::StorageType::Device,
 			.debugName = "PerMaterialData Storage Buffer"
 		});
 		constexpr unsigned int kNumObjects = 50;
 		mythril::Buffer objectDataBuf = ctx->createBuffer({
-			.size = sizeof(GPU::ObjectData) * kNumObjects,
+			.size = sizeof(mythril::GPU::ObjectData) * kNumObjects,
 			.usage = mythril::BufferUsageBits::BufferUsageBits_Storage,
 			.storage = mythril::StorageType::Device,
 			.debugName = "Object Data SSBO"
@@ -496,7 +496,7 @@ int main() {
 			// rotating cube!
 			glm::mat4 modelmatrix = glm::rotate(glm::mat4(1.0f), time, glm::vec3(0.0f, 1.0f, 0.0f));
 			modelmatrix = glm::rotate(modelmatrix, time * 0.5f, glm::vec3(1.0f, 0.0f, 0.0f));
-			const GPU::GeometryPushConstant push {
+			const mythril::GPU::GeometryPushConstant push {
 				.model =  modelmatrix,
 				.vertexBufferAddress = ctx->gpuAddress(cubeVertexBuffer.handle()),
 				.perFrame = ctx->gpuAddress(perFrameDataBuffer.handle()),
@@ -569,8 +569,8 @@ int main() {
 			ImGui::End();
 
 			std::srand(static_cast<unsigned>(std::time(nullptr)));
-			GPU::ObjectData objects[kNumObjects];
-			for (GPU::ObjectData& object : objects) {
+			mythril::GPU::ObjectData objects[kNumObjects];
+			for (mythril::GPU::ObjectData& object : objects) {
 				glm::vec3 pos = {
 					(std::rand() / static_cast<float>(RAND_MAX) - 0.5f) * 100.0f, // range [-50, 50]
 					(std::rand() / static_cast<float>(RAND_MAX) - 0.5f) * 100.0f,
@@ -585,7 +585,7 @@ int main() {
 			}
 
 
-			const GPU::MaterialData matData = {
+			const mythril::GPU::MaterialData matData = {
 				.tint = { col[0], col[1], col[2] },
 				.warpIterations = warp_iterations,
 				.glowAmount = glow,
@@ -599,7 +599,7 @@ int main() {
 				.nearPlane = 0.1f,
 				.farPlane = 100.f
 			};
-			const GPU::CameraData cameraData = {
+			const mythril::GPU::CameraData cameraData = {
 				.proj = calculateProjectionMatrix(camera),
 				.view = calculateViewMatrix(camera),
 				.position = camera.position
@@ -607,7 +607,7 @@ int main() {
 			auto currentTime = std::chrono::high_resolution_clock::now();
 			float time = std::chrono::duration<float>(currentTime - startTime).count();
 			// once again, getFramebufferSize is the actual resolution we render out
-			const GPU::GlobalData frameData {
+			const mythril::GPU::GlobalData frameData {
 				.objects = ctx->gpuAddress(objectDataBuf.handle()),
 				.camera = cameraData,
 				.renderResolution = { currentWindowSize.width, currentWindowSize.height },
