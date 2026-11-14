@@ -48,6 +48,9 @@ namespace mythril {
 		Version engine_version = {0, 0, 1};
 
 		bool enableValidation = true;
+		// case-insensitive substring of the device name, falls back to default selection if nothing matches
+		const char* preferredDeviceName = nullptr;
+		bool preferDiscrete = true;
 		// implement this later
 		// bool enableHeadless = false;
 		// instance extension names

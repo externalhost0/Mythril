@@ -6,8 +6,10 @@
 #include "mythril/CTXBuilder.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cstring>
 #include <set>
+#include <string_view>
 #include <format>
 
 #include "mythril/CTX.h"
@@ -118,6 +120,8 @@ namespace mythril {
 		struct VulkanPhysicalDeviceInputs {
 			vkb::Instance vkbInstance = {};
 			VkSurfaceKHR vkSurface = VK_NULL_HANDLE;
+			const char* preferredDeviceName = nullptr;
+			bool preferDiscrete = true;
 		};
 		struct VulkanQueueOutputs {
 			VkQueue vkGraphicsQueue = VK_NULL_HANDLE;
@@ -168,19 +172,25 @@ namespace mythril {
 		vkEnumeratePhysicalDevices(inputs.vkbInstance.instance, &count, devices.data());
 
 		VkPhysicalDevice selectedDevice = VK_NULL_HANDLE;
-		bool isSelectedDiscrete = false;
+		int selectedRank = -1;
 		std::string rejections;
 		for (VkPhysicalDevice pd : devices) {
 			VkPhysicalDeviceProperties2 props = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2 };
 			vkGetPhysicalDeviceProperties2(pd, &props);
 			if (const std::string reason = GetUnsuitableReason(pd, props, inputs.vkSurface); !reason.empty()) {
 				rejections += std::string("\n\t") + props.properties.deviceName + ": " + reason;
+				continue;
 			}
-			const bool discrete = props.properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU;
-			if (selectedDevice == VK_NULL_HANDLE || (discrete && !isSelectedDiscrete)) {
+			const std::string_view name = props.properties.deviceName;
+			const bool named = inputs.preferredDeviceName && !std::ranges::search(name, std::string_view(inputs.preferredDeviceName), [](char a, char b) { return std::tolower(a) == std::tolower(b); }).empty();
+			const bool discrete = inputs.preferDiscrete && props.properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU;
+			if (const int rank = named ? 2 : discrete ? 1 : 0; rank > selectedRank) {
 				selectedDevice = pd;
-				isSelectedDiscrete = discrete;
+				selectedRank = rank;
 			}
+		}
+		if (inputs.preferredDeviceName && selectedRank < 2) {
+			LOG_SYSTEM_NOSOURCE(LogType::Warning, "No suitable device matches preferredDeviceName \"{}\", using default selection", inputs.preferredDeviceName);
 		}
 		ASSERT_MSG(selectedDevice != VK_NULL_HANDLE, "Failed to select VkPhysicalDevice. Error: {}", rejections.c_str());
 
@@ -693,7 +703,7 @@ missing_features.append("\n\t(" version ") " #feature);
 		}
 
 		// do not pass features or extensions here, do that to the vkb::PhysicalDevice
-		VkPhysicalDevice vk_physical_device = SelectVulkanPhysicalDevice({.vkbInstance = vkb_instance, .vkSurface = vk_surface});
+		VkPhysicalDevice vk_physical_device = SelectVulkanPhysicalDevice({.vkbInstance = vkb_instance, .vkSurface = vk_surface, .preferredDeviceName = this->_vulkanCfg.preferredDeviceName, .preferDiscrete = this->_vulkanCfg.preferDiscrete});
 
 		// fill in user device extensions & resolve based on cfg
 		std::vector device_extensions(std::begin(this->_vulkanCfg.deviceExtensions), std::end(this->_vulkanCfg.deviceExtensions));
@@ -703,6 +713,7 @@ missing_features.append("\n\t(" version ") " #feature);
 		// sets features & properties
 		std::vector<std::string> enabled_device_extensions;
 		VkDevice vk_device = CreateVulkanLogicalDevice(vk_physical_device, vk_surface, device_extensions, this->_vulkanCfg.additionalDeviceFeatures, this->_vulkanCfg.deviceExtensionFeatureChain, features, properties, queues, enabled_device_extensions);
+		LOG_SYSTEM_NOSOURCE(LogType::Info, "Using device {} (Vulkan {}.{}, driver {} {})", properties.props10.deviceName, VK_API_VERSION_MAJOR(properties.props10.apiVersion), VK_API_VERSION_MINOR(properties.props10.apiVersion), properties.props12.driverName, properties.props12.driverInfo);
 		VmaAllocator vma_allocator = CreateVulkanMemoryAllocator({.vkInstance = vkb_instance.instance, .vkPhysicalDevice = vk_physical_device, .vkDevice = vk_device});
 
 		// most of the setup we need to worry about is done in the constructor
