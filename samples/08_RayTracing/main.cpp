@@ -131,7 +131,6 @@ int main() {
 		.accelerationStructureCaptureReplay = VK_FALSE,
 		.accelerationStructureIndirectBuild = VK_FALSE,
 		.accelerationStructureHostCommands = VK_FALSE,
-		.descriptorBindingAccelerationStructureUpdateAfterBind = VK_TRUE,
 	};
 	VkPhysicalDeviceRayTracingPipelineFeaturesKHR rayTracingPipelineFeatures = {
 		.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR,
@@ -364,7 +363,7 @@ int main() {
 				.vertices = ctx->gpuAddress(sceneVertexBuffer.handle()),
 				.indices = ctx->gpuAddress(sceneIndexBuffer.handle()),
 				.outTexture = tracedOutput.index(),
-				.tlas = tlas.index(),
+				.tlas = ctx->gpuAddress(tlas.handle()),
 				.enableShadows = static_cast<uint32_t>(true),
 				.debugMode = debugMode
 			};

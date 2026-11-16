@@ -49,9 +49,11 @@ namespace mythril {
 	private:
 		CompileResult compileSlangImpl(Slang::ComPtr<slang::IModule>& slang_module, Slang::ComPtr<slang::IBlob>& diagnostics_blob) const;
 		void createSessionImpl();
+		void validateNoBindlessOverride() const;
 
 		Slang::ComPtr<slang::ISession> _slangSession = nullptr;
 		Slang::ComPtr<slang::IGlobalSession> _globalSlangSession = nullptr;
+		Slang::ComPtr<slang::IModule> _bindlessModule = nullptr;
 		bool _sessionExists = false;
 
 		std::vector<std::filesystem::path> _shaderSearchPaths = {};

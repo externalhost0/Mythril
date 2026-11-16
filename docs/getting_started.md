@@ -306,7 +306,7 @@ mythril::AccelerationStructure tlas = ctx->createAccelerationStructure({
 ```
 **Good to Knows**:
 - They are quite experimental so if you run into an issue please let me know lol
-- Acceleration structures are also bindless like textures/samplers so use `.index()` when reffering to them to shaders.
+- Acceleration structures are not bindless descriptors. Pass `ctx->gpuAddress(tlas.handle())` in a `DescriptorHandle<RaytracingAccelerationStructure>` push constant field, the same way buffer pointers are passed, and keep the `AccelerationStructure` alive for as long as any pushed address is in use.
 
 # RenderGraph
 

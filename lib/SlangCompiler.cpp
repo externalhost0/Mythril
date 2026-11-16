@@ -6,6 +6,7 @@
 #include "HelperMacros.h"
 
 #include <array>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <vector>
@@ -16,6 +17,14 @@
 #include "mythril/CTXBuilder.h"
 
 namespace mythril {
+	static constexpr const char* kBindlessFunctionName = "getDescriptorFromHandle";
+	// must match the descriptor set layout built in CTX::growBindlessDescriptorPoolImpl
+	static constexpr const char* kBindlessModuleSource = R"(
+export T getDescriptorFromHandle<T : IOpaqueDescriptor>(DescriptorHandle<T> handleValue) {
+    return defaultGetDescriptorFromHandle(handleValue, BindlessDescriptorOptions.None);
+}
+)";
+
 	SlangMatrixLayoutMode SlangMatrixModeFromMythrilMatrixMode(SlangCfg::MatrixMode matrix_mode) {
 		switch (matrix_mode) {
 			case SlangCfg::MatrixMode::ColMajor:
@@ -35,6 +44,7 @@ namespace mythril {
 	void SlangCompiler::destroy() {
 		if (!this->_sessionExists)
 			return;
+		_bindlessModule.detach();
 		_slangSession.detach();
 		_globalSlangSession.detach();
 		_sessionExists = false;
@@ -42,6 +52,10 @@ namespace mythril {
 
 	void SlangCompiler::addSearchPath(const std::filesystem::path& searchPath) { this->_shaderSearchPaths.push_back(searchPath); }
 	void SlangCompiler::clearSearchPaths() { this->_shaderSearchPaths.clear(); }
+
+	static const char* ResolveDiagnosticsMessage(const Slang::ComPtr<slang::IBlob>& diagnostics_blob) {
+		return diagnostics_blob ? static_cast<const char*>(diagnostics_blob->getBufferPointer()) : "(no diagnostics available)";
+	}
 
 	void SlangCompiler::createSessionImpl() {
 		const SlangResult global_result = slang::createGlobalSession(this->_globalSlangSession.writeRef());
@@ -94,11 +108,38 @@ namespace mythril {
 		};
 		const SlangResult session_result = this->_globalSlangSession->createSession(sessionDesc, this->_slangSession.writeRef());
 		ASSERT_MSG(SLANG_SUCCEEDED(session_result), "Slang failed to create session!");
+
+		Slang::ComPtr<slang::IBlob> bindless_diagnostics;
+		this->_bindlessModule = this->_slangSession->loadModuleFromSourceString("mythril_bindless", "mythril_bindless.slang", kBindlessModuleSource, bindless_diagnostics.writeRef());
+		ASSERT_MSG(this->_bindlessModule, "Failed to load Mythril's bindless module! Diagnostics Below:\n{}", ResolveDiagnosticsMessage(bindless_diagnostics));
 	}
 
-	static const char* ResolveDiagnosticsMessage(const Slang::ComPtr<slang::IBlob>& diagnostics_blob) {
-		return diagnostics_blob ? static_cast<const char*>(diagnostics_blob->getBufferPointer()) : "(no diagnostics available)";
+	static bool DeclaresBindlessOverride(slang::DeclReflection* moduleDecl) {
+		for (slang::DeclReflection* child: moduleDecl->getChildren()) {
+			const auto kind = child->getKind();
+			if (kind != slang::DeclReflection::Kind::Func && kind != slang::DeclReflection::Kind::Generic)
+				continue;
+			const char* name = child->getName();
+			if (name && std::strcmp(name, kBindlessFunctionName) == 0)
+				return true;
+		}
+		return false;
 	}
+
+	void SlangCompiler::validateNoBindlessOverride() const {
+		for (SlangInt i = 0; i < _slangSession->getLoadedModuleCount(); ++i) {
+			slang::IModule* loaded = _slangSession->getLoadedModule(i);
+			if (loaded == _bindlessModule.get())
+				continue;
+			ASSERT_MSG(
+			        !DeclaresBindlessOverride(loaded->getModuleReflection()),
+			        "Module '{}' defines '{}', but Mythril already provides it and a second definition would be silently ignored. Remove it from your shader.",
+			        loaded->getFilePath() ? loaded->getFilePath() : loaded->getName(),
+			        kBindlessFunctionName
+			);
+		}
+	}
+
 	static std::string JoinActiveSearchPathsLog(const std::vector<std::filesystem::path>& paths) {
 		std::string message;
 		for (const auto& path: paths) {
@@ -109,6 +150,8 @@ namespace mythril {
 
 
 	CompileResult SlangCompiler::compileSlangImpl(Slang::ComPtr<slang::IModule>& slang_module, Slang::ComPtr<slang::IBlob>& diagnostics_blob) const {
+		validateNoBindlessOverride();
+
 		// 2. query entry points
 		// if you have more than 8 components we want to link than whatever man
 		std::vector<Slang::ComPtr<slang::IComponentType>> componentTypes = {};
@@ -120,6 +163,7 @@ namespace mythril {
 			ASSERT_MSG(SLANG_SUCCEEDED(entry_point_result), "Entry point retrieval failed!");
 			componentTypes.emplace_back(entryPoint.get());
 		}
+		componentTypes.emplace_back(_bindlessModule);
 
 		// 3. compose module
 		Slang::ComPtr<slang::IComponentType> composed_program;

@@ -73,20 +73,19 @@ struct RaytracingAccelerationStructure {
 
 };
 
+template<>
+struct DescriptorHandle<RaytracingAccelerationStructure> {
+	uint64_t address;
+	DescriptorHandle(uint64_t address) : address(address) {}
+	DescriptorHandle(uint32_t) = delete;
+};
+
 NAMESPACE_END()
 
 #elif __SLANG__ // when this header is processed in slang
 
 #define NAMESPACE_BEGIN()
 #define NAMESPACE_END()
-
-// will be injected into shaders that use a header file for struct definitions
-export T getDescriptorFromHandle<T : IOpaqueDescriptor>(DescriptorHandle<T> handleValue) {
-    // slang's default reads acceleration structure handles as device addresses
-    if (T.kind == DescriptorKind.AccelerationStructure)
-        return __getDynamicResourceHeap<T>(9)[((uint2)handleValue).x];
-    return defaultGetDescriptorFromHandle(handleValue, BindlessDescriptorOptions.None);
-}
 
 #else // when this header is processed in an unknown languages
 #error "Unknown Language Environment!"

@@ -345,8 +345,7 @@ namespace mythril {
 		void checkAndUpdateBindlessDescriptorSetImpl();
 		void writeTextureDescriptorsImpl(uint32_t first, uint32_t count);
 		void writeSamplerDescriptorsImpl(uint32_t first, uint32_t count);
-		void writeAccelerationStructureDescriptorsImpl(uint32_t first, uint32_t count);
-		void growBindlessDescriptorPoolImpl(uint32_t newMaxSamplerCount, uint32_t newMaxTextureCount, uint32_t newMaxAccelStructureCount);
+		void growBindlessDescriptorPoolImpl(uint32_t newMaxSamplerCount, uint32_t newMaxTextureCount);
 
 		template<typename T>
 		constexpr detail::PipelineCoreData& getPipelineCommonData(T handle) {
@@ -428,9 +427,6 @@ namespace mythril {
 		// not really my stuff //
 		Texture _dummyTexture;
 		Sampler _dummyLinearSampler;
-		// every bindless acceleration structure slot must hold a TLAS, this one is never built so never trace against it
-		VkAccelerationStructureKHR _dummyTLAS = VK_NULL_HANDLE;
-		Buffer _dummyTLASBuffer;
 
 		mutable std::vector<DeferredTask> _deferredTasks;
 
@@ -438,7 +434,6 @@ namespace mythril {
 		bool _awaitingCreation = false;
 		uint32_t _currentMaxTextureCount = 16;
 		uint16_t _currentMaxSamplerCount = 16;
-		uint32_t _currentMaxAccelerationCount = 16;
 
 		VkDescriptorSetLayout _vkBindlessDSL = VK_NULL_HANDLE;
 		VkDescriptorPool _vkBindlessDPool = VK_NULL_HANDLE;

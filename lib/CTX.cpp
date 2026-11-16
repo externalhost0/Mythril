@@ -40,11 +40,9 @@ namespace mythril {
 			//			kStorageTexelBuffer = 2,
 			//			kUniformBuffer = 2,
 			//			kStorageBuffer = 2,
-			// we use 9 because 0-8 are assigned already by slang
-			kAccelerationStructure = 9,
 
 			// this MUST be manually updated
-			kNumOfBinds = 4
+			kNumOfBinds = 3
 		};
 	} // namespace BindlessSpaceIndex
 
@@ -148,26 +146,8 @@ namespace mythril {
 			         .wrapW = SamplerWrap::ClampEdge,
 			         .debugName = "Internal_Linear_Sampler"}
 			);
-			// dummy tlas for bindless validation warnings
-			if (isExtensionEnabled(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME)) {
-				constexpr VkDeviceSize kDummyTLASSize = 256;
-				this->_dummyTLASBuffer = this->createBuffer({
-					.size = kDummyTLASSize,
-					.usage = BufferUsageBits_AccelerationStructureStorage,
-					.storage = StorageType::Device,
-					.debugName = "Internal_Dummy_TLAS_Buffer"
-				});
-				const VkAccelerationStructureCreateInfoKHR ci = {
-					.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR,
-					.buffer = _bufferPool.get(_dummyTLASBuffer.handle())->_vkBuffer,
-					.size = kDummyTLASSize,
-					.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR,
-				};
-				VK_CHECK(vkCreateAccelerationStructureKHR(_vkDevice, &ci, nullptr, &_dummyTLAS));
-				vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR, reinterpret_cast<uint64_t>(_dummyTLAS), "Internal_Dummy_TLAS");
-			}
 			// initial descriptor pool creation
-			this->growBindlessDescriptorPoolImpl(this->_currentMaxSamplerCount, this->_currentMaxTextureCount, this->_currentMaxAccelerationCount);
+			this->growBindlessDescriptorPoolImpl(this->_currentMaxSamplerCount, this->_currentMaxTextureCount);
 		}
 	}
 
@@ -190,11 +170,6 @@ namespace mythril {
 		this->destroySwapchain();
 		this->_dummyTexture.release();
 		this->_dummyLinearSampler.release();
-		if (_dummyTLAS != VK_NULL_HANDLE) {
-			vkDestroyAccelerationStructureKHR(_vkDevice, _dummyTLAS, nullptr);
-			_dummyTLAS = VK_NULL_HANDLE;
-		}
-		this->_dummyTLASBuffer.release();
 
 		// TODO::fixing the allocation not being proerly freed for buffers VMA
 		auto destroyAll = [this]<typename H, typename O>(HandlePool<H, O>& pool, const char* name) {
@@ -311,7 +286,6 @@ namespace mythril {
 		}
 		uint32_t newMaxSamplers = _currentMaxSamplerCount;
 		uint32_t newMaxTextures = _currentMaxTextureCount;
-		uint32_t newMaxAccelStructures = _currentMaxAccelerationCount;
 
 		while (_samplerPool._objects.size() > newMaxSamplers) {
 			newMaxSamplers *= 2;
@@ -319,12 +293,9 @@ namespace mythril {
 		while (_texturePool._objects.size() > newMaxTextures) {
 			newMaxTextures *= 2;
 		}
-		while (_accelerationStructurePool._objects.size() > newMaxAccelStructures) {
-			newMaxAccelStructures *= 2;
-		}
-		if (newMaxSamplers != _currentMaxSamplerCount || newMaxTextures != _currentMaxTextureCount || newMaxAccelStructures != _currentMaxAccelerationCount) {
+		if (newMaxSamplers != _currentMaxSamplerCount || newMaxTextures != _currentMaxTextureCount) {
 			// actual call site for growing
-			this->growBindlessDescriptorPoolImpl(newMaxSamplers, newMaxTextures, newMaxAccelStructures);
+			this->growBindlessDescriptorPoolImpl(newMaxSamplers, newMaxTextures);
 			// pipeline layouts include the old DSL's descriptor counts so they are incompatible with the new set and must be rebuilt
 			for (auto& obj : _graphicsPipelinePool._objects)
 				invalidateBindlessPipelineImpl(obj._obj._shared);
@@ -337,7 +308,6 @@ namespace mythril {
 		_awaitingCreation = false;
 		writeSamplerDescriptorsImpl(0, static_cast<uint32_t>(_samplerPool._objects.size()));
 		writeTextureDescriptorsImpl(0, static_cast<uint32_t>(_texturePool._objects.size()));
-		writeAccelerationStructureDescriptorsImpl(0, static_cast<uint32_t>(_accelerationStructurePool._objects.size()));
 	}
 
 	void CTX::writeTextureDescriptorsImpl(uint32_t first, uint32_t count) {
@@ -421,41 +391,10 @@ namespace mythril {
 		vkUpdateDescriptorSets(_vkDevice, 1, &write, 0, nullptr);
 	}
 
-	void CTX::writeAccelerationStructureDescriptorsImpl(uint32_t first, uint32_t count) {
-		if (_awaitingCreation || _vkBindlessDSet == VK_NULL_HANDLE || first + count > _currentMaxAccelerationCount) {
-			_awaitingCreation = true;
-			return;
-		}
-		if (count == 0 || _dummyTLAS == VK_NULL_HANDLE)
-			return;
-		std::vector<VkAccelerationStructureKHR> handles;
-		handles.reserve(count);
-		for (uint32_t i = first; i < first + count; ++i) {
-			const AllocatedAccelerationStructure& as = _accelerationStructurePool._objects[i]._obj;
-			handles.push_back(as._isTLAS && as._vkAccelerationStructure != VK_NULL_HANDLE ? as._vkAccelerationStructure : _dummyTLAS);
-		}
-		const VkWriteDescriptorSetAccelerationStructureKHR writeAccelStruct = {
-			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR,
-			.accelerationStructureCount = count,
-			.pAccelerationStructures = handles.data(),
-		};
-		const VkWriteDescriptorSet write = {
-			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-			.pNext = &writeAccelStruct,
-			.dstSet = _vkBindlessDSet,
-			.dstBinding = BindlessSpaceIndex::kAccelerationStructure,
-			.dstArrayElement = first,
-			.descriptorCount = count,
-			.descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR,
-		};
-		vkUpdateDescriptorSets(_vkDevice, 1, &write, 0, nullptr);
-	}
-
-	void CTX::growBindlessDescriptorPoolImpl(uint32_t newMaxSamplerCount, uint32_t newMaxTextureCount, uint32_t newMaxAccelStructureCount) {
+	void CTX::growBindlessDescriptorPoolImpl(uint32_t newMaxSamplerCount, uint32_t newMaxTextureCount) {
 		MYTH_PROFILER_FUNCTION();
 		_currentMaxSamplerCount = newMaxSamplerCount;
 		_currentMaxTextureCount = newMaxTextureCount;
-		_currentMaxAccelerationCount = newMaxAccelStructureCount;
 
 		const uint32_t MAX_TEXTURE_LIMIT = getPhysicalDeviceProperties12().maxDescriptorSetUpdateAfterBindSampledImages;
 		ASSERT_MSG(newMaxTextureCount <= MAX_TEXTURE_LIMIT, "Max sampled textures exceeded: {}, but maximum of {} is allowed!", newMaxTextureCount, MAX_TEXTURE_LIMIT);
@@ -486,7 +425,6 @@ namespace mythril {
 		    //				VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kStorageTexelBuffer, VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, newMaxTextureCount, stage_flags, nullptr),
 		    //				VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kUniformBuffer, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, newMaxTextureCount, stage_flags, nullptr),
 		    //				VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kStorageBuffer, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, newMaxTextureCount, stage_flags, nullptr),
-			VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kAccelerationStructure, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, newMaxAccelStructureCount, stage_flags, nullptr)
 		};
 		constexpr uint32_t dsbinding_flags = VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_UNUSED_WHILE_PENDING_BIT | VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT;
 		// assign each of our descriptors the same flags
@@ -494,19 +432,16 @@ namespace mythril {
 		for (VkDescriptorBindingFlags& bindingFlag : bindingFlags) {
 			bindingFlag = dsbinding_flags;
 		}
-		// we only have one conditional set so account for it during runtime here
-		const uint32_t numberofBindsNeeded = isExtensionEnabled(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME) ? BindlessSpaceIndex::kNumOfBinds : BindlessSpaceIndex::kNumOfBinds - 1;
-		// ReSharper disable once CppVariableCanBeMadeConstexpr
 		const VkDescriptorSetLayoutBindingFlagsCreateInfo dsl_bf_ci = {
 		    .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO,
-		    .bindingCount = numberofBindsNeeded,
+		    .bindingCount = BindlessSpaceIndex::kNumOfBinds,
 		    .pBindingFlags = bindingFlags,
 		};
 		const VkDescriptorSetLayoutCreateInfo dsl_ci = {
 		    .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
 		    .pNext = &dsl_bf_ci,
 		    .flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT,
-		    .bindingCount =numberofBindsNeeded,
+		    .bindingCount = BindlessSpaceIndex::kNumOfBinds,
 		    .pBindings = bindings,
 		};
 		VK_CHECK(vkCreateDescriptorSetLayout(_vkDevice, &dsl_ci, nullptr, &_vkBindlessDSL));
@@ -523,15 +458,11 @@ namespace mythril {
 		    //			VkDescriptorPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, newMaxTextureCount),
 		    //			VkDescriptorPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, newMaxTextureCount),
 		};
-		uint32_t numPoolSizes = 3;
-		if (isExtensionEnabled(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME)) {
-			poolSizes[numPoolSizes++] = VkDescriptorPoolSize(VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, newMaxAccelStructureCount);
-		}
 		const VkDescriptorPoolCreateInfo dp_ci = {
 		    .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
 		    .flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT,
 		    .maxSets = 1,
-		    .poolSizeCount = numPoolSizes,
+		    .poolSizeCount = BindlessSpaceIndex::kNumOfBinds,
 		    .pPoolSizes = poolSizes,
 		};
 		VK_CHECK(vkCreateDescriptorPool(_vkDevice, &dp_ci, nullptr, &_vkBindlessDPool));
@@ -2035,7 +1966,6 @@ namespace mythril {
 
 		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR, reinterpret_cast<uint64_t>(obj._vkAccelerationStructure), obj.getDebugName().data());
 		const AccelerationStructureHandle handle = _accelerationStructurePool.create(std::move(obj));
-		writeAccelerationStructureDescriptorsImpl(handle.index(), 1);
 		return { this, handle };
 	}
 
@@ -2405,10 +2335,7 @@ namespace mythril {
 		if (!acceleration_structure)
 			return;
 
-		deferTask(std::packaged_task<void()>([this, index = handle.index()]() {
-			writeAccelerationStructureDescriptorsImpl(index, 1);
-			_accelerationStructurePool.release(index);
-		}));
+		deferTask(std::packaged_task<void()>([this, index = handle.index()]() { _accelerationStructurePool.release(index); }));
 		deferTask(std::packaged_task<void()>([device = _vkDevice, accel_struct = acceleration_structure->_vkAccelerationStructure]() { vkDestroyAccelerationStructureKHR(device, accel_struct, nullptr); }));
 		_accelerationStructurePool.retire(handle);
 	}
