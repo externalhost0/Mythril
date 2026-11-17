@@ -27,6 +27,7 @@ set(SAMPLE_04_PostProcessingCube_REQUIRES "")
 set(SAMPLE_05_ImGui_REQUIRES              "MYTH_ENABLE_IMGUI_STANDARD")
 set(SAMPLE_06_ComplexShader_REQUIRES      "MYTH_ENABLE_IMGUI_STANDARD")
 set(SAMPLE_07_CompleteScene_REQUIRES      "MYTH_ENABLE_IMGUI_STANDARD;MYTH_ENABLE_TRACY")
+set(SAMPLE_09_Skinning_REQUIRES           "MYTH_ENABLE_IMGUI_STANDARD")
 set(ALL_SAMPLES
         01_ClearWindow
         02_Cube
@@ -36,6 +37,7 @@ set(ALL_SAMPLES
         06_ComplexShader
         07_CompleteScene
         08_RayTracing
+        09_Skinning
 )
 
 # ==================== C++ Standard ====================
