@@ -1,10 +1,6 @@
 //
 // Created by Hayden Rivas on 10/8/25.
 //
-// Internal compiled-stage types for the render graph. Defined here so the
-// public include/mythril/RenderGraphBuilder.h can forward-declare them and
-// stay free of lib/ reaches.
-//
 
 #pragma once
 
@@ -161,7 +157,8 @@ namespace mythril {
         }
     };
 
-    // what the graph last recorded per subresource, only trusted while the texture's layout version still matches
+    // what the graph last recorded per subresource
+    // only trusted while the texture's layout version still matches
     struct TextureAccessCache {
         SubresourceMap<StageAccess> masks;
         uint32_t layoutVersion = 0;
@@ -192,7 +189,6 @@ namespace mythril {
         std::vector<GraphTexture> sortedDeclaredTextures;
     };
 
-    // hidden information that transforms the PassSource into usable info
     struct CompiledPass {
         // transferred info from source
         std::string name;

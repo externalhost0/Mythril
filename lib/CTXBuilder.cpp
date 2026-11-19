@@ -309,8 +309,6 @@ namespace mythril {
 	        std::vector<std::string>& outEnabledExtensions
 	) {
 
-		// unfortunately vkb doesnt provide the flexibility we want
-		// so we use some of its features for this step
 		ASSERT(vkPhysicalDevice != VK_NULL_HANDLE);
 
 		uint32_t count = 0;
@@ -802,7 +800,6 @@ missing_features.append("\n\t(" version ") " #feature);
 			vk_surface = this->_surfaceSpec.createFunc(vk_instance);
 		}
 
-		// do not pass features or extensions here, do that to the vkb::PhysicalDevice
 		VkPhysicalDevice vk_physical_device = SelectVulkanPhysicalDevice({
 			.vkInstance = vk_instance,
 			.vkSurface = vk_surface,

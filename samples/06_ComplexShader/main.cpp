@@ -606,7 +606,6 @@ int main() {
 			};
 			auto currentTime = std::chrono::high_resolution_clock::now();
 			float time = std::chrono::duration<float>(currentTime - startTime).count();
-			// once again, getFramebufferSize is the actual resolution we render out
 			const mythril::GPU::GlobalData frameData {
 				.objects = ctx->gpuAddress(objectDataBuf.handle()),
 				.camera = cameraData,

@@ -344,7 +344,7 @@ TEST_CASE("every usage bit createBuffer can emit is handled by the barrier table
 	CHECK_MESSAGE((emitted & ~vkutil::kHandledBufferUsage) == 0, "unhandled usage " << usageNames(emitted & ~vkutil::kHandledBufferUsage));
 }
 
-TEST_CASE("checker catches the barrier bugs that actually happened") {
+TEST_CASE("barrier checker rejects each known-bad barrier generator") {
 	constexpr VkBufferUsageFlags device = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
 
 	SUBCASE("all commands with guessed access: INDEX_READ on a transfer stage") {

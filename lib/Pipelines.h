@@ -32,7 +32,6 @@ namespace mythril {
 		ShaderStage(ShaderHandle handle, const char* entryPoint) :
 		    handle(handle),
 		    entryPoint(entryPoint) {}
-		// recently added
 		ShaderStage(const Shader& shader, const char* entryPoint);
 
 		bool valid() const noexcept { return handle.valid(); }

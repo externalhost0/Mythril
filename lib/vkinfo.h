@@ -7,13 +7,17 @@
 #include <volk.h>
 
 namespace mythril::vkinfo {
+	VkFenceCreateInfo CreateFenceInfo(VkFenceCreateFlags flags = 0);
+	VkSemaphoreCreateInfo CreateSemaphoreInfo(VkSemaphoreCreateFlags flags = 0);
+
+	VkPipelineDynamicStateCreateInfo CreatePipelineDynamicStateInfo(const VkDynamicState* states, uint32_t statescount, VkPipelineDynamicStateCreateFlags flags = 0);
+
+	// all below functions are unused and ready for removal later
 	VkCommandPoolCreateInfo CreateCommandPoolInfo(uint32_t queueFamilyIndex, VkCommandPoolCreateFlags flags = 0);
 	VkCommandBufferAllocateInfo CreateCommandBufferAllocateInfo(VkCommandPool pool, uint32_t count);
 	VkCommandBufferBeginInfo CreateCommandBufferBeginInfo(VkCommandBufferUsageFlags flags = 0);
 	VkCommandBufferSubmitInfo CreateCommandBufferSubmitInfo(VkCommandBuffer cmd);
 
-	VkFenceCreateInfo CreateFenceInfo(VkFenceCreateFlags flags = 0);
-	VkSemaphoreCreateInfo CreateSemaphoreInfo(VkSemaphoreCreateFlags flags = 0);
 	VkSemaphoreSubmitInfo CreateSemaphoreSubmitInfo(VkPipelineStageFlags2 stageMask, VkSemaphore semaphore);
 	VkSubmitInfo2 CreateSubmitInfo(VkCommandBufferSubmitInfo* cmd, VkSemaphoreSubmitInfo* signalSemaphoreInfo, VkSemaphoreSubmitInfo* waitSemaphoreInfo);
 
@@ -48,8 +52,6 @@ namespace mythril::vkinfo {
 
 	VkRenderingInfo CreateRenderingInfo(VkExtent2D extent2D, VkRenderingAttachmentInfo* attachment, VkRenderingAttachmentInfo* depthAttachment);
 	VkRenderingInfo CreateRenderingInfo(VkExtent2D extent2D, std::span<VkRenderingAttachmentInfo> colorAttachments, VkRenderingAttachmentInfo* depthAttachment);
-
-	VkPipelineDynamicStateCreateInfo CreatePipelineDynamicStateInfo(const VkDynamicState* states, uint32_t statescount, VkPipelineDynamicStateCreateFlags flags = 0);
 
 	VkImageViewCreateInfo CreateImageViewInfo(VkFormat format, VkImage image, VkImageAspectFlags aspectFlags);
 	VkImageCreateInfo CreateImageInfo(VkExtent3D extent, VkFormat format, VkImageUsageFlags usage_flags, uint32_t mipmap_levels = 1, VkSampleCountFlags sample_flag = VK_SAMPLE_COUNT_1_BIT);

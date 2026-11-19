@@ -140,7 +140,7 @@ TEST_CASE("render graph buffer tracker orders every hazard for every request seq
 	CHECK(checked == n + n * n + n * n * n + n * n * n * n);
 }
 
-TEST_CASE("checker catches the buffer tracker bugs that actually happened") {
+TEST_CASE("tracker checker rejects a tracker that only remembers the last request") {
 	SUBCASE("earlier reader dropped: fragment read, compute read, compute write") {
 		CHECK_FALSE(check(known_bad::lastRequestOnly, {kFragmentRead, kComputeRead, kComputeWrite}).empty());
 		CHECK(check(vkutil::TrackBufferAccess, {kFragmentRead, kComputeRead, kComputeWrite}).empty());

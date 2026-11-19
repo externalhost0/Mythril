@@ -31,7 +31,6 @@ v2f vs_main(VSInput input) {
     return output;
 }
 
-// the fragment/pixel shader for a depth only pass is irrelevant
 [shader("pixel")]
 float fs_main(v2f input) : SV_Depth {
     float distance = length(input.WorldPos - push.lightPos);

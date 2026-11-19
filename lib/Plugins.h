@@ -31,9 +31,7 @@ namespace mythril {
 		inline bool isEnabled() const { return _isEnabeld; }
 		inline VkFormat getFormat() const { return _requestedFormat; }
 
-		// Called from ImGui::Image free functions in CTX.cpp.
 		static void renderImage(TextureHandle texHandle, SamplerHandle samplerHandle, const ImVec2& image_size, const ImVec2& uv0, const ImVec2& uv1);
-
 	private:
 		struct ImageDescriptorKey {
 			TextureHandle texture;

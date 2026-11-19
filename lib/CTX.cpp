@@ -605,9 +605,6 @@ namespace mythril {
 		// however i want to leave this legacy code in here :)
 		std::vector<VkDescriptorSetLayout> layouts;
 		if (signature.bindlessSetIndex.has_value()) {
-			// The bindless set must live at set index 0 because Vulkan's set-layout array is
-			// positional. Slang assigns it as the highest set index by default; if the user has
-			// other (non-bindless) sets the reflection step will already have errored out.
 			ASSERT_MSG(*signature.bindlessSetIndex == 0, "Bindless set must be declared at set index 0, got {}.", *signature.bindlessSetIndex);
 			layouts.push_back(_vkBindlessDSL);
 		}
@@ -2305,7 +2302,7 @@ namespace mythril {
 		if (!graphics_pipeline)
 			return;
 		PipelineCoreData& core = graphics_pipeline->_shared.core;
-		// The bindless descriptor set layout is owned by CTX and shared across all pipelines.
+		// The bindless descriptor set layout is owned by CTX and shared across all pipelines, so dont delete it!
 		deferTask(std::packaged_task<void()>([device = _vkDevice, pipeline = core._vkPipeline]() { vkDestroyPipeline(device, pipeline, nullptr); }));
 		deferTask(std::packaged_task<void()>([device = _vkDevice, layout = core._vkPipelineLayout]() { vkDestroyPipelineLayout(device, layout, nullptr); }));
 		_graphicsPipelinePool.destroy(handle);
