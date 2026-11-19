@@ -105,7 +105,7 @@ namespace mythril {
 		uint8_t mipLodMin = 0;
 		uint8_t mipLodMax = 15;
 
-		bool anistrophic = false;
+		bool anisotropic = false;
 		uint8_t maxAnisotropic = 1;
 		const char* debugName = "Unnamed Sampler";
 	};

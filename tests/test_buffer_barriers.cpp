@@ -327,7 +327,7 @@ static size_t checkEveryBuffer(Fn fn, bool includeHostVisible) {
 constexpr size_t kSubsets = 1u << kUsageBitCount;
 constexpr size_t kSubsetsWithTransferDst = kSubsets - kSubsets / 4;
 
-TEST_CASE("cmdUpdateBuffer barriers are valid, cover every access, and are tight for every buffer createBuffer can make") {
+TEST_CASE("cmdUpdateBufferEXT barriers are valid, cover every access, and are tight for every buffer createBuffer can make") {
 	CHECK(checkEveryBuffer(vkutil::GetUpdateBufferBarriers, true) == std::size(kFeatureSets) * (kSubsets + 2 * kSubsetsWithTransferDst));
 }
 

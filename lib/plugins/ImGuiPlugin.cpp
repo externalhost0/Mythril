@@ -128,4 +128,106 @@ namespace mythril {
 		_ctx = nullptr;
 		this->_isEnabeld = false;
 	}
+
+	VkDescriptorSet ImGuiPlugin::getOrCreateImageDescriptor(TextureHandle texHandle, SamplerHandle samplerHandle) {
+		ImageDescriptorKey key{
+		    .texture = texHandle,
+		    .sampler = samplerHandle,
+		};
+		if (const auto iterator = _imageDescriptors.find(key); iterator != _imageDescriptors.end()) {
+			return iterator->second;
+		}
+
+		ASSERT_MSG(_ctx, "Mythril ImGui plugin is missing its CTX.");
+		const detail::AllocatedTexture& texture = _ctx->view(texHandle);
+		ASSERT_MSG(texture.isSampledImage(), "Texture '{}' must have sampled flag!", texture.getDebugName());
+
+		const VkSampler sampler = samplerHandle.valid() ? _ctx->view(samplerHandle).getSampler() : _defaultSampler;
+		ScopedImGuiContext context(_backendContext);
+		VkDescriptorSet ds = ImGui_ImplVulkan_AddTexture(sampler, texture.getImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+		_imageDescriptors.insert({key, ds});
+		return ds;
+	}
+
+	void ImGuiPlugin::removeImageDescriptor(TextureHandle texHandle) {
+		std::vector<VkDescriptorSet> descriptors;
+		for (auto it = _imageDescriptors.begin(); it != _imageDescriptors.end();) {
+			if (it->first.texture == texHandle) {
+				descriptors.push_back(it->second);
+				it = _imageDescriptors.erase(it);
+			} else {
+				++it;
+			}
+		}
+		deferImageDescriptorRemoval(std::move(descriptors));
+	}
+
+	void ImGuiPlugin::removeImageDescriptors(SamplerHandle samplerHandle) {
+		std::vector<VkDescriptorSet> descriptors;
+		for (auto it = _imageDescriptors.begin(); it != _imageDescriptors.end();) {
+			if (it->first.sampler == samplerHandle) {
+				descriptors.push_back(it->second);
+				it = _imageDescriptors.erase(it);
+			} else {
+				++it;
+			}
+		}
+		deferImageDescriptorRemoval(std::move(descriptors));
+	}
+
+	void ImGuiPlugin::deferImageDescriptorRemoval(std::vector<VkDescriptorSet> descriptors) {
+		if (descriptors.empty()) {
+			return;
+		}
+		ASSERT_MSG(_ctx, "Mythril ImGui plugin is missing its CTX.");
+		_ctx->deferTask(std::packaged_task<void()>([this, descriptors = std::move(descriptors)]() {
+			ScopedImGuiContext context(_backendContext);
+			for (VkDescriptorSet descriptor: descriptors) {
+				ImGui_ImplVulkan_RemoveTexture(descriptor);
+			}
+		}));
+	}
+
+	void ImGuiPlugin::clearImageDescriptors() {
+		ScopedImGuiContext context(_backendContext);
+		for (const auto& [key, descriptor]: _imageDescriptors) {
+			ImGui_ImplVulkan_RemoveTexture(descriptor);
+		}
+		_imageDescriptors.clear();
+	}
+
+	void ImGuiPlugin::renderImage(TextureHandle texHandle, SamplerHandle samplerHandle, const ImVec2& image_size, const ImVec2& uv0, const ImVec2& uv1) {
+		ASSERT_MSG(texHandle.valid(), "Texture handle is invalid!");
+		ImGuiPlugin* plugin = _activePlugin;
+		ASSERT_MSG(plugin && plugin->_ctx && plugin->_isEnabeld, "No active Mythril ImGui plugin is available for ImGui::Image(TextureHandle).");
+
+		ImVec2 size;
+		if (image_size.x <= 0 && image_size.y <= 0) {
+			const Dimensions dims = plugin->_ctx->view(texHandle).getDimensions();
+			size = {static_cast<float>(dims.width), static_cast<float>(dims.height)};
+		} else {
+			size = image_size;
+		}
+
+		VkDescriptorSet im_image_ds = plugin->getOrCreateImageDescriptor(texHandle, samplerHandle);
+		ImGui::Image(reinterpret_cast<ImTextureID>(im_image_ds), size, uv0, uv1);
+	}
 } // namespace mythril
+namespace ImGui {
+	void Image(mythril::TextureHandle texHandle, mythril::SamplerHandle samplerHandle, const ImVec2& image_size, const ImVec2& uv0, const ImVec2& uv1) {
+		mythril::ImGuiPlugin::renderImage(texHandle, samplerHandle, image_size, uv0, uv1);
+	}
+	void Image(mythril::TextureHandle texHandle, const ImVec2& image_size, const ImVec2& uv0, const ImVec2& uv1) {
+		Image(texHandle, mythril::SamplerHandle{}, image_size, uv0, uv1);
+	}
+	void Image(const mythril::Texture& texture, mythril::TextureViewKey viewKey, const ImVec2& image_size, const ImVec2& uv0, const ImVec2& uv1) {
+		const mythril::TextureHandle viewHandle = texture.getContext()->getTextureViewHandle(texture.handle(), viewKey);
+		Image(viewHandle, mythril::SamplerHandle{}, image_size, uv0, uv1);
+	}
+	void Image(const mythril::Texture& texture, const ImVec2& image_size, const ImVec2& uv0, const ImVec2& uv1) {
+		Image(texture.handle(), mythril::SamplerHandle{}, image_size, uv0, uv1);
+	}
+	void Image(const mythril::Texture& texture, const mythril::Sampler& sampler, const ImVec2& image_size, const ImVec2& uv0, const ImVec2& uv1) {
+		Image(texture.handle(), sampler.handle(), image_size, uv0, uv1);
+	}
+} // namespace ImGui

@@ -10,7 +10,6 @@
 
 #include <vector>
 #include <filesystem>
-#include <execution>
 
 #include <imgui.h>
 #include <imgui_impl_vulkan.h>
@@ -134,10 +133,10 @@ static glm::mat4 calculateProjectionMatrix(const Camera& camera, bool isReverseD
 
 struct MeshCompiled {
 	mythril::BufferHandle vertexBufHandle;
-	uint32_t vertexCount;
+	uint32_t vertexCount{};
 	mythril::BufferHandle indexBufHandle;
-	uint32_t indexCount;
-	int materialIndex;
+	uint32_t indexCount{};
+	int materialIndex{};
 };
 
 struct MaterialData {
@@ -306,7 +305,7 @@ static AssetData loadGLTFAsset(const std::filesystem::path& filepath) {
 				// initialize vertex values
 				// load position
 				fastgltf::iterateAccessorWithIndex<glm::vec3>(gltf, posAccessor, [&vertices, initial_vertex](const glm::vec3 v, const size_t index) {
-					GPU::GeneralVertex vertex = {};
+					GPU::GeneralVertex vertex;
 					vertex.position = v;
 					vertex.uv_x = 0;
 					vertex.normal = glm::vec3{ 1, 0, 0 };
@@ -943,7 +942,7 @@ int main() {
 				VkDeviceAddress vba;
 			} push {
 				.mvp = lightSpaceMatrix * model,
-				.vba = ctx->gpuAddress(opaqueSponzaVertexBuf.handle())
+				.vba = ctx->gpuAddress(opaqueSponzaVertexBuf)
 			};
 			cmd.cmdPushConstants(push);
 			cmd.cmdBindIndexBuffer(opaqueSponzaIndexBuf);
@@ -1038,8 +1037,8 @@ int main() {
 					glm::vec3 lightPos;
 					float farPlane;
 				} push {
-					.shadowMVPs = ctx->gpuAddress(pointLightShadowMatrixBuf.handle()),
-					.vba = ctx->gpuAddress(opaqueSponzaVertexBuf.handle()),
+					.shadowMVPs = ctx->gpuAddress(pointLightShadowMatrixBuf),
+					.vba = ctx->gpuAddress(opaqueSponzaVertexBuf),
 					.model = scaledModel,
 					.nLight = static_cast<uint32_t>(i),
 					.lightPos = lightingData.pointLights[i].position,
@@ -1070,6 +1069,15 @@ int main() {
 			.cull = mythril::CullMode::BACK,
 			.multisample = mythril::SampleCount::X4,
 			.debugName = "Opaque Graphics Pipeline"
+		});
+		// same shader as opaque, only blending and culling differ
+		mythril::GraphicsPipeline transparentPipeline = ctx->createGraphicsPipeline({
+			.vertexShader = {standardShader},
+			.fragmentShader = {standardShader},
+			.blend = mythril::BlendingMode::ALPHA_BLEND,
+			.cull = mythril::CullMode::OFF,
+			.multisample = mythril::SampleCount::X4,
+			.debugName = "Transparent Graphics Pipeline"
 		});
 		mythril::Shader skyShader = ctx->createShader({
 			.source = kDataDir / "shaders/Sky.slang",
@@ -1104,30 +1112,14 @@ int main() {
 				glm::vec3 sunDirection;
 				float _pad;
 			} push{
-				.frame = ctx->gpuAddress(frameDataHandle.handle()),
+				.frame = ctx->gpuAddress(frameDataHandle),
 				.sunDirection = sun_quaternion * glm::vec3(0.f, 0.f, -1.f),
 			};
 			cmd.cmdPushConstants(push);
 			cmd.cmdDraw(3);
 		});
 
-		graph.addGraphicsPass("geometry_opaque")
-		.attachment({
-			.texDesc = rgMsaaColorTarget,
-			.loadOp  = mythril::LoadOp::LOAD,
-			.storeOp = mythril::StoreOp::STORE,
-		})
-		.attachment({
-			.texDesc = rgMsaaDepthTarget,
-			.loadOp = mythril::LoadOp::LOAD,
-			.storeOp = mythril::StoreOp::STORE,
-		})
-		.dependency(rgShadowMap, mythril::TextureAccess::Sampled)
-		.dependency(rgPointLightShadowTex, mythril::TextureAccess::Sampled)
-		.dependency(frameDataHandle, mythril::BufferAccess::ShaderRead)
-		.execute([&](mythril::CommandBuffer& cmd) {
-			cmd.cmdBindGraphicsPipeline(opaquePipeline);
-			cmd.cmdBindDepthState({mythril::CompareOp::Greater, true});
+		auto drawSponzaMeshes = [&](mythril::CommandBuffer& cmd, bool transparent) {
 			const uint32_t shadowTexIndex = cmd.texture(rgShadowMap).index();
 			const uint32_t pointShadowTexIndices[kNumPointLights] = {
 				cmd.texture(rgPointLightShadowTex[0]).index(),
@@ -1135,9 +1127,10 @@ int main() {
 				cmd.texture(rgPointLightShadowTex[2]).index(),
 				cmd.texture(rgPointLightShadowTex[3]).index(),
 			};
+			// what we call a mesh is really a primitive for fastgltf
 			for (const MeshCompiled& mesh : sponzaCompiled.meshes) {
 				const MaterialData& material = sponzaCompiled.materials[mesh.materialIndex];
-				if (material.isTransparent) continue;
+				if (material.isTransparent != transparent) continue;
 
 				mythril::TextureHandle baseColorTex = sponzaCompiled.textureHandles[material.baseColorTextureIndex];
 				mythril::TextureHandle normalTex = sponzaCompiled.textureHandles[material.normalTextureIndex];
@@ -1146,7 +1139,7 @@ int main() {
 				const GPU::GeometryPushConstants push {
 					.model = scaledModel,
 					.vba = ctx->gpuAddress(mesh.vertexBufHandle),
-					.frame = ctx->gpuAddress(frameDataHandle.handle()),
+					.frame = ctx->gpuAddress(frameDataHandle),
 					.tintColor = {1, 1, 1, 1},
 					.baseColorTexture = baseColorTex.index(),
 					.normalTexture = normalTex.index(),
@@ -1167,15 +1160,26 @@ int main() {
 				cmd.cmdBindIndexBuffer(mesh.indexBufHandle);
 				cmd.cmdDrawIndexed(mesh.indexCount);
 			}
-		});
+		};
 
-		mythril::GraphicsPipeline transparentPipeline = ctx->createGraphicsPipeline({
-			.vertexShader = {standardShader},
-			.fragmentShader = {standardShader},
-			.blend = mythril::BlendingMode::ALPHA_BLEND,
-			.cull = mythril::CullMode::OFF,
-			.multisample = mythril::SampleCount::X4,
-			.debugName = "Transparent Graphics Pipeline"
+		graph.addGraphicsPass("geometry_opaque")
+		.attachment({
+			.texDesc = rgMsaaColorTarget,
+			.loadOp  = mythril::LoadOp::LOAD,
+			.storeOp = mythril::StoreOp::STORE,
+		})
+		.attachment({
+			.texDesc = rgMsaaDepthTarget,
+			.loadOp = mythril::LoadOp::LOAD,
+			.storeOp = mythril::StoreOp::STORE,
+		})
+		.dependency(rgShadowMap, mythril::TextureAccess::Sampled)
+		.dependency(rgPointLightShadowTex, mythril::TextureAccess::Sampled)
+		.dependency(frameDataHandle, mythril::BufferAccess::ShaderRead)
+		.execute([&](mythril::CommandBuffer& cmd) {
+			cmd.cmdBindGraphicsPipeline(opaquePipeline);
+			cmd.cmdBindDepthState({mythril::CompareOp::Greater, true});
+			drawSponzaMeshes(cmd, false);
 		});
 
 		graph.addGraphicsPass("geometry_transparent")
@@ -1195,48 +1199,7 @@ int main() {
 		.execute([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdBindGraphicsPipeline(transparentPipeline);
 			cmd.cmdBindDepthState({mythril::CompareOp::Greater, true});
-			const uint32_t shadowTexIndex = cmd.texture(rgShadowMap).index();
-			const uint32_t pointShadowTexIndices[kNumPointLights] = {
-				cmd.texture(rgPointLightShadowTex[0]).index(),
-				cmd.texture(rgPointLightShadowTex[1]).index(),
-				cmd.texture(rgPointLightShadowTex[2]).index(),
-				cmd.texture(rgPointLightShadowTex[3]).index(),
-			};
-			auto model = glm::mat4(1.0);
-			model = glm::scale(model, glm::vec3(kMODELSCALE));
-			// what we call a mesh is really a primitive for fastgltf
-			for (const MeshCompiled& mesh : sponzaCompiled.meshes) {
-				const MaterialData& material = sponzaCompiled.materials[mesh.materialIndex];
-				if (!material.isTransparent) continue;
-
-				mythril::TextureHandle baseColorTex = sponzaCompiled.textureHandles[material.baseColorTextureIndex];
-				mythril::TextureHandle normalTex = sponzaCompiled.textureHandles[material.normalTextureIndex];
-				mythril::TextureHandle roughnessMetallicTex = sponzaCompiled.textureHandles[material.roughnessMetallicTextureIndex];
-
-				const GPU::GeometryPushConstants push {
-						.model = model,
-						.vba = ctx->gpuAddress(mesh.vertexBufHandle),
-						.frame = ctx->gpuAddress(frameDataHandle.handle()),
-						.tintColor = {1, 1, 1, 1},
-						.baseColorTexture = baseColorTex.index(),
-						.normalTexture = normalTex.index(),
-						.roughnessMetallicTexture = roughnessMetallicTex.index(),
-						.samplerState = repeatSampler.index(),
-						.shadowTexture = shadowTexIndex,
-						.shadowSampler = shadowSampler.index(),
-						.lightSpaceMatrix = lightSpaceMatrix,
-						.pointLightShadowTextures = {
-							pointShadowTexIndices[0],
-							pointShadowTexIndices[1],
-							pointShadowTexIndices[2],
-							pointShadowTexIndices[3]
-						},
-						.pointLightFarPlane = pointlight_farplane
-				};
-				cmd.cmdPushConstants(push);
-				cmd.cmdBindIndexBuffer(mesh.indexBufHandle);
-				cmd.cmdDrawIndexed(mesh.indexCount);
-			}
+			drawSponzaMeshes(cmd, true);
 		});
 
 		mythril::Shader particleShader = ctx->createShader({
@@ -1322,9 +1285,9 @@ int main() {
 				float brightness;
 				float speed;
 			} push {
-				.vba = ctx->gpuAddress(particle_vertex_buffer.handle()),
-				.bufferAddr = ctx->gpuAddress(particles_buffer.handle()),
-				.frame = ctx->gpuAddress(frameDataHandle.handle()),
+				.vba = ctx->gpuAddress(particle_vertex_buffer),
+				.bufferAddr = ctx->gpuAddress(particles_buffer),
+				.frame = ctx->gpuAddress(frameDataHandle),
 				.brightness = particle_emission,
 				.speed = particle_speed
 			};
@@ -1418,8 +1381,8 @@ int main() {
 			cmd.cmdPushConstants(push);
 			const mythril::Dimensions texDims = lowResColor.dimensions;
 			constexpr glm::vec2 threadsPerGroup = {16, 16};
-			const auto groupX = static_cast<uint32_t>((texDims.width + threadsPerGroup.x - 1) / threadsPerGroup.x);
-			const auto groupY = static_cast<uint32_t>((texDims.height + threadsPerGroup.y - 1) / threadsPerGroup.y);
+			const auto groupX = static_cast<uint32_t>((texDims.width + static_cast<uint32_t>(threadsPerGroup.x) - 1) / threadsPerGroup.x);
+			const auto groupY = static_cast<uint32_t>((texDims.height + static_cast<uint32_t>(threadsPerGroup.y) - 1) / threadsPerGroup.y);
 			cmd.cmdDispatchThreadGroup({groupX, groupY, 1});
 		});
 
@@ -1611,7 +1574,7 @@ int main() {
 				} push {
 					.model = model,
 					.vba = ctx->gpuAddress(mesh.vertexBufHandle),
-					.frame = ctx->gpuAddress(frameDataHandle.handle())
+					.frame = ctx->gpuAddress(frameDataHandle)
 				};
 				cmd.cmdPushConstants(push);
 				cmd.cmdBindIndexBuffer(mesh.indexBufHandle);
@@ -1661,7 +1624,7 @@ int main() {
 			constexpr glm::vec3 horizonColor = {1.00f, 0.45f, 0.10f};
 			constexpr glm::vec3 moonColor = {0.55f, 0.62f, 0.78f};
 			const float moonUp = glm::max(0.f, sunDir.y);
-			const float nightBlend = glm::smoothstep(0.0f, 0.12f, -sunDir.y);
+			// const float nightBlend = glm::smoothstep(0.0f, 0.12f, -sunDir.y);
 
 			if (sunUp > 0.001f) {
 				lightingData.directionalLights.color     = glm::mix(noonColor, horizonColor, horizonT);
@@ -1946,6 +1909,6 @@ int main() {
 			lumFlip = !lumFlip;
 		}
 	}
-	SDL_DestroyWindow(sdlWindow);
+	DestroySDLWindow(sdlWindow);
 	return 0;
 }

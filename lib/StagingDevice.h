@@ -64,6 +64,7 @@ namespace mythril {
 		};
 
 		MemoryRegionDesc getNextFreeOffset(uint32_t size);
+		MemoryRegionDesc getNextContiguousOffset(uint32_t size);
 		void ensureStagingBufferSize(uint32_t sizeNeeded);
 		void waitAndReset();
 		bool isRegionFree(const MemoryRegionDesc& region) const;

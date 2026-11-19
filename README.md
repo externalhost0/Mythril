@@ -63,9 +63,7 @@ int main() {
 				if (e.type == SDL_EVENT_QUIT) quit = true;
 			}
 
-			mythril::CommandBuffer& cmd = ctx->acquireCommand(mythril::CommandBuffer::Type::Graphics);
-			graph.execute(cmd);
-			ctx->submitCommand(cmd);
+			graph.executeEXT(*ctx);
 		}
 	}
 	DestroySDLWindow(sdlWindow);

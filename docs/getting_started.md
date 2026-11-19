@@ -20,7 +20,7 @@
 
 You are expected to manage the windowing system yourself, however `Mythril` is built to allow ANY windowing system as long as you can get an instance of VkSurfaceKHR from it, the examples use SDL3 and therefore show how you might retrieve it via other similar libraries.
 
-The majority of operations you will be performing are the creation of our Vulkan objects and setting up your framegraph, and basically everything your application will do will take place inside the framegraph's execute callbacks, [read more](#framegraph).
+The majority of operations you will be performing are the creation of our Vulkan objects and setting up your rendergraph, and basically everything your application will do will take place inside the rendergraph's execute callbacks, [read more](#rendergraph).
 
 Throughout this document `Mythril::CTX` and `CTX` are synonymous, and lowercase "ctx" is just an instance of it.
 
@@ -109,7 +109,7 @@ mythril::Buffer uniformBuffer = ctx->createBuffer({
 - Though `StorageType::HostVisible` is the default storage setting (for working out of the box reasons), it is reccomend to use `StorageType::Device` since you likely don't need CPU accessible data.
 - `Buffer::gpuAddress()` is only valid on storage buffers with `StorageType::Device`.
 - To read data back to CPU use `CTX::download()`.
-- You can update buffers via both `CTX::upload()` which has no size limit *(reccommended for one-time uploads)* and `CommandBuffer::cmdUpdateBuffer()` which has a max of 64kb. If you are doing these operations per-frame please consider using `IntermediateBuilder` instead, [read more](#add-intermediate).
+- You can update buffers via both `CTX::upload()` which has no size limit *(reccommended for one-time uploads)* and `CommandBuffer::cmdUpdateBufferEXT()` which has a max of 64kb. If you are doing these operations per-frame please consider using `IntermediateBuilder` instead, [read more](#add-intermediate).
 ---
 
 ## Images
@@ -238,7 +238,7 @@ mythril::GraphicsPipeline pipeline = ctx->createGraphicsPipeline({
 
 ```cpp
 .vertexShader = {defaultShader.handle(), "vertMain"},
-# equivalent
+// equivalent
 .vertexShader = {defaultShader, "vertMain"},
 ```
 
@@ -314,7 +314,7 @@ The rendergraph is Mythril's special sauce, allowing a developer to simply write
 The samples are your friend here since they show various use cases of a pass. 
 We use the words framegraph and rendergraph interchangably in the docs.
 
-It's a three step process:
+It's a four step process:
 - Instiantate a `RenderGraph` object;
 - Tell the graph which textures it works with. Passes name textures by `GraphTexture` ids, not by `Texture` objects.
   - `graph.importTexture(texture)` hands the graph a texture you created and keep alive. Importing the same texture twice returns the same id.
@@ -324,7 +324,7 @@ It's a three step process:
   - `addComputePass`: Used alongside a `ComputePipeline`
   - `addRayTracingPass`: Used alongside a `RayTracingPipeline`
 <a id="add-intermediate"></a>
-  - `addIntermediate`: When you have per-frame operations that don't pertain to a pipeline, this includes copying & blitting textures, updating/uploading data to buffers. You should use this instead of a `CommandBuffer::cmdUpdateBuffer` or `CTX::upload` since it is context aware and can optimize when the updates occur.
+  - `addIntermediate`: When you have per-frame operations that don't pertain to a pipeline, this includes copying & blitting textures, updating/uploading data to buffers. You should use this instead of a `CommandBuffer::cmdUpdateBufferEXT` or `CTX::upload` since it is context aware and can optimize when the updates occur.
 
 - Call `.compile()` on your rendergraph!
 

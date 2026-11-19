@@ -150,17 +150,7 @@ namespace mythril {
 
 		ASSERT_MSG(storageSize <= _stagingBufferSize, "No support for copying image in multiple smaller chunk sizes");
 
-		// get next staging buffer free offset
-		MemoryRegionDesc desc = getNextFreeOffset(storageSize);
-
-		// No support for copying image in multiple smaller chunk sizes.
-		// If we get smaller buffer size than storageSize, we will wait for GPU idle and get a bigger chunk.
-		if (desc.size_ < storageSize) {
-			waitAndReset();
-			desc = getNextFreeOffset(storageSize);
-		}
-
-		ASSERT(desc.size_ >= storageSize);
+		MemoryRegionDesc desc = getNextContiguousOffset(storageSize);
 
 		AllocatedBuffer* stagingBuffer = _ctx._bufferPool.get(_stagingBuffer);
 
@@ -236,14 +226,7 @@ namespace mythril {
 
 		ensureStagingBufferSize(storageSize);
 		ASSERT(storageSize <= _stagingBufferSize);
-		MemoryRegionDesc desc = getNextFreeOffset(storageSize);
-		// No support for copying image in multiple smaller chunk sizes. If we get smaller buffer size than storageSize, we will wait for GPU idle
-		// and get bigger chunk.
-		if (desc.size_ < storageSize) {
-			waitAndReset();
-			desc = getNextFreeOffset(storageSize);
-		}
-		ASSERT(desc.size_ >= storageSize);
+		MemoryRegionDesc desc = getNextContiguousOffset(storageSize);
 
 		const ImmediateCommands::CommandBufferWrapper& wrapper = _ctx._immGraphics->acquire();
 
@@ -342,17 +325,7 @@ namespace mythril {
 
 		ASSERT(storageSize <= _stagingBufferSize);
 
-		// get next staging buffer free offset
-		MemoryRegionDesc desc = getNextFreeOffset(storageSize);
-
-		// No support for copying image in multiple smaller chunk sizes.
-		// If we get smaller buffer size than storageSize, we will wait for GPU idle and get a bigger chunk.
-		if (desc.size_ < storageSize) {
-			waitAndReset();
-			desc = getNextFreeOffset(storageSize);
-		}
-
-		ASSERT(desc.size_ >= storageSize);
+		MemoryRegionDesc desc = getNextContiguousOffset(storageSize);
 
 		AllocatedBuffer* stagingBuffer = _ctx._bufferPool.get(_stagingBuffer);
 
@@ -495,7 +468,6 @@ namespace mythril {
 			}
 		}
 		// we found a region that is available that is smaller than the requested size. It's the best we can do
-		// we found a region that is available that is smaller than the requested size. It's the best we can do
 		if (bestNextIt != _regions.end() && isRegionFree(*bestNextIt)) {
 			const auto result = MemoryRegionDesc{bestNextIt->offset_, bestNextIt->size_, SubmitHandle(), MemoryRegionDesc::State::Free};
 			// Perform the cleanup that was in SCOPE_EXIT
@@ -522,6 +494,15 @@ namespace mythril {
 		    .handle_ = SubmitHandle(),
 		    .state_ = MemoryRegionDesc::State::Free,
 		};
+	}
+	StagingDevice::MemoryRegionDesc StagingDevice::getNextContiguousOffset(uint32_t size) {
+		MemoryRegionDesc desc = getNextFreeOffset(size);
+		if (desc.size_ < size) {
+			waitAndReset();
+			desc = getNextFreeOffset(size);
+		}
+		ASSERT(desc.size_ >= size);
+		return desc;
 	}
 	void StagingDevice::waitAndReset() {
 		for (const MemoryRegionDesc& r: _regions) {

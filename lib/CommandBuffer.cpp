@@ -564,19 +564,19 @@ namespace mythril {
 		this->cmdBindPipelineImpl(&info->core, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR);
 	}
 
-	void CommandBuffer::cmdUpdateBuffer(BufferHandle handle, size_t offset, size_t size, const void* data) {
+	void CommandBuffer::cmdUpdateBufferEXT(BufferHandle handle, size_t offset, size_t size, const void* data) {
 		DRY_RETURN()
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_COMMAND);
 
 		ASSERT_MSG(!_isRendering, "You cannot update a buffer while rendering! Please move this command either before or after rendering.");
-		ASSERT_MSG(handle.valid(), "cmdUpdateBuffer called with an invalid BufferHandle.");
-		ASSERT_MSG(size > 0 && size <= 65536, "cmdUpdateBuffer requires 0 < size <= 65'536 (64KB).");
-		ASSERT_MSG(size % 4 == 0, "cmdUpdateBuffer size must be a multiple of 4 bytes.");
-		ASSERT_MSG(offset % 4 == 0, "cmdUpdateBuffer offset must be a multiple of 4 bytes.");
+		ASSERT_MSG(handle.valid(), "cmdUpdateBufferEXT called with an invalid BufferHandle.");
+		ASSERT_MSG(size > 0 && size <= 65536, "cmdUpdateBufferEXT requires 0 < size <= 65'536 (64KB).");
+		ASSERT_MSG(size % 4 == 0, "cmdUpdateBufferEXT size must be a multiple of 4 bytes.");
+		ASSERT_MSG(offset % 4 == 0, "cmdUpdateBufferEXT offset must be a multiple of 4 bytes.");
 		AllocatedBuffer* buf = _ctx->_bufferPool.get(handle);
-		ASSERT_MSG(buf, "cmdUpdateBuffer: handle does not resolve to a live buffer.");
-		ASSERT_MSG(offset + size <= buf->_bufferSize, "cmdUpdateBuffer: offset + size exceeds buffer '{}' size ({} > {}).", buf->_debugName, offset + size, buf->_bufferSize);
-		ASSERT_MSG(buf->_vkUsageFlags & VK_BUFFER_USAGE_TRANSFER_DST_BIT, "cmdUpdateBuffer: buffer '{}' was not created with TRANSFER_DST usage.", buf->_debugName);
+		ASSERT_MSG(buf, "cmdUpdateBufferEXT: handle does not resolve to a live buffer.");
+		ASSERT_MSG(offset + size <= buf->_bufferSize, "cmdUpdateBufferEXT: offset + size exceeds buffer '{}' size ({} > {}).", buf->_debugName, offset + size, buf->_bufferSize);
+		ASSERT_MSG(buf->_vkUsageFlags & VK_BUFFER_USAGE_TRANSFER_DST_BIT, "cmdUpdateBufferEXT: buffer '{}' was not created with TRANSFER_DST usage.", buf->_debugName);
 		if (!data) {
 			LOG_SYSTEM(LogType::Warning, "You are updating buffer '{}' with empty data.", buf->_debugName);
 			return;
@@ -589,7 +589,7 @@ namespace mythril {
 		const vkutil::UpdateBufferBarriers barriers = vkutil::GetUpdateBufferBarriers(buf->_vkUsageFlags, features);
 		bufferBarrierImpl(*buf, barriers.before.src, barriers.before.dst);
 
-		MYTH_PROFILER_GPU_COMMAND_ZONE("cmdUpdateBuffer()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
+		MYTH_PROFILER_GPU_COMMAND_ZONE("cmdUpdateBufferEXT()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
 		vkCmdUpdateBuffer(_wrapper->_cmdBuf, buf->_vkBuffer, offset, size, data);
 
 		bufferBarrierImpl(*buf, barriers.after.src, barriers.after.dst);

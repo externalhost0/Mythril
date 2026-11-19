@@ -473,9 +473,19 @@ int main() {
 		});
 
 		auto startTime = std::chrono::high_resolution_clock::now();
+		mythril::GPU::ObjectData objects[kNumObjects];
+		mythril::GPU::MaterialData matData{};
+		mythril::GPU::GlobalData frameData { .objects = ctx->gpuAddress(objectDataBuf) };
+
 		mythril::RenderGraph graph;
 		const mythril::GraphTexture rgColorTarget = graph.createTexture({.size = mythril::RelativeSize{}, .format = VK_FORMAT_R8G8B8A8_UNORM, .debugName = "Color Texture"});
 		const mythril::GraphTexture rgDepthTarget = graph.createTexture({.size = mythril::RelativeSize{}, .format = VK_FORMAT_D32_SFLOAT_S8_UINT, .debugName = "Depth Texture"});
+		graph.addIntermediate("per_frame_uploads")
+		.update(objectDataBuf, [&] { return mythril::UploadData{objects, sizeof(objects)}; })
+		.update(perFrameDataBuffer, [&] { return mythril::UploadData{&frameData, sizeof(frameData)}; })
+		.update(perMaterialDataBuffer, [&] { return mythril::UploadData{&matData, sizeof(matData)}; })
+		.finish();
+
 		graph.addGraphicsPass("geometry")
 		.attachment({
 			.texDesc = rgColorTarget,
@@ -486,10 +496,14 @@ int main() {
 		.attachment({
 			.texDesc = rgDepthTarget,
 			.clearValue = mythril::ClearValue::depth(1.f, 0),
-			.loadOp = mythril::LoadOp::CLEAR
+			.loadOp = mythril::LoadOp::CLEAR,
 		})
+		.dependency(objectDataBuf, mythril::BufferAccess::ShaderRead)
+		.dependency(perFrameDataBuffer, mythril::BufferAccess::ShaderRead)
+		.dependency(perMaterialDataBuffer, mythril::BufferAccess::ShaderRead)
 		.execute([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdBindGraphicsPipeline(mainPipeline);
+			cmd.cmdBindDepthState({mythril::CompareOp::LessEqual, true});
 
 			const auto currentTime = std::chrono::high_resolution_clock::now();
 			const float time = std::chrono::duration<float>(currentTime - startTime).count();
@@ -498,13 +512,13 @@ int main() {
 			modelmatrix = glm::rotate(modelmatrix, time * 0.5f, glm::vec3(1.0f, 0.0f, 0.0f));
 			const mythril::GPU::GeometryPushConstant push {
 				.model =  modelmatrix,
-				.vertexBufferAddress = ctx->gpuAddress(cubeVertexBuffer.handle()),
-				.perFrame = ctx->gpuAddress(perFrameDataBuffer.handle()),
-				.perMaterial = ctx->gpuAddress(perMaterialDataBuffer.handle())
+				.vertexBufferAddress = ctx->gpuAddress(cubeVertexBuffer),
+				.perFrame = ctx->gpuAddress(perFrameDataBuffer),
+				.perMaterial = ctx->gpuAddress(perMaterialDataBuffer)
 			};
 			cmd.cmdPushConstants(push);
 			cmd.cmdBindIndexBuffer(cubeIndexBuffer);
-			cmd.cmdDrawIndexed(cubeIndices.size());
+			cmd.cmdDrawIndexed(cubeIndices.size(), kNumObjects);
 		});
 
 		graph.addGraphicsPass("gui")
@@ -569,7 +583,6 @@ int main() {
 			ImGui::End();
 
 			std::srand(static_cast<unsigned>(std::time(nullptr)));
-			mythril::GPU::ObjectData objects[kNumObjects];
 			for (mythril::GPU::ObjectData& object : objects) {
 				glm::vec3 pos = {
 					(std::rand() / static_cast<float>(RAND_MAX) - 0.5f) * 100.0f, // range [-50, 50]
@@ -583,9 +596,10 @@ int main() {
 				};
 				object = { pos, color };
 			}
+			objects[0].position = glm::vec3(0.f);
 
 
-			const mythril::GPU::MaterialData matData = {
+			matData = mythril::GPU::MaterialData {
 				.tint = { col[0], col[1], col[2] },
 				.warpIterations = warp_iterations,
 				.glowAmount = glow,
@@ -606,29 +620,18 @@ int main() {
 			};
 			auto currentTime = std::chrono::high_resolution_clock::now();
 			float time = std::chrono::duration<float>(currentTime - startTime).count();
-			const mythril::GPU::GlobalData frameData {
-				.objects = ctx->gpuAddress(objectDataBuf.handle()),
+			frameData = mythril::GPU::GlobalData {
+				.objects = ctx->gpuAddress(objectDataBuf),
 				.camera = cameraData,
 				.renderResolution = { currentWindowSize.width, currentWindowSize.height },
 				.time = time
 			};
-
-
-			// buffer updating must be done before rendering
-			// should make this part of the rendergraph
-			{
-				mythril::CommandBuffer& cmd = ctx->acquireCommand(mythril::CommandBuffer::Type::General);
-				cmd.cmdUpdateBuffer(objectDataBuf, objects);
-				cmd.cmdUpdateBuffer(perFrameDataBuffer, frameData);
-				cmd.cmdUpdateBuffer(perMaterialDataBuffer, matData);
-				ctx->submitCommand(cmd);
-			}
 
 			mythril::CommandBuffer& cmd = ctx->acquireCommand(mythril::CommandBuffer::Type::Graphics);
 			graph.execute(cmd);
 			ctx->submitCommand(cmd);
 		}
 	}
-	SDL_DestroyWindow(sdlWindow);
+	DestroySDLWindow(sdlWindow);
 	return 0;
 }

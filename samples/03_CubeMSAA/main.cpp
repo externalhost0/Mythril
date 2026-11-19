@@ -209,7 +209,7 @@ int main() {
 			model = glm::rotate(model, time * 0.5f, glm::vec3(1.0f, 0.0f, 0.0f));
 			mythril::GPU::PushConstant constants = {
 					.mvp = calculateProjectionMatrix(camera) * calculateViewMatrix(camera) * model,
-					.vertexBufferAddress = ctx->gpuAddress(cubeVertexBuffer.handle())
+					.vertexBufferAddress = ctx->gpuAddress(cubeVertexBuffer)
 			};
 			cmd.cmdPushConstants(constants);
 			cmd.cmdBindIndexBuffer(cubeIndexBuffer);

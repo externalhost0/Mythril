@@ -224,6 +224,10 @@ namespace mythril {
 		Shader createShader(const ShaderSpec& spec);
 		AccelerationStructure createAccelerationStructure(const AccelerationStructureSpec& spec);
 
+		// for family
+		VkDeviceAddress gpuAddress(const Buffer& buf, size_t offset = 0) const { return gpuAddress(buf.handle(), offset); }
+		VkDeviceAddress gpuAddress(const AccelerationStructure& as) const { return gpuAddress(as.handle()); }
+		// for friends
 		VkDeviceAddress gpuAddress(BufferHandle handle, size_t offset = 0) const;
 		VkDeviceAddress gpuAddress(AccelerationStructureHandle handle) const;
 

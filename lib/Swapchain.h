@@ -18,7 +18,8 @@ namespace mythril {
 		explicit Swapchain(CTX& ctx, SwapchainSpec args);
 		~Swapchain();
 
-	public: // actually used in the loop
+	public:
+		// actually used in the loop
 		VkSemaphore acquire();
 		void present(VkSemaphore waitSemaphore);
 
@@ -31,6 +32,10 @@ namespace mythril {
 		const TextureHandle& getSwapchainTextureHandle(uint32_t index) const { return _swapchainTextures[index]; }
 		VkExtent2D getSwapchainExtent() const { return _vkExtent2D; }
 
+		// cause why not
+		VkPresentModeKHR getPresentMode() const { return _vkPresentMode; }
+		VkColorSpaceKHR getColorSpace() const { return _vkColorSpace; }
+		VkFormat getFormat() const { return _vkImageFormat; }
 	private:
 		VkSwapchainKHR _vkSwapchain = VK_NULL_HANDLE;
 		VkExtent2D _vkExtent2D = {};

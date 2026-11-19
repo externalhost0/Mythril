@@ -3,6 +3,7 @@
 
 struct VSInput {
     uint VertexID : SV_VertexID;
+    uint InstanceID : SV_InstanceID;
 };
 struct FSOutput {
     float4 FragColor : SV_Target0;
@@ -25,7 +26,9 @@ v2f vs_main(VSInput input) {
 
     Vertex v = perObject.vertexBufferAddress[input.VertexID];
 
-    float3 worldpos = mul(perObject.model, float4(v.position, 1)).xyz;
+    ObjectData obj = perObject.perFrame.objects[input.InstanceID];
+
+    float3 worldpos = mul(perObject.model, float4(v.position, 1)).xyz + obj.position;
     output.ClipPos = mul(mul(perObject.perFrame.camera.proj, perObject.perFrame.camera.view), float4(worldpos, 1));
 
     output.Normal = mul(perObject.model, float4(v.normal, 0)).xyz;

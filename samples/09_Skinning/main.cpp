@@ -354,10 +354,17 @@ int main() {
 		int selectedSlot = 0;
 		std::vector<glm::vec3> rotationOffsets(jointCount, glm::vec3(0.f));
 		Pose pose = evaluatePose(model, 0.f, rotationOffsets);
+		mythril::GPU::FrameData frameData{};
 
 		mythril::RenderGraph graph;
 		const mythril::GraphTexture rgColorTarget = graph.createTexture({.size = mythril::RelativeSize{}, .format = VK_FORMAT_R8G8B8A8_UNORM, .debugName = "Color Texture"});
 		const mythril::GraphTexture rgDepthTarget = graph.createTexture({.size = mythril::RelativeSize{}, .format = VK_FORMAT_D32_SFLOAT_S8_UINT, .debugName = "Depth Texture"});
+		graph.addIntermediate("per_frame_uploads")
+		.update(jointMatrixBuffer, [&] { return mythril::UploadData{pose.jointMatrices.data(), pose.jointMatrices.size() * sizeof(glm::mat4)}; })
+		.update(jointDualQuatBuffer, [&] { return mythril::UploadData{pose.jointDualQuats.data(), pose.jointDualQuats.size() * sizeof(mythril::GPU::DualQuat)}; })
+		.update(frameDataBuffer, [&] { return mythril::UploadData{&frameData, sizeof(frameData)}; })
+		.finish();
+
 		graph.addGraphicsPass("skinned geometry")
 		.attachment({
 			.texDesc = rgColorTarget,
@@ -370,15 +377,18 @@ int main() {
 			.clearValue = mythril::ClearValue::depth(1.f, 0),
 			.loadOp = mythril::LoadOp::CLEAR
 		})
+		.dependency(jointMatrixBuffer, mythril::BufferAccess::ShaderRead)
+		.dependency(jointDualQuatBuffer, mythril::BufferAccess::ShaderRead)
+		.dependency(frameDataBuffer, mythril::BufferAccess::ShaderRead)
 		.execute([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdBindGraphicsPipeline(skinningPipeline);
 			cmd.cmdBindDepthState({mythril::CompareOp::LessEqual, true});
 			const mythril::GPU::SkinPushConstant push = {
 				.model = pose.globals[model.meshNode],
-				.vertices = ctx->gpuAddress(vertexBuffer.handle()),
-				.frame = ctx->gpuAddress(frameDataBuffer.handle()),
-				.jointMatrices = ctx->gpuAddress(jointMatrixBuffer.handle()),
-				.jointDualQuats = ctx->gpuAddress(jointDualQuatBuffer.handle()),
+				.vertices = ctx->gpuAddress(vertexBuffer),
+				.frame = ctx->gpuAddress(frameDataBuffer),
+				.jointMatrices = ctx->gpuAddress(jointMatrixBuffer),
+				.jointDualQuats = ctx->gpuAddress(jointDualQuatBuffer),
 				.skinningMode = static_cast<uint32_t>(skinningMode),
 				.viewMode = static_cast<uint32_t>(viewMode),
 				.selectedJoint = static_cast<uint32_t>(selectedSlot)
@@ -508,21 +518,13 @@ int main() {
 			const glm::vec3 cameraPosition = orbitTarget + orbitDir * orbitDistance;
 			const float aspect = static_cast<float>(currentWindowSize.width) / static_cast<float>(currentWindowSize.height);
 			const glm::mat4 viewProj = glm::perspective(glm::radians(45.f), aspect, 0.01f, 100.f) * glm::lookAt(cameraPosition, orbitTarget, glm::vec3(0, 1, 0));
-			const mythril::GPU::FrameData frameData = {
+			frameData = mythril::GPU::FrameData {
 				.viewProj = viewProj,
 				.lightDir = glm::normalize(orbitDir + glm::vec3(0.f, 1.f, 0.f))
 			};
 
 			if (showSkeleton)
 				drawSkeletonOverlay(model, pose, nodeToSlot, viewProj, selectedSlot);
-
-			{
-				mythril::CommandBuffer& cmd = ctx->acquireCommand(mythril::CommandBuffer::Type::General);
-				cmd.cmdUpdateBuffer(jointMatrixBuffer, pose.jointMatrices);
-				cmd.cmdUpdateBuffer(jointDualQuatBuffer, pose.jointDualQuats);
-				cmd.cmdUpdateBuffer(frameDataBuffer, frameData);
-				ctx->submitCommand(cmd);
-			}
 
 			mythril::CommandBuffer& cmd = ctx->acquireCommand(mythril::CommandBuffer::Type::Graphics);
 			graph.execute(cmd);

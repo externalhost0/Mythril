@@ -177,7 +177,7 @@ int main() {
 		.with_default_swapchain({
 			.width = initialWindowSize.width,
 			.height = initialWindowSize.height,
-			.presentMode = VK_PRESENT_MODE_FIFO_RELAXED_KHR,
+			.presentMode = VK_PRESENT_MODE_IMMEDIATE_KHR,
 		})
 		.build();
 
@@ -293,7 +293,7 @@ int main() {
 				.mask = 0xFF,
 				.instanceShaderBindingTableRecordOffset = 0,
 				.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR,
-				.accelerationStructureReference = ctx->gpuAddress(blases.back().handle())
+				.accelerationStructureReference = ctx->gpuAddress(blases.back())
 			});
 		}
 
@@ -338,32 +338,32 @@ int main() {
 		};
 		applyDebugMode(0);
 
+		mythril::GPU::PerFrame frameData{};
+
 		mythril::RenderGraph graph;
 		const mythril::GraphTexture rgTracedShadowOutput = graph.createTexture({
 			.size = mythril::RelativeSize{},
 			.format = VK_FORMAT_R8G8B8A8_UNORM,
 			.debugName = "Raytraced output"
 		});
+		graph.addIntermediate("per_frame_uploads")
+		.update(frameBuffer, [&] { return mythril::UploadData{&frameData, sizeof(frameData)}; })
+		.finish();
+
 		graph.addRayTracingPass("trace shadows")
 		.dependency(rgTracedShadowOutput, mythril::TextureAccess::StorageReadWrite)
 		.dependency(frameBuffer, mythril::BufferAccess::ShaderRead)
 		.execute([&](mythril::CommandBuffer& cmd) {
 			cmd.cmdBindRayTracingPipeline(mainPipeline);
 			const mythril::ResolvedTexture tracedOutput = cmd.texture(rgTracedShadowOutput);
-			const mythril::GPU::PerFrame frameData = {
-				.viewInverse = glm::inverse(calculateViewMatrix(camera)),
-				.projInverse = glm::inverse(calculateProjectionMatrix(camera)),
-			};
-			cmd.cmdUpdateBuffer(frameBuffer, 0, sizeof(mythril::GPU::PerFrame), &frameData);
-			
 			const mythril::GPU::ShadowPushConstant push = {
-				.frame = ctx->gpuAddress(frameBuffer.handle()),
+				.frame = ctx->gpuAddress(frameBuffer),
 				// points toward the light, closestHitMain dots it with the surface normal
 				.lightDir = glm::vec4(1.5, 2.0, 1.0, 0),
-				.vertices = ctx->gpuAddress(sceneVertexBuffer.handle()),
-				.indices = ctx->gpuAddress(sceneIndexBuffer.handle()),
+				.vertices = ctx->gpuAddress(sceneVertexBuffer),
+				.indices = ctx->gpuAddress(sceneIndexBuffer),
 				.outTexture = tracedOutput.index(),
-				.tlas = ctx->gpuAddress(tlas.handle()),
+				.tlas = ctx->gpuAddress(tlas),
 				.enableShadows = static_cast<uint32_t>(true),
 				.debugMode = debugMode
 			};
@@ -424,6 +424,11 @@ int main() {
 			if (state[SDL_SCANCODE_LCTRL]) camera.position -= up * cameraSpeed;
 			camera.forwardVector = front;
 			camera.upVector = up;
+
+			frameData = mythril::GPU::PerFrame {
+				.viewInverse = glm::inverse(calculateViewMatrix(camera)),
+				.projInverse = glm::inverse(calculateProjectionMatrix(camera)),
+			};
 
 			graph.executeEXT(*ctx);
 		}

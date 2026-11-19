@@ -94,23 +94,23 @@ namespace mythril {
 		}
 
 		template<typename T>
-		void cmdUpdateBuffer(const Buffer& buffer, const std::vector<T>& data, size_t bufferOffset = 0) {
+		void cmdUpdateBufferEXT(const Buffer& buffer, const std::vector<T>& data, size_t bufferOffset = 0) {
 			static_assert(std::is_trivially_copyable_v<T>, "Vector element type must be trivially copyable.");
-			cmdUpdateBuffer(buffer, bufferOffset, data.size() * sizeof(T), data.data());
+			cmdUpdateBufferEXT(buffer, bufferOffset, data.size() * sizeof(T), data.data());
 		}
 
-		void cmdUpdateBuffer(const Buffer& buffer, size_t offset, size_t size, const void* data) { cmdUpdateBuffer(buffer.handle(), offset, size, data); }
+		void cmdUpdateBufferEXT(const Buffer& buffer, size_t offset, size_t size, const void* data) { cmdUpdateBufferEXT(buffer.handle(), offset, size, data); }
 		template<typename Struct>
-		void cmdUpdateBuffer(const Buffer& buffer, const Struct& data, size_t bufferOffset = 0) {
+		void cmdUpdateBufferEXT(const Buffer& buffer, const Struct& data, size_t bufferOffset = 0) {
 			static_assert(sizeof(Struct) <= 65536);
-			static_assert(std::is_trivially_copyable_v<Struct>, "cmdUpdateBuffer template only accepts trivially copyable structs.");
-			cmdUpdateBuffer(buffer, bufferOffset, sizeof(Struct), &data);
+			static_assert(std::is_trivially_copyable_v<Struct>, "cmdUpdateBufferEXT template only accepts trivially copyable structs.");
+			cmdUpdateBufferEXT(buffer, bufferOffset, sizeof(Struct), &data);
 		}
 		// void these two
-		void cmdUpdateBuffer(BufferHandle handle, size_t offset, size_t size, const void* data);
+		void cmdUpdateBufferEXT(BufferHandle handle, size_t offset, size_t size, const void* data);
 		template<typename Struct>
-		void cmdUpdateBuffer(BufferHandle handle, const Struct& data, size_t bufferOffset = 0) {
-			cmdUpdateBuffer(handle, bufferOffset, sizeof(Struct), &data);
+		void cmdUpdateBufferEXT(BufferHandle handle, const Struct& data, size_t bufferOffset = 0) {
+			cmdUpdateBufferEXT(handle, bufferOffset, sizeof(Struct), &data);
 		}
 
 		void cmdDraw(uint32_t vertexCount, uint32_t instanceCount = 1, uint32_t firstVertex = 0, uint32_t firstInstance = 0);

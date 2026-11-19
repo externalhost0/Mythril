@@ -136,7 +136,6 @@ namespace mythril {
 		VmaAllocation _vmaAllocation = VK_NULL_HANDLE;
 
 		void* _mappedPtr = nullptr;
-		bool _isResolveAttachment = false;
 		bool _isSwapchainImage = false;
 		bool _isOwning = true;
 		char _debugName[kMaxDebugNameLength] = {0};
