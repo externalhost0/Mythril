@@ -14,7 +14,6 @@
 #include "Plugins.h"
 #include "mythril/CTXBuilder.h"
 #include "mythril/Objects.h"
-#include "vkstring.h"
 #include "vkutil.h"
 
 #include <slang/slang-com-ptr.h>

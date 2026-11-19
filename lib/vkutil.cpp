@@ -5,7 +5,7 @@
 #include "vkutil.h"
 #include "HelperMacros.h"
 #include "Logger.h"
-#include "vkstring.h"
+#include <vulkan/vk_enum_string_helper.h>
 
 #include <algorithm>
 #include <array>
@@ -99,7 +99,7 @@ namespace mythril::vkutil {
 		if (auto it = std::lower_bound(kTextureFormatTable.begin(), kTextureFormatTable.end(), format, cmp); it != kTextureFormatTable.end() && it->format == format) {
 			return &(*it);
 		}
-		ASSERT_MSG(false, "VkFormat '{}' not currently supported!", vkstring::VulkanFormatToString(format));
+		ASSERT_MSG(false, "VkFormat '{}' not currently supported!", string_VkFormat(format));
 	}
 	uint32_t GetTextureBytesPerLayer(uint32_t width, uint32_t height, VkFormat format, uint32_t level) {
 		const uint32_t levelWidth = std::max(width >> level, 1u);

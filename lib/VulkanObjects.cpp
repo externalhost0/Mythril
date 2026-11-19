@@ -5,7 +5,7 @@
 #include "mythril/CTX.h"
 #include "HelperMacros.h"
 #include "Logger.h"
-#include "vkstring.h"
+#include <vulkan/vk_enum_string_helper.h>
 #include "vkutil.h"
 
 #include <algorithm>
@@ -103,7 +103,7 @@ namespace mythril::detail {
 			const bool hardwareDownscalingSupported = (_vkFormatProperties.optimalTilingFeatures & formatFeatureMask) == formatFeatureMask;
 
 			if (!hardwareDownscalingSupported) {
-				LOG_SYSTEM(LogType::Warning, "Doesn't support hardware downscaling of image format: {}", vkstring::VulkanFormatToString(_vkFormat));
+				LOG_SYSTEM(LogType::Warning, "Doesn't support hardware downscaling of image format: {}", string_VkFormat(_vkFormat));
 				return;
 			}
 		}

@@ -12,7 +12,7 @@
 #include "Swapchain.h"
 #include "VulkanObjects.h"
 #include "vkinfo.h"
-#include "vkstring.h"
+#include <vulkan/vk_enum_string_helper.h>
 
 namespace mythril {
 	using namespace detail;
@@ -81,7 +81,7 @@ namespace mythril {
 		}
 
 		if (args.format != VK_FORMAT_MAX_ENUM && surfaceFormat.format != args.format) {
-			LOG_SYSTEM(LogType::Warning, "Requested swapchain format is unsupported by the surface! Requested: '{}' vs Actual: '{}'", vkstring::VulkanFormatToString(args.format), vkstring::VulkanFormatToString(surfaceFormat.format));
+			LOG_SYSTEM(LogType::Warning, "Requested swapchain format is unsupported by the surface! Requested: '{}' vs Actual: '{}'", string_VkFormat(args.format), string_VkFormat(surfaceFormat.format));
 		}
 		if (args.colorSpace != VK_COLOR_SPACE_MAX_ENUM_KHR && surfaceFormat.colorSpace != args.colorSpace) {
 			LOG_SYSTEM(LogType::Warning, "Requested swapchain color space is unsupported by the surface! Requested: '{}' vs Actual: '{}'", ColorSpaceName(args.colorSpace), ColorSpaceName(surfaceFormat.colorSpace));

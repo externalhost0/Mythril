@@ -12,7 +12,7 @@
 
 #include <volk.h>
 
-#include "vkstring.h"
+#include <vulkan/vk_enum_string_helper.h>
 #ifdef MYTH_ENABLED_IMGUI
 #include <imgui.h>
 #include <imgui_impl_vulkan.h>
@@ -358,7 +358,7 @@ namespace mythril {
 			        "Automatically resolved texture ({}) to be in correct layout (VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) before {}. Was in ({})",
 			        sourceObject._debugName,
 			        operation,
-			        vkstring::VulkanImageLayoutToString(sourceObject.getImageLayout(baseSubresource))
+			        string_VkImageLayout(sourceObject.getImageLayout(baseSubresource))
 			);
 			this->cmdTransitionLayout(sourceHandle, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
 		}
@@ -368,7 +368,7 @@ namespace mythril {
 			        "Automatically resolved texture ({}) to be in correct layout (VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) before {}. Was in ({})",
 			        destinationObject._debugName,
 			        operation,
-			        vkstring::VulkanImageLayoutToString(destinationObject.getImageLayout(baseSubresource))
+			        string_VkImageLayout(destinationObject.getImageLayout(baseSubresource))
 			);
 			this->cmdTransitionLayout(destinationHandle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 		}
@@ -742,8 +742,8 @@ namespace mythril {
 		ASSERT_MSG(
 		        sourceTex._vkFormat == destinationTex._vkFormat,
 		        "The images being copied must be of the same VkFormat (source is '{}' while destination is '{}')!",
-		        vkstring::VulkanFormatToString(sourceTex.getFormat()),
-		        vkstring::VulkanFormatToString(destinationTex.getFormat())
+		        string_VkFormat(sourceTex.getFormat()),
+		        string_VkFormat(destinationTex.getFormat())
 		);
 		ASSERT_MSG(sourceTex._vkExtent.width == destinationTex._vkExtent.width, "The images being copied must be of the same width!");
 		ASSERT_MSG(sourceTex._vkExtent.height == destinationTex._vkExtent.height, "The images being copied must be of the same height!");

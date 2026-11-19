@@ -6,7 +6,7 @@
 #include "HelperMacros.h"
 #include "Logger.h"
 #include "faststl/StackString.h"
-#include "vkstring.h"
+#include <vulkan/vk_enum_string_helper.h>
 
 #include <cctype>
 #include <optional>
@@ -341,7 +341,7 @@ namespace mythril {
 				        numOfStageEntryPoints[vk_shader_stage_flag] < 2,
 				        "You cannot have more than 1 entrypoint for the same shader stage! '{}' is the second entrypoint that targets '{}'",
 				        spvReflectedEntryPoint.name,
-				        vkstring::VulkanShaderStageFlagBitsToString(vk_shader_stage_flag).c_str()
+				        string_VkShaderStageFlagBits(vk_shader_stage_flag)
 				);
 			}
 #endif

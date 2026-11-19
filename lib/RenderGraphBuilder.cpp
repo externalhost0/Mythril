@@ -19,7 +19,7 @@
 
 #include "GraphicsPipelineBuilder.h"
 #include "Logger.h"
-#include "vkstring.h"
+#include <vulkan/vk_enum_string_helper.h>
 
 namespace mythril {
 	using namespace detail;
@@ -473,9 +473,9 @@ namespace mythril {
 				        pass_desc,
 				        "Resolve texture must have the same format as the texture it resolves from (found texture '{}' to be of format {} while resolve texture '{}' is of format {})",
 				        shape.debugName,
-				        vkstring::VulkanFormatToString(shape.format),
+				        string_VkFormat(shape.format),
 				        resolve_shape.debugName,
-				        vkstring::VulkanFormatToString(resolve_shape.format)
+				        string_VkFormat(resolve_shape.format)
 				);
 				if (attachment_desc.storeOp == StoreOp::STORE)
 					LOG_PASS(
