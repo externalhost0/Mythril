@@ -36,8 +36,8 @@ int main() {
 			SDL_Vulkan_DestroySurface(instance, surface_khr, nullptr);
 		})
 		.with_default_swapchain({
-			.width = windowSize.width,
-			.height = windowSize.height,
+			.width = width,
+			.height = height,
 			.presentMode = VK_PRESENT_MODE_IMMEDIATE_KHR
 		})
 		.build();

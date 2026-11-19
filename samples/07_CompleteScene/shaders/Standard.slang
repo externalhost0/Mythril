@@ -108,7 +108,7 @@ FSOutput fs_main(v2f input) {
                 push.frame.lighting.pointLights[i].position,
                 push.pointLightCubemaps[i],
                 N,
-                60 // farPlane, just hardcode for now
+                push.pointLightFarPlane
             );
             omni += pointLightContribution * pointShadowFactor;
         }

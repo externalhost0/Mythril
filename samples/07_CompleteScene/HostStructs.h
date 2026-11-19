@@ -69,6 +69,7 @@ namespace GPU {
         uint64_t shadowSampler;
 		glm::mat4 lightSpaceMatrix;
 		uint64_t pointLightShadowTextures[4];
+		float pointLightFarPlane;
 	};
 
 }

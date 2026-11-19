@@ -985,7 +985,7 @@ namespace mythril {
 			// demote passes that request a queue but we dont have access to
 			if (requested_queue == QueueAffinity::AsyncCompute && !canUseAC) {
 				LOG_PASS(LogType::Warning, pass, "demoted to graphics: No async compute family available.");
-				return QueueAffinity::AsyncTransfer;
+				return QueueAffinity::Graphics;
 			}
 			if (requested_queue == QueueAffinity::AsyncTransfer && !canUseAT) {
 				if (canUseAC) {

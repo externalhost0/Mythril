@@ -15,13 +15,6 @@
 
 
 namespace mythril {
-	// some helper functions //
-	bool isIntegarFormat(VkFormat format) {
-		return (format == VK_FORMAT_R8_UINT || format == VK_FORMAT_R16_UINT || format == VK_FORMAT_R32_UINT || format == VK_FORMAT_R8G8_UINT || format == VK_FORMAT_R16G16_UINT ||
-		        format == VK_FORMAT_R32G32_UINT || format == VK_FORMAT_R8G8B8_UINT || format == VK_FORMAT_R16G16B16_UINT || format == VK_FORMAT_R32G32B32_UINT || format == VK_FORMAT_R8G8B8A8_UINT ||
-		        format == VK_FORMAT_R16G16B16A16_UINT || format == VK_FORMAT_R32G32B32A32_UINT);
-	}
-
 	void GraphicsPipelineBuilder::Clear() {
 		// clear all of the structs we need back to 0 with their correct stype
 		_inputAssembly = {.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
@@ -53,7 +46,7 @@ namespace mythril {
 		// if blending is enabled in one of the helper functions, this catches formats that cant use transparency and disables it
 		// disable blending if format doesnt accept it
 		for (int i = 0; i < blendAttachments.size(); i++) {
-			if (isIntegarFormat(_colorAttachmentFormats[i])) {
+			if (vkutil::IsIntegerFormat(_colorAttachmentFormats[i])) {
 				LOG_SYSTEM(LogType::Warning, "Color Attachment {} does not support blending and has blendEnabled to VK_FALSE", i);
 				blendAttachments[i].blendEnable = VK_FALSE;
 			}
@@ -153,8 +146,8 @@ namespace mythril {
 		for (const VkFormat& format: formats) {
 			_colorAttachmentFormats.push_back(format);
 		}
-		_renderInfo.colorAttachmentCount = formats.size();
-		_renderInfo.pColorAttachmentFormats = formats.data();
+		_renderInfo.colorAttachmentCount = _colorAttachmentFormats.size();
+		_renderInfo.pColorAttachmentFormats = _colorAttachmentFormats.data();
 
 		return *this;
 	}

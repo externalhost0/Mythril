@@ -1036,12 +1036,14 @@ int main() {
 					glm::mat4 model;
 					uint32_t nLight;
 					glm::vec3 lightPos;
+					float farPlane;
 				} push {
 					.shadowMVPs = ctx->gpuAddress(pointLightShadowMatrixBuf.handle()),
 					.vba = ctx->gpuAddress(opaqueSponzaVertexBuf.handle()),
 					.model = scaledModel,
 					.nLight = static_cast<uint32_t>(i),
 					.lightPos = lightingData.pointLights[i].position,
+					.farPlane = pointlight_farplane,
 				};
 				cmd.cmdPushConstants(push);
 				cmd.cmdBindIndexBuffer(opaqueSponzaIndexBuf);
@@ -1158,7 +1160,8 @@ int main() {
 						pointShadowTexIndices[1],
 						pointShadowTexIndices[2],
 						pointShadowTexIndices[3]
-					}
+					},
+					.pointLightFarPlane = pointlight_farplane
 				};
 				cmd.cmdPushConstants(push);
 				cmd.cmdBindIndexBuffer(mesh.indexBufHandle);
@@ -1227,7 +1230,8 @@ int main() {
 							pointShadowTexIndices[1],
 							pointShadowTexIndices[2],
 							pointShadowTexIndices[3]
-						}
+						},
+						.pointLightFarPlane = pointlight_farplane
 				};
 				cmd.cmdPushConstants(push);
 				cmd.cmdBindIndexBuffer(mesh.indexBufHandle);

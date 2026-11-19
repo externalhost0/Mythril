@@ -639,7 +639,7 @@ namespace mythril {
 		    .stage = VK_SHADER_STAGE_COMPUTE_BIT,
 		    .module = shader->_vkShaderModule,
 		    .pName = "cs_main",
-		    .pSpecializationInfo = &spec_constants_bundle->vkInfo,
+		    .pSpecializationInfo = spec_constants_bundle ? &spec_constants_bundle->vkInfo : nullptr,
 		};
 		VkComputePipelineCreateInfo pipeline_ci = {.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO, .pNext = nullptr, .flags = 0, .stage = shader_stage_ci, .layout = layout};
 
@@ -977,7 +977,7 @@ namespace mythril {
 			ASSERT_MSG(shader, "The vertex shader for graphics pipeline: '{}' was destroyed or moved.", spec.debugName);
 			CheckSpecializationConstants(*shader, sc_count, "vertex", spec.debugName, true);
 			vertSpecConstantsBundle = BuildSpecializationInfoBundle(spec.specConstants, sc_count, shader->_specializationInfo.nameToID);
-			builder.add_shader_module(shader->_vkShaderModule, VK_SHADER_STAGE_VERTEX_BIT, vertStage.entryPoint, &vertSpecConstantsBundle->vkInfo);
+			builder.add_shader_module(shader->_vkShaderModule, VK_SHADER_STAGE_VERTEX_BIT, vertStage.entryPoint, vertSpecConstantsBundle ? &vertSpecConstantsBundle->vkInfo : nullptr);
 			pipeline_layout_signatures.push_back(shader->_pipelineSignature);
 		}
 		ShaderStage& fragStage = spec.fragmentShader;
@@ -990,7 +990,7 @@ namespace mythril {
 			ASSERT_MSG(shader, "The fragment shader for graphics pipeline: '{}' was destroyed or moved.", spec.debugName);
 			CheckSpecializationConstants(*shader, sc_count, "fragment", spec.debugName, true);
 			fragSpecConstantsBundle = BuildSpecializationInfoBundle(spec.specConstants, sc_count, shader->_specializationInfo.nameToID);
-			builder.add_shader_module(shader->_vkShaderModule, VK_SHADER_STAGE_FRAGMENT_BIT, fragStage.entryPoint, &fragSpecConstantsBundle->vkInfo);
+			builder.add_shader_module(shader->_vkShaderModule, VK_SHADER_STAGE_FRAGMENT_BIT, fragStage.entryPoint, fragSpecConstantsBundle ? &fragSpecConstantsBundle->vkInfo : nullptr);
 			pipeline_layout_signatures.push_back(shader->_pipelineSignature);
 		}
 		// we dont support geometry shaders because my mac doesnt :)
@@ -1950,9 +1950,6 @@ namespace mythril {
 		ASSERT_MSG(spec.indexType == VK_INDEX_TYPE_UINT16 || spec.indexType == VK_INDEX_TYPE_UINT32 || spec.indexType == VK_INDEX_TYPE_NONE_KHR, "Invalid indexType attribute, must be VK_INDEX_TYPE_UINT16, VK_INDEX_TYPE_UINT32, or VK_INDEX_TYPE_NONE_KHR.");
 
 		AllocatedAccelerationStructure obj{};
-		// _debugName
-		snprintf(obj._debugName, sizeof(obj._debugName), "%s", spec.debugName);
-
 		switch (spec.type) {
 			case AccelerationStructureSpec::Type::BLAS: {
 				obj = createBLASImpl(spec);
@@ -1963,6 +1960,7 @@ namespace mythril {
 			default:
 				ASSERT_MSG(false, "Invalid acceleration structure type choosen!");
 		}
+		snprintf(obj._debugName, sizeof(obj._debugName), "%s", spec.debugName);
 
 		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR, reinterpret_cast<uint64_t>(obj._vkAccelerationStructure), obj.getDebugName().data());
 		const AccelerationStructureHandle handle = _accelerationStructurePool.create(std::move(obj));
