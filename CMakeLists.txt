@@ -88,45 +88,13 @@ if(VULKAN_SDK_DIR)
 endif()
 
 # ==================== Slang Shader Compiler ====================
-option(MYTH_USE_LOCAL_SLANG "Use a locally-built Slang instead of the Vulkan SDK's" OFF)
-set(MYTH_LOCAL_SLANG_DIR "$ENV{HOME}/Libs/slang" CACHE PATH "Path to local Slang source")
-
-if(MYTH_USE_LOCAL_SLANG)
-    message(STATUS "Looking for local Slang at: ${MYTH_LOCAL_SLANG_DIR}")
-    set(SLANG_BUILD_CONFIGS "Release" "Debug" "RelWithDebInfo")
-    set(SLANG_LIBRARY_FOUND FALSE)
-    foreach(CONFIG ${SLANG_BUILD_CONFIGS})
-        if(APPLE)
-            set(POTENTIAL_LIB "${MYTH_LOCAL_SLANG_DIR}/build/${CONFIG}/lib/libslang.dylib")
-        elseif(WIN32)
-            set(POTENTIAL_LIB "${MYTH_LOCAL_SLANG_DIR}/build/${CONFIG}/bin/slang.dll")
-            set(POTENTIAL_IMPLIB "${MYTH_LOCAL_SLANG_DIR}/build/${CONFIG}/lib/slang.lib")
-        else()
-            set(POTENTIAL_LIB "${MYTH_LOCAL_SLANG_DIR}/build/${CONFIG}/lib/libslang.so")
-        endif()
-        set(POTENTIAL_INCLUDE "${MYTH_LOCAL_SLANG_DIR}")
-        if(EXISTS "${POTENTIAL_LIB}")
-            set(SLANG_LIBRARY "${POTENTIAL_LIB}")
-            set(SLANG_INCLUDE_DIR "${POTENTIAL_INCLUDE}")
-            set(SLANG_LIBRARY_FOUND TRUE)
-            message(STATUS "Found local Slang (${CONFIG}): ${SLANG_LIBRARY}")
-            break()
-        endif()
-    endforeach()
-    if(NOT SLANG_LIBRARY_FOUND)
-        message(FATAL_ERROR
-                "Local Slang not found at ${MYTH_LOCAL_SLANG_DIR}/build/. "
-                "Build it first or unset MYTH_USE_LOCAL_SLANG.")
-    endif()
-else()
-    set(SLANG_INCLUDE_DIR "${Vulkan_INCLUDE_DIRS}/slang")
-    find_library(SLANG_LIBRARY
-            NAMES slang
-            PATHS "${VULKAN_SDK_LIBDIR}"
-            REQUIRED
-    )
-    message(STATUS "Using Slang from Vulkan SDK: ${SLANG_LIBRARY}")
-endif()
+set(SLANG_INCLUDE_DIR "${Vulkan_INCLUDE_DIRS}/slang")
+find_library(SLANG_LIBRARY
+        NAMES slang
+        PATHS "${VULKAN_SDK_LIBDIR}"
+        REQUIRED
+)
+message(STATUS "Using Slang from Vulkan SDK: ${SLANG_LIBRARY}")
 
 # ==================== Private CPM Dependencies ====================
 CPMAddPackage(
