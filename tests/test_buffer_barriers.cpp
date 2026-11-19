@@ -59,7 +59,7 @@ namespace {
 
 	std::string featureNames(vkutil::BufferSyncFeatures f) { return f.rayTracingPipeline ? "AS+RT" : f.accelerationStructure ? "AS" : "none"; }
 
-	// AGENTS: this is the oracle, write it from the spec's buffer usage descriptions, never from the vkutil table
+	// oracle, derived from the spec's buffer usage descriptions, not from the vkutil table
 	std::vector<Use> possibleUses(VkBufferUsageFlags usage, vkutil::BufferSyncFeatures f) {
 		uint64_t shaders = expandStages(supportedStages(st::kAccessSupportedStages, VK_ACCESS_2_SHADER_STORAGE_READ_BIT));
 		if (!f.rayTracingPipeline)

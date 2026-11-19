@@ -17,7 +17,6 @@ option(MYTH_ENABLE_IMGUI_DOCKING "Enable ImGui plugin (docking branch)" OFF)
 option(MYTH_ENABLE_TRACY "Enable Tracy profiling" OFF)
 option(MYTH_ENABLE_TRACY_GPU "Enable Tracy GPU profiling (EXPERIMENTAL)" OFF)
 option(MYTH_ENABLE_TRACY_GPU_COMMANDS "Enable Tracy GPU per-command zones, dont use for measurement!" OFF)
-#option(MYTH_INSTALL "Generate install rules for mythril (EXPERIMENTAL: see README)" OFF)
 
 # ==================== Sample Feature Requirements ====================
 set(SAMPLE_01_ClearWindow_REQUIRES        "")
@@ -227,7 +226,6 @@ add_library(mythril::mythril ALIAS mythril)
 target_include_directories(mythril
         PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-        $<INSTALL_INTERFACE:include>
         PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/lib
 )
@@ -270,14 +268,6 @@ if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     )
 endif()
 
-# help the dynamic loader find libslang at runtime on Linux when consumers
-# don't explicitly set LD_LIBRARY_PATH (Vulkan SDK installs slang alongside).
-if(UNIX AND NOT APPLE AND VULKAN_SDK_LIBDIR)
-    set_target_properties(mythril PROPERTIES
-            INSTALL_RPATH "${VULKAN_SDK_LIBDIR}"
-    )
-endif()
-
 
 # ImGui integration
 if(MYTH_ENABLE_IMGUI_STANDARD)
@@ -291,7 +281,7 @@ elseif(MYTH_ENABLE_IMGUI_DOCKING)
     target_link_libraries(mythril PUBLIC $<BUILD_INTERFACE:imgui>)
 endif()
 
-# Tracy integration (same BUILD_INTERFACE scoping rationale as imgui above).
+# Tracy integration
 if(MYTH_ENABLE_TRACY)
     target_compile_definitions(mythril PUBLIC MYTH_ENABLED_TRACY)
     target_link_libraries(mythril PUBLIC $<BUILD_INTERFACE:TracyClient>)
@@ -340,78 +330,3 @@ if(MYTH_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
 endif()
-
-## ==================== Install Rules ====================
-#if(MYTH_INSTALL)
-#    include(GNUInstallDirs)
-#    include(CMakePackageConfigHelpers)
-#
-#    install(TARGETS mythril volk
-#            EXPORT mythrilTargets
-#            LIBRARY  DESTINATION ${CMAKE_INSTALL_LIBDIR}
-#            ARCHIVE  DESTINATION ${CMAKE_INSTALL_LIBDIR}
-#            RUNTIME  DESTINATION ${CMAKE_INSTALL_BINDIR}
-#            INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-#    )
-#
-#    # imgui and TracyClient come from CPM and are scoped to BUILD_INTERFACE
-#    # above, so they intentionally do not appear in the install export.
-#
-#    # The public headers reference private headers via "../../lib/Foo.h" and
-#    # the private headers reach back to public via "../include/mythril/Foo.h".
-#    # Those relative paths only resolve at build time. We rewrite them to a
-#    # uniform "internal/" / "../" layout in a staging dir before installing.
-#    set(_myth_install_stage "${CMAKE_CURRENT_BINARY_DIR}/install-stage")
-#    file(REMOVE_RECURSE "${_myth_install_stage}")
-#
-#    file(GLOB _myth_public_hdrs RELATIVE
-#            "${CMAKE_CURRENT_SOURCE_DIR}/include/mythril"
-#            "${CMAKE_CURRENT_SOURCE_DIR}/include/mythril/*.h")
-#    foreach(_h ${_myth_public_hdrs})
-#        file(READ "${CMAKE_CURRENT_SOURCE_DIR}/include/mythril/${_h}" _content)
-#        string(REPLACE "../../lib/" "internal/" _content "${_content}")
-#        file(WRITE "${_myth_install_stage}/mythril/${_h}" "${_content}")
-#    endforeach()
-#
-#    file(GLOB _myth_internal_hdrs RELATIVE
-#            "${CMAKE_CURRENT_SOURCE_DIR}/lib"
-#            "${CMAKE_CURRENT_SOURCE_DIR}/lib/*.h")
-#    foreach(_h ${_myth_internal_hdrs})
-#        file(READ "${CMAKE_CURRENT_SOURCE_DIR}/lib/${_h}" _content)
-#        string(REPLACE "../include/mythril/" "../" _content "${_content}")
-#        file(WRITE "${_myth_install_stage}/mythril/internal/${_h}" "${_content}")
-#    endforeach()
-#
-#    install(DIRECTORY "${_myth_install_stage}/mythril"
-#            DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-#            FILES_MATCHING PATTERN "*.h"
-#    )
-#
-#    # Ship volk headers so consumers compiling against mythril's PUBLIC
-#    # interface can include <volk.h> without a separate find_package(volk).
-#    install(FILES "${volk_SOURCE_DIR}/volk.h"
-#            DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-#    )
-#
-#    install(EXPORT mythrilTargets
-#            FILE mythrilTargets.cmake
-#            NAMESPACE mythril::
-#            DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/mythril
-#    )
-#
-#    configure_package_config_file(
-#            cmake/mythrilConfig.cmake.in
-#            "${CMAKE_CURRENT_BINARY_DIR}/mythrilConfig.cmake"
-#            INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/mythril
-#    )
-#    write_basic_package_version_file(
-#            "${CMAKE_CURRENT_BINARY_DIR}/mythrilConfigVersion.cmake"
-#            VERSION ${PROJECT_VERSION}
-#            COMPATIBILITY SameMajorVersion
-#    )
-#    install(FILES
-#            "${CMAKE_CURRENT_BINARY_DIR}/mythrilConfig.cmake"
-#            "${CMAKE_CURRENT_BINARY_DIR}/mythrilConfigVersion.cmake"
-#            DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/mythril
-#    )
-#endif()

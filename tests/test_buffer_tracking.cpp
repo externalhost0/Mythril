@@ -23,7 +23,7 @@ namespace {
 	uint64_t expandAccess(VkAccessFlags2 mask) { return expand(st::kAccessExpansion, mask); }
 	bool contains(uint64_t outer, uint64_t inner) { return (inner & ~outer) == 0; }
 
-	// AGENTS: oracle side, write access per the spec's access flag descriptions, never from vkutil::kWriteAccess
+	// oracle, write access derived from the spec's access flag descriptions, not from vkutil::kWriteAccess
 	constexpr VkAccessFlags2 kSpecBufferWrites = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT;
 	bool writes(StageAccess a) { return (expandAccess(a.access) & expandAccess(kSpecBufferWrites)) != 0; }
 

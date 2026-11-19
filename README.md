@@ -108,7 +108,6 @@ The `debug` / `release` presets enable `MYTH_BUILD_SAMPLES`,
 | Option                       | Default | Description                                                            |
 |------------------------------|---------|------------------------------------------------------------------------|
 | `MYTH_BUILD_SAMPLES`         | `OFF`   | Build the sample applications under `samples/`.                        |
-| `MYTH_INSTALL`               | `OFF`   | Generate `install()` rules and `mythrilConfig.cmake` (experimental).   |
 | `MYTH_ENABLE_IMGUI_STANDARD` | `OFF`   | Fetch ImGui (main branch) and enable mythril's ImGuiPlugin.            |
 | `MYTH_ENABLE_IMGUI_DOCKING`  | `OFF`   | Fetch ImGui (docking branch) and enable mythril's ImGuiPlugin.         |
 | `MYTH_ENABLE_TRACY`          | `OFF`   | Fetch Tracy and enable CPU profiling.                                  |
