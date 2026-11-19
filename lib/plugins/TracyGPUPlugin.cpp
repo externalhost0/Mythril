@@ -7,7 +7,7 @@
 
 #include <volk.h>
 
-
+#ifdef MYTH_ENABLED_TRACY_GPU
 namespace mythril {
 	void TracyGPUPlugin::onInit(CTX& ctx) {
 		// aliases
@@ -61,3 +61,4 @@ namespace mythril {
 		}
 	}
 } // namespace mythril
+#endif

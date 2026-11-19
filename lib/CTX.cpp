@@ -2152,6 +2152,10 @@ namespace mythril {
 		_deferredTasks.clear();
 	}
 
+	void CTX::waitIdle() const {
+		vkDeviceWaitIdle(_vkDevice);
+	}
+
 	// 	SubmitHandle CTX::submitCommand(CommandBuffer& cmd) {
 	// 		ASSERT(cmd._ctx);
 	// 		ASSERT(cmd._wrapper);

@@ -12,7 +12,6 @@
 
 #include <functional>
 #include <span>
-#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -135,7 +134,11 @@ namespace mythril {
                 add(this->base._passSource, tex, access);
             return *this;
         }
-
+    	// conditionally perform a renderpass without having to enter the execution stage
+    	[[nodiscard]] ComputePassBuilder& condition(std::function<bool()> fn) {
+        	this->base._passSource.conditionCallback = std::move(fn);
+        	return *this;
+        }
     	// dispatches in this pass are unordered unless requested, use when one dispatch reads what a previous one wrote (ie: mip chain)
     	// has a performance overhead so only use if the commands in your pass need to be dependent on previous
     	[[nodiscard]] ComputePassBuilder& executeCmdsInOrder() {
@@ -176,6 +179,12 @@ namespace mythril {
 				add(this->base._passSource, tex, access);
 			return *this;
 		}
+		// conditionally perform a renderpass without having to enter the execution stage
+		[[nodiscard]] RayTracingPassBuilder& condition(std::function<bool()> fn) {
+			this->base._passSource.conditionCallback = std::move(fn);
+			return *this;
+		}
+
 		[[nodiscard]] RayTracingPassBuilder& executeCmdsInOrder() {
 			this->base._passSource.executeInOrder = true;
 			return *this;

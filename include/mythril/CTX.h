@@ -370,6 +370,7 @@ namespace mythril {
 		void deferTask(std::packaged_task<void()>&& task, SubmitHandle handle = SubmitHandle()) const;
 		void processDeferredTasks();
 		void waitDeferredTasks();
+		void waitIdle() const;
 
 		bool isHeadless() const { return _swapchain == nullptr; }
 
