@@ -268,6 +268,7 @@ namespace mythril {
 		// temp for now, for samples
 		[[nodiscard]] CommandBuffer& acquireCommand(CommandBuffer::Type type);
 		SubmitHandle submitCommand(CommandBuffer& cmd);
+		void waitIdle() const;
 
 		// literally just for our node editor for now, experimental
 		void switchShader(GraphicsPipeline& graphicsPipeline, Shader& newShader, ShaderStages stage);
@@ -370,7 +371,6 @@ namespace mythril {
 		void deferTask(std::packaged_task<void()>&& task, SubmitHandle handle = SubmitHandle()) const;
 		void processDeferredTasks();
 		void waitDeferredTasks();
-		void waitIdle() const;
 
 		bool isHeadless() const { return _swapchain == nullptr; }
 
