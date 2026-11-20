@@ -19,6 +19,20 @@
 #endif
 
 #ifdef DEBUG
+static const char* PassSourceTypeToString(mythril::PassDesc::Type type) {
+	switch (type) {
+		case mythril::PassDesc::Type::Graphics:
+			return "Graphics";
+		case mythril::PassDesc::Type::Compute:
+			return "Compute";
+		case mythril::PassDesc::Type::Intermediate:
+			return "Transfer";
+		case mythril::PassDesc::Type::RayTracing:
+			return "RayTracing";
+		default:
+			assert(false);
+	}
+}
 #define CHECK_PASS_OPERATION_MISMATCH(goalType) \
 if (this->getCurrentPassType() != goalType) \
 LOG_SYSTEM_NOSOURCE(LogType::Warning, \

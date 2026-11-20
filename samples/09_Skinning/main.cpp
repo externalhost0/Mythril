@@ -9,6 +9,7 @@
 #include "glm/gtc/quaternion.hpp"
 #include "glm/ext/matrix_transform.hpp"
 #include "glm/ext/matrix_clip_space.hpp"
+#include "glm/gtc/type_ptr.hpp"
 
 #include <fastgltf/core.hpp>
 #include <fastgltf/types.hpp>
@@ -16,6 +17,7 @@
 #include <fastgltf/glm_element_traits.hpp>
 
 #include <imgui.h>
+#include <ImGuizmo.h>
 #include <backends/imgui_impl_vulkan.h>
 #include <backends/imgui_impl_sdl3.h>
 
@@ -54,7 +56,6 @@ struct SkinnedModel {
 
 	std::vector<size_t> joints;
 	std::vector<glm::mat4> inverseBindMatrices;
-	std::vector<uint32_t> jointVertexCounts;
 
 	std::vector<Channel> channels;
 	float duration = 0.f;
@@ -124,12 +125,6 @@ static SkinnedModel loadSkinnedModel(const std::filesystem::path& filepath) {
 	});
 	fastgltf::iterateAccessor<uint32_t>(gltf, gltf.accessors[primitive.indicesAccessor.value()], [&](uint32_t idx) { model.indices.push_back(idx); });
 
-	model.jointVertexCounts.resize(model.joints.size(), 0);
-	for (const mythril::GPU::SkinnedVertex& v : model.vertices)
-		for (int i = 0; i < 4; i++)
-			if (v.weights[i] > 0.f)
-				model.jointVertexCounts[v.joints[i]]++;
-
 	if (!gltf.animations.empty()) {
 		const fastgltf::Animation& animation = gltf.animations[0];
 		for (const fastgltf::AnimationChannel& srcChannel : animation.channels) {
@@ -172,7 +167,7 @@ struct Pose {
 	std::vector<mythril::GPU::DualQuat> jointDualQuats;
 };
 
-static Pose evaluatePose(const SkinnedModel& model, float time, std::span<const glm::vec3> rotationOffsets) {
+static Pose evaluatePose(const SkinnedModel& model, float time, std::span<const glm::quat> rotationOffsets) {
 	Pose pose;
 	std::vector<Node> locals = model.nodes;
 	for (const Channel& channel : model.channels) {
@@ -186,7 +181,7 @@ static Pose evaluatePose(const SkinnedModel& model, float time, std::span<const 
 		}
 	}
 	for (size_t slot = 0; slot < model.joints.size(); slot++)
-		locals[model.joints[slot]].rotation *= glm::quat(glm::radians(rotationOffsets[slot]));
+		locals[model.joints[slot]].rotation *= rotationOffsets[slot];
 
 	pose.globals.resize(model.nodes.size());
 	for (size_t n : model.parentFirstOrder) {
@@ -212,45 +207,44 @@ static Pose evaluatePose(const SkinnedModel& model, float time, std::span<const 
 	return pose;
 }
 
-static void drawJointTree(const SkinnedModel& model, const std::vector<int>& nodeToSlot, size_t node, int& selectedSlot) {
-	const int slot = nodeToSlot[node];
-	bool hasJointChildren = false;
-	for (size_t child : model.nodes[node].children)
-		hasJointChildren |= nodeToSlot[child] >= 0;
-	ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_SpanAvailWidth;
-	if (!hasJointChildren) flags |= ImGuiTreeNodeFlags_Leaf;
-	if (slot == selectedSlot) flags |= ImGuiTreeNodeFlags_Selected;
-	const bool open = ImGui::TreeNodeEx(reinterpret_cast<void*>(node), flags, "[%d] %s", slot, model.nodes[node].name.c_str());
-	if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen())
-		selectedSlot = slot;
-	if (open) {
-		for (size_t child : model.nodes[node].children)
-			if (nodeToSlot[child] >= 0)
-				drawJointTree(model, nodeToSlot, child, selectedSlot);
-		ImGui::TreePop();
+static std::optional<ImVec2> projectToScreen(const glm::mat4& viewProj, const glm::vec3& world, ImVec2 display) {
+	const glm::vec4 clip = viewProj * glm::vec4(world, 1.f);
+	if (clip.w <= 0.f) return std::nullopt;
+	const glm::vec2 ndc = glm::vec2(clip) / clip.w;
+	return ImVec2{(ndc.x * 0.5f + 0.5f) * display.x, (0.5f - ndc.y * 0.5f) * display.y};
+}
+
+static int pickJoint(const SkinnedModel& model, const Pose& pose, const glm::mat4& viewProj, ImVec2 display, ImVec2 mouse) {
+	constexpr float kPickRadius = 14.f;
+	int best = -1;
+	float bestDistSq = kPickRadius * kPickRadius;
+	for (size_t slot = 0; slot < model.joints.size(); slot++) {
+		const auto p = projectToScreen(viewProj, glm::vec3(pose.globals[model.joints[slot]][3]), display);
+		if (!p) continue;
+		const float dx = p->x - mouse.x, dy = p->y - mouse.y;
+		const float distSq = dx * dx + dy * dy;
+		if (distSq < bestDistSq) {
+			bestDistSq = distSq;
+			best = static_cast<int>(slot);
+		}
 	}
+	return best;
 }
 
 static void drawSkeletonOverlay(const SkinnedModel& model, const Pose& pose, const std::vector<int>& nodeToSlot, const glm::mat4& viewProj, int selectedSlot) {
 	const ImVec2 display = ImGui::GetIO().DisplaySize;
-	const auto project = [&](size_t node, ImVec2& out) {
-		const glm::vec4 clip = viewProj * glm::vec4(glm::vec3(pose.globals[node][3]), 1.f);
-		if (clip.w <= 0.f) return false;
-		const glm::vec2 ndc = glm::vec2(clip) / clip.w;
-		out = {(ndc.x * 0.5f + 0.5f) * display.x, (0.5f - ndc.y * 0.5f) * display.y};
-		return true;
-	};
+	const auto project = [&](size_t node) { return projectToScreen(viewProj, glm::vec3(pose.globals[node][3]), display); };
 	ImDrawList* drawList = ImGui::GetBackgroundDrawList();
 	for (size_t slot = 0; slot < model.joints.size(); slot++) {
 		const size_t node = model.joints[slot];
-		ImVec2 p;
-		if (!project(node, p)) continue;
+		const auto p = project(node);
+		if (!p) continue;
 		const int parent = model.nodes[node].parent;
-		ImVec2 q;
-		if (parent >= 0 && nodeToSlot[parent] >= 0 && project(parent, q))
-			drawList->AddLine(q, p, IM_COL32(255, 255, 255, 200), 2.f);
+		if (parent >= 0 && nodeToSlot[parent] >= 0)
+			if (const auto q = project(parent))
+				drawList->AddLine(*q, *p, IM_COL32(255, 255, 255, 200), 2.f);
 		const bool selected = static_cast<int>(slot) == selectedSlot;
-		drawList->AddCircleFilled(p, selected ? 6.f : 4.f, selected ? IM_COL32(255, 210, 0, 255) : IM_COL32(80, 200, 255, 255));
+		drawList->AddCircleFilled(*p, selected ? 6.f : 4.f, selected ? IM_COL32(255, 210, 0, 255) : IM_COL32(80, 200, 255, 255));
 	}
 }
 
@@ -352,7 +346,7 @@ int main() {
 		int skinningMode = mythril::GPU::kSkinLinear;
 		int viewMode = mythril::GPU::kViewLit;
 		int selectedSlot = 0;
-		std::vector<glm::vec3> rotationOffsets(jointCount, glm::vec3(0.f));
+		std::vector<glm::quat> rotationOffsets(jointCount, glm::quat(1.f, 0.f, 0.f, 0.f));
 		Pose pose = evaluatePose(model, 0.f, rotationOffsets);
 		mythril::GPU::FrameData frameData{};
 
@@ -428,6 +422,9 @@ int main() {
 		bool showSkeleton = true;
 		float playbackSpeed = 1.f;
 		float animationTime = 0.f;
+		bool clickPending = false;
+		bool pickRequested = false;
+		ImVec2 pressPos{};
 
 		auto lastTime = std::chrono::steady_clock::now();
 		bool quit = false;
@@ -441,7 +438,19 @@ int main() {
 				ImGui_ImplSDL3_ProcessEvent(&e);
 				if (e.type == SDL_EVENT_QUIT) quit = true;
 				if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_Q) quit = true;
-				const bool mouseFree = !ImGui::GetIO().WantCaptureMouse;
+				const bool mouseFree = !ImGui::GetIO().WantCaptureMouse && !ImGuizmo::IsOver() && !ImGuizmo::IsUsing();
+				if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN && e.button.button == SDL_BUTTON_LEFT) {
+					clickPending = mouseFree;
+					pressPos = {e.button.x, e.button.y};
+				}
+				if (e.type == SDL_EVENT_MOUSE_MOTION && clickPending) {
+					const float dx = e.motion.x - pressPos.x, dy = e.motion.y - pressPos.y;
+					if (dx * dx + dy * dy > 16.f) clickPending = false;
+				}
+				if (e.type == SDL_EVENT_MOUSE_BUTTON_UP && e.button.button == SDL_BUTTON_LEFT && clickPending) {
+					pickRequested = true;
+					clickPending = false;
+				}
 				if (e.type == SDL_EVENT_MOUSE_MOTION && mouseFree && (e.motion.state & SDL_BUTTON_LMASK)) {
 					orbitYaw += e.motion.xrel * 0.4f;
 					orbitPitch = glm::clamp(orbitPitch + e.motion.yrel * 0.4f, -85.f, 85.f);
@@ -457,6 +466,21 @@ int main() {
 					.height = currentWindowSize.height
 				});
 			}
+
+			if (playing && model.duration > 0.f)
+				animationTime = std::fmod(animationTime + deltaTime * playbackSpeed, model.duration);
+
+			const glm::vec3 orbitDir = {
+				std::cos(glm::radians(orbitPitch)) * std::sin(glm::radians(orbitYaw)),
+				std::sin(glm::radians(orbitPitch)),
+				std::cos(glm::radians(orbitPitch)) * std::cos(glm::radians(orbitYaw))
+			};
+			const glm::vec3 cameraPosition = orbitTarget + orbitDir * orbitDistance;
+			const float aspect = static_cast<float>(currentWindowSize.width) / static_cast<float>(currentWindowSize.height);
+			const glm::mat4 view = glm::lookAt(cameraPosition, orbitTarget, glm::vec3(0, 1, 0));
+			const glm::mat4 proj = glm::perspective(glm::radians(45.f), aspect, 0.01f, 100.f);
+			const glm::mat4 viewProj = proj * view;
+			pose = evaluatePose(model, animationTime, rotationOffsets);
 
 			ImGui_ImplVulkan_NewFrame();
 			ImGui_ImplSDL3_NewFrame();
@@ -488,36 +512,38 @@ int main() {
 			ImGui::Checkbox("Show Skeleton", &showSkeleton);
 
 			ImGui::SeparatorText("Joints");
-			ImGui::TextWrapped("Twist an arm joint around Y by ~150 degrees, then compare Linear Blend with Dual Quaternion.");
-			if (ImGui::BeginChild("joint tree", ImVec2(0, 220), ImGuiChildFlags_Borders))
-				drawJointTree(model, nodeToSlot, model.joints[0], selectedSlot);
-			ImGui::EndChild();
-
-			const size_t selectedNode = model.joints[selectedSlot];
-			const auto selectedWorld = glm::vec3(pose.globals[selectedNode][3]);
-			ImGui::Text("%s", model.nodes[selectedNode].name.c_str());
-			ImGui::TextDisabled("slot %d | node %zu | influences %u vertices", selectedSlot, selectedNode, model.jointVertexCounts[selectedSlot]);
-			ImGui::TextDisabled("world (%.3f, %.3f, %.3f)", selectedWorld.x, selectedWorld.y, selectedWorld.z);
-			ImGui::SliderFloat3("Rotation Offset", &rotationOffsets[selectedSlot].x, -180.f, 180.f, "%.0f deg");
 			if (ImGui::Button("Reset Joint"))
-				rotationOffsets[selectedSlot] = glm::vec3(0.f);
+				rotationOffsets[selectedSlot] = glm::quat(1.f, 0.f, 0.f, 0.f);
 			ImGui::SameLine();
 			if (ImGui::Button("Reset All"))
-				std::fill(rotationOffsets.begin(), rotationOffsets.end(), glm::vec3(0.f));
+				std::fill(rotationOffsets.begin(), rotationOffsets.end(), glm::quat(1.f, 0.f, 0.f, 0.f));
 			ImGui::End();
 
-			if (playing && model.duration > 0.f)
-				animationTime = std::fmod(animationTime + deltaTime * playbackSpeed, model.duration);
-			pose = evaluatePose(model, animationTime, rotationOffsets);
+			const ImVec2 display = ImGui::GetIO().DisplaySize;
+			if (pickRequested) {
+				pickRequested = false;
+				const int picked = pickJoint(model, pose, viewProj, display, pressPos);
+				if (picked >= 0) selectedSlot = picked;
+			}
 
-			const glm::vec3 orbitDir = {
-				std::cos(glm::radians(orbitPitch)) * std::sin(glm::radians(orbitYaw)),
-				std::sin(glm::radians(orbitPitch)),
-				std::cos(glm::radians(orbitPitch)) * std::cos(glm::radians(orbitYaw))
-			};
-			const glm::vec3 cameraPosition = orbitTarget + orbitDir * orbitDistance;
-			const float aspect = static_cast<float>(currentWindowSize.width) / static_cast<float>(currentWindowSize.height);
-			const glm::mat4 viewProj = glm::perspective(glm::radians(45.f), aspect, 0.01f, 100.f) * glm::lookAt(cameraPosition, orbitTarget, glm::vec3(0, 1, 0));
+			ImGuizmo::BeginFrame();
+			ImGuizmo::SetOrthographic(false);
+			ImGuizmo::SetDrawlist(ImGui::GetBackgroundDrawList());
+			ImGuizmo::SetRect(0, 0, display.x, display.y);
+			const glm::mat4& selectedGlobal = pose.globals[model.joints[selectedSlot]];
+			const glm::quat globalRotation = glm::normalize(glm::quat_cast(glm::mat3(
+				glm::normalize(glm::vec3(selectedGlobal[0])),
+				glm::normalize(glm::vec3(selectedGlobal[1])),
+				glm::normalize(glm::vec3(selectedGlobal[2])))));
+			glm::mat4 gizmoMatrix = glm::translate(glm::mat4(1.f), glm::vec3(selectedGlobal[3])) * glm::mat4_cast(globalRotation);
+			ImGuizmo::Manipulate(glm::value_ptr(view), glm::value_ptr(proj), ImGuizmo::ROTATE, ImGuizmo::WORLD, glm::value_ptr(gizmoMatrix));
+			if (ImGuizmo::IsUsing()) {
+				const glm::quat newRotation = glm::normalize(glm::quat_cast(glm::mat3(gizmoMatrix)));
+				glm::quat& offset = rotationOffsets[selectedSlot];
+				offset = glm::normalize(offset * glm::inverse(globalRotation) * newRotation);
+				pose = evaluatePose(model, animationTime, rotationOffsets);
+			}
+
 			frameData = mythril::GPU::FrameData {
 				.viewProj = viewProj,
 				.lightDir = glm::normalize(orbitDir + glm::vec3(0.f, 1.f, 0.f))

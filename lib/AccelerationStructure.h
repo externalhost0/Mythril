@@ -79,7 +79,6 @@ namespace mythril {
 	namespace detail {
 		class AllocatedAccelerationStructure {
 		public:
-
 			std::string_view getDebugName() const { return _debugName; }
 		private:
 
