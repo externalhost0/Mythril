@@ -69,20 +69,6 @@ PassSourceTypeToString(goalType));
 
 namespace mythril {
 	using namespace detail;
-	static const char* PassSourceTypeToString(PassDesc::Type type) {
-		switch (type) {
-			case PassDesc::Type::Graphics:
-				return "Graphics";
-			case PassDesc::Type::Compute:
-				return "Compute";
-			case PassDesc::Type::Intermediate:
-				return "Transfer";
-			case PassDesc::Type::RayTracing:
-				return "RayTracing";
-			default:
-				assert(false);
-		}
-	}
 
 	PassDesc::Type CommandBuffer::getCurrentPassType() const {
 		if (std::holds_alternative<GraphicsPipelineHandle>(_currentPipelineHandle))
@@ -135,7 +121,6 @@ namespace mythril {
 	CommandBuffer::CommandBuffer(CTX* ctx, CommandBuffer::Type type) :
 	    _ctx(ctx),
 	    _wrapper(&ctx->_immGraphics->acquire()),
-	    _activePass(),
 	    _cmdType(type),
 	    _isDryRun(false) {}
 
@@ -146,7 +131,7 @@ namespace mythril {
 	}
 
 	VkCommandBufferSubmitInfo CommandBuffer::requestSubmitInfo() const {
-		VkCommandBufferSubmitInfo info = {};
+		VkCommandBufferSubmitInfo info;
 		info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
 		info.pNext = nullptr;
 		info.commandBuffer = _wrapper->_cmdBuf;
@@ -811,7 +796,7 @@ namespace mythril {
 	void CommandBuffer::cmdSetViewportImpl(VkExtent2D extent2D) {
 		// we flip the viewport because Vulkan is reversed using LH instead of OpenGL's RH
 		// HOWEVER: using Slang compilier option to reflect the y axis solves this so we dont have to flip here
-		VkViewport viewport = {};
+		VkViewport viewport;
 		viewport.x = 0;
 		viewport.y = 0;
 		viewport.width = static_cast<float>(extent2D.width);
@@ -822,7 +807,7 @@ namespace mythril {
 		vkCmdSetViewport(_wrapper->_cmdBuf, 0, 1, &viewport);
 	}
 	void CommandBuffer::cmdSetScissorImpl(VkExtent2D extent2D) {
-		VkRect2D scissor = {};
+		VkRect2D scissor;
 		scissor.offset.x = 0; // default 0 for both
 		scissor.offset.y = 0;
 		scissor.extent = extent2D;

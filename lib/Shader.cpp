@@ -5,7 +5,6 @@
 #include "Shader.h"
 #include "HelperMacros.h"
 #include "Logger.h"
-#include "faststl/StackString.h"
 #include <vulkan/vk_enum_string_helper.h>
 
 #include <cctype>

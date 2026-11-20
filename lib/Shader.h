@@ -5,7 +5,6 @@
 #pragma once
 
 #include "Constants.h"
-#include "faststl/StackVector.h"
 
 #include <optional>
 #include <string>
@@ -154,9 +153,6 @@ namespace mythril {
 		// ds = descriptor sets
 		// pc = push constants
 		// sc = specialization constants
-
-		// we allow the user
-		StackVector<const char*, 4> entryPoints;
 
 		// pipeline layout requires ds & pc
 		PipelineLayoutSignature pipelineLayoutSignature;

@@ -3,7 +3,6 @@
 //
 #pragma once
 
-#include "faststl/StackVector.h"
 #include "mythril/vkenums.h"
 
 #include <span>
@@ -24,9 +23,8 @@ namespace mythril {
 		VkPipelineRenderingCreateInfo _renderInfo = {};
 		VkPipelineColorBlendAttachmentState _colorBlendAttachment = {};
 
-		// max of 4 stages per pipeline
-		StackVector<VkPipelineShaderStageCreateInfo, 4> _shaderStages = {};
-		StackVector<VkFormat, 12> _colorAttachmentFormats = {};
+		std::vector<VkPipelineShaderStageCreateInfo> _shaderStages;
+		std::vector<VkFormat> _colorAttachmentFormats;
 
 	public:
 		VkPipeline build(VkDevice device, VkPipelineLayout layout);

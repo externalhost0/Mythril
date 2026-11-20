@@ -309,7 +309,7 @@ namespace mythril {
 		void rebuildTextureViewsImpl(const detail::AllocatedTexture& image);
 
 		// all things related to our pipeline constructions
-		detail::PipelineCoreData buildPipelineCommonDataExceptVkPipelineImpl(const PipelineLayoutSignature& signature);
+		detail::PipelineCoreData buildPipelineCommonDataExceptVkPipelineImpl(const PipelineLayoutSignature& signature) const;
 
 		// return values from resolvings are ignored for now
 		void resolveGraphicsPipelineImpl(detail::AllocatedGraphicsPipeline& pipeline, uint32_t viewMask);

@@ -370,11 +370,11 @@ namespace mythril {
 		if (count == 0)
 			return;
 		// our linear sampler is the backup/resolve
-		const VkSampler linearSampler = _samplerPool._objects[0]._obj._vkSampler;
+		VkSampler linearSampler = _samplerPool._objects[0]._obj._vkSampler;
 		std::vector<VkDescriptorImageInfo> infos;
 		infos.reserve(count);
 		for (uint32_t i = first; i < first + count; ++i) {
-			const VkSampler sampler = _samplerPool._objects[i]._obj._vkSampler;
+			VkSampler sampler = _samplerPool._objects[i]._obj._vkSampler;
 			infos.push_back({.sampler = sampler ? sampler : linearSampler, .imageView = VK_NULL_HANDLE, .imageLayout = VK_IMAGE_LAYOUT_UNDEFINED});
 		}
 		const VkWriteDescriptorSet write = {
@@ -533,7 +533,7 @@ namespace mythril {
 				if (!found) {
 					// check for overlaps between multiple push constants, vulkan spec disallows this
 					for (const auto& dst: out.pushes) {
-						bool overlap = !(src.offset + src.size <= dst.offset || dst.offset + dst.size <= src.offset);
+						const bool overlap = !(src.offset + src.size <= dst.offset || dst.offset + dst.size <= src.offset);
 						ASSERT_MSG(!overlap, "Push constant ranges overlap but differ in size or offset.");
 					}
 					out.pushes.push_back(src);
@@ -598,7 +598,7 @@ namespace mythril {
 		return bundle;
 	}
 
-	PipelineCoreData CTX::buildPipelineCommonDataExceptVkPipelineImpl(const PipelineLayoutSignature& signature) {
+	PipelineCoreData CTX::buildPipelineCommonDataExceptVkPipelineImpl(const PipelineLayoutSignature& signature) const {
 		// because we are fully bindless, we have at most one descriptor set (the bindless one) is ever bound
 		// however i want to leave this legacy code in here :)
 		std::vector<VkDescriptorSetLayout> layouts;
@@ -623,7 +623,7 @@ namespace mythril {
 			sc_count++;
 		}
 		// a compute pipeline only has one shader anyways
-		AllocatedShader* shader = _shaderPool.get(spec.shader);
+		const AllocatedShader* shader = _shaderPool.get(spec.shader);
 		CheckSpecializationConstants(*shader, sc_count, "compute", spec.debugName, false);
 		const std::unique_ptr<SpecializationInfoBundle> spec_constants_bundle = BuildSpecializationInfoBundle(spec.specConstants, sc_count, shader->_specializationInfo.nameToID);
 
@@ -718,7 +718,7 @@ namespace mythril {
 		std::vector<VkRayTracingShaderGroupCreateInfoKHR> shaderGroups(kMaxShaderGroups);
 
 		for (auto& raygenShader : spec.rayGenShaders) {
-			if (auto shader = _shaderPool.get(raygenShader.handle)) {
+			if (const auto shader = _shaderPool.get(raygenShader.handle)) {
 				CheckSpecializationConstants(*shader, sc_count, "ray generatioon", spec.debugName, true);
 				shaderGroups[numShaderGroups++] = {
 					.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR,
@@ -731,7 +731,7 @@ namespace mythril {
 			}
 		}
 		for (auto& missShader : spec.missShaders) {
-			if (auto shader = _shaderPool.get(missShader.handle)) {
+			if (const auto shader = _shaderPool.get(missShader.handle)) {
 				CheckSpecializationConstants(*shader, sc_count, "miss", spec.debugName, true);
 				numMissGroups++;
 				shaderGroups[numShaderGroups++] = {
@@ -745,7 +745,7 @@ namespace mythril {
 			}
 		}
 		for (auto& closestHitShader : spec.closestHitShaders) {
-			if (auto shader = _shaderPool.get(closestHitShader.handle)) {
+			if (const auto shader = _shaderPool.get(closestHitShader.handle)) {
 				CheckSpecializationConstants(*shader, sc_count, "closest hit", spec.debugName, true);
 				numHitGroups++;
 				shaderGroups[numShaderGroups++] = {
@@ -759,7 +759,7 @@ namespace mythril {
 			}
 		}
 		for (auto& callableShader : spec.callableShader) {
-			if (auto shader = _shaderPool.get(callableShader.handle)) {
+			if (const auto shader = _shaderPool.get(callableShader.handle)) {
 				CheckSpecializationConstants(*shader, sc_count, "callable", spec.debugName, true);
 				numCallableGroups++;
 				shaderGroups[numShaderGroups++] = {
@@ -2344,7 +2344,7 @@ namespace mythril {
 	TextureViewKey CTX::createTextureView(TextureHandle handle, const TextureViewSpec& spec) {
 		const TextureViewKey key = detail::packTextureViewKey(spec.mipLevel, spec.numMipLevels, spec.layer, spec.numLayers);
 		AllocatedTexture& tex = access(handle);
-		if (tex._additionalViews.find(key) != tex._additionalViews.end()) {
+		if (tex._additionalViews.contains(key)) {
 			return key; // already cached
 		}
 		VkImageViewType viewType = spec.type != VK_IMAGE_VIEW_TYPE_MAX_ENUM ? spec.type : tex.getViewType();
