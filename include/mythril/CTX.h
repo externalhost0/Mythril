@@ -135,21 +135,6 @@ namespace mythril {
 		uint64_t _frameNumber;
 	};
 
-	// helpers
-	template<typename Pool, typename Handle>
-	const auto& viewImpl(const Pool& pool, Handle handle) {
-		auto* ptr = pool.get(handle);
-		ASSERT_MSG(ptr, "Invalid handle!");
-		return *ptr;
-	}
-	template<typename Pool, typename Handle>
-	static auto& accessImpl(Pool& pool, Handle handle) {
-		auto* ptr = pool.get(handle);
-		ASSERT_MSG(ptr, "Invalid handle!");
-		return *ptr;
-	}
-
-
 	struct VulkanFeatures {
 		VkPhysicalDeviceFeatures features10;
 		VkPhysicalDeviceVulkan11Features features11;
@@ -167,15 +152,15 @@ namespace mythril {
 		void construct();
 		// hide the default constructor to avoid user from instantiating a useless CTX
 		// aka a CTX not returned from CTXBuilder
-		CTX() = default;
+		CTX();
 	public:
 		~CTX();
 
 		CTX(const CTX&) = delete;
 		CTX& operator=(const CTX&) = delete;
 
-		CTX(CTX&&) noexcept = default;
-		CTX& operator=(CTX&&) noexcept = default;
+		CTX(CTX&&) noexcept;
+		CTX& operator=(CTX&&) noexcept;
 	public:
 		// arguements are optional as when not given we recreate with the same settings as the last swapchain
 		void createSwapchain(const SwapchainSpec& spec = {});
@@ -183,20 +168,9 @@ namespace mythril {
 		// wraps create & destroy Swapchain functions as a most common use case
 		void recreateSwapchain(const SwapchainSpec& spec = {});
 
-		bool isSwapchainDirty() const {
-			ASSERT_MSG(_swapchain, "Swapchain has not been created!");
-			return _swapchain->isDirty();
-		}
-		const TextureHandle& getCurrentSwapchainTexHandle() const {
-			ASSERT_MSG(_swapchain, "Swapchain has not been created!");
-			return _swapchain->getCurrentSwapchainTextureHandle();
-		}
-		Dimensions getSwapchainDimensions() const {
-			if (!_swapchain)
-				return {lastSwapchainSpec.width, lastSwapchainSpec.height, 1};
-			const VkExtent2D extent = _swapchain->getSwapchainExtent();
-			return {extent.width, extent.height, 1};
-		}
+		bool isSwapchainDirty() const;
+		const TextureHandle& getCurrentSwapchainTexHandle() const;
+		Dimensions getSwapchainDimensions() const;
 
 		const Texture& getNullTexture() const { return this->_dummyTexture; }
 
@@ -205,7 +179,7 @@ namespace mythril {
 		Texture createTexture(TextureSpec spec);
 		void resizeTexture(TextureHandle handle, Dimensions newDimensions);
 		Dimensions getTextureDimensions(TextureHandle handle) const;
-		bool isSwapchainTexture(TextureHandle handle) const { return view(handle).isSwapchainImage(); }
+		bool isSwapchainTexture(TextureHandle handle) const;
 
 		// subresource views; owned by the texture, freed on destroy
 		TextureViewKey createTextureView(TextureHandle handle, const TextureViewSpec& spec);
@@ -273,7 +247,7 @@ namespace mythril {
 		// literally just for our node editor for now, experimental
 		void switchShader(GraphicsPipeline& graphicsPipeline, Shader& newShader, ShaderStages stage);
 
-		const detail::AllocatedShader& inspectShader(ShaderHandle handle) const { return view(handle); }
+		const detail::AllocatedShader& inspectShader(ShaderHandle handle) const;
 
 		// for ray tracing ease of use, not clean as of now;
 		// we want to reduce the user having to make calls like these since we do so behind the scenes in CTX later anyways
@@ -282,23 +256,24 @@ namespace mythril {
 	private:
 
 		// internal detail:: accessors; user code goes through the handle-taking methods above
-		const detail::AllocatedTexture& view(TextureHandle h) const { return viewImpl(_texturePool, h); }
-		const detail::AllocatedBuffer& view(BufferHandle h) const { return viewImpl(_bufferPool, h); }
-		const detail::AllocatedSampler& view(SamplerHandle h) const { return viewImpl(_samplerPool, h); }
-		const detail::AllocatedQueryPool& view(QueryPoolHandle h) const { return viewImpl(_queryPoolPool, h); }
-		const detail::AllocatedShader& view(ShaderHandle h) const { return viewImpl(_shaderPool, h); }
-		const detail::AllocatedGraphicsPipeline& view(GraphicsPipelineHandle h) const { return viewImpl(_graphicsPipelinePool, h); }
-		const detail::AllocatedComputePipeline& view(ComputePipelineHandle h) const { return viewImpl(_computePipelinePool, h); }
-		const detail::AllocatedRayTracingPipeline& view(RayTracingPipelineHandle h) const { return viewImpl(_rayTracingPipelinePool, h); }
+		// defined in lib/HandleAccess.h
+		const detail::AllocatedTexture& view(TextureHandle h) const;
+		const detail::AllocatedBuffer& view(BufferHandle h) const;
+		const detail::AllocatedSampler& view(SamplerHandle h) const;
+		const detail::AllocatedQueryPool& view(QueryPoolHandle h) const;
+		const detail::AllocatedShader& view(ShaderHandle h) const;
+		const detail::AllocatedGraphicsPipeline& view(GraphicsPipelineHandle h) const;
+		const detail::AllocatedComputePipeline& view(ComputePipelineHandle h) const;
+		const detail::AllocatedRayTracingPipeline& view(RayTracingPipelineHandle h) const;
 
-		detail::AllocatedTexture& access(TextureHandle h) { return accessImpl(_texturePool, h); }
-		detail::AllocatedBuffer& access(BufferHandle h) { return accessImpl(_bufferPool, h); }
-		detail::AllocatedSampler& access(SamplerHandle h) { return accessImpl(_samplerPool, h); }
-		detail::AllocatedQueryPool& access(QueryPoolHandle h) { return accessImpl(_queryPoolPool, h); }
-		detail::AllocatedShader& access(ShaderHandle h) { return accessImpl(_shaderPool, h); }
-		detail::AllocatedGraphicsPipeline& access(GraphicsPipelineHandle h) { return accessImpl(_graphicsPipelinePool, h); }
-		detail::AllocatedComputePipeline& access(ComputePipelineHandle h) { return accessImpl(_computePipelinePool, h); }
-		detail::AllocatedRayTracingPipeline& access(RayTracingPipelineHandle h) { return accessImpl(_rayTracingPipelinePool, h); }
+		detail::AllocatedTexture& access(TextureHandle h);
+		detail::AllocatedBuffer& access(BufferHandle h);
+		detail::AllocatedSampler& access(SamplerHandle h);
+		detail::AllocatedQueryPool& access(QueryPoolHandle h);
+		detail::AllocatedShader& access(ShaderHandle h);
+		detail::AllocatedGraphicsPipeline& access(GraphicsPipelineHandle h);
+		detail::AllocatedComputePipeline& access(ComputePipelineHandle h);
+		detail::AllocatedRayTracingPipeline& access(RayTracingPipelineHandle h);
 
 		// wrappers around VulkanObjects
 		// advanced functions that user will rarely need to call
@@ -352,50 +327,12 @@ namespace mythril {
 		void writeSamplerDescriptorsImpl(uint32_t first, uint32_t count);
 		void growBindlessDescriptorPoolImpl(uint32_t newMaxSamplerCount, uint32_t newMaxTextureCount);
 
-		template<typename T>
-		constexpr detail::PipelineCoreData& getPipelineCommonData(T handle) {
-			static_assert(std::is_same_v<T, GraphicsPipelineHandle> || std::is_same_v<T, ComputePipelineHandle>);
-			if constexpr (std::is_same_v<T, GraphicsPipelineHandle>) {
-				auto* obj = _graphicsPipelinePool.get(handle);
-				ASSERT(obj);
-				return obj->_common;
-			} else if constexpr (std::is_same_v<T, ComputePipelineHandle>) {
-				auto* obj = _computePipelinePool.get(handle);
-				ASSERT(obj);
-				return obj->_common;
-			}
-			assert(false);
-		}
-
 		// pack tasks
 		void deferTask(std::packaged_task<void()>&& task, SubmitHandle handle = SubmitHandle()) const;
 		void processDeferredTasks();
 		void waitDeferredTasks();
 
-		bool isHeadless() const { return _swapchain == nullptr; }
-
-		ImmediateCommands* getQueue(QueueAffinity type) const {
-			// first two can be nullptr
-			switch (type) {
-				case QueueAffinity::AsyncCompute:  return _immAsyncCompute.get();
-				case QueueAffinity::AsyncTransfer: return _immAsyncTransfer.get();
-				default: return _immGraphics.get();
-			}
-		}
-		ImmediateCommands* getQueueOrFallback(QueueAffinity type) const {
-			ImmediateCommands* q = getQueue(type);
-			return q ? q : _immGraphics.get();
-		}
-		uint32_t getQueueFamilyIndex(QueueAffinity type) const {
-			switch (type) {
-				case QueueAffinity::AsyncCompute:
-					return (_immAsyncCompute) ? _computeQueueFamilyIndex : _graphicsQueueFamilyIndex;
-				case QueueAffinity::AsyncTransfer:
-					return (_immAsyncTransfer) ? _transferQueueFamilyIndex : _graphicsQueueFamilyIndex;
-				default:
-					return _graphicsQueueFamilyIndex;
-			}
-		}
+		bool isHeadless() const;
 	private:
 		// Vulkan Members //
 		VkInstance _vkInstance = VK_NULL_HANDLE;

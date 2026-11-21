@@ -2,7 +2,7 @@
 // Created by Hayden Rivas on 10/6/25.
 //
 
-#include "mythril/CTX.h"
+#include "HandleAccess.h"
 #include "RenderGraphInternal.h"
 
 #include <iostream>
@@ -149,6 +149,28 @@ namespace mythril {
 			this->growBindlessDescriptorPoolImpl(this->_currentMaxSamplerCount, this->_currentMaxTextureCount);
 		}
 	}
+
+	CTX::CTX() = default;
+	CTX::CTX(CTX&&) noexcept = default;
+	CTX& CTX::operator=(CTX&&) noexcept = default;
+
+	bool CTX::isSwapchainDirty() const {
+		ASSERT_MSG(_swapchain, "Swapchain has not been created!");
+		return _swapchain->isDirty();
+	}
+	const TextureHandle& CTX::getCurrentSwapchainTexHandle() const {
+		ASSERT_MSG(_swapchain, "Swapchain has not been created!");
+		return _swapchain->getCurrentSwapchainTextureHandle();
+	}
+	Dimensions CTX::getSwapchainDimensions() const {
+		if (!_swapchain)
+			return {lastSwapchainSpec.width, lastSwapchainSpec.height, 1};
+		const VkExtent2D extent = _swapchain->getSwapchainExtent();
+		return {extent.width, extent.height, 1};
+	}
+	bool CTX::isHeadless() const { return _swapchain == nullptr; }
+	bool CTX::isSwapchainTexture(TextureHandle handle) const { return view(handle).isSwapchainImage(); }
+	const AllocatedShader& CTX::inspectShader(ShaderHandle handle) const { return view(handle); }
 
 	CTX::~CTX() {
 		VK_CHECK(vkDeviceWaitIdle(this->_vkDevice));

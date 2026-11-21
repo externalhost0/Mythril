@@ -12,7 +12,7 @@
 #include <string_view>
 #include <format>
 
-#include "mythril/CTX.h"
+#include "HandleAccess.h"
 #include "HelperMacros.h"
 #include "Logger.h"
 #include "Plugins.h"
