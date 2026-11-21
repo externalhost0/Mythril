@@ -107,6 +107,8 @@ namespace mythril {
 
 		bool anisotropic = false;
 		uint8_t maxAnisotropic = 1;
+
+		SamplerReduction reduction = SamplerReduction::WeightedAverage;
 		const char* debugName = "Unnamed Sampler";
 	};
 	struct QueryPoolSpec {

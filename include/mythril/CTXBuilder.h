@@ -54,9 +54,9 @@ namespace mythril {
 		// implement this later
 		// bool enableHeadless = false;
 		// instance extension names
-		std::vector<const char*> instanceExtensions = {};
+		std::vector<const char*> instanceExtensionNames = {};
 		// device extension names
-		std::vector<const char*> deviceExtensions   = {};
+		std::vector<const char*> deviceExtensionNames   = {};
 		// made just for int64 feature supported
 		VkPhysicalDeviceFeatures additionalDeviceFeatures = {};
 		// device extension feautures, will not be handled if unsupported!

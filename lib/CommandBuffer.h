@@ -80,6 +80,7 @@ namespace mythril {
 		void cmdEndRenderingEXT();
 
 		void cmdDispatchThreadGroup(const Dimensions& threadGroupCount);
+		void cmdDispatchIndirect(const Buffer& indirectBuffer, VkDeviceSize offset = 0);
 
 		void cmdTraceRays(const Dimensions& queryDimension);
 
@@ -117,6 +118,7 @@ namespace mythril {
 		void cmdDrawIndexed(uint32_t indexCount, uint32_t instanceCount = 1, uint32_t firstIndex = 0, int32_t vertexOffset = 0, uint32_t baseInstance = 0);
 		void cmdDrawIndirect(const Buffer& indirectBuffer, VkDeviceSize offset, uint32_t drawCount, uint32_t stride = 0);
 		void cmdDrawIndexedIndirect(const Buffer& indirectBuffer, VkDeviceSize offset, uint32_t drawCount, uint32_t stride = 0);
+		void cmdDrawIndexedIndirectCount(const Buffer& indirectBuffer, VkDeviceSize offset, const Buffer& countBuffer, VkDeviceSize countOffset, uint32_t maxDrawCount, uint32_t stride = 0);
 
 		void cmdWriteTimestamp(QueryPoolHandle pool, uint32_t query);
 		void cmdWriteTimestamp(const QueryPool& pool, uint32_t query) { cmdWriteTimestamp(pool.handle(), query); }

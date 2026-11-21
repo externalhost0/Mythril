@@ -221,6 +221,21 @@ namespace mythril {
 		vkCmdDrawIndexedIndirect(_wrapper->_cmdBuf, buf._vkBuffer, offset, drawCount, stride ? stride : sizeof(VkDrawIndexedIndirectCommand));
 	}
 
+	void CommandBuffer::cmdDrawIndexedIndirectCount(const Buffer& indirectBuffer, VkDeviceSize offset, const Buffer& countBuffer, VkDeviceSize countOffset, uint32_t maxDrawCount, uint32_t stride) {
+		DRY_RETURN();
+		CHECK_SHOULD_BE_RENDERING();
+		CHECK_PASS_OPERATION_MISMATCH(PassDesc::Type::Graphics);
+		const AllocatedBuffer& buf = _ctx->view(indirectBuffer.handle());
+		const AllocatedBuffer& countBuf = _ctx->view(countBuffer.handle());
+		ASSERT_MSG(buf.isIndirectBuffer(), "Buffer '{}' is not an indirect buffer, please have its usage include 'BufferUsageBits_Indirect'!", buf.getDebugName());
+		ASSERT_MSG(countBuf.isIndirectBuffer(), "Count buffer '{}' is not an indirect buffer, please have its usage include 'BufferUsageBits_Indirect'!", countBuf.getDebugName());
+		ASSERT_MSG(countOffset % 4 == 0, "Count offset {} must be a multiple of 4!", countOffset);
+		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_COMMAND);
+		MYTH_PROFILER_GPU_COMMAND_ZONE("cmdDrawIndexedIndirectCount()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
+
+		vkCmdDrawIndexedIndirectCount(_wrapper->_cmdBuf, buf._vkBuffer, offset, countBuf._vkBuffer, countOffset, maxDrawCount, stride ? stride : sizeof(VkDrawIndexedIndirectCommand));
+	}
+
 	void CommandBuffer::cmdBindIndexBuffer(BufferHandle handle) {
 		DRY_RETURN();
 		CHECK_SHOULD_BE_RENDERING();
@@ -256,6 +271,18 @@ namespace mythril {
 		MYTH_PROFILER_GPU_COMMAND_ZONE("cmdDispatchThreadGroup()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
 
 		vkCmdDispatch(_wrapper->_cmdBuf, threadGroupCount.width, threadGroupCount.height, threadGroupCount.depth);
+	}
+	void CommandBuffer::cmdDispatchIndirect(const Buffer& indirectBuffer, VkDeviceSize offset) {
+		DRY_RETURN()
+		CHECK_PASS_OPERATION_MISMATCH(PassDesc::Type::Compute);
+		const AllocatedBuffer& buf = _ctx->view(indirectBuffer.handle());
+		ASSERT_MSG(buf.isIndirectBuffer(), "Buffer '{}' is not an indirect buffer, please have its usage include 'BufferUsageBits_Indirect'!", buf.getDebugName());
+		ASSERT_MSG(offset % 4 == 0, "Indirect offset {} must be a multiple of 4!", offset);
+		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_COMMAND);
+		orderAfterPreviousDispatchImpl();
+		MYTH_PROFILER_GPU_COMMAND_ZONE("cmdDispatchIndirect()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
+
+		vkCmdDispatchIndirect(_wrapper->_cmdBuf, buf._vkBuffer, offset);
 	}
 	void CommandBuffer::orderAfterPreviousDispatchImpl() {
 		const bool needsBarrier = _hasDispatchedInPass && _activePass && _activePass->inOrderBarrier.has_value();

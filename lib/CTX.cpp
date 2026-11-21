@@ -1044,9 +1044,26 @@ namespace mythril {
 	Sampler CTX::createSampler(SamplerSpec spec) {
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_CREATE);
 		// creating sampler requires little work so we dont need an _Impl function for it
-		VkSamplerCreateInfo info = {
+		const bool usesReduction = spec.reduction != SamplerReduction::WeightedAverage;
+		ASSERT_MSG(!(usesReduction && spec.depthCompareEnabled), "You cannot use the SamplerReduction feature (reduction) and depthCompareEnabled be true!");
+		VkSamplerReductionModeCreateInfo reduction_ci;
+		if (usesReduction) {
+			if (spec.minFilter == SamplerFilter::Nearest || spec.magFilter == SamplerFilter::Nearest) {
+				LOG_SYSTEM(LogType::Warning, "Sampler '{}' uses a reduction mode with a Nearest filter, Nearest fetches a single texel so the reduction has no effect.", spec.debugName);
+			}
+			const auto wraps = [](SamplerWrap w) { return w == SamplerWrap::Repeat || w == SamplerWrap::MirrorRepeat; };
+			if (wraps(spec.wrapU) || wraps(spec.wrapV) || wraps(spec.wrapW)) {
+				LOG_SYSTEM(LogType::Warning, "Sampler '{}' uses a reduction mode with a repeating wrap, edge texels will reduce against the opposite edge, use ClampEdge.", spec.debugName);
+			}
+			reduction_ci = {
+				.sType = VK_STRUCTURE_TYPE_SAMPLER_REDUCTION_MODE_CREATE_INFO,
+				.pNext = nullptr,
+				.reductionMode = toVulkan(spec.reduction)
+			};
+		}
+		VkSamplerCreateInfo ci = {
 		    .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
-		    .pNext = nullptr,
+		    .pNext = usesReduction ? &reduction_ci : nullptr,
 		    .flags = 0,
 
 		    .magFilter = toVulkan(spec.magFilter),
@@ -1075,16 +1092,16 @@ namespace mythril {
 			const float maxSamplerAnisotropy = this->getPhysicalDeviceProperties10().limits.maxSamplerAnisotropy;
 			const bool isAnisotropicFilteringSupported = maxSamplerAnisotropy > 1;
 			ASSERT_MSG(isAnisotropicFilteringSupported, "Anisotropic filtering is not supported by the device.");
-			info.anisotropyEnable = spec.anisotropic ? VK_TRUE : VK_FALSE;
+			ci.anisotropyEnable = spec.anisotropic ? VK_TRUE : VK_FALSE;
 			// fixme: not sure why maxAnisotropic is of type uint_
 			if (maxSamplerAnisotropy < static_cast<float>(spec.maxAnisotropic)) {
 				LOG_SYSTEM(LogType::Warning, "Supplied sampler anisotropic value greater than max supported by the device, setting to {}", static_cast<double>(maxSamplerAnisotropy));
 			}
-			info.maxAnisotropy = std::min(static_cast<float>(maxSamplerAnisotropy), static_cast<float>(spec.maxAnisotropic));
+			ci.maxAnisotropy = std::min(static_cast<float>(maxSamplerAnisotropy), static_cast<float>(spec.maxAnisotropic));
 		}
 
 		AllocatedSampler obj = {};
-		vkCreateSampler(_vkDevice, &info, nullptr, &obj._vkSampler);
+		vkCreateSampler(_vkDevice, &ci, nullptr, &obj._vkSampler);
 		snprintf(obj._debugName, sizeof(obj._debugName), "%s", spec.debugName);
 		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_SAMPLER, reinterpret_cast<uint64_t>(obj._vkSampler), obj.getDebugName().data());
 		SamplerHandle handle = _samplerPool.create(std::move(obj));

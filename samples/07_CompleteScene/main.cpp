@@ -652,7 +652,7 @@ int main() {
 			.app_version = {0, 0, 1},
 			.engine_version = {0, 0, 1},
 			.enableValidation = true,
-			.deviceExtensions = {VK_EXT_MEMORY_BUDGET_EXTENSION_NAME},
+			.deviceExtensionNames = {VK_EXT_MEMORY_BUDGET_EXTENSION_NAME},
 		})
 		.set_window_surface({
 			.instanceExtensions = std::span(sdlExtensions, sdlExtensionCount),

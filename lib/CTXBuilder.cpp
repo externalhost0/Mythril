@@ -784,7 +784,7 @@ missing_features.append("\n\t(" version ") " #feature);
 		const bool hasSurface = static_cast<bool>(this->_surfaceSpec.createFunc);
 
 		// fill in user instance extensions & resolve based on cfg
-		std::vector<const char*> instance_extensions = MergeExtensions(this->_vulkanCfg.instanceExtensions, this->_surfaceSpec.instanceExtensions);
+		std::vector<const char*> instance_extensions = MergeExtensions(this->_vulkanCfg.instanceExtensionNames, this->_surfaceSpec.instanceExtensions);
 		auto [vk_instance, vk_debug_messenger] = CreateVulkanInstance(
 		        {
 		            .appVersion = this->_vulkanCfg.app_version,
@@ -807,7 +807,7 @@ missing_features.append("\n\t(" version ") " #feature);
 			.preferDiscrete = this->_vulkanCfg.preferDiscrete});
 
 		// fill in user device extensions & resolve based on cfg
-		std::vector device_extensions(std::begin(this->_vulkanCfg.deviceExtensions), std::end(this->_vulkanCfg.deviceExtensions));
+		std::vector device_extensions(std::begin(this->_vulkanCfg.deviceExtensionNames), std::end(this->_vulkanCfg.deviceExtensionNames));
 		VulkanFeatures features{};
 		VulkanProperties properties{};
 		VulkanQueueOutputs queues{};

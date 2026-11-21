@@ -156,7 +156,7 @@ int main() {
 			.app_version = {0, 0, 1},
 			.engine_version = {0, 0, 1},
 			.enableValidation = true,
-			.deviceExtensions = vulkan_extensions,
+			.deviceExtensionNames = vulkan_extensions,
 			.additionalDeviceFeatures = { .shaderInt64 = VK_TRUE },
 			.deviceExtensionFeatureChain = &rayQueryFeatures
 		})

@@ -52,6 +52,11 @@ namespace mythril {
 		ClampBorder,
 		MirrorClampEdge
 	};
+	enum class SamplerReduction {
+		Max,
+		Min,
+		WeightedAverage
+	};
 	enum class CompareOp {
 		NeverPass,
 		Less,
@@ -216,6 +221,18 @@ namespace mythril {
 				return VK_SAMPLER_MIPMAP_MODE_LINEAR;
 			default:
 				throw std::invalid_argument("invalid mythril::MipMap value!");
+		}
+	}
+	constexpr VkSamplerReductionMode toVulkan(SamplerReduction mode) {
+		switch (mode) {
+			case SamplerReduction::Max:
+				return VK_SAMPLER_REDUCTION_MODE_MAX;
+			case SamplerReduction::Min:
+				return VK_SAMPLER_REDUCTION_MODE_MIN;
+			case SamplerReduction::WeightedAverage:
+				return VK_SAMPLER_REDUCTION_MODE_WEIGHTED_AVERAGE;
+			default:
+				throw std::invalid_argument("invalid mythril::SamplerReductionMode value!");
 		}
 	}
 	constexpr VkCompareOp toVulkan(CompareOp op) {
