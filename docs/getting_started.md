@@ -22,7 +22,7 @@ You are expected to manage the windowing system yourself, however `Mythril` is b
 
 The majority of operations you will be performing are the creation of our Vulkan objects and setting up your rendergraph, and basically everything your application will do will take place inside the rendergraph's execute callbacks, [read more](#rendergraph).
 
-Throughout this document `Mythril::CTX` and `CTX` are synonymous, and lowercase "ctx" is just an instance of it.
+Throughout this document `mythril::CTX` and `CTX` are synonymous, and lowercase "ctx" is just an instance of it.
 
 # Creation
 

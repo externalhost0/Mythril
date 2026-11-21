@@ -100,7 +100,9 @@ CPMAddPackage(
         NAME SPIRV-Reflect
         GITHUB_REPOSITORY "KhronosGroup/SPIRV-Reflect"
         GIT_TAG vulkan-sdk-1.4.335.0
-        OPTIONS "SPIRV_REFLECT_STATIC_LIB ON"
+        OPTIONS
+        "SPIRV_REFLECT_STATIC_LIB ON"
+        "SPIRV_REFLECT_EXECUTABLE OFF"
 )
 add_library(SPIRV-Reflect-objects OBJECT
         ${SPIRV-Reflect_SOURCE_DIR}/spirv_reflect.c
