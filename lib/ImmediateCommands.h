@@ -5,15 +5,13 @@
 #pragma once
 
 #include "HelperMacros.h"
-#include "SubmitHandle.h"
+#include "mythril/SubmitHandle.h"
 
 #include <utility>
 #include <volk.h>
 
 namespace mythril {
-	class ImmediateCommands final {
-	public:
-		static constexpr uint32_t kMaxCommandBuffers = 64; // overkill lvk
+	namespace detail {
 		struct CommandBufferWrapper {
 			VkCommandBuffer _cmdBuf = VK_NULL_HANDLE;
 			VkCommandBuffer _cmdBufAllocated = VK_NULL_HANDLE;
@@ -22,6 +20,11 @@ namespace mythril {
 			VkSemaphore _semaphore = VK_NULL_HANDLE;
 			bool _isEncoding = false;
 		};
+	} // namespace detail
+
+	class ImmediateCommands final {
+	public:
+		static constexpr uint32_t kMaxCommandBuffers = 64; // overkill lvk
 
 		ImmediateCommands(VkDevice device, uint32_t queueFamilyIndex, VkQueue vk_queue = VK_NULL_HANDLE);
 		~ImmediateCommands();
@@ -36,8 +39,8 @@ namespace mythril {
 		void waitAll();
 		bool isReady(SubmitHandle handle, bool fastCheckNoVulkan = false) const;
 		VkFence getVkFence(SubmitHandle handle) const;
-		const CommandBufferWrapper& acquire();
-		SubmitHandle submit(const CommandBufferWrapper& wrapper);
+		const detail::CommandBufferWrapper& acquire();
+		SubmitHandle submit(const detail::CommandBufferWrapper& wrapper);
 
 		void waitSemaphore(VkSemaphore semaphore);
 		void signalSemaphore(VkSemaphore semaphore, uint64_t signalValue);
@@ -64,7 +67,7 @@ namespace mythril {
 		VkQueue _vkQueue = VK_NULL_HANDLE;
 		uint32_t _queueFamilyIndex = MYTHRIL_INVALID_U32;
 
-		CommandBufferWrapper _buffers[kMaxCommandBuffers];
+		detail::CommandBufferWrapper _buffers[kMaxCommandBuffers];
 
 		SubmitHandle _lastSubmitHandle = SubmitHandle();
 		SubmitHandle _nextSubmitHandle = SubmitHandle();

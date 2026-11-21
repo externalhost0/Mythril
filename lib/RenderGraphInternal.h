@@ -178,11 +178,6 @@ namespace mythril {
         StageAccess dstMask{};
     };
 
-    struct UploadData {
-        const void* data = nullptr;
-        size_t size = 0;
-    };
-
     struct PassMember {
         std::string name;
         std::function<void(CommandBuffer&)> callback;

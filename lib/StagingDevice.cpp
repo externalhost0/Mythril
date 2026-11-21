@@ -44,7 +44,7 @@ namespace mythril {
 			    .size = chunkSize,
 			};
 
-			const ImmediateCommands::CommandBufferWrapper& wrapper = _ctx._immGraphics->acquire();
+			const detail::CommandBufferWrapper& wrapper = _ctx._immGraphics->acquire();
 			vkCmdCopyBuffer(wrapper._cmdBuf, stagingBuffer->_vkBuffer, buffer._vkBuffer, 1, &copy);
 			vkutil::BufferMemoryBarrier2(wrapper._cmdBuf, buffer._vkBuffer, barrier.src, barrier.dst, dstOffset, chunkSize);
 			desc.handle_ = _ctx._immGraphics->submit(wrapper);
@@ -157,7 +157,7 @@ namespace mythril {
 		// 1. Copy the pixel data into the host visible staging buffer
 		stagingBuffer->bufferSubData(_ctx, desc.offset_, storageSize, data);
 
-		const ImmediateCommands::CommandBufferWrapper& wrapper = _ctx._immGraphics->acquire();
+		const detail::CommandBufferWrapper& wrapper = _ctx._immGraphics->acquire();
 
 		// 1. Transition initial image layout into TRANSFER_DST_OPTIMAL
 		vkutil::ImageMemoryBarrier2(
@@ -228,7 +228,7 @@ namespace mythril {
 		ASSERT(storageSize <= _stagingBufferSize);
 		MemoryRegionDesc desc = getNextContiguousOffset(storageSize);
 
-		const ImmediateCommands::CommandBufferWrapper& wrapper = _ctx._immGraphics->acquire();
+		const detail::CommandBufferWrapper& wrapper = _ctx._immGraphics->acquire();
 
 		AllocatedBuffer* stagingBuffer = _ctx._bufferPool.get(_stagingBuffer);
 		stagingBuffer->bufferSubData(_ctx, desc.offset_, storageSize, data);
@@ -329,7 +329,7 @@ namespace mythril {
 
 		AllocatedBuffer* stagingBuffer = _ctx._bufferPool.get(_stagingBuffer);
 
-		const ImmediateCommands::CommandBufferWrapper& wrapper1 = _ctx._immGraphics->acquire();
+		const detail::CommandBufferWrapper& wrapper1 = _ctx._immGraphics->acquire();
 
 		// 1. Transition to VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL
 		vkutil::ImageMemoryBarrier2(
@@ -373,7 +373,7 @@ namespace mythril {
 		memcpy(outData, stagingBuffer->getMappedPtr() + desc.offset_, storageSize);
 
 		// 4. Transition back to the initial image layout
-		const ImmediateCommands::CommandBufferWrapper& wrapper2 = _ctx._immGraphics->acquire();
+		const detail::CommandBufferWrapper& wrapper2 = _ctx._immGraphics->acquire();
 
 		vkutil::ImageMemoryBarrier2(
 		        wrapper2._cmdBuf,

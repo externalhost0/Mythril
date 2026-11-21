@@ -34,7 +34,7 @@ namespace mythril {
 		};
 
 		for (uint32_t i = 0; i != kMaxCommandBuffers; i++) {
-			CommandBufferWrapper& buf = _buffers[i];
+			detail::CommandBufferWrapper& buf = _buffers[i];
 
 			// make semaphore
 			const VkSemaphoreCreateInfo semaphore_ci = vkinfo::CreateSemaphoreInfo();
@@ -53,14 +53,14 @@ namespace mythril {
 	}
 	ImmediateCommands::~ImmediateCommands() {
 		waitAll();
-		for (CommandBufferWrapper& buf: _buffers) {
+		for (detail::CommandBufferWrapper& buf: _buffers) {
 			// lifetimes of all VkFence objects are managed explicitly we do not use deferredTask() for them
 			vkDestroyFence(_vkDevice, buf._fence, nullptr);
 			vkDestroySemaphore(_vkDevice, buf._semaphore, nullptr);
 		}
 		vkDestroyCommandPool(_vkDevice, _vkCommandPool, nullptr);
 	}
-	const ImmediateCommands::CommandBufferWrapper& ImmediateCommands::acquire() {
+	const detail::CommandBufferWrapper& ImmediateCommands::acquire() {
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_ACQUIRE);
 		if (!_numAvailableCommandBuffers) {
 			_purge();
@@ -69,9 +69,9 @@ namespace mythril {
 			LOG_SYSTEM(LogType::Warning, "Waiting for command buffers..");
 			_purge();
 		}
-		CommandBufferWrapper* current = nullptr;
+		detail::CommandBufferWrapper* current = nullptr;
 		// we are ok with any available buffer
-		for (CommandBufferWrapper& buf: _buffers) {
+		for (detail::CommandBufferWrapper& buf: _buffers) {
 			if (buf._cmdBuf == VK_NULL_HANDLE) {
 				current = &buf;
 				break;
@@ -117,7 +117,7 @@ namespace mythril {
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_WAIT);
 		VkFence fences[kMaxCommandBuffers];
 		uint32_t numFences = 0;
-		for (const CommandBufferWrapper& buf: _buffers) {
+		for (const detail::CommandBufferWrapper& buf: _buffers) {
 			if (buf._cmdBuf != VK_NULL_HANDLE && !buf._isEncoding) {
 				fences[numFences++] = buf._fence;
 			}
@@ -133,7 +133,7 @@ namespace mythril {
 
 		for (uint32_t i = 0; i != numBuffers; i++) {
 			// always start checking with the oldest submitted buffer, then wrap around
-			CommandBufferWrapper& buf = _buffers[(i + _lastSubmitHandle.bufferIndex_ + 1) % numBuffers];
+			detail::CommandBufferWrapper& buf = _buffers[(i + _lastSubmitHandle.bufferIndex_ + 1) % numBuffers];
 			if (buf._cmdBuf == VK_NULL_HANDLE || buf._isEncoding) {
 				continue;
 			}
@@ -157,7 +157,7 @@ namespace mythril {
 			// a null handle
 			return true;
 		}
-		const CommandBufferWrapper& buf = _buffers[handle.bufferIndex_];
+		const detail::CommandBufferWrapper& buf = _buffers[handle.bufferIndex_];
 		if (buf._cmdBuf == VK_NULL_HANDLE) {
 			// already recycled and not yet reused
 			return true;
@@ -172,7 +172,7 @@ namespace mythril {
 		}
 		return vkWaitForFences(_vkDevice, 1, &buf._fence, VK_TRUE, 0) == VK_SUCCESS;
 	}
-	SubmitHandle ImmediateCommands::submit(const CommandBufferWrapper& wrapper) {
+	SubmitHandle ImmediateCommands::submit(const detail::CommandBufferWrapper& wrapper) {
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_SUBMIT);
 		ASSERT_MSG(wrapper._isEncoding, "Command buffer must be encoding!");
 		VK_CHECK(vkEndCommandBuffer(wrapper._cmdBuf));
@@ -215,7 +215,7 @@ namespace mythril {
 		_signalSemaphore.semaphore = VK_NULL_HANDLE;
 
 		// reset
-		const_cast<CommandBufferWrapper&>(wrapper)._isEncoding = false;
+		const_cast<detail::CommandBufferWrapper&>(wrapper)._isEncoding = false;
 		_submitCounter++;
 
 		if (!_submitCounter) {

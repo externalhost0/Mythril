@@ -11,12 +11,12 @@
 #include "../../lib/Swapchain.h"
 
 #include "../../lib/Pipelines.h"
-#include "../../lib/Shader.h"
+#include "Shader.h"
 #include "../../lib/VulkanObjects.h"
-#include "../../lib/AccelerationStructure.h"
+#include "AccelerationStructure.h"
 
 #include "Objects.h"
-#include "../../lib/CommandBuffer.h"
+#include "CommandBuffer.h"
 #include "../../lib/Plugins.h"
 #include "../../lib/SlangCompiler.h"
 

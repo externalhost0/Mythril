@@ -160,7 +160,10 @@ namespace mythril {
 		BufferAccess access = BufferAccess::ShaderRead;
 	};
 
-	struct UploadData;
+	struct UploadData {
+		const void* data = nullptr;
+		size_t size = 0;
+	};
 	struct CopyOp {
 		GraphTexture src;
 		GraphTexture dst;

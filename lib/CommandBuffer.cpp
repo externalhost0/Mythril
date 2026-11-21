@@ -3,7 +3,9 @@
 //
 
 
-#include "CommandBuffer.h"
+#include "mythril/CommandBuffer.h"
+#include "ImmediateCommands.h"
+#include "RenderGraphInternal.h"
 #include "HandleAccess.h"
 #include "Logger.h"
 #include "Pipelines.h"

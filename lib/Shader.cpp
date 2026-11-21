@@ -2,7 +2,7 @@
 // Created by Hayden Rivas on 11/1/25.
 //
 
-#include "Shader.h"
+#include "mythril/Shader.h"
 #include "HelperMacros.h"
 #include "Logger.h"
 #include <vulkan/vk_enum_string_helper.h>

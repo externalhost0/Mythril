@@ -4,23 +4,24 @@
 
 #pragma once
 
-#include "mythril/RenderGraphBuilder.h"
-#include "RenderGraphInternal.h"
-#include "ImmediateCommands.h"
-#include "mythril/ObjectHandles.h"
-#include "mythril/vkenums.h"
+#include "ObjectHandles.h"
+#include "RenderGraphBuilder.h"
+#include "SubmitHandle.h"
+#include "vkenums.h"
 
 #include <volk.h>
 
 #include <span>
-
-#include "Pipelines.h"
+#include <variant>
+#include <vector>
 
 namespace mythril {
 	// forward declarations
 	class CTX;
 	namespace detail {
+		class AllocatedBuffer;
 		class AllocatedTexture;
+		struct CommandBufferWrapper;
 		struct PipelineCoreData;
 		struct SharedPipelineInfo;
 	}
@@ -161,7 +162,7 @@ namespace mythril {
 		void cmdSetViewportImpl(VkExtent2D extent2D);
 		void cmdSetScissorImpl(VkExtent2D extent2D);
 
-		void bufferBarrierImpl(const detail::AllocatedBuffer& buf, vkutil::StageAccess src, vkutil::StageAccess dst);
+		void bufferBarrierImpl(const detail::AllocatedBuffer& buf, StageAccess src, StageAccess dst);
 		void orderAfterPreviousDispatchImpl();
 
 		// helpers
@@ -172,7 +173,7 @@ namespace mythril {
 	private:
 		// pretty important members for communication to the rest of the renderer
 		CTX* _ctx = nullptr;
-		const ImmediateCommands::CommandBufferWrapper* _wrapper = nullptr;
+		const detail::CommandBufferWrapper* _wrapper = nullptr;
 
 		// all set via RenderGraph
 		VkPipeline _lastBoundvkPipeline = VK_NULL_HANDLE;

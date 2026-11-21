@@ -21,9 +21,8 @@
 #include <slang/slang-cpp-types.h>
 #include <slang/slang.h>
 
-#include "AccelerationStructure.h"
-#include "AccelerationStructure.h"
-#include "CommandBuffer.h"
+#include "mythril/AccelerationStructure.h"
+#include "mythril/CommandBuffer.h"
 
 namespace mythril {
 	using namespace detail;
@@ -2013,7 +2012,7 @@ namespace mythril {
 			LOG_SYSTEM(LogType::Warning, "Generate mipmap request of texture with less then 2 levels, returning early.");
 			return;
 		}
-		const ImmediateCommands::CommandBufferWrapper& wrapper = _immGraphics->acquire();
+		const detail::CommandBufferWrapper& wrapper = _immGraphics->acquire();
 		image->generateMipmap(wrapper._cmdBuf);
 		_immGraphics->submit(wrapper);
 	}

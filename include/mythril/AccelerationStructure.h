@@ -6,6 +6,7 @@
 #include <string_view>
 
 #include "Constants.h"
+#include "Objects.h"
 
 #include <volk.h>
 
