@@ -14,6 +14,8 @@
 #include "vkinfo.h"
 #include <vulkan/vk_enum_string_helper.h>
 
+#include "mythril/CPUProfiler.h"
+
 namespace mythril {
 	using namespace detail;
 	[[maybe_unused]] static const char* PresentModeName(VkPresentModeKHR mode) {

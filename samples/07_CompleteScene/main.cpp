@@ -5,6 +5,8 @@
 #include "mythril/CTXBuilder.h"
 #include "mythril/CTX.h"
 #include "mythril/Objects.h"
+#include "mythril/CPUProfiler.h"
+#include "mythril/ImGui.h"
 
 #include "SDL3/SDL_events.h"
 
@@ -35,7 +37,9 @@
 #include "Helpers.h"
 #include "HostStructs.h"
 #include "Primitives.h"
+
 #include "../SDL3Usage.h"
+#include "../SampleUtils.h"
 
 #include <chrono>
 #include <thread>
@@ -222,7 +226,7 @@ static AssetData loadGLTFAsset(const std::filesystem::path& filepath) {
 	// 1. load asset
 	fastgltf::Parser parser;
 	auto data_result = fastgltf::GltfDataBuffer::FromPath(filepath);
-	ASSERT_MSG(data_result.error() == fastgltf::Error::None, "Data load from path {} failed!", filepath.string().c_str());
+	SAMPLE_ASSERT_MSG(data_result.error() == fastgltf::Error::None, "Data load from path {} failed!", filepath.string().c_str());
 	fastgltf::GltfDataBuffer data = std::move(data_result.get());
 
 	constexpr fastgltf::Options options =
@@ -242,7 +246,7 @@ static AssetData loadGLTFAsset(const std::filesystem::path& filepath) {
 		case fastgltf::GltfType::Invalid:
 			assert(false);
 	}
-	ASSERT_MSG(asset_result.error() == fastgltf::Error::None, "Error when validating {}", filepath.string().c_str());
+	SAMPLE_ASSERT_MSG(asset_result.error() == fastgltf::Error::None, "Error when validating {}", filepath.string().c_str());
 	fastgltf::Asset gltf = std::move(asset_result.get());
 
 	// 2. process asset
@@ -354,7 +358,7 @@ static AssetData loadGLTFAsset(const std::filesystem::path& filepath) {
 		int w, h, nChannels;
 		std::visit(fastgltf::visitor {
 			[&](auto& args) {
-					ASSERT_MSG(false, "Unsupported image named: '{}' from gltf: '{}'", image.name, filepath.string().c_str());
+					SAMPLE_ASSERT_MSG(false, "Unsupported image named: '{}' from gltf: '{}'", image.name, filepath.string().c_str());
 				},
 				[&](const fastgltf::sources::BufferView& view) {
 					const fastgltf::BufferView& bufferView = gltf.bufferViews[view.bufferViewIndex];
@@ -366,7 +370,7 @@ static AssetData loadGLTFAsset(const std::filesystem::path& filepath) {
 										reinterpret_cast<const stbi_uc*>(vector.bytes.data() + bufferView.byteOffset),
 										static_cast<int>(bufferView.byteLength),
 										&w, &h, &nChannels, 4);
-								ASSERT_MSG(image_data, "Failed to load data from image named: '{}' from gltf: '{}'", image.name, filepath.string().c_str());
+								SAMPLE_ASSERT_MSG(image_data, "Failed to load data from image named: '{}' from gltf: '{}'", image.name, filepath.string().c_str());
 								texture.width = w;
 								texture.height = h;
 								texture.channels = nChannels;
@@ -379,7 +383,7 @@ static AssetData loadGLTFAsset(const std::filesystem::path& filepath) {
 							reinterpret_cast<const stbi_uc*>(array.bytes.data()),
 							static_cast<int>(array.bytes.size()),
 							&w, &h, &nChannels, 4);
-					ASSERT_MSG(image_data, "Failed to load data from image named: '{}' from gltf: '{}'", image.name, filepath.string().c_str());
+					SAMPLE_ASSERT_MSG(image_data, "Failed to load data from image named: '{}' from gltf: '{}'", image.name, filepath.string().c_str());
 					texture.width = w;
 					texture.height = h;
 					texture.channels = nChannels;
@@ -390,19 +394,19 @@ static AssetData loadGLTFAsset(const std::filesystem::path& filepath) {
 							reinterpret_cast<const stbi_uc*>(vector.bytes.data()),
 							static_cast<int>(vector.bytes.size()),
 							&w, &h, &nChannels, 4);
-					ASSERT_MSG(image_data, "Failed to load data from image named: '{}' from gltf: '{}'", image.name, filepath.string().c_str());
+					SAMPLE_ASSERT_MSG(image_data, "Failed to load data from image named: '{}' from gltf: '{}'", image.name, filepath.string().c_str());
 					texture.width = w;
 					texture.height = h;
 					texture.channels = nChannels;
 					texture.pixels.reset(image_data);
 				},
 				[&](const fastgltf::sources::URI& uri_source) {
-					ASSERT(uri_source.fileByteOffset == 0);
-					ASSERT(uri_source.uri.isLocalPath());
+					SAMPLE_ASSERT(uri_source.fileByteOffset == 0);
+					SAMPLE_ASSERT(uri_source.uri.isLocalPath());
 
 					const std::filesystem::path image_path = uri_source.uri.path();
 					unsigned char* image_data = stbi_load(image_path.string().c_str(), &w, &h, &nChannels, 4);
-					ASSERT_MSG(image_data, "Failed to load data from image named: '{}' from gltf: '{}'", image.name, filepath.string().c_str());
+					SAMPLE_ASSERT_MSG(image_data, "Failed to load data from image named: '{}' from gltf: '{}'", image.name, filepath.string().c_str());
 					texture.width = w;
 					texture.height = h;
 					texture.channels = nChannels;
@@ -426,7 +430,7 @@ static mythril::Texture loadTexture(mythril::CTX& ctx, const std::filesystem::pa
 		.format = VK_FORMAT_R8G8B8A8_UNORM,
 		.usage = mythril::TextureUsageBits_Sampled,
 		.storage = mythril::StorageType::Device,
-		.numMipLevels = mythril::vkutil::CalcNumMipLevels(w, h),
+		.numMipLevels = sample::CalcNumMipLevels(w, h),
 		.initialData = image_data,
 		.generateMipmaps = true,
 		.debugName = filepath.filename().string().c_str()
@@ -494,7 +498,7 @@ static AssetCompiled compileGLTFAsset(mythril::CTX& ctx, AssetData& data) {
 				.dimension = { texture_data.width, texture_data.height },
 				.format = VK_FORMAT_R8G8B8A8_UNORM,
 				.usage = mythril::TextureUsageBits::TextureUsageBits_Sampled,
-				.numMipLevels = mythril::vkutil::CalcNumMipLevels(texture_data.width, texture_data.height),
+				.numMipLevels = sample::CalcNumMipLevels(texture_data.width, texture_data.height),
 				.initialData = texture_data.pixels.get(),
 				.generateMipmaps = true,
 				.debugName = texture_name_buf
@@ -1012,7 +1016,7 @@ int main() {
 
 		GPU::LightingData lastFramelightingData{};
 		for (int i = 0; i < kNumPointLights; i++) {
-			graph.addGraphicsPass(fmt::format("pointlight_shadow_{}", i).c_str())
+			graph.addGraphicsPass(std::format("pointlight_shadow_{}", i).c_str())
 			.attachment({
 				.texDesc = rgPointLightShadowTex[i],
 				.clearValue = mythril::ClearValue::depth(1.f, 1),
@@ -1722,8 +1726,8 @@ int main() {
 				ndc.y = 1.0f - uv.y * 2.0f; // flip Y for vulkan
 				ndc.z = 1.0f;              // far plane
 				ndc.w = 1.0f;
-				glm::vec4 view = invProj * ndc;
-				glm::vec3 viewPos = glm::vec3(view) / view.w;
+				const glm::vec4 view = invProj * ndc;
+				const glm::vec3 viewPos = glm::vec3(view) / view.w;
 				return viewPos / viewPos.z;
 			};
 			glm::mat4 invProj = glm::inverse(reversedCameraProj);

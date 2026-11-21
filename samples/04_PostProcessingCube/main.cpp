@@ -95,7 +95,7 @@ glm::mat4 calculateProjectionMatrix(const Camera& camera) {
 int main() {
 	static const std::filesystem::path kDataDir = std::filesystem::path(MYTH_SAMPLE_NAME).concat("_data/");
 	static const std::vector<std::string> slang_searchpaths = {
-		MYTH_INCLUDE_DIR,
+		MYTH_SAMPLES_DIR,
 		kDataDir.string()
 	};
 	SDL_Window* sdlWindow = BuildSDLWindow(false);

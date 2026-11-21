@@ -5,7 +5,7 @@
 #pragma once
 
 // REQUIRED BY SHARED HEADER FILES BETWEEN SLANG & C++
-#include <mythril/shader_types.h>
+#include "shader_types.h"
 
 NAMESPACE_BEGIN()
 

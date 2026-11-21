@@ -6,6 +6,7 @@
 #include "mythril/CTX.h"
 #include "Logger.h"
 #include "vkinfo.h"
+#include "mythril/CPUProfiler.h"
 
 namespace mythril {
 	ImmediateCommands::ImmediateCommands(VkDevice device, uint32_t queueFamilyIndex, VkQueue vk_queue) :

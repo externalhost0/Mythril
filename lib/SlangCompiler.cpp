@@ -13,6 +13,7 @@
 
 #include <slang/slang.h>
 
+#include "mythril/CPUProfiler.h"
 #include "mythril/CTX.h"
 #include "mythril/CTXBuilder.h"
 

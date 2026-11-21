@@ -3,7 +3,6 @@
 //
 
 
-#include "mythril/CTXBuilder.h"
 
 #include <algorithm>
 #include <cctype>
@@ -15,12 +14,15 @@
 #include "HandleAccess.h"
 #include "HelperMacros.h"
 #include "Logger.h"
-#include "Plugins.h"
-#include "vkutil.h"
+#include "mythril/CTXBuilder.h"
+#include "mythril/Plugins.h"
 
 #include <vk_mem_alloc.h>
 #include <volk.h>
 #include <slang/slang.h>
+
+#include "SlangCompiler.h"
+#include "mythril/CPUProfiler.h"
 
 namespace mythril {
 	struct VulkanInstanceInputs {
@@ -893,8 +895,10 @@ missing_features.append("\n\t(" version ") " #feature);
 			ctx->createSwapchain(this->_swapchainSpec);
 		}
 
+		ctx->_slangCompiler = std::make_unique<SlangCompiler>();
+		ASSERT(ctx->_slangCompiler);
 		for (const auto& path: this->_slangCfg.searchpaths) {
-			ctx->_slangCompiler.addSearchPath(path);
+			ctx->_slangCompiler->addSearchPath(path);
 		}
 		// now we can build plugins!
 #ifdef MYTH_ENABLED_IMGUI

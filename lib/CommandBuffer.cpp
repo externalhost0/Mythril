@@ -15,6 +15,9 @@
 #include <volk.h>
 
 #include <vulkan/vk_enum_string_helper.h>
+
+#include "GPUProfiler.h"
+#include "mythril/CPUProfiler.h"
 #ifdef MYTH_ENABLED_IMGUI
 #include <imgui.h>
 #include <imgui_impl_vulkan.h>

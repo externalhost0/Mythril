@@ -3,6 +3,7 @@
 //
 
 #include <mythril/CTX.h>
+#include "../SampleUtils.h"
 #include <mythril/CTXBuilder.h>
 
 #include <SDL3/SDL_vulkan.h>
@@ -113,8 +114,7 @@ int main() {
 	static constexpr VkFormat kOffscreenFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
 	static const std::filesystem::path kDataDir = std::filesystem::path(MYTH_SAMPLE_NAME).concat("_data/");
 	static const std::vector<std::string> slang_searchpaths = {
-		"../../include/",
-		"../include/",
+		MYTH_SAMPLES_DIR,
 		(kDataDir / "shaders/").string()
 	};
 	SDL_Window* sdlWindow = BuildSDLWindow(true);
@@ -251,7 +251,7 @@ int main() {
 			const uint32_t count2 = blasSizes.accelerationStructureSize / maxStorageBufferSize;
 			return 1 + (count1 > count2 ? count1 : count2);
 		}();
-		ASSERT(requiredBLASCount > 0);
+		SAMPLE_ASSERT(requiredBLASCount > 0);
 		const auto totalPrimitiveCount = static_cast<uint32_t>(scene.indices.size() / 3);  // divide by 3 since every 3 makes a triangle
 
 		// each of our blases have the same spec but read from a different position in the buffers

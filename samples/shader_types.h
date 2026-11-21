@@ -4,6 +4,9 @@
 
 #pragma once
 
+// this serves as an example of how cpu types should be correlatted with gpu types from Slang
+// you of course dont have to make an abstraction like this but because most of our samples are simple it is very helpful
+
 #ifdef __cplusplus // when this header is processed in cpp
 #include <concepts>
 #include <glm/glm.hpp>

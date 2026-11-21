@@ -1,6 +1,8 @@
 #pragma once
 
 #include "mythril/CTX.h"
+#include "VulkanObjects.h"
+#include "Pipelines.h"
 
 namespace mythril {
 	template<typename Pool, typename Handle>

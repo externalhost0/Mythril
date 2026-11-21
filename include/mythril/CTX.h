@@ -4,23 +4,15 @@
 
 #pragma once
 
-#include "../../lib/HelperMacros.h"
-#include "../../lib/ImmediateCommands.h"
 #include "ObjectHandles.h"
-#include "../../lib/StagingDevice.h"
-#include "../../lib/Swapchain.h"
-
-#include "../../lib/Pipelines.h"
 #include "Shader.h"
-#include "../../lib/VulkanObjects.h"
 #include "AccelerationStructure.h"
-
+#include "PipelineSpecs.h"
 #include "Objects.h"
 #include "CommandBuffer.h"
-#include "../../lib/Plugins.h"
-#include "../../lib/SlangCompiler.h"
-
+#include "Plugins.h"
 #include "Specs.h"
+#include "SwapchainSpec.h"
 
 #include <deque>
 #include <filesystem>
@@ -28,97 +20,18 @@
 #include <span>
 #include <unordered_map>
 #include <unordered_set>
-
-#ifdef MYTH_ENABLED_IMGUI
-#include <imgui.h>
-#include <imgui_impl_vulkan.h>
-#endif
-
-#if defined(MYTH_ENABLED_TRACY)
-#include <tracy/Tracy.hpp>
-
-// colors
-// command buffer colors
-#define MYTH_PROFILER_COLOR_WAIT 0x8a89a1 // blue gray
-#define MYTH_PROFILER_COLOR_ACQUIRE 0x3128de // rich blue
-#define MYTH_PROFILER_COLOR_SUBMIT 0x6b28de // dark purple
-
-#define MYTH_PROFILER_COLOR_PRESENT 0xbf1bb7 // magenta
-#define MYTH_PROFILER_COLOR_BARRIER 0xbdd1ff // baby blue
-#define MYTH_PROFILER_COLOR_COMMAND 0x3f449e // light saturated blue
-
-#define MYTH_PROFILER_COLOR_UPDATE 0xd1c12e // light yellow
-
-// function colors
-#define MYTH_PROFILER_COLOR_CREATE 0x22bf4f // dark green
-#define MYTH_PROFILER_COLOR_DESTROY 0xc41212 // dark red
+#include <memory>
 
 
-// rendering colors
-#define MYTH_PROFILER_COLOR_RENDERGRAPH 0xf0784d // light orange
-#define MYTH_PROFILER_COLOR_RENDERPASS 0xff591c // orange
-
-// macro functions
-#define MYTH_PROFILER_FUNCTION_N(name) ZoneScopedN(name)
-#if defined(_MSC_VER)
-#define MYTH_PROFILER_FUNCTION() ZoneScopedN(__FUNCSIG__)
-#define MYTH_PROFILER_FUNCTION_COLOR(color) ZoneScopedNC(__FUNCSIG__, color)
-#else
-#if defined(__APPLE__)
-#define MYTH_PROFILER_FUNCTION() ZoneScopedN(__PRETTY_FUNCTION__)
-
-#define MYTH_PROFILER_FUNCTION_COLOR(color) ZoneScopedNC(__PRETTY_FUNCTION__, color)
-
-#else
-#define MYTH_PROFILER_FUNCTION() ZoneScopedN(__PRETTY_FUNCTION__)
-#define MYTH_PROFILER_FUNCTION_COLOR(color) ZoneScopedNC(__PRETTY_FUNCTION__, color)
-#endif
-#endif
-
-#define MYTH_PROFILER_ZONE_COLOR(name, color)                                                                                                                                                          \
-    {                                                                                                                                                                                                  \
-        ZoneScopedNC(name, color);
-
-#define MYTH_PROFILER_ZONE(name)                                                                                                                                                                       \
-    {                                                                                                                                                                                                  \
-        ZoneScopedN(name);
-
-#define MYTH_PROFILER_ZONE_END() }
-
-
-#define MYTH_PROFILER_THREAD(name) tracy::SetThreadName(name)
-#define MYTH_PROFILER_FRAME() FrameMark;
-
-#else
-#define MYTH_PROFILER_FUNCTION()
-#define MYTH_PROFILER_FUNCTION_N(name)
-#define MYTH_PROFILER_FUNCTION_COLOR(color)
-#define MYTH_PROFILER_ZONE_COLOR(name, color) {
-#define MYTH_PROFILER_ZONE(name) {
-#define MYTH_PROFILER_ZONE_END() }
-#define MYTH_PROFILER_THREAD(name)
-#define MYTH_PROFILER_FRAME(name)
-#endif // MYTH_ENABLED_TRACY
-
-#if defined(MYTH_ENABLED_TRACY_GPU)
-#include <tracy/TracyVulkan.hpp>
-#define MYTH_PROFILER_GPU_ZONE(ctx, name, cmdBuffer) TracyVkZoneTransient((ctx)->_tracyPlugin.getTracyVkCtx(), ___tracy_gpu_zone, cmdBuffer, name, true);
-#else
-#define MYTH_PROFILER_GPU_ZONE(ctx, name, cmdBuffer)
-#endif // MYTH_ENABLED_TRACY_GPU
-
-// metal only samples timestamps at encoder boundaries, per-command zones would split metal encoders
-// aka you get horrible performance, so we disable it
-#if defined(MYTH_ENABLED_TRACY_GPU_COMMANDS) && !defined(__APPLE__)
-#define MYTH_PROFILER_GPU_COMMAND_ZONE(name, cmdBuffer, color) TracyVkZoneC(this->_ctx->_tracyPlugin.getTracyVkCtx(), cmdBuffer, name, color);
-#else
-#define MYTH_PROFILER_GPU_COMMAND_ZONE(name, cmdBuffer, color)
-#endif
-
-
+VK_DEFINE_HANDLE(VmaAllocator)
 namespace mythril {
+	// big forward declares!!!!
 	class CTXBuilder;
 	class CommandBuffer;
+	class ImmediateCommands;
+	class StagingDevice;
+	class Swapchain;
+	class SlangCompiler;
 
 	static constexpr uint32_t kMaxUserExtensions = 32;
 	static constexpr VkFormat kDefaultSwapchainFormat = VK_FORMAT_B8G8R8A8_UNORM;
@@ -422,7 +335,7 @@ namespace mythril {
 #ifdef MYTH_ENABLED_TRACY_GPU
 		TracyGPUPlugin _tracyPlugin;
 #endif
-		SlangCompiler _slangCompiler;
+		std::unique_ptr<SlangCompiler> _slangCompiler;
 		std::function<void(VkInstance, VkSurfaceKHR)> _surfaceDestroyFunc;
 
 		friend class RenderGraph;
@@ -440,12 +353,3 @@ namespace mythril {
 		friend class detail::Holder;
 	};
 } // namespace mythril
-#ifdef MYTH_ENABLED_IMGUI
-namespace ImGui {
-	void Image(const mythril::Texture& texture, const ImVec2& image_size = {0, 0}, const ImVec2& uv0 = {0, 0}, const ImVec2& uv1 = {1, 1});
-	void Image(const mythril::Texture& texture, const mythril::Sampler& sampler, const ImVec2& image_size = {0, 0}, const ImVec2& uv0 = {0, 0}, const ImVec2& uv1 = {1, 1});
-	void Image(mythril::TextureHandle texHandle, const ImVec2& image_size = {0, 0}, const ImVec2& uv0 = {0, 0}, const ImVec2& uv1 = {1, 1});
-	void Image(mythril::TextureHandle texHandle, mythril::SamplerHandle samplerHandle, const ImVec2& image_size, const ImVec2& uv0 = {0, 0}, const ImVec2& uv1 = {1, 1});
-	void Image(const mythril::Texture& texture, mythril::TextureViewKey viewKey, const ImVec2& image_size = {0, 0}, const ImVec2& uv0 = {0, 0}, const ImVec2& uv1 = {1, 1});
-} // namespace ImGui
-#endif

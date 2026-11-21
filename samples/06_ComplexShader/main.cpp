@@ -3,6 +3,7 @@
 //
 #include "mythril/CTXBuilder.h"
 #include "mythril/CTX.h"
+#include "../SampleUtils.h"
 #include "mythril/RenderGraphBuilder.h"
 
 #include "glm/glm.hpp"
@@ -16,7 +17,6 @@
 #include <SDL3/SDL.h>
 
 // for shader structs
-#include <fmt/color.h>
 #include <SDL3/SDL_vulkan.h>
 
 #include "GPUStructs.h"
@@ -115,7 +115,7 @@ namespace mythril {
 			case FieldKind::Unknown:
 				return "Unknown";
 		}
-		ASSERT(false);
+		SAMPLE_ASSERT(false);
 	}
 
 	static const char* GetScalarKindString(ScalarKind kind) {
@@ -266,7 +266,7 @@ void DrawFieldInfoRecursive(const std::vector<mythril::FieldInfo>& fields) {
 		ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_SpanAvailWidth |
 								   (isStruct ? 0 : (ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen));
 
-		std::string label = fmt::format("{} ({})", field.varName, field.typeName);
+		std::string label = std::format("{} ({})", field.varName, field.typeName);
 		bool open = ImGui::TreeNodeEx(label.c_str(), flags);
 
 		if (!isStruct) {
@@ -384,8 +384,7 @@ void DrawShaderInfo(const mythril::detail::AllocatedShader& shader) {
 int main() {
 	static const std::filesystem::path kDataDir = std::filesystem::path(MYTH_SAMPLE_NAME).concat("_data/");
 	static const std::vector<std::string> slang_searchpaths = {
-		"../../include/",
-		"../include/",
+		MYTH_SAMPLES_DIR,
 		kDataDir.string()
 	};
 	SDL_Window* sdlWindow = BuildSDLWindow(false);

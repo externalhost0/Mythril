@@ -11,9 +11,6 @@
 #include "GraphicsPipelineBuilder.h"
 #include "Logger.h"
 #include "Pipelines.h"
-#include "Plugins.h"
-#include "mythril/CTXBuilder.h"
-#include "mythril/Objects.h"
 #include "vkutil.h"
 
 #include <slang/slang-com-ptr.h>
@@ -21,6 +18,16 @@
 #include <slang/slang-cpp-types.h>
 #include <slang/slang.h>
 
+#include "Swapchain.h"
+#include "StagingDevice.h"
+#include "ImmediateCommands.h"
+#include "SlangCompiler.h"
+#include "HelperMacros.h"
+
+#include "mythril/CPUProfiler.h"
+#include "mythril/CTXBuilder.h"
+#include "mythril/Objects.h"
+#include "mythril/Plugins.h"
 #include "mythril/AccelerationStructure.h"
 #include "mythril/CommandBuffer.h"
 
@@ -229,7 +236,7 @@ namespace mythril {
 		_immGraphics.reset(nullptr);
 
 		// destroy slang compiler
-		_slangCompiler.destroy();
+		_slangCompiler->destroy();
 
 		// destroy our bindless descriptor stuff
 		vkDestroyDescriptorSetLayout(_vkDevice, _vkBindlessDSL, nullptr);
@@ -1636,19 +1643,19 @@ namespace mythril {
 	Shader CTX::createShader(const ShaderSpec& spec) {
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_CREATE);
 		// lazily create slang session & slang global session
-		if (!_slangCompiler.sessionExists()) {
-			_slangCompiler.create();
+		if (!_slangCompiler->sessionExists()) {
+			_slangCompiler->create();
 		}
 
 		CompileResult compile_result;
 		if (std::holds_alternative<std::filesystem::path>(spec.source)) {
 			const auto& filepath = std::get<std::filesystem::path>(spec.source);
 			ASSERT_MSG(std::filesystem::exists(filepath), "Shader filepath '{}' does not exist.", filepath.string());
-			compile_result = _slangCompiler.compileSlangFromDisk(filepath);
+			compile_result = _slangCompiler->compileSlangFromDisk(filepath);
 		} else if (std::holds_alternative<std::string>(spec.source)) {
 			const auto& code = std::get<std::string>(spec.source);
 			ASSERT_MSG(!code.empty(), "Shader source code is empty.", code);
-			compile_result = _slangCompiler.compileSlangFromSourceString(code);
+			compile_result = _slangCompiler->compileSlangFromSourceString(code);
 		}
 		ASSERT(compile_result.getSpirvCode());
 		// TODO: this is some of the worst code i have ever written in my life, i am so sorry future me who will come back here and have to clean it

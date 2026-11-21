@@ -260,12 +260,12 @@ namespace mythril::vkutil {
 
 	VkSemaphore CreateTimelineSemaphore(VkDevice device, unsigned int numImages);
 
-	constexpr uint32_t CalcNumMipLevels(uint32_t width, uint32_t height) {
-		uint32_t levels = 1;
-		while ((width | height) >> levels)
-			levels++;
-		return levels;
-	}
+	//constexpr uint32_t CalcNumMipLevels(uint32_t width, uint32_t height) {
+	//	uint32_t levels = 1;
+	//	while ((width | height) >> levels)
+	//		levels++;
+	//	return levels;
+	//}
 	constexpr bool IsComponentMappingAnIdentity(VkComponentMapping componentMapping) {
 		return componentMapping.r == VK_COMPONENT_SWIZZLE_IDENTITY && componentMapping.g == VK_COMPONENT_SWIZZLE_IDENTITY && componentMapping.b == VK_COMPONENT_SWIZZLE_IDENTITY &&
 		       componentMapping.a == VK_COMPONENT_SWIZZLE_IDENTITY;

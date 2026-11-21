@@ -21,6 +21,12 @@
 #include "Logger.h"
 #include <vulkan/vk_enum_string_helper.h>
 
+#include "GPUProfiler.h"
+#include "ImmediateCommands.h"
+#include "StagingDevice.h"
+#include "Swapchain.h"
+#include "mythril/CPUProfiler.h"
+
 namespace mythril {
 	using namespace detail;
 	RenderGraph::RenderGraph() = default;

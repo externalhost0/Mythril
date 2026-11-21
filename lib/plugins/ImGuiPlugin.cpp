@@ -2,7 +2,7 @@
 // Created by Hayden Rivas on 10/11/25.
 //
 #include "../HandleAccess.h"
-#include "Plugins.h"
+#include "mythril/Plugins.h"
 
 #include <array>
 #include <cstdio>
@@ -11,6 +11,7 @@
 #include <imgui.h>
 
 #include "mythril/CTXBuilder.h"
+#include "mythril/ImGui.h"
 
 namespace mythril {
 	namespace {

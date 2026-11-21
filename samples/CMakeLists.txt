@@ -29,8 +29,9 @@ macro(ADD_SAMPLE sample_name)
 
     target_compile_definitions(${sample_name} PRIVATE
         MYTH_SAMPLE_NAME="${sample_name}"
-        MYTH_INCLUDE_DIR="${CMAKE_SOURCE_DIR}/include"
+        MYTH_SAMPLES_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
     )
+    target_include_directories(${sample_name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
     foreach(feature IN LISTS SAMPLE_${sample_name}_REQUIRES)
         if(${feature})
@@ -105,15 +106,16 @@ endif()
 
 # ==================== Sample Definitions ====================
 # Only build samples whose required features the parent CMakeLists kept enabled.
-set(_sample_args_01_ClearWindow        "")
-set(_sample_args_02_Cube               "LIBS;glm")
-set(_sample_args_03_CubeMSAA           "LIBS;glm")
-set(_sample_args_04_PostProcessingCube "LIBS;glm")
-set(_sample_args_05_ImGui              "LIBS;imgui_sdl3_backend")
-set(_sample_args_06_ComplexShader      "LIBS;glm;imgui_sdl3_backend")
-set(_sample_args_07_CompleteScene      "LIBS;glm;fastgltf;stb_image;imguizmo;imgui_sdl3_backend")
-set(_sample_args_08_RayTracing         "LIBS;glm;fastgltf;imgui_sdl3_backend")
-set(_sample_args_09_Skinning           "LIBS;glm;fastgltf;imguizmo;imgui_sdl3_backend")
+set(_sample_args_01_ClearWindow                "")
+set(_sample_args_02_Cube                       "LIBS;glm")
+set(_sample_args_03_CubeMSAA                   "LIBS;glm")
+set(_sample_args_04_PostProcessingCube         "LIBS;glm")
+set(_sample_args_05_ImGui                      "LIBS;imgui_sdl3_backend")
+set(_sample_args_06_ComplexShader              "LIBS;glm;imgui_sdl3_backend")
+set(_sample_args_07_CompleteScene              "LIBS;glm;fastgltf;stb_image;imguizmo;imgui_sdl3_backend")
+set(_sample_args_08_RayTracing                 "LIBS;glm;fastgltf;imgui_sdl3_backend")
+set(_sample_args_09_Skinning                   "LIBS;glm;fastgltf;imguizmo;imgui_sdl3_backend")
+set(_sample_args_10_EverythingAsFastAsPossible "LIBS;glm;imgui_sdl3_backend")
 
 
 foreach(sample IN LISTS MYTH_SAMPLES_TO_BUILD)

@@ -3,6 +3,7 @@
 //
 #include "mythril/CTXBuilder.h"
 #include "mythril/CTX.h"
+#include "../SampleUtils.h"
 #include "mythril/RenderGraphBuilder.h"
 
 #include "glm/glm.hpp"
@@ -63,12 +64,12 @@ struct SkinnedModel {
 
 static SkinnedModel loadSkinnedModel(const std::filesystem::path& filepath) {
 	auto data = fastgltf::GltfDataBuffer::FromPath(filepath);
-	ASSERT_MSG(data.error() == fastgltf::Error::None, "Failed to read {}", filepath.string());
+	SAMPLE_ASSERT_MSG(data.error() == fastgltf::Error::None, "Failed to read {}", filepath.string());
 	fastgltf::Parser parser;
 	auto asset = parser.loadGltfBinary(data.get(), filepath.parent_path(), fastgltf::Options::LoadExternalBuffers);
-	ASSERT_MSG(asset.error() == fastgltf::Error::None, "Failed to parse {}", filepath.string());
+	SAMPLE_ASSERT_MSG(asset.error() == fastgltf::Error::None, "Failed to parse {}", filepath.string());
 	const fastgltf::Asset& gltf = asset.get();
-	ASSERT_MSG(gltf.skins.size() == 1, "Sample expects exactly one skin");
+	SAMPLE_ASSERT_MSG(gltf.skins.size() == 1, "Sample expects exactly one skin");
 
 	SkinnedModel model;
 
@@ -112,7 +113,7 @@ static SkinnedModel loadSkinnedModel(const std::filesystem::path& filepath) {
 	const fastgltf::Primitive& primitive = gltf.meshes[gltf.nodes[model.meshNode].meshIndex.value()].primitives[0];
 	const auto accessorFor = [&](const char* name) -> const fastgltf::Accessor& {
 		const auto* attribute = primitive.findAttribute(name);
-		ASSERT_MSG(attribute != primitive.attributes.end(), "Mesh is missing {}", name);
+		SAMPLE_ASSERT_MSG(attribute != primitive.attributes.end(), "Mesh is missing {}", name);
 		return gltf.accessors[attribute->accessorIndex];
 	};
 	model.vertices.resize(accessorFor("POSITION").count);
@@ -131,7 +132,7 @@ static SkinnedModel loadSkinnedModel(const std::filesystem::path& filepath) {
 			if (!srcChannel.nodeIndex.has_value() || srcChannel.path == fastgltf::AnimationPath::Weights)
 				continue;
 			const fastgltf::AnimationSampler& sampler = animation.samplers[srcChannel.samplerIndex];
-			ASSERT_MSG(sampler.interpolation == fastgltf::AnimationInterpolation::Linear, "Sample only handles linear keyframes");
+			SAMPLE_ASSERT_MSG(sampler.interpolation == fastgltf::AnimationInterpolation::Linear, "Sample only handles linear keyframes");
 			Channel& channel = model.channels.emplace_back();
 			channel.node = srcChannel.nodeIndex.value();
 			channel.path = srcChannel.path;
@@ -251,8 +252,7 @@ static void drawSkeletonOverlay(const SkinnedModel& model, const Pose& pose, con
 int main() {
 	static const std::filesystem::path kDataDir = std::filesystem::path(MYTH_SAMPLE_NAME).concat("_data/");
 	static const std::vector<std::string> slang_searchpaths = {
-		"../../include/",
-		"../include/",
+		MYTH_SAMPLES_DIR,
 		kDataDir.string()
 	};
 	SDL_Window* sdlWindow = BuildSDLWindow(true);

@@ -11,13 +11,12 @@
 
 #include <volk.h>
 
-#include "mythril/ObjectHandles.h"
-#ifdef MYTH_ENABLED_IMGUI
-#include <imgui.h>
-#endif
-#ifdef MYTH_ENABLED_TRACY_GPU
-#include <tracy/TracyVulkan.hpp>
-#endif
+#include "ObjectHandles.h"
+
+struct ImVec2;
+struct ImGuiContext;
+// harmless to forward declare even without tracy gpu
+namespace tracy { class VkCtx; }
 
 namespace mythril {
 	struct ImGuiPluginSpec;
@@ -28,8 +27,8 @@ namespace mythril {
 	public:
 		void onInit(CTX& ctx, ImGuiPluginSpec spec);
 		void onDestroy();
-		inline bool isEnabled() const { return _isEnabeld; }
-		inline VkFormat getFormat() const { return _requestedFormat; }
+		bool isEnabled() const { return _isEnabeld; }
+		VkFormat getFormat() const { return _requestedFormat; }
 
 		static void renderImage(TextureHandle texHandle, SamplerHandle samplerHandle, const ImVec2& image_size, const ImVec2& uv0, const ImVec2& uv1);
 	private:
@@ -76,11 +75,11 @@ namespace mythril {
 	public:
 		void onInit(CTX& ctx);
 		void onDestroy();
-		TracyVkCtx getTracyVkCtx() { return _tracyVkCtx; }
+		tracy::VkCtx* getTracyVkCtx() { return _tracyVkCtx; }
 
 	private:
 		CTX* _ctx = nullptr;
-		TracyVkCtx _tracyVkCtx = nullptr;
+		tracy::VkCtx* _tracyVkCtx = nullptr;
 		VkCommandPool _commandPool = VK_NULL_HANDLE;
 		VkCommandBuffer _commandBuffer = VK_NULL_HANDLE;
 	};

@@ -3,9 +3,10 @@
 //
 
 #include "mythril/CTX.h"
-#include "../Plugins.h"
+#include "mythril/Plugins.h"
 
 #include <volk.h>
+#include <tracy/TracyVulkan.hpp>
 
 #ifdef MYTH_ENABLED_TRACY_GPU
 namespace mythril {
