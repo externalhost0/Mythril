@@ -600,7 +600,7 @@ static std::vector<ParticleData> GenerateParticles(
 
 	return particles;
 }
-void UpdateParticles(std::vector<ParticleData>& particles, float deltaTime, float speed) {
+static void UpdateParticles(std::vector<ParticleData>& particles, float deltaTime, float speed) {
 	const float dtSpeed = deltaTime * speed;
 	for (auto& p : particles) {
 		p.position += p.velocity * dtSpeed;

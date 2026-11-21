@@ -101,9 +101,9 @@ namespace mythril {
 		Sampler createSampler(SamplerSpec spec);
 		QueryPool createQueryPool(const QueryPoolSpec& spec);
 		// host reset, caller guarantees the queries are not in flight (true for frame N - kNUM_FRAMES_IN_FLIGHT after acquiring a graphics command)
-		void resetQueryPool(QueryPoolHandle handle, uint32_t first, uint32_t count);
+		void resetQueryPool(QueryPoolHandle handle, uint32_t first, uint32_t count) const;
 		// non-blocking, returns false if any query in range is unavailable, values are ticks masked to timestampValidBits
-		bool getQueryPoolResults(QueryPoolHandle handle, uint32_t first, std::span<uint64_t> outTicks);
+		bool getQueryPoolResults(QueryPoolHandle handle, uint32_t first, std::span<uint64_t> outTicks) const;
 		double timestampTicksToNs(uint64_t ticks) const;
 		GraphicsPipeline createGraphicsPipeline(const GraphicsPipelineSpec& spec);
 		ComputePipeline createComputePipeline(const ComputePipelineSpec& spec);

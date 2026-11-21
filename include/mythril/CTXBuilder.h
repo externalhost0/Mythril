@@ -47,7 +47,11 @@ namespace mythril {
 		Version app_version = {0, 0, 1};
 		Version engine_version = {0, 0, 1};
 
+#ifdef DEBUG
 		bool enableValidation = true;
+#else
+		bool enableValidation = false;
+#endif
 		// case-insensitive substring of the device name, falls back to default selection if nothing matches
 		const char* preferredDeviceName = nullptr;
 		bool preferDiscrete = true;

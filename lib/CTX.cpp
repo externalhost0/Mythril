@@ -1165,19 +1165,18 @@ namespace mythril {
 		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_QUERY_POOL, reinterpret_cast<uint64_t>(obj._vkQueryPool), spec.debugName);
 		return {this, _queryPoolPool.create(std::move(obj))};
 	}
-	void CTX::resetQueryPool(QueryPoolHandle handle, uint32_t first, uint32_t count) {
+	void CTX::resetQueryPool(QueryPoolHandle handle, uint32_t first, uint32_t count) const {
 		const AllocatedQueryPool& pool = view(handle);
 		ASSERT_MSG(first + count <= pool._count, "Query range [{}, {}) is out of bounds for a pool of {} queries!", first, first + count, pool._count);
 		vkResetQueryPool(_vkDevice, pool._vkQueryPool, first, count);
 	}
-	bool CTX::getQueryPoolResults(QueryPoolHandle handle, uint32_t first, std::span<uint64_t> outTicks) {
+	bool CTX::getQueryPoolResults(QueryPoolHandle handle, uint32_t first, std::span<uint64_t> outTicks) const {
 		const AllocatedQueryPool& pool = view(handle);
-		const uint32_t count = static_cast<uint32_t>(outTicks.size());
+		const auto count = static_cast<uint32_t>(outTicks.size());
 		ASSERT_MSG(first + count <= pool._count, "Query range [{}, {}) is out of bounds for a pool of {} queries!", first, first + count, pool._count);
 		const VkResult result = vkGetQueryPoolResults(_vkDevice, pool._vkQueryPool, first, count, outTicks.size_bytes(), outTicks.data(), sizeof(uint64_t), VK_QUERY_RESULT_64_BIT);
 		if (result == VK_NOT_READY)
 			return false;
-		VK_CHECK(result);
 		for (uint64_t& ticks : outTicks)
 			ticks &= pool._validBitsMask;
 		return true;

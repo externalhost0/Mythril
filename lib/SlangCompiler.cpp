@@ -26,12 +26,12 @@ export T getDescriptorFromHandle<T : IOpaqueDescriptor>(DescriptorHandle<T> hand
 }
 )";
 
-	SlangMatrixLayoutMode SlangMatrixModeFromMythrilMatrixMode(SlangCfg::MatrixMode matrix_mode) {
+	static SlangMatrixLayoutMode SlangMatrixModeFromMythrilMatrixMode(SlangCfg::MatrixMode matrix_mode) {
 		switch (matrix_mode) {
 			case SlangCfg::MatrixMode::ColMajor:
-				return SlangMatrixLayoutMode::SLANG_MATRIX_LAYOUT_COLUMN_MAJOR;
+				return SLANG_MATRIX_LAYOUT_COLUMN_MAJOR;
 			case SlangCfg::MatrixMode::RowMajor:
-				return SlangMatrixLayoutMode::SLANG_MATRIX_LAYOUT_ROW_MAJOR;
+				return SLANG_MATRIX_LAYOUT_ROW_MAJOR;
 		}
 		ASSERT_MSG(false, "If this happens something went horribly wrong.");
 	}
@@ -81,9 +81,14 @@ export T getDescriptorFromHandle<T : IOpaqueDescriptor>(DescriptorHandle<T> hand
 		    slang::CompilerOptionEntry{.name = slang::CompilerOptionName::BindlessSpaceIndex, .value = {.kind = slang::CompilerOptionValueKind::Int, .intValue0 = 0}},
 
 		    slang::CompilerOptionEntry{.name = slang::CompilerOptionName::VulkanUseEntryPointName, .value = {.kind = slang::CompilerOptionValueKind::Int, .intValue0 = true}},
-		    slang::CompilerOptionEntry{.name = slang::CompilerOptionName::Optimization, .value = {.kind = slang::CompilerOptionValueKind::Int, .intValue0 = SLANG_OPTIMIZATION_LEVEL_DEFAULT}},
 		    slang::CompilerOptionEntry{.name = slang::CompilerOptionName::VulkanInvertY, .value = {.kind = slang::CompilerOptionValueKind::Int, .intValue0 = true}},
+#ifdef DEBUG
+		    slang::CompilerOptionEntry{.name = slang::CompilerOptionName::Optimization, .value = {.kind = slang::CompilerOptionValueKind::Int, .intValue0 = SLANG_OPTIMIZATION_LEVEL_DEFAULT}},
 		    slang::CompilerOptionEntry{.name = slang::CompilerOptionName::DebugInformation, .value = {.kind = slang::CompilerOptionValueKind::Int, .intValue0 = SLANG_DEBUG_INFO_LEVEL_MAXIMAL}},
+#else
+		    slang::CompilerOptionEntry{.name = slang::CompilerOptionName::Optimization, .value = {.kind = slang::CompilerOptionValueKind::Int, .intValue0 = SLANG_OPTIMIZATION_LEVEL_MAXIMAL}},
+		    slang::CompilerOptionEntry{.name = slang::CompilerOptionName::DebugInformation, .value = {.kind = slang::CompilerOptionValueKind::Int, .intValue0 = SLANG_DEBUG_INFO_LEVEL_NONE}},
+#endif
 		    // forces scalar layout which is awesome, means we can have a header file that is shared by c++ and slang
 		    slang::CompilerOptionEntry{.name = slang::CompilerOptionName::ForceCLayout, .value = {.kind = slang::CompilerOptionValueKind::Int, .intValue0 = true}},
 		};
@@ -169,7 +174,7 @@ export T getDescriptorFromHandle<T : IOpaqueDescriptor>(DescriptorHandle<T> hand
 		// 3. compose module
 		Slang::ComPtr<slang::IComponentType> composed_program;
 		const SlangResult module_result = this->_slangSession->createCompositeComponentType(
-		        (slang::IComponentType**) componentTypes.data(), (int) componentTypes.size(), composed_program.writeRef(), diagnostics_blob.writeRef()
+		        reinterpret_cast<slang::IComponentType**>(componentTypes.data()), static_cast<int>(componentTypes.size()), composed_program.writeRef(), diagnostics_blob.writeRef()
 		);
 		ASSERT_MSG(SLANG_SUCCEEDED(module_result), "Composition failed! Diagnostics Below:\n{}", ResolveDiagnosticsMessage(diagnostics_blob));
 		diagnostics_blob.setNull();
