@@ -220,7 +220,6 @@ endif()
 add_library(mythril STATIC
         ${MYTHRIL_SOURCES}
         $<TARGET_OBJECTS:SPIRV-Reflect-objects>
-        $<TARGET_OBJECTS:fmt>
 )
 # cause we are lazy
 add_library(mythril::mythril ALIAS mythril)
@@ -232,10 +231,6 @@ target_include_directories(mythril
         ${CMAKE_CURRENT_SOURCE_DIR}/lib
 )
 
-target_include_directories(mythril PUBLIC
-        $<BUILD_INTERFACE:$<TARGET_PROPERTY:fmt,INTERFACE_INCLUDE_DIRECTORIES>>
-        $<BUILD_INTERFACE:$<TARGET_PROPERTY:GPUOpen::VulkanMemoryAllocator,INTERFACE_INCLUDE_DIRECTORIES>>
-)
 if(MYTH_ENABLE_TRACY)
     target_include_directories(mythril PUBLIC
             $<BUILD_INTERFACE:$<TARGET_PROPERTY:TracyClient,INTERFACE_INCLUDE_DIRECTORIES>>
@@ -258,6 +253,8 @@ target_link_libraries(mythril
         Vulkan::Vulkan
         volk::volk
         PRIVATE
+        fmt::fmt
+        GPUOpen::VulkanMemoryAllocator
         "$<BUILD_INTERFACE:${SLANG_LIBRARY}>"
 )
 

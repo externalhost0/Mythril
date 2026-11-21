@@ -73,7 +73,7 @@ int main() {
 ![Minimal Example Screenshot][basic_window_img]
 
 ## Requirements
-* C++20 compiler (tested with clang 16.0.0, gcc 13.3.0, MSVC v143)
+* C++20 compiler (tested with clang 16.0.0/21.0..0, gcc 13.3.0, MSVC v143)
 * CMake 3.28+
 * Vulkan SDK 1.4.335.0+ (must include Slang)
 
@@ -90,25 +90,22 @@ from your own `CMakeLists.txt`:
 add_subdirectory(third_party/mythril)
 target_link_libraries(my_app PRIVATE mythril::mythril)
 ```
-Publicly exposed headers are `Vulkan`, `volk`, `fmt`, `VMA`, and
-(when enabled) `Tracy`, these will be visible to consumers at compile time. 
+Be aware that Mythril exposes the `Vulkan` and `volk` headers to consumers.
 
 ### Building the samples
 Samples are off by default. To build and run them locally:
 ```bash
-cmake --preset debug
+cmake --preset samples
 cmake --build build/debug
 ```
-The `debug` / `release` presets enable `MYTH_BUILD_SAMPLES`,
-`MYTH_ENABLE_IMGUI_STANDARD`, and `MYTH_ENABLE_TRACY`.
 
 ### CMake Options
 | Option                       | Default | Description                                                            |
 |------------------------------|---------|------------------------------------------------------------------------|
 | `MYTH_BUILD_SAMPLES`         | `OFF`   | Build the sample applications under `samples/`.                        |
-| `MYTH_ENABLE_IMGUI_STANDARD` | `OFF`   | Fetch ImGui (main branch) and enable mythril's ImGuiPlugin.            |
-| `MYTH_ENABLE_IMGUI_DOCKING`  | `OFF`   | Fetch ImGui (docking branch) and enable mythril's ImGuiPlugin.         |
-| `MYTH_ENABLE_TRACY`          | `OFF`   | Fetch Tracy and enable CPU profiling.                                  |
+| `MYTH_ENABLE_IMGUI_STANDARD` | `OFF`   | Fetch ImGui (main branch) and enable mythril's ImGuiPlugin (accessible by `mythril/ImGui.h`).            |
+| `MYTH_ENABLE_IMGUI_DOCKING`  | `OFF`   | Fetch ImGui (docking branch) and enable mythril's ImGuiPlugin ^.         |
+| `MYTH_ENABLE_TRACY`          | `OFF`   | Fetch Tracy and enable CPU profiling (accessible by `mythril/CPUProfiler.h`).                                  |
 | `MYTH_ENABLE_TRACY_GPU`      | `OFF`   | Requires `MYTH_ENABLE_TRACY=ON`. Enables per-pass GPU zones (experimental). |
 | `MYTH_ENABLE_TRACY_GPU_COMMANDS` | `OFF` | Requires `MYTH_ENABLE_TRACY_GPU=ON`. Adds a GPU zone per command (ignored on Apple). Affects timings, dev only. |
 
