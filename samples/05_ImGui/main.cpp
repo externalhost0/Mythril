@@ -50,22 +50,22 @@ int main() {
 
 		mythril::RenderGraph graph;
 		const mythril::GraphTexture rgColorTarget = graph.createTexture({.size = mythril::RelativeSize{}, .format = VK_FORMAT_R8G8B8A8_UNORM, .debugName = "Color Texture"});
-		graph.exportTexture(rgColorTarget);
-		graph.addGraphicsPass("main")
-		.attachment({
-			.texDesc = rgColorTarget,
-			.clearValue = mythril::ClearValue::color(1.f, 0.f, 0.f, 1.f),
-			.loadOp = mythril::LoadOp::CLEAR,
-			.storeOp = mythril::StoreOp::STORE
-		})
-		.execute([&](mythril::CommandBuffer& cmd) {
-			cmd.cmdDrawImGui();
-		});
-		graph.addIntermediate("present")
-		.blit(rgColorTarget, graph.backBuffer())
-		.finish();
-		graph.compile(*ctx);
-
+		const auto buildGraph = [&] {
+			mythril::GraphTexture color = rgColorTarget;
+			graph.addGraphicsPass("main", [&](mythril::GraphicsPassBuilder& b, mythril::NoPassData&) {
+				color = b.attachment({
+					.texDesc = color,
+					.clearValue = mythril::ClearValue::color(1.f, 0.f, 0.f, 1.f),
+					.loadOp = mythril::LoadOp::CLEAR,
+					.storeOp = mythril::StoreOp::STORE
+				}).texture;
+			}, [](const mythril::NoPassData&, mythril::GraphicsCmd& cmd) {
+				cmd.cmdDrawImGui();
+			});
+			graph.addTransferPass("present", [&](mythril::TransferBuilder& b) {
+				b.blit(color, graph.backBuffer());
+			});
+		};
 
 		bool quit = false;
 		while(!quit) {
@@ -106,9 +106,6 @@ int main() {
 			SDL_GetWindowSize(sdlWindow, &w, &h);
 			ImGui::Text("Windowsize: %u, %u", w, h);
 
-			const mythril::Dimensions colorTargetDims = ctx->getTextureDimensions(graph.exported(rgColorTarget));
-			ImGui::Text("Color Texture Size: %.1u x %.1u", colorTargetDims.width, colorTargetDims.height);
-
 			const ImGuiIO& io = ImGui::GetIO();
 			ImGui::Text("[ImGui] Display Size: %.1f x %.1f", io.DisplaySize.x, io.DisplaySize.y);
 			ImGui::Text("[ImGui] Display Framebuffer Scale: %.1f x %.1f", io.DisplayFramebufferScale.x, io.DisplayFramebufferScale.y);
@@ -116,9 +113,10 @@ int main() {
 			ImGui::End();
 
 
-			mythril::CommandBuffer& cmd = ctx->acquireCommand(mythril::CommandBuffer::Type::Graphics);
-			graph.execute(cmd);
-			ctx->submitCommand(cmd);
+			graph.reset();
+			buildGraph();
+			graph.compile(*ctx);
+			graph.execute(*ctx);
 		}
 	}
 	DestroySDLWindow(sdlWindow);

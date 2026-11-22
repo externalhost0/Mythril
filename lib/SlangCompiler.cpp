@@ -120,6 +120,52 @@ export T getDescriptorFromHandle<T : IOpaqueDescriptor>(DescriptorHandle<T> hand
 		ASSERT_MSG(this->_bindlessModule, "Failed to load Mythril's bindless module! Diagnostics Below:\n{}", ResolveDiagnosticsMessage(bindless_diagnostics));
 	}
 
+	static void CollectPushResourcesIn(slang::TypeLayoutReflection* type, const size_t base, std::vector<PushResourceField>& out) {
+		for (unsigned i = 0; i < type->getFieldCount(); ++i) {
+			slang::VariableLayoutReflection* field = type->getFieldByIndex(i);
+			slang::TypeLayoutReflection* layout = field->getTypeLayout();
+			const auto offset = static_cast<uint32_t>(base + field->getOffset());
+			if (layout->getKind() == slang::TypeReflection::Kind::Pointer) {
+				out.push_back({field->getName(), offset, PushResourceField::Kind::Pointer});
+				continue;
+			}
+			if (layout->getKind() == slang::TypeReflection::Kind::Struct) {
+				CollectPushResourcesIn(layout, offset, out);
+				continue;
+			}
+			// handles lower to uint2, only the declared type still names DescriptorHandle<T>
+			slang::TypeReflection* declared = field->getVariable()->getType();
+			const bool isArray = declared->getKind() == slang::TypeReflection::Kind::Array;
+			Slang::ComPtr<slang::IBlob> fullName;
+			(isArray ? declared->getElementType() : declared)->getFullName(fullName.writeRef());
+			const std::string_view name = fullName ? std::string_view(static_cast<const char*>(fullName->getBufferPointer()), fullName->getBufferSize()) : std::string_view{};
+			constexpr std::string_view kHandle = "DescriptorHandle<";
+			if (!name.starts_with(kHandle))
+				continue;
+			const std::string_view resource = name.substr(kHandle.size());
+			if (!resource.starts_with("Texture") && !resource.starts_with("RWTexture"))
+				continue;
+			const PushResourceField::Kind kind = resource.starts_with("RW") ? PushResourceField::Kind::StorageTexture : PushResourceField::Kind::SampledTexture;
+			const size_t count = isArray ? declared->getElementCount() : 1;
+			const size_t stride = isArray ? layout->getElementStride(SLANG_PARAMETER_CATEGORY_UNIFORM) : 0;
+			for (size_t element = 0; element < count; ++element)
+				out.push_back({field->getName(), static_cast<uint32_t>(offset + element * stride), kind});
+		}
+	}
+	std::vector<PushResourceField> CollectPushResources(slang::ProgramLayout* layout) {
+		std::vector<PushResourceField> out;
+		for (unsigned i = 0; i < layout->getParameterCount(); ++i) {
+			slang::VariableLayoutReflection* parameter = layout->getParameterByIndex(i);
+			if (parameter->getCategory() != slang::ParameterCategory::PushConstantBuffer)
+				continue;
+			slang::TypeLayoutReflection* type = parameter->getTypeLayout();
+			if (type->getKind() == slang::TypeReflection::Kind::ConstantBuffer)
+				type = type->getElementTypeLayout();
+			CollectPushResourcesIn(type, 0, out);
+		}
+		return out;
+	}
+
 	static bool DeclaresBindlessOverride(slang::DeclReflection* moduleDecl) {
 		for (slang::DeclReflection* child: moduleDecl->getChildren()) {
 			const auto kind = child->getKind();

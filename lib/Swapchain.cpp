@@ -231,20 +231,16 @@ namespace mythril {
 		MYTH_PROFILER_FUNCTION_N("Swapchain Acquire");
 		ASSERT_MSG(_getNextImage, "Already acquired this frame's acquire semaphore!");
 
-		// wait for frame N - numSwapchainImages
-		const VkSemaphoreWaitInfo waitInfo = {
-		    .sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
-		    .semaphoreCount = 1,
-		    .pSemaphores = &_ctx._timelineSemaphore,
-		    .pValues = &_timelineWaitValues[_frameIndex],
-		};
-		VK_CHECK(vkWaitSemaphores(_ctx._vkDevice, &waitInfo, UINT64_MAX));
-
 		VkSemaphore vkAcquireSemaphore = _vkAcquireSemaphores[_frameIndex];
 		const VkResult result = vkAcquireNextImageKHR(_ctx._vkDevice, _vkSwapchain, UINT64_MAX, vkAcquireSemaphore, VK_NULL_HANDLE, &_imageIndex);
-		if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR && result != VK_ERROR_OUT_OF_DATE_KHR) {
-			ASSERT_MSG(result, "Something went horribly wrong, vkAcquireNextImageKHR() failed!");
+		// out of date acquires no image and leaves the semaphore unsignaled
+		if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+			_isDirty = true;
+			return VK_NULL_HANDLE;
 		}
+		ASSERT_MSG(result == VK_SUCCESS || result == VK_SUBOPTIMAL_KHR, "Something went horribly wrong, vkAcquireNextImageKHR() failed!");
+		if (result == VK_SUBOPTIMAL_KHR)
+			_isDirty = true;
 		_getNextImage = false;
 		return vkAcquireSemaphore;
 	}

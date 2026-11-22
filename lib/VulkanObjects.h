@@ -22,7 +22,7 @@ namespace mythril {
 	class Swapchain;
 	class StagingDevice;
 	class RenderGraph;
-	class IntermediateBuilder;
+	class TransferBuilder;
 
 	namespace detail {
 
@@ -138,6 +138,7 @@ namespace mythril {
 		void* _mappedPtr = nullptr;
 		bool _isSwapchainImage = false;
 		bool _isOwning = true;
+		bool _concurrent = false;
 		char _debugName[kMaxDebugNameLength] = {0};
 
 		std::unordered_map<TextureViewKey, TextureHandle> _additionalViews;
@@ -176,12 +177,14 @@ namespace mythril {
 
 		void* _mappedPtr = nullptr;
 		bool _isCoherentMemory = false;
+		// frame timeline value of the last graph that declared this buffer, host access to a mapped buffer waits on it
+		uint64_t _graphTimelineValue = 0;
 		char _debugName[kMaxDebugNameLength] = {0};
 
 		friend class ::mythril::CTX;
 		friend class ::mythril::CommandBuffer;
 		friend class ::mythril::RenderGraph;
-		friend class ::mythril::IntermediateBuilder;
+		friend class ::mythril::TransferBuilder;
 		friend class ::mythril::StagingDevice;
 	};
 

@@ -171,50 +171,67 @@ int main() {
 			.format = VK_FORMAT_D32_SFLOAT_S8_UINT,
 			.debugName = "Depth Texture"
 		});
-		graph.addGraphicsPass("main")
-		.attachment({
-			.texDesc = rgColorTarget,
-			.clearValue = mythril::ClearValue::color(0.2f, 0.2f, 0.2f, 1.f),
-			.loadOp = mythril::LoadOp::CLEAR,
-			.storeOp = mythril::StoreOp::STORE
-		})
-		.attachment({
-			.texDesc = rgDepthTarget,
-			.clearValue = mythril::ClearValue::depth(1.f, 0),
-			.loadOp = mythril::LoadOp::CLEAR,
-		})
-		.execute([&](mythril::CommandBuffer& cmd) {
-			cmd.cmdBindGraphicsPipeline(mainPipeline);
+		const mythril::GraphBuffer rgCubeVertices = graph.importBuffer(cubeVertexBuffer);
+		const mythril::GraphBuffer rgCubeIndices = graph.importBuffer(cubeIndexBuffer);
 
-			auto frameWindowSize = GetSDLWindowFramebufferSize(sdlWindow);
+		struct MainPass {
+			mythril::GraphicsPipelineHandle pipeline;
+			mythril::BufferHandle indexBuffer;
+			uint32_t indexCount = 0;
+			glm::mat4 mvp{};
+			VkDeviceAddress vertices = 0;
+		};
+		const auto buildGraph = [&] {
+			mythril::GraphTexture color = rgColorTarget;
+			graph.addGraphicsPass<MainPass>("main", [&](mythril::GraphicsPassBuilder& b, MainPass& d) {
+				color = b.attachment({
+					.texDesc = color,
+					.clearValue = mythril::ClearValue::color(0.2f, 0.2f, 0.2f, 1.f),
+					.loadOp = mythril::LoadOp::CLEAR,
+					.storeOp = mythril::StoreOp::STORE
+				}).texture;
+				b.attachment({
+					.texDesc = rgDepthTarget,
+					.clearValue = mythril::ClearValue::depth(1.f, 0),
+					.loadOp = mythril::LoadOp::CLEAR,
+				});
+				b.dependency(rgCubeVertices, mythril::BufferAccess::ShaderRead);
+				b.dependency(rgCubeIndices, mythril::BufferAccess::IndexRead);
 
-			Camera camera = {
-					.position = { 0.f, 0.f, 5.f },
-					.aspectRatio = (float)frameWindowSize.width/(float)frameWindowSize.height,
-					.fov = 80.f,
-					.nearPlane = 0.1f,
-					.farPlane = 100.f
-			};
+				auto frameWindowSize = GetSDLWindowFramebufferSize(sdlWindow);
 
-			// rotating cube!
-			auto currentTime = std::chrono::high_resolution_clock::now();
-			float time = std::chrono::duration<float>(currentTime - startTime).count();
-			glm::mat4 model = glm::rotate(glm::mat4(1.0f), time, glm::vec3(0.0f, 1.0f, 0.0f));
-			model = glm::rotate(model, time * 0.5f, glm::vec3(1.0f, 0.0f, 0.0f));
-			mythril::GPU::PushConstant constants = {
-					.mvp = calculateProjectionMatrix(camera) * calculateViewMatrix(camera) * model,
-					.vertexBufferAddress = ctx->gpuAddress(cubeVertexBuffer)
-			};
-			cmd.cmdPushConstants(constants);
-			cmd.cmdBindIndexBuffer(cubeIndexBuffer);
-			cmd.cmdDrawIndexed(cubeIndices.size());
-		});
-		graph.addIntermediate("present")
-		.blit(rgColorTarget, graph.backBuffer())
-		.finish();
+				Camera camera = {
+						.position = { 0.f, 0.f, 5.f },
+						.aspectRatio = (float)frameWindowSize.width/(float)frameWindowSize.height,
+						.fov = 80.f,
+						.nearPlane = 0.1f,
+						.farPlane = 100.f
+				};
 
-		graph.compile(*ctx);
-
+				// rotating cube!
+				auto currentTime = std::chrono::high_resolution_clock::now();
+				float time = std::chrono::duration<float>(currentTime - startTime).count();
+				glm::mat4 model = glm::rotate(glm::mat4(1.0f), time, glm::vec3(0.0f, 1.0f, 0.0f));
+				model = glm::rotate(model, time * 0.5f, glm::vec3(1.0f, 0.0f, 0.0f));
+				d.pipeline = mainPipeline.handle();
+				d.indexBuffer = cubeIndexBuffer.handle();
+				d.indexCount = static_cast<uint32_t>(cubeIndices.size());
+				d.mvp = calculateProjectionMatrix(camera) * calculateViewMatrix(camera) * model;
+				d.vertices = ctx->gpuAddress(cubeVertexBuffer);
+			}, [](const MainPass& d, mythril::GraphicsCmd& cmd) {
+				cmd.cmdBindGraphicsPipeline(d.pipeline);
+				const mythril::GPU::PushConstant push = {
+						.mvp = d.mvp,
+						.vertexBufferAddress = d.vertices
+				};
+				cmd.cmdPushConstants(push);
+				cmd.cmdBindIndexBuffer(d.indexBuffer);
+				cmd.cmdDrawIndexed(d.indexCount);
+			});
+			graph.addTransferPass("present", [&](mythril::TransferBuilder& b) {
+				b.blit(color, graph.backBuffer());
+			});
+		};
 
 		bool quit = false;
 		while(!quit) {
@@ -223,9 +240,10 @@ int main() {
 				if (e.type == SDL_EVENT_QUIT) quit = true;
 			}
 
-			mythril::CommandBuffer& cmd = ctx->acquireCommand(mythril::CommandBuffer::Type::Graphics);
-			graph.execute(cmd);
-			ctx->submitCommand(cmd);
+			graph.reset();
+			buildGraph();
+			graph.compile(*ctx);
+			graph.execute(*ctx);
 		}
 	}
 	DestroySDLWindow(sdlWindow);

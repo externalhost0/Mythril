@@ -18,6 +18,8 @@ namespace mythril {
 		_maxBufferSize = std::min(limits.maxStorageBufferRange, 128u * 1024u * 1024u);
 		ASSERT_MSG(_minBufferSize <= _maxBufferSize, "Min buffer size MUST BE smaller than or equal to max buffer size!");
 	}
+	static constexpr vkutil::StageAccess kPriorAccesses = {.stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, .access = VK_ACCESS_2_MEMORY_WRITE_BIT};
+
 	void StagingDevice::bufferSubData(AllocatedBuffer& buffer, size_t dstOffset, size_t size, const void* data) {
 		if (buffer.isMapped()) {
 			buffer.bufferSubData(_ctx, dstOffset, size, data);
@@ -29,7 +31,7 @@ namespace mythril {
 		    .accelerationStructure = _ctx.isExtensionEnabled(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME),
 		    .rayTracingPipeline = _ctx.isExtensionEnabled(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME),
 		};
-		const vkutil::BufferBarrier barrier = vkutil::GetUploadBufferBarrier(buffer._vkUsageFlags, features);
+		const vkutil::UpdateBufferBarriers barriers = vkutil::GetUploadBufferBarriers(buffer._vkUsageFlags, features);
 
 		while (size) {
 			// get next staging buffer free offset
@@ -47,8 +49,10 @@ namespace mythril {
 			};
 
 			const detail::CommandBufferWrapper& wrapper = _ctx._immGraphics->acquire();
+			// present consumes the semaphore that chains submits, so the copy must wait on earlier graph accesses itself
+			vkutil::BufferMemoryBarrier2(wrapper._cmdBuf, buffer._vkBuffer, barriers.before.src, barriers.before.dst, dstOffset, chunkSize);
 			vkCmdCopyBuffer(wrapper._cmdBuf, stagingBuffer->_vkBuffer, buffer._vkBuffer, 1, &copy);
-			vkutil::BufferMemoryBarrier2(wrapper._cmdBuf, buffer._vkBuffer, barrier.src, barrier.dst, dstOffset, chunkSize);
+			vkutil::BufferMemoryBarrier2(wrapper._cmdBuf, buffer._vkBuffer, barriers.after.src, barriers.after.dst, dstOffset, chunkSize);
 			desc.handle_ = _ctx._immGraphics->submit(wrapper);
 			desc.state_ = MemoryRegionDesc::State::Busy;
 			_regions.push_back(desc);
@@ -101,6 +105,19 @@ namespace mythril {
 			dstOffset += chunkSize;
 		}
 		return copies;
+	}
+
+	VkDeviceSize StagingDevice::stageContiguous(const void* data, const size_t size) {
+		ASSERT_MSG(size > 0 && size <= UINT32_MAX, "StagingDevice::stageContiguous size must be in (0, UINT32_MAX].");
+		MemoryRegionDesc desc = getNextContiguousOffset(static_cast<uint32_t>(size));
+		_ctx._bufferPool.get(_stagingBuffer)->bufferSubData(_ctx, desc.offset_, size, data);
+		desc.state_ = MemoryRegionDesc::State::Pending;
+		desc.handle_ = {};
+		_regions.push_back(desc);
+		return desc.offset_;
+	}
+	VkBuffer StagingDevice::getStagingVkBuffer() const {
+		return _ctx._bufferPool.get(_stagingBuffer)->_vkBuffer;
 	}
 
 	void StagingDevice::recordBufferCopies(VkCommandBuffer cmd, std::span<const StagedBufferCopy> copies) {
@@ -165,7 +182,7 @@ namespace mythril {
 		vkutil::ImageMemoryBarrier2(
 		        wrapper._cmdBuf,
 		        image._vkImage,
-		        vkutil::StageAccess{.stage = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT, .access = VK_ACCESS_2_NONE},
+		        kPriorAccesses,
 		        vkutil::StageAccess{.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = VK_ACCESS_2_TRANSFER_WRITE_BIT},
 		        VK_IMAGE_LAYOUT_UNDEFINED,
 		        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
@@ -261,7 +278,7 @@ namespace mythril {
 				vkutil::ImageMemoryBarrier2(
 				        wrapper._cmdBuf,
 				        image._vkImage,
-				        vkutil::StageAccess{.stage = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT, .access = VK_ACCESS_2_NONE},
+				        kPriorAccesses,
 				        vkutil::StageAccess{.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = VK_ACCESS_2_TRANSFER_WRITE_BIT},
 				        VK_IMAGE_LAYOUT_UNDEFINED,
 				        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
@@ -337,7 +354,7 @@ namespace mythril {
 		vkutil::ImageMemoryBarrier2(
 		        wrapper1._cmdBuf,
 		        image._vkImage,
-		        vkutil::StageAccess{.stage = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT, .access = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT},
+		        kPriorAccesses,
 		        vkutil::StageAccess{.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = VK_ACCESS_2_TRANSFER_READ_BIT},
 		        originalLayout,
 		        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
@@ -381,7 +398,7 @@ namespace mythril {
 		        wrapper2._cmdBuf,
 		        image._vkImage,
 		        vkutil::StageAccess{.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = VK_ACCESS_2_TRANSFER_READ_BIT},
-		        vkutil::StageAccess{.stage = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT, .access = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT},
+		        vkutil::StageAccess{.stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, .access = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT},
 		        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
 		        originalLayout,
 		        range

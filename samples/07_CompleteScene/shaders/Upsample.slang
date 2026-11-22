@@ -23,37 +23,17 @@ void cs_main(uint3 threadId : SV_DispatchThreadID) {
     }
     float2 uv = (float2(outputCoord) + 0.5) / push.outSize;
 
-    float2 dy = float2(0, push.filterRadius);
-    float2 dx = float2(push.filterRadius, 0);
+    uint2 inSize;
+    push.inTexture.GetDimensions(inSize.x, inSize.y);
+    // 4 bilinear taps at half the radius equal the 3x3 tent, exactly so at a radius of 1 texel
+    float2 o = 0.5 * push.filterRadius / float2(inSize);
 
-
-    // Take 9 samples with tent filter pattern:
-    // a - b - c
-    // d - e - f
-    // g - h - i
-
-    float3 a = push.inTexture.SampleLevel(push.sampler, uv - dx + dy, 0).rgb;
-    float3 b = push.inTexture.SampleLevel(push.sampler, uv + dy, 0).rgb;
-    float3 c = push.inTexture.SampleLevel(push.sampler, uv + dx + dy, 0).rgb;
-
-    float3 d = push.inTexture.SampleLevel(push.sampler, uv - dx, 0).rgb;
-    float3 e = push.inTexture.SampleLevel(push.sampler, uv, 0).rgb;
-    float3 f = push.inTexture.SampleLevel(push.sampler, uv + dx, 0).rgb;
-
-    float3 g = push.inTexture.SampleLevel(push.sampler, uv - dx - dy, 0).rgb;
-    float3 h = push.inTexture.SampleLevel(push.sampler, uv - dy, 0).rgb;
-    float3 i = push.inTexture.SampleLevel(push.sampler, uv + dx - dy, 0).rgb;
-
-    // Apply 3x3 tent filter weights:
-    //  1   | 1 2 1 |
-    // -- * | 2 4 2 |
-    // 16   | 1 2 1 |
-    float3 result = e * 4.0;
-    result += (b + d + f + h) * 2.0;
-    result += (a + c + g + i);
-    result *= 1.0 / 16.0;
+    float3 result = push.inTexture.SampleLevel(push.sampler, uv + float2(-o.x, -o.y), 0).rgb;
+    result += push.inTexture.SampleLevel(push.sampler, uv + float2(o.x, -o.y), 0).rgb;
+    result += push.inTexture.SampleLevel(push.sampler, uv + float2(-o.x, o.y), 0).rgb;
+    result += push.inTexture.SampleLevel(push.sampler, uv + o, 0).rgb;
+    result *= 0.25;
 
     float3 prev = push.outTexture[outputCoord].rgb;
-    float3 curr = result;
-    push.outTexture[outputCoord] = float4(prev+curr, 1);
+    push.outTexture[outputCoord] = float4(prev + result, 1);
 }

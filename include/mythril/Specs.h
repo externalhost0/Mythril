@@ -75,6 +75,7 @@ namespace mythril {
 		Swizzle g = Swizzle_Default;
 		Swizzle b = Swizzle_Default;
 		Swizzle a = Swizzle_Default;
+		bool operator==(const ComponentMapping&) const = default;
 		bool identity() const { return r == Swizzle_Default && g == Swizzle_Default && b == Swizzle_Default && a == Swizzle_Default; }
 		VkComponentMapping toVkComponentMapping() const {
 			return {.r = static_cast<VkComponentSwizzle>(r), .g = static_cast<VkComponentSwizzle>(g), .b = static_cast<VkComponentSwizzle>(b), .a = static_cast<VkComponentSwizzle>(a)};
@@ -137,6 +138,8 @@ namespace mythril {
 		const void* initialData = nullptr;
 		uint32_t dataNumMipLevels = 1; // how many mip-levels we want to create & fill in when uploading data
 		bool generateMipmaps = false; // works only if initialData is not nulll
+		// readable by every queue family in use at once with no ownership transfer, can cost compression on AMD
+		bool concurrent = false;
 		const char* debugName = "Unnamed Texture";
 	};
 

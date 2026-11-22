@@ -32,7 +32,7 @@ namespace {
 	std::vector<StageAccess> everyRequest() {
 		constexpr BufferAccess kAccesses[] = {BufferAccess::ShaderRead, BufferAccess::ShaderWrite, BufferAccess::ShaderReadWrite, BufferAccess::IndexRead,
 		                                      BufferAccess::IndirectRead, BufferAccess::TransferRead, BufferAccess::TransferWrite};
-		constexpr PassDesc::Type kPassTypes[] = {PassDesc::Type::Graphics, PassDesc::Type::Compute, PassDesc::Type::Intermediate, PassDesc::Type::RayTracing};
+		constexpr PassDesc::Type kPassTypes[] = {PassDesc::Type::Graphics, PassDesc::Type::Compute, PassDesc::Type::Transfer, PassDesc::Type::RayTracing};
 		std::vector<StageAccess> out;
 		for (BufferAccess access : kAccesses)
 			for (PassDesc::Type type : kPassTypes) {

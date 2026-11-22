@@ -137,6 +137,7 @@ static glm::mat4 calculateProjectionMatrix(const Camera& camera, bool isReverseD
 
 struct MeshCompiled {
 	mythril::BufferHandle vertexBufHandle;
+	VkDeviceAddress vertexAddress{};
 	uint32_t vertexCount{};
 	mythril::BufferHandle indexBufHandle;
 	uint32_t indexCount{};
@@ -469,6 +470,7 @@ static AssetCompiled compileGLTFAsset(mythril::CTX& ctx, AssetData& data) {
 				.debugName = vertex_name_buf
 			}).release();
 			mesh_compiled.vertexBufHandle = mesh_vertex_buffer;
+			mesh_compiled.vertexAddress = ctx.gpuAddress(mesh_vertex_buffer);
 			mesh_compiled.vertexCount = primitive_data.vertexData.size();
 
 			const mythril::BufferHandle mesh_index_buffer = ctx.createBuffer({
@@ -513,6 +515,154 @@ static AssetCompiled compileGLTFAsset(mythril::CTX& ctx, AssetData& data) {
 	return asset;
 }
 
+
+// one ring slot more than frames in flight, so the slot being rewritten belongs to a frame the CPU already waited on
+struct GpuTimeline {
+	static constexpr uint32_t kSlots = mythril::kNUM_FRAMES_IN_FLIGHT + 1;
+	static constexpr uint32_t kMaxGroups = 64;
+	struct Block {
+		std::string name;
+		mythril::PassDesc::Type type = mythril::PassDesc::Type::Graphics;
+		mythril::QueueAffinity queue = mythril::QueueAffinity::Graphics;
+		double startMs = 0.0;
+		double endMs = 0.0;
+	};
+	mythril::QueryPool pool;
+	std::array<std::vector<mythril::ScheduledPass>, kSlots> schedules;
+	std::vector<Block> latest;
+	std::vector<Block> averaged;
+	uint64_t frame = 0;
+	bool showAverage = true;
+
+	uint32_t slot() const { return static_cast<uint32_t>(frame % kSlots); }
+	uint32_t firstQuery() const { return slot() * 2 * kMaxGroups; }
+
+	// call between compile and execute, it reads the slot this frame is about to overwrite
+	void collect(const mythril::CTX& ctx, std::span<const mythril::ScheduledPass> schedule) {
+		std::vector<Block> groups;
+		for (const mythril::ScheduledPass& pass : schedules[slot()]) {
+			if (pass.culled) continue;
+			if (pass.mergeGroup >= groups.size()) groups.resize(pass.mergeGroup + 1);
+			Block& block = groups[pass.mergeGroup];
+			block.name += block.name.empty() ? pass.name : " + " + pass.name;
+			block.type = pass.type;
+			block.queue = pass.queue;
+		}
+		std::vector<Block> fresh;
+		std::vector<std::array<uint64_t, 2>> ticks;
+		uint64_t origin = UINT64_MAX;
+		for (uint32_t g = 0; g < groups.size(); ++g) {
+			std::array<uint64_t, 2> pair{};
+			if (!ctx.getQueryPoolResults(pool.handle(), firstQuery() + 2 * g, pair)) continue;
+			origin = std::min(origin, pair[0]);
+			fresh.push_back(std::move(groups[g]));
+			ticks.push_back(pair);
+		}
+		for (size_t i = 0; i < fresh.size(); ++i) {
+			fresh[i].startMs = ctx.timestampTicksToNs(ticks[i][0] - origin) * 1e-6;
+			fresh[i].endMs = ctx.timestampTicksToNs(ticks[i][1] - origin) * 1e-6;
+		}
+		if (fresh.empty()) {
+			schedules[slot()].assign(schedule.begin(), schedule.end());
+			return;
+		}
+		if (fresh.size() == averaged.size() && std::ranges::equal(fresh, averaged, {}, &Block::name, &Block::name)) {
+			constexpr double kAlpha = 0.02;
+			for (size_t i = 0; i < fresh.size(); ++i) {
+				averaged[i].startMs += (fresh[i].startMs - averaged[i].startMs) * kAlpha;
+				averaged[i].endMs += (fresh[i].endMs - averaged[i].endMs) * kAlpha;
+			}
+		} else {
+			averaged = fresh;
+		}
+		latest = std::move(fresh);
+		schedules[slot()].assign(schedule.begin(), schedule.end());
+	}
+	void advance() { ++frame; }
+};
+
+void DrawGpuTimeline(GpuTimeline& timeline) {
+	ImGui::SetNextWindowSize({1400, 300}, ImGuiCond_FirstUseEver);
+	const std::vector<GpuTimeline::Block>& blocks = timeline.showAverage ? timeline.averaged : timeline.latest;
+	if (!ImGui::Begin("GPU Timeline") || blocks.empty()) {
+		ImGui::End();
+		return;
+	}
+	double frameMs = 0.0, busyMs = 0.0;
+	std::array<bool, mythril::kQueueCount> usedQueue{};
+	for (const GpuTimeline::Block& b : blocks) {
+		frameMs = std::max(frameMs, b.endMs);
+		busyMs += b.endMs - b.startMs;
+		usedQueue[static_cast<size_t>(b.queue)] = true;
+	}
+	ImGui::Text("GPU frame %.3f ms, sum of passes %.3f ms", frameMs, busyMs);
+	ImGui::SameLine(0.f, ImGui::GetStyle().ItemSpacing.x * 4.f);
+	ImGui::Checkbox("Average (EMA)", &timeline.showAverage);
+
+	// indexed by PassDesc::Type
+	constexpr const char* kTypeNames[] = {"Graphics", "Compute", "Transfer", "Ray Tracing"};
+	constexpr ImU32 kFill[] = {IM_COL32(147, 196, 125, 255), IM_COL32(255, 217, 102, 255), IM_COL32(183, 183, 183, 255), IM_COL32(224, 102, 102, 255)};
+
+	constexpr const char* kQueueNames[] = {"main", "async compute", "async transfer"};
+	const float lineH = ImGui::GetTextLineHeight();
+	const float blockH = 3.f * lineH;
+	constexpr int kLabelLines = 4;
+	const float rowH = 2.f * kLabelLines * lineH + blockH + ImGui::GetStyle().ItemSpacing.y * 2.f;
+	float gutter = 0.f;
+	for (size_t q = 0; q < mythril::kQueueCount; ++q)
+		if (usedQueue[q]) gutter = std::max(gutter, ImGui::CalcTextSize(kQueueNames[q]).x);
+	gutter += ImGui::GetStyle().ItemSpacing.x;
+	ImDrawList* draw = ImGui::GetWindowDrawList();
+	const ImU32 text = ImGui::GetColorU32(ImGuiCol_Text);
+	const ImU32 border = ImGui::GetColorU32(ImGuiCol_Border, 4.f);
+
+	for (size_t q = 0; q < mythril::kQueueCount; ++q) {
+		if (!usedQueue[q]) continue;
+		const ImVec2 origin = ImGui::GetCursorScreenPos();
+		const float width = std::max(ImGui::GetContentRegionAvail().x - gutter, 1.f);
+		const float scale = width / static_cast<float>(std::max(frameMs, 1e-6));
+		const float x0 = origin.x + gutter;
+		const float top = origin.y + kLabelLines * lineH;
+		const float bottom = top + blockH;
+		draw->AddText({origin.x, top + (blockH - lineH) * 0.5f}, text, kQueueNames[q]);
+
+		// a label takes the innermost line it does not overlap on, or the least crowded one
+		std::array<float, kLabelLines> nameRight;
+		std::array<float, kLabelLines> timeRight;
+		nameRight.fill(-FLT_MAX);
+		timeRight.fill(-FLT_MAX);
+		const auto place = [&](std::array<float, kLabelLines>& right, const float center, const float textW) {
+			const float left = std::max(std::min(center - textW * 0.5f, x0 + width - textW), x0);
+			const auto free = std::ranges::find_if(right, [&](const float r) { return left >= r; });
+			const int line = static_cast<int>((free != right.end() ? free : std::ranges::min_element(right)) - right.begin());
+			right[line] = left + textW + ImGui::GetStyle().ItemSpacing.x;
+			return std::pair{left, line};
+		};
+		for (const GpuTimeline::Block& b : blocks) {
+			if (static_cast<size_t>(b.queue) != q) continue;
+			const ImVec2 pMin{x0 + static_cast<float>(b.startMs) * scale, top};
+			const ImVec2 pMax{std::max(x0 + static_cast<float>(b.endMs) * scale, pMin.x + 1.f), bottom};
+			draw->AddRectFilled(pMin, pMax, kFill[static_cast<size_t>(b.type)]);
+			draw->AddRect(pMin, pMax, border);
+			const float center = (pMin.x + pMax.x) * 0.5f;
+
+			const float nameW = ImGui::CalcTextSize(b.name.c_str()).x;
+			const auto [nameX, nameLine] = place(nameRight, center, nameW);
+			draw->AddText({nameX, top - (1.f + nameLine) * lineH}, text, b.name.c_str());
+
+			char timeBuf[32];
+			std::snprintf(timeBuf, sizeof(timeBuf), "%.3f ms", b.endMs - b.startMs);
+			const float timeW = ImGui::CalcTextSize(timeBuf).x;
+			const auto [timeX, timeLine] = place(timeRight, center, timeW);
+			draw->AddText({timeX, bottom + timeLine * lineH}, text, timeBuf);
+
+			if (ImGui::IsMouseHoveringRect(pMin, pMax))
+				ImGui::SetTooltip("%s\n%s on %s\nstart %.3f ms\nduration %.3f ms", b.name.c_str(), kTypeNames[static_cast<size_t>(b.type)], kQueueNames[q], b.startMs, b.endMs - b.startMs);
+		}
+		ImGui::Dummy({width + gutter, rowH});
+	}
+	ImGui::End();
+}
 
 void DrawLightingUI(GPU::LightingData& lightingData) {
 	if (ImGui::Begin("Lighting")) {
@@ -858,12 +1008,12 @@ int main() {
 		constexpr float kMODELSCALE = 0.05f;
 		constexpr float kReverseZFarDepth = 0.f;
 		mythril::RenderGraph graph;
+		GpuTimeline gpuTimeline{.pool = ctx->createQueryPool({.count = GpuTimeline::kSlots * 2 * GpuTimeline::kMaxGroups, .debugName = "GPU Timeline Queries"})};
 		const mythril::GraphTexture rgShadowMap = graph.createTexture({
 			.size = mythril::Dimensions{shadow_map_size, shadow_map_size},
 			.format = kShadowFormat,
 			.debugName = "Shadow Map Texture"
 		});
-		graph.exportTexture(rgShadowMap);
 		const mythril::GraphTexture rgMsaaColorTarget = graph.createTexture({
 			.size = mythril::RelativeSize{},
 			.format = kOffscreenFormat,
@@ -903,55 +1053,6 @@ int main() {
 		glm::vec3 eulerAngles = glm::radians(glm::vec3(-40.f, -60.f, 0.f));
 		auto sun_quaternion = glm::quat(eulerAngles);
 
-		graph.addGraphicsPass("shadow_map")
-		.attachment({
-			.texDesc = {rgShadowMap},
-			.clearValue = mythril::ClearValue::depth(1.f, 0),
-			.loadOp = mythril::LoadOp::CLEAR,
-			.storeOp = mythril::StoreOp::STORE
-		})
-		.dependency(opaqueSponzaVertexBuf, mythril::BufferAccess::ShaderRead)
-		.dependency(opaqueSponzaIndexBuf, mythril::BufferAccess::IndexRead)
-		.dependency(opaqueSponzaIndirectBuf, mythril::BufferAccess::IndirectRead)
-		.execute([&](mythril::CommandBuffer& cmd) {
-			cmd.cmdBindGraphicsPipeline(shadowPipeline);
-			cmd.cmdBindDepthState({mythril::CompareOp::LessEqual, true});
-			cmd.cmdSetDepthBiasEnable(true);
-			cmd.cmdSetDepthBias(depthBiasConstant, depthBiasSlope, 0.f);
-
-			const glm::vec3 lightDir = glm::normalize(lightingData.directionalLights.direction);
-			const glm::vec3 lightPos = scene_center - lightDir * distance_from_center;
-
-			if (far < near) {
-				far = near;
-			}
-			assert(far >= near);
-
-			const glm::mat4 lightView = glm::lookAt(
-					lightPos,
-					scene_center,
-					glm::vec3(0, 1, 0)
-			);
-			const glm::mat4 lightProj = glm::ortho(
-					-orthoSize, orthoSize,
-					-orthoSize, orthoSize,
-					near, far
-			);
-
-			lightSpaceMatrix = lightProj * lightView;
-
-			const auto model = glm::scale(glm::mat4(1.0), glm::vec3(kMODELSCALE));
-			const struct PushConstant {
-				glm::mat4 mvp;
-				VkDeviceAddress vba;
-			} push {
-				.mvp = lightSpaceMatrix * model,
-				.vba = ctx->gpuAddress(opaqueSponzaVertexBuf)
-			};
-			cmd.cmdPushConstants(push);
-			cmd.cmdBindIndexBuffer(opaqueSponzaIndexBuf);
-			cmd.cmdDrawIndexedIndirect(opaqueSponzaIndirectBuf, 0, opaqueDrawCount);
-		});
 
 		static constexpr uint32_t pointLightShadowResolution = 512;
 		mythril::Texture pointLightShadowTex[kNumPointLights];
@@ -1007,52 +1108,8 @@ int main() {
 			.debugName = "Point Light Shadow Matrices Buffer"
 		});
 
-		graph.addIntermediate("per_frame_scene_uploads")
-		.update(frameDataHandle, [&] { return mythril::UploadData{&frameData, sizeof(frameData)}; })
-		.update(pointLightShadowMatrixBuf, [&] {
-			return mythril::UploadData{&shadowMatrices[0][0], sizeof(glm::mat4) * kNumPointLights * 6};
-		})
-		.finish();
 
 		GPU::LightingData lastFramelightingData{};
-		for (int i = 0; i < kNumPointLights; i++) {
-			graph.addGraphicsPass(std::format("pointlight_shadow_{}", i).c_str())
-			.attachment({
-				.texDesc = rgPointLightShadowTex[i],
-				.clearValue = mythril::ClearValue::depth(1.f, 1),
-				.loadOp = mythril::LoadOp::CLEAR,
-				.storeOp = mythril::StoreOp::STORE,
-			})
-			.multiview(6, 0b111111)
-			.condition([&, i] { return lightingData.pointLights[i].position != lastFramelightingData.pointLights[i].position; })
-			.dependency(pointLightShadowMatrixBuf, mythril::BufferAccess::ShaderRead)
-			.dependency(opaqueSponzaVertexBuf, mythril::BufferAccess::ShaderRead)
-			.dependency(opaqueSponzaIndexBuf, mythril::BufferAccess::IndexRead)
-			.dependency(opaqueSponzaIndirectBuf, mythril::BufferAccess::IndirectRead)
-			.execute([&, i](mythril::CommandBuffer& cmd) {
-				cmd.cmdBindGraphicsPipeline(pointShadowGraphicsPipeline);
-				cmd.cmdBindDepthState({mythril::CompareOp::LessEqual, true});
-				// i cant tell enough of a difference with it on or off
-				struct PushConstant {
-					VkDeviceAddress shadowMVPs;
-					VkDeviceAddress vba;
-					glm::mat4 model;
-					uint32_t nLight;
-					glm::vec3 lightPos;
-					float farPlane;
-				} push {
-					.shadowMVPs = ctx->gpuAddress(pointLightShadowMatrixBuf),
-					.vba = ctx->gpuAddress(opaqueSponzaVertexBuf),
-					.model = scaledModel,
-					.nLight = static_cast<uint32_t>(i),
-					.lightPos = lightingData.pointLights[i].position,
-					.farPlane = pointlight_farplane,
-				};
-				cmd.cmdPushConstants(push);
-				cmd.cmdBindIndexBuffer(opaqueSponzaIndexBuf);
-				cmd.cmdDrawIndexedIndirect(opaqueSponzaIndirectBuf, 0, opaqueDrawCount);
-			});
-		}
 
 		mythril::Sampler shadowSampler = ctx->createSampler({
 			.wrapU = mythril::SamplerWrap::ClampBorder,
@@ -1094,116 +1151,6 @@ int main() {
 			.cull           = mythril::CullMode::OFF,
 			.multisample    = mythril::SampleCount::X4,
 			.debugName      = "Sky Graphics Pipeline"
-		});
-		graph.addGraphicsPass("sky")
-		.attachment({
-			.texDesc   = rgMsaaColorTarget,
-			.clearValue = mythril::ClearValue::color(0.f, 0.f, 0.f, 1.f),
-			.loadOp    = mythril::LoadOp::CLEAR,
-			.storeOp   = mythril::StoreOp::STORE,
-		})
-		.attachment({
-			.texDesc = rgMsaaDepthTarget,
-			.clearValue = mythril::ClearValue::depth(kReverseZFarDepth, 0),
-			.loadOp = mythril::LoadOp::CLEAR,
-			.storeOp = mythril::StoreOp::STORE,
-		})
-		.dependency(frameDataHandle, mythril::BufferAccess::ShaderRead)
-		.execute([&](mythril::CommandBuffer& cmd) {
-			cmd.cmdBindGraphicsPipeline(skyPipeline);
-			struct SkyPush {
-				VkDeviceAddress frame;
-				glm::vec3 sunDirection;
-				float _pad;
-			} push{
-				.frame = ctx->gpuAddress(frameDataHandle),
-				.sunDirection = sun_quaternion * glm::vec3(0.f, 0.f, -1.f),
-			};
-			cmd.cmdPushConstants(push);
-			cmd.cmdDraw(3);
-		});
-
-		auto drawSponzaMeshes = [&](mythril::CommandBuffer& cmd, bool transparent) {
-			const uint32_t shadowTexIndex = cmd.texture(rgShadowMap).index();
-			const uint32_t pointShadowTexIndices[kNumPointLights] = {
-				cmd.texture(rgPointLightShadowTex[0]).index(),
-				cmd.texture(rgPointLightShadowTex[1]).index(),
-				cmd.texture(rgPointLightShadowTex[2]).index(),
-				cmd.texture(rgPointLightShadowTex[3]).index(),
-			};
-			// what we call a mesh is really a primitive for fastgltf
-			for (const MeshCompiled& mesh : sponzaCompiled.meshes) {
-				const MaterialData& material = sponzaCompiled.materials[mesh.materialIndex];
-				if (material.isTransparent != transparent) continue;
-
-				mythril::TextureHandle baseColorTex = sponzaCompiled.textureHandles[material.baseColorTextureIndex];
-				mythril::TextureHandle normalTex = sponzaCompiled.textureHandles[material.normalTextureIndex];
-				mythril::TextureHandle roughnessMetallicTex = sponzaCompiled.textureHandles[material.roughnessMetallicTextureIndex];
-
-				const GPU::GeometryPushConstants push {
-					.model = scaledModel,
-					.vba = ctx->gpuAddress(mesh.vertexBufHandle),
-					.frame = ctx->gpuAddress(frameDataHandle),
-					.tintColor = {1, 1, 1, 1},
-					.baseColorTexture = baseColorTex.index(),
-					.normalTexture = normalTex.index(),
-					.roughnessMetallicTexture = roughnessMetallicTex.index(),
-					.samplerState = repeatSampler.index(),
-					.shadowTexture = shadowTexIndex,
-					.shadowSampler = shadowSampler.index(),
-					.lightSpaceMatrix = lightSpaceMatrix,
-					.pointLightShadowTextures = {
-						pointShadowTexIndices[0],
-						pointShadowTexIndices[1],
-						pointShadowTexIndices[2],
-						pointShadowTexIndices[3]
-					},
-					.pointLightFarPlane = pointlight_farplane
-				};
-				cmd.cmdPushConstants(push);
-				cmd.cmdBindIndexBuffer(mesh.indexBufHandle);
-				cmd.cmdDrawIndexed(mesh.indexCount);
-			}
-		};
-
-		graph.addGraphicsPass("geometry_opaque")
-		.attachment({
-			.texDesc = rgMsaaColorTarget,
-			.loadOp  = mythril::LoadOp::LOAD,
-			.storeOp = mythril::StoreOp::STORE,
-		})
-		.attachment({
-			.texDesc = rgMsaaDepthTarget,
-			.loadOp = mythril::LoadOp::LOAD,
-			.storeOp = mythril::StoreOp::STORE,
-		})
-		.dependency(rgShadowMap, mythril::TextureAccess::Sampled)
-		.dependency(rgPointLightShadowTex, mythril::TextureAccess::Sampled)
-		.dependency(frameDataHandle, mythril::BufferAccess::ShaderRead)
-		.execute([&](mythril::CommandBuffer& cmd) {
-			cmd.cmdBindGraphicsPipeline(opaquePipeline);
-			cmd.cmdBindDepthState({mythril::CompareOp::Greater, true});
-			drawSponzaMeshes(cmd, false);
-		});
-
-		graph.addGraphicsPass("geometry_transparent")
-		.attachment({
-			.texDesc = rgMsaaColorTarget,
-			.loadOp = mythril::LoadOp::LOAD,
-			.storeOp = mythril::StoreOp::STORE,
-		})
-		.attachment({
-			.texDesc = rgMsaaDepthTarget,
-			.loadOp = mythril::LoadOp::LOAD,
-			.storeOp = mythril::StoreOp::STORE,
-		})
-		.dependency(rgShadowMap, mythril::TextureAccess::Sampled)
-		.dependency(rgPointLightShadowTex, mythril::TextureAccess::Sampled)
-		.dependency(frameDataHandle, mythril::BufferAccess::ShaderRead)
-		.execute([&](mythril::CommandBuffer& cmd) {
-			cmd.cmdBindGraphicsPipeline(transparentPipeline);
-			cmd.cmdBindDepthState({mythril::CompareOp::Greater, true});
-			drawSponzaMeshes(cmd, true);
 		});
 
 		mythril::Shader particleShader = ctx->createShader({
@@ -1256,61 +1203,18 @@ int main() {
 
 		float particle_emission = 0.7f;
 		float particle_speed = 4.f;
-		graph.addIntermediate("per_frame_particle_uploads")
-		.upload(particles_buffer, [&] {
-			return mythril::UploadData{particles.data(), particles.size() * sizeof(ParticleData)};
-		})
-		.finish();
 
-		graph.addGraphicsPass("Ambient Particles")
-		.attachment({
-			.texDesc = rgMsaaColorTarget,
-			.loadOp = mythril::LoadOp::LOAD,
-			.storeOp = mythril::StoreOp::DONT_CARE,
-			.resolveTexDesc = rgOffscreenColorTarget
-		})
-		.attachment({
-			.texDesc = rgMsaaDepthTarget,
-			.loadOp = mythril::LoadOp::LOAD,
-			.storeOp = mythril::StoreOp::DONT_CARE,
-			.resolveTexDesc = rgDepthTarget
-		})
-		.dependency(particles_buffer, mythril::BufferAccess::ShaderRead)
-		.dependency(frameDataHandle, mythril::BufferAccess::ShaderRead)
-		.dependency(particle_vertex_buffer, mythril::BufferAccess::ShaderRead)
-		.dependency(particle_index_buffer, mythril::BufferAccess::IndexRead)
-		.execute([&](mythril::CommandBuffer& cmd) {
-			cmd.cmdBindGraphicsPipeline(particle_pipeline);
-			cmd.cmdBindDepthState({mythril::CompareOp::Greater, true});
-			const struct PushConstant {
-				VkDeviceAddress vba;
-				VkDeviceAddress bufferAddr;
-				VkDeviceAddress frame;
-				float brightness;
-				float speed;
-			} push {
-				.vba = ctx->gpuAddress(particle_vertex_buffer),
-				.bufferAddr = ctx->gpuAddress(particles_buffer),
-				.frame = ctx->gpuAddress(frameDataHandle),
-				.brightness = particle_emission,
-				.speed = particle_speed
-			};
-			cmd.cmdPushConstants(push);
-			cmd.cmdBindIndexBuffer(particle_index_buffer);
-			cmd.cmdDrawIndexed(Primitives::kHexIndices.size(), particles.size());
-		});
 
-		constexpr unsigned int kNumColorMips = 8;
+		constexpr unsigned int kNumColorMips = 7;
 		mythril::GraphTexture rgOffscreenColorTexs[kNumColorMips];
 		for (int i = 0; i < kNumColorMips; i++) {
 			char namebuf[64];
 			snprintf(namebuf, sizeof(namebuf), "Color Bloom Tex %i", i);
 			rgOffscreenColorTexs[i] = graph.createTexture({
-				.size = mythril::RelativeSize{.scale = 1.f / static_cast<float>(1u << i)},
-				.format = kOffscreenFormat,
+				.size = mythril::RelativeSize{.scale = 1.f / static_cast<float>(2u << i)},
+				.format = VK_FORMAT_B10G11R11_UFLOAT_PACK32,
 				.debugName = namebuf
 			});
-			graph.exportTexture(rgOffscreenColorTexs[i]);
 		}
 		mythril::Shader downsampleComputeShader = ctx->createShader({
 			.source = kDataDir / "shaders/Downsample.slang",
@@ -1320,38 +1224,7 @@ int main() {
 			.shader = downsampleComputeShader.handle(),
 			.debugName = "Downsample Compute Pipeline"
 		});
-		graph.addIntermediate("copy offscreen to toplevel mipmap color")
-		.copy(rgOffscreenColorTarget, rgOffscreenColorTexs[0])
-		.finish();
 
-		graph.addComputePass("Downsampling")
-		.dependency(rgOffscreenColorTexs, mythril::TextureAccess::StorageReadWrite)
-		.executeCmdsInOrder()
-		.execute([&](mythril::CommandBuffer& cmd) {
-			cmd.cmdBindComputePipeline(downsampleComputePipeline);
-			for (int i = 0; i < kNumColorMips-1; i++) {
-				const mythril::ResolvedTexture out = cmd.texture(rgOffscreenColorTexs[i+1]);
-				struct PushConstants {
-					uint64_t inTex;
-					uint64_t outTex;
-					uint64_t sampler;
-					uint32_t mipLevel;
-				} push {
-					.inTex = cmd.texture(rgOffscreenColorTexs[i]).index(),
-					.outTex = out.index(),
-					.sampler = clampSampler.index(),
-					.mipLevel = static_cast<uint32_t>(i)
-				};
-				cmd.cmdPushConstants(push);
-				static constexpr uint32_t threadNum = 8;
-				const mythril::Dimensions texDims = out.dimensions;
-				const mythril::Dimensions roundedDims = {
-					(texDims.width + threadNum - 1) / threadNum,
-					(texDims.height + threadNum - 1) / threadNum,
-					1};
-				cmd.cmdDispatchThreadGroup(roundedDims);
-			}
-		});
 
 		mythril::Shader luminanceConversionShader = ctx->createShader({
 			.source = kDataDir /  "shaders/ConversionLuminance.slang",
@@ -1367,28 +1240,6 @@ int main() {
 			.components = red_swizzle,
 			.debugName = "Luminance Current Texture"
 		});
-		graph.addComputePass("convert into current lum")
-		.dependency(rgOffscreenColorTexs[7], mythril::TextureAccess::Sampled)
-		.dependency(rgCurrentLuminanceTex, mythril::TextureAccess::StorageReadWrite)
-		.execute([&](mythril::CommandBuffer& cmd) {
-			cmd.cmdBindComputePipeline(conversionLuminancePipeline);
-			const mythril::ResolvedTexture lowResColor = cmd.texture(rgOffscreenColorTexs[7]);
-			const struct PushConstant {
-				uint64_t lowResColorTex;
-				uint64_t curLumOutTex;
-				uint64_t sampler;
-			} push {
-				.lowResColorTex = lowResColor.index(),
-				.curLumOutTex = cmd.texture(rgCurrentLuminanceTex).index(),
-				.sampler = 0
-			};
-			cmd.cmdPushConstants(push);
-			const mythril::Dimensions texDims = lowResColor.dimensions;
-			constexpr glm::vec2 threadsPerGroup = {16, 16};
-			const auto groupX = static_cast<uint32_t>((texDims.width + static_cast<uint32_t>(threadsPerGroup.x) - 1) / threadsPerGroup.x);
-			const auto groupY = static_cast<uint32_t>((texDims.height + static_cast<uint32_t>(threadsPerGroup.y) - 1) / threadsPerGroup.y);
-			cmd.cmdDispatchThreadGroup({groupX, groupY, 1});
-		});
 
 		mythril::Shader upsampleComputeShader = ctx->createShader({
 			.source = kDataDir / "shaders/Upsample.slang",
@@ -1398,38 +1249,8 @@ int main() {
 			.shader = upsampleComputeShader.handle(),
 			.debugName = "Upsample Compute Pipeline"
 		});
-		float filter_radius = 0.002f;
+		float filter_radius = 1.f;
 		float blend = 1.f;
-		graph.addComputePass("Upsampling")
-		.dependency(rgOffscreenColorTexs)
-		.executeCmdsInOrder()
-		.execute([&](mythril::CommandBuffer& cmd) {
-			cmd.cmdBindComputePipeline(upsampleComputePipeline);
-			for (int i = kNumColorMips-1; i > 0; i--) {
-				const mythril::ResolvedTexture out = cmd.texture(rgOffscreenColorTexs[i-1]);
-				const mythril::Dimensions outdims = out.dimensions;
-				struct PushConstants {
-					uint64_t inTex;
-					uint64_t outTex;
-					uint64_t sampler;
-					glm::ivec2 outSize;
-					float filterRadius;
-				} push {
-					.inTex = cmd.texture(rgOffscreenColorTexs[i]).index(),
-					.outTex = out.index(),
-					.sampler = clampSampler.index(),
-					.outSize = {outdims.width, outdims.height},
-					.filterRadius = filter_radius,
-				};
-				cmd.cmdPushConstants(push);
-				static constexpr uint32_t threadNum = 8;
-				const mythril::Dimensions roundedDims = {
-					(outdims.width + threadNum - 1) / threadNum,
-					(outdims.height + threadNum - 1) / threadNum,
-					1};
-				cmd.cmdDispatchThreadGroup(roundedDims);
-			}
-		});
 
 		mythril::Shader adaptationShader = ctx->createShader({
 			.source = kDataDir / "shaders/Adaptation.slang",
@@ -1443,29 +1264,6 @@ int main() {
 		float adaptationSpeed = 1.5f;
 		bool lumFlip = false;
 		auto st = std::chrono::steady_clock::now();
-		graph.addComputePass("adaptation")
-		.dependency(rgCurrentLuminanceTex, mythril::TextureAccess::StorageReadWrite)
-		.dependency(rgAdaptedLuminanceTextures, mythril::TextureAccess::StorageReadWrite)
-		.execute([&](mythril::CommandBuffer& cmd) {
-			cmd.cmdBindComputePipeline(adaptationComputePipeline);
-			const auto ct = std::chrono::steady_clock::now();
-			const float dt = std::chrono::duration<float>(ct - st).count();
-			st = ct;
-
-			struct PushConstant {
-				uint64_t currentSceneLumTex;
-				uint64_t prevAdaptedLumTex;
-				uint64_t nextAdaptedLumTex;
-				float adaptionSpeed;
-			} push {
-				.currentSceneLumTex = cmd.texture(rgCurrentLuminanceTex).index(),
-				.prevAdaptedLumTex = cmd.texture(rgAdaptedLuminanceTextures[lumFlip]).index(),
-				.nextAdaptedLumTex = cmd.texture(rgAdaptedLuminanceTextures[!lumFlip]).index(),
-				.adaptionSpeed = adaptationSpeed * dt
-			};
-			cmd.cmdPushConstants(push);
-			cmd.cmdDispatchThreadGroup({1, 1});
-		});
 
 
 		// should be pretty low we crrently dont handle this well
@@ -1491,19 +1289,414 @@ int main() {
 		glm::vec3 offset = {0.f, 0.f, 0.f};
 		glm::vec3 power = {1.f, 1.f, 1.f};
 		float saturation = 1.f;
-		graph.addGraphicsPass("composite")
-		.attachment({
-			.texDesc = rgFinalColorTarget,
-			.clearValue = mythril::ClearValue::color(0.f, 0.f, 0.f, 1.f),
-			.loadOp = mythril::LoadOp::CLEAR,
-			.storeOp = mythril::StoreOp::STORE
-		})
-		.dependency(rgOffscreenColorTarget, mythril::TextureAccess::Sampled)
-		.dependency(rgOffscreenColorTexs[0], mythril::TextureAccess::Sampled)
-		.dependency(rgAdaptedLuminanceTextures, mythril::TextureAccess::Sampled)
-		.execute([&](mythril::CommandBuffer& cmd) {
-			cmd.cmdBindGraphicsPipeline(fullscreenCompositePipeline);
-			const struct PushConstant {
+
+		const mythril::GraphBuffer rgFrameData = graph.importBuffer(frameDataHandle);
+		const mythril::GraphBuffer rgPointLightShadowMatrices = graph.importBuffer(pointLightShadowMatrixBuf);
+		const mythril::GraphBuffer rgOpaqueSponzaVertices = graph.importBuffer(opaqueSponzaVertexBuf);
+		const mythril::GraphBuffer rgOpaqueSponzaIndices = graph.importBuffer(opaqueSponzaIndexBuf);
+		const mythril::GraphBuffer rgOpaqueSponzaIndirect = graph.importBuffer(opaqueSponzaIndirectBuf);
+		const mythril::GraphBuffer rgParticles = graph.importBuffer(particles_buffer);
+		const mythril::GraphBuffer rgParticleVertices = graph.importBuffer(particle_vertex_buffer);
+		const mythril::GraphBuffer rgParticleIndices = graph.importBuffer(particle_index_buffer);
+
+		struct SponzaDraw {
+			const AssetCompiled* asset = nullptr;
+			mythril::GraphicsPipelineHandle pipeline;
+			bool transparent = false;
+			mythril::GraphTexture shadowMap;
+			mythril::GraphTexture pointShadowMaps[kNumPointLights];
+			GPU::GeometryPushConstants push{};
+
+			static void draw(const SponzaDraw& d, mythril::GraphicsCmd& cmd) {
+				cmd.cmdBindGraphicsPipeline(d.pipeline);
+				cmd.cmdBindDepthState({mythril::CompareOp::Greater, true});
+				GPU::GeometryPushConstants push = d.push;
+				push.shadowTexture = cmd.texture(d.shadowMap).index();
+				for (int i = 0; i < kNumPointLights; i++)
+					push.pointLightShadowTextures[i] = cmd.texture(d.pointShadowMaps[i]).index();
+				// what we call a mesh is really a primitive for fastgltf
+				for (const MeshCompiled& mesh : d.asset->meshes) {
+					const MaterialData& material = d.asset->materials[mesh.materialIndex];
+					if (material.isTransparent != d.transparent) continue;
+					push.vba = mesh.vertexAddress;
+					push.baseColorTexture = d.asset->textureHandles[material.baseColorTextureIndex].index();
+					push.normalTexture = d.asset->textureHandles[material.normalTextureIndex].index();
+					push.roughnessMetallicTexture = d.asset->textureHandles[material.roughnessMetallicTextureIndex].index();
+					cmd.cmdPushConstants(push);
+					cmd.cmdBindIndexBuffer(mesh.indexBufHandle);
+					cmd.cmdDrawIndexed(mesh.indexCount);
+				}
+			}
+		};
+		const auto setupSponzaDraw = [&](SponzaDraw& d, const mythril::GraphicsPipeline& pipeline, bool transparent) {
+			d.asset = &sponzaCompiled;
+			d.pipeline = pipeline.handle();
+			d.transparent = transparent;
+			d.shadowMap = rgShadowMap;
+			std::ranges::copy(rgPointLightShadowTex, d.pointShadowMaps);
+			d.push = {
+				.model = scaledModel,
+				.frame = ctx->gpuAddress(frameDataHandle),
+				.tintColor = {1, 1, 1, 1},
+				.samplerState = repeatSampler.index(),
+				.shadowSampler = shadowSampler.index(),
+				.lightSpaceMatrix = lightSpaceMatrix,
+				.pointLightFarPlane = pointlight_farplane
+			};
+		};
+		struct DepthOnlyDraw {
+			mythril::GraphicsPipelineHandle pipeline;
+			float depthBiasConstant = 0.f;
+			float depthBiasSlope = 0.f;
+			mythril::BufferHandle indexBuffer;
+			mythril::Buffer* indirectBuffer = nullptr;
+			uint32_t drawCount = 0;
+		};
+		struct PointShadowPush {
+			VkDeviceAddress shadowMVPs;
+			VkDeviceAddress vba;
+			glm::mat4 model;
+			uint32_t nLight;
+			glm::vec3 lightPos;
+			float farPlane;
+		};
+		struct BloomChain {
+			mythril::ComputePipelineHandle pipeline;
+			mythril::GraphTexture source;
+			mythril::GraphTexture mips[kNumColorMips];
+			uint64_t sampler = 0;
+			float filterRadius = 0.f;
+		};
+
+		auto buildGraph = [&] {
+			mythril::GraphTexture shadowMap = rgShadowMap;
+			mythril::GraphTexture pointShadowMaps[kNumPointLights];
+			std::ranges::copy(rgPointLightShadowTex, pointShadowMaps);
+			mythril::GraphTexture msaaColor = rgMsaaColorTarget;
+			mythril::GraphTexture msaaDepth = rgMsaaDepthTarget;
+			mythril::GraphTexture offscreenColor = rgOffscreenColorTarget;
+			mythril::GraphTexture depthResolve = rgDepthTarget;
+			mythril::GraphTexture bloomMips[kNumColorMips];
+			std::ranges::copy(rgOffscreenColorTexs, bloomMips);
+			mythril::GraphTexture currentLuminance = rgCurrentLuminanceTex;
+			mythril::GraphTexture adaptedLuminance[2] = {rgAdaptedLuminanceTextures[0], rgAdaptedLuminanceTextures[1]};
+			mythril::GraphTexture finalColor = rgFinalColorTarget;
+			mythril::GraphBuffer frameBuffer = rgFrameData;
+			mythril::GraphBuffer shadowMatrixBuffer = rgPointLightShadowMatrices;
+			mythril::GraphBuffer particleBuffer = rgParticles;
+			{
+				const glm::vec3 lightDir = glm::normalize(lightingData.directionalLights.direction);
+				const glm::vec3 lightPos = scene_center - lightDir * distance_from_center;
+				if (far < near) {
+					far = near;
+				}
+				assert(far >= near);
+				const glm::mat4 lightView = glm::lookAt(lightPos, scene_center, glm::vec3(0, 1, 0));
+				const glm::mat4 lightProj = glm::ortho(-orthoSize, orthoSize, -orthoSize, orthoSize, near, far);
+				lightSpaceMatrix = lightProj * lightView;
+			}
+			struct ShadowMap {
+				DepthOnlyDraw draw;
+				struct {
+					glm::mat4 mvp;
+					VkDeviceAddress vba;
+				} push;
+			};
+			graph.addGraphicsPass<ShadowMap>("shadow_map", [&](mythril::GraphicsPassBuilder& b, ShadowMap& d) {
+				shadowMap = b.attachment({
+					.texDesc = {shadowMap},
+					.clearValue = mythril::ClearValue::depth(1.f, 0),
+					.loadOp = mythril::LoadOp::CLEAR,
+					.storeOp = mythril::StoreOp::STORE
+				}).texture;
+				b.dependency(rgOpaqueSponzaVertices, mythril::BufferAccess::ShaderRead);
+				b.dependency(rgOpaqueSponzaIndices, mythril::BufferAccess::IndexRead);
+				b.dependency(rgOpaqueSponzaIndirect, mythril::BufferAccess::IndirectRead);
+				d.draw = {shadowPipeline.handle(), depthBiasConstant, depthBiasSlope, opaqueSponzaIndexBuf.handle(), &opaqueSponzaIndirectBuf, opaqueDrawCount};
+				d.push = {.mvp = lightSpaceMatrix * scaledModel, .vba = ctx->gpuAddress(opaqueSponzaVertexBuf)};
+			}, [](const ShadowMap& d, mythril::GraphicsCmd& cmd) {
+				cmd.cmdBindGraphicsPipeline(d.draw.pipeline);
+				cmd.cmdBindDepthState({mythril::CompareOp::LessEqual, true});
+				cmd.cmdSetDepthBiasEnable(true);
+				cmd.cmdSetDepthBias(d.draw.depthBiasConstant, d.draw.depthBiasSlope, 0.f);
+				cmd.cmdPushConstants(d.push);
+				cmd.cmdBindIndexBuffer(d.draw.indexBuffer);
+				cmd.cmdDrawIndexedIndirect(*d.draw.indirectBuffer, 0, d.draw.drawCount);
+			});
+			graph.addTransferPass("per_frame_scene_uploads", [&](mythril::TransferBuilder& b) {
+				frameBuffer = b.update(frameBuffer, frameData);
+				shadowMatrixBuffer = b.update(shadowMatrixBuffer, shadowMatrices);
+			});
+			struct PointShadow {
+				DepthOnlyDraw draw;
+				PointShadowPush push;
+			};
+			for (int i = 0; i < kNumPointLights; i++) {
+				if (lightingData.pointLights[i].position == lastFramelightingData.pointLights[i].position)
+					continue;
+				graph.addGraphicsPass<PointShadow>(std::format("pointlight_shadow_{}", i).c_str(), [&](mythril::GraphicsPassBuilder& b, PointShadow& d) {
+					pointShadowMaps[i] = b.attachment({
+						.texDesc = pointShadowMaps[i],
+						.clearValue = mythril::ClearValue::depth(1.f, 1),
+						.loadOp = mythril::LoadOp::CLEAR,
+						.storeOp = mythril::StoreOp::STORE,
+					}).texture;
+					b.multiview(6, 0b111111);
+					b.dependency(shadowMatrixBuffer, mythril::BufferAccess::ShaderRead);
+					b.dependency(rgOpaqueSponzaVertices, mythril::BufferAccess::ShaderRead);
+					b.dependency(rgOpaqueSponzaIndices, mythril::BufferAccess::IndexRead);
+					b.dependency(rgOpaqueSponzaIndirect, mythril::BufferAccess::IndirectRead);
+					d.draw = {.pipeline = pointShadowGraphicsPipeline.handle(), .indexBuffer = opaqueSponzaIndexBuf.handle(), .indirectBuffer = &opaqueSponzaIndirectBuf, .drawCount = opaqueDrawCount};
+					d.push = {
+						.shadowMVPs = ctx->gpuAddress(pointLightShadowMatrixBuf),
+						.vba = ctx->gpuAddress(opaqueSponzaVertexBuf),
+						.model = scaledModel,
+						.nLight = static_cast<uint32_t>(i),
+						.lightPos = lightingData.pointLights[i].position,
+						.farPlane = pointlight_farplane,
+					};
+				}, [](const PointShadow& d, mythril::GraphicsCmd& cmd) {
+					cmd.cmdBindGraphicsPipeline(d.draw.pipeline);
+					cmd.cmdBindDepthState({mythril::CompareOp::LessEqual, true});
+					cmd.cmdPushConstants(d.push);
+					cmd.cmdBindIndexBuffer(d.draw.indexBuffer);
+					cmd.cmdDrawIndexedIndirect(*d.draw.indirectBuffer, 0, d.draw.drawCount);
+				});
+			}
+			struct Sky {
+				mythril::GraphicsPipelineHandle pipeline;
+				struct {
+					VkDeviceAddress frame;
+					glm::vec3 sunDirection;
+					float _pad;
+				} push;
+			};
+			graph.addGraphicsPass<Sky>("sky", [&](mythril::GraphicsPassBuilder& b, Sky& d) {
+				msaaColor = b.attachment({
+					.texDesc   = msaaColor,
+					.clearValue = mythril::ClearValue::color(0.f, 0.f, 0.f, 1.f),
+					.loadOp    = mythril::LoadOp::CLEAR,
+					.storeOp   = mythril::StoreOp::STORE,
+				}).texture;
+				msaaDepth = b.attachment({
+					.texDesc = msaaDepth,
+					.clearValue = mythril::ClearValue::depth(kReverseZFarDepth, 0),
+					.loadOp = mythril::LoadOp::CLEAR,
+					.storeOp = mythril::StoreOp::STORE,
+				}).texture;
+				b.dependency(frameBuffer, mythril::BufferAccess::ShaderRead);
+				d.pipeline = skyPipeline.handle();
+				d.push = {.frame = ctx->gpuAddress(frameDataHandle), .sunDirection = sun_quaternion * glm::vec3(0.f, 0.f, -1.f)};
+			}, [](const Sky& d, mythril::GraphicsCmd& cmd) {
+				cmd.cmdBindGraphicsPipeline(d.pipeline);
+				cmd.cmdPushConstants(d.push);
+				cmd.cmdDraw(3);
+			});
+			const auto sponzaPass = [&](const char* name, const mythril::GraphicsPipeline& pipeline, bool transparent) {
+				graph.addGraphicsPass<SponzaDraw>(name, [&](mythril::GraphicsPassBuilder& b, SponzaDraw& d) {
+					msaaColor = b.attachment({
+						.texDesc = msaaColor,
+						.loadOp  = mythril::LoadOp::LOAD,
+						.storeOp = mythril::StoreOp::STORE,
+					}).texture;
+					msaaDepth = b.attachment({
+						.texDesc = msaaDepth,
+						.loadOp = mythril::LoadOp::LOAD,
+						.storeOp = mythril::StoreOp::STORE,
+					}).texture;
+					b.dependency(shadowMap, mythril::TextureAccess::Sampled);
+					for (const mythril::GraphTexture tex : pointShadowMaps)
+						b.dependency(tex, mythril::TextureAccess::Sampled);
+					b.dependency(frameBuffer, mythril::BufferAccess::ShaderRead);
+					setupSponzaDraw(d, pipeline, transparent);
+				}, &SponzaDraw::draw);
+			};
+			sponzaPass("geometry_opaque", opaquePipeline, false);
+			sponzaPass("geometry_transparent", transparentPipeline, true);
+			graph.addTransferPass("per_frame_particle_uploads", [&](mythril::TransferBuilder& b) {
+				particleBuffer = b.upload(particleBuffer, particles);
+			});
+			struct Particles {
+				mythril::GraphicsPipelineHandle pipeline;
+				mythril::BufferHandle indexBuffer;
+				uint32_t instanceCount = 0;
+				struct {
+					VkDeviceAddress vba;
+					VkDeviceAddress bufferAddr;
+					VkDeviceAddress frame;
+					float brightness;
+					float speed;
+				} push;
+			};
+			graph.addGraphicsPass<Particles>("Ambient Particles", [&](mythril::GraphicsPassBuilder& b, Particles& d) {
+				const mythril::AttachmentOutput color = b.attachment({
+					.texDesc = msaaColor,
+					.loadOp = mythril::LoadOp::LOAD,
+					.storeOp = mythril::StoreOp::DONT_CARE,
+					.resolveTexDesc = offscreenColor
+				});
+				const mythril::AttachmentOutput depth = b.attachment({
+					.texDesc = msaaDepth,
+					.loadOp = mythril::LoadOp::LOAD,
+					.storeOp = mythril::StoreOp::DONT_CARE,
+					.resolveTexDesc = depthResolve
+				});
+				msaaColor = color.texture;
+				offscreenColor = color.resolve;
+				msaaDepth = depth.texture;
+				depthResolve = depth.resolve;
+				b.dependency(particleBuffer, mythril::BufferAccess::ShaderRead);
+				b.dependency(frameBuffer, mythril::BufferAccess::ShaderRead);
+				b.dependency(rgParticleVertices, mythril::BufferAccess::ShaderRead);
+				b.dependency(rgParticleIndices, mythril::BufferAccess::IndexRead);
+				d.pipeline = particle_pipeline.handle();
+				d.indexBuffer = particle_index_buffer.handle();
+				d.instanceCount = static_cast<uint32_t>(particles.size());
+				d.push = {
+					.vba = ctx->gpuAddress(particle_vertex_buffer),
+					.bufferAddr = ctx->gpuAddress(particles_buffer),
+					.frame = ctx->gpuAddress(frameDataHandle),
+					.brightness = particle_emission,
+					.speed = particle_speed
+				};
+			}, [](const Particles& d, mythril::GraphicsCmd& cmd) {
+				cmd.cmdBindGraphicsPipeline(d.pipeline);
+				cmd.cmdBindDepthState({mythril::CompareOp::Greater, true});
+				cmd.cmdPushConstants(d.push);
+				cmd.cmdBindIndexBuffer(d.indexBuffer);
+				cmd.cmdDrawIndexed(Primitives::kHexIndices.size(), d.instanceCount);
+			});
+			const auto setupBloomChain = [&](mythril::ComputePassBuilder& b, BloomChain& d, const mythril::ComputePipeline& pipeline, std::optional<uint32_t> readOnlyMip, std::optional<uint32_t> writeOnlyMip) {
+				for (uint32_t i = 0; i < kNumColorMips; i++) {
+					const mythril::TextureAccess access = (i == readOnlyMip) ? mythril::TextureAccess::Sampled
+					: (i == writeOnlyMip) ? mythril::TextureAccess::StorageWrite : mythril::TextureAccess::StorageReadWrite;
+					bloomMips[i] = b.dependency(bloomMips[i], access);
+				}
+				b.executeCmdsInOrder();
+				d.pipeline = pipeline.handle();
+				std::ranges::copy(bloomMips, d.mips);
+				d.sampler = clampSampler.index();
+				d.filterRadius = filter_radius;
+			};
+			graph.addComputePass<BloomChain>("Downsampling", [&](mythril::ComputePassBuilder& b, BloomChain& d) {
+				b.dependency(offscreenColor, mythril::TextureAccess::Sampled);
+				setupBloomChain(b, d, downsampleComputePipeline, std::nullopt, kNumColorMips - 1);
+				d.source = offscreenColor;
+			}, [](const BloomChain& d, mythril::ComputeCmd& cmd) {
+				cmd.cmdBindComputePipeline(d.pipeline);
+				for (int i = 0; i < kNumColorMips; i++) {
+					const mythril::ResolvedTexture out = cmd.texture(d.mips[i]);
+					struct PushConstants {
+						uint64_t inTex;
+						uint64_t outTex;
+						uint64_t sampler;
+						uint32_t mipLevel;
+					} push {
+						.inTex = cmd.texture(i == 0 ? d.source : d.mips[i-1]).index(),
+						.outTex = out.index(),
+						.sampler = d.sampler,
+						.mipLevel = static_cast<uint32_t>(i)
+					};
+					cmd.cmdPushConstants(push);
+					static constexpr uint32_t threadNum = 8;
+					const mythril::Dimensions texDims = out.dimensions;
+					const mythril::Dimensions roundedDims = {
+						(texDims.width + threadNum - 1) / threadNum,
+						(texDims.height + threadNum - 1) / threadNum,
+						1};
+					cmd.cmdDispatchThreadGroup(roundedDims);
+				}
+			});
+			struct LuminanceConvert {
+				mythril::ComputePipelineHandle pipeline;
+				mythril::GraphTexture lowResColor;
+				mythril::GraphTexture currentLuminance;
+			};
+			graph.addComputePass<LuminanceConvert>("convert into current lum", [&](mythril::ComputePassBuilder& b, LuminanceConvert& d) {
+				b.dependency(bloomMips[kNumColorMips - 1], mythril::TextureAccess::Sampled);
+				currentLuminance = b.dependency(currentLuminance, mythril::TextureAccess::StorageReadWrite);
+				d = {conversionLuminancePipeline.handle(), bloomMips[kNumColorMips - 1], currentLuminance};
+			}, [](const LuminanceConvert& d, mythril::ComputeCmd& cmd) {
+				cmd.cmdBindComputePipeline(d.pipeline);
+				const mythril::ResolvedTexture lowResColor = cmd.texture(d.lowResColor);
+				const struct PushConstant {
+					uint64_t lowResColorTex;
+					uint64_t curLumOutTex;
+					uint64_t sampler;
+				} push {
+					.lowResColorTex = lowResColor.index(),
+					.curLumOutTex = cmd.texture(d.currentLuminance).index(),
+					.sampler = 0
+				};
+				cmd.cmdPushConstants(push);
+				const mythril::Dimensions texDims = lowResColor.dimensions;
+				constexpr glm::vec2 threadsPerGroup = {16, 16};
+				// uhhhhhhh
+				const auto groupX = static_cast<uint32_t>(static_cast<float>(texDims.width + static_cast<uint32_t>(threadsPerGroup.x) - 1u) / threadsPerGroup.x);
+				const auto groupY = static_cast<uint32_t>(static_cast<float>(texDims.height + static_cast<uint32_t>(threadsPerGroup.y) - 1u) / threadsPerGroup.y);
+				cmd.cmdDispatchThreadGroup({groupX, groupY, 1});
+			});
+			graph.addComputePass<BloomChain>("Upsampling", [&](mythril::ComputePassBuilder& b, BloomChain& d) {
+				setupBloomChain(b, d, upsampleComputePipeline, kNumColorMips - 1, std::nullopt);
+			}, [](const BloomChain& d, mythril::ComputeCmd& cmd) {
+				cmd.cmdBindComputePipeline(d.pipeline);
+				for (int i = kNumColorMips-1; i > 0; i--) {
+					const mythril::ResolvedTexture out = cmd.texture(d.mips[i-1]);
+					const mythril::Dimensions outdims = out.dimensions;
+					struct PushConstants {
+						uint64_t inTex;
+						uint64_t outTex;
+						uint64_t sampler;
+						glm::ivec2 outSize;
+						float filterRadius;
+					} push {
+						.inTex = cmd.texture(d.mips[i]).index(),
+						.outTex = out.index(),
+						.sampler = d.sampler,
+						.outSize = {outdims.width, outdims.height},
+						.filterRadius = d.filterRadius,
+					};
+					cmd.cmdPushConstants(push);
+					static constexpr uint32_t threadNum = 8;
+					const mythril::Dimensions roundedDims = {
+						(outdims.width + threadNum - 1) / threadNum,
+						(outdims.height + threadNum - 1) / threadNum,
+						1};
+					cmd.cmdDispatchThreadGroup(roundedDims);
+				}
+			});
+			struct Adaptation {
+				mythril::ComputePipelineHandle pipeline;
+				mythril::GraphTexture currentLuminance;
+				mythril::GraphTexture prevAdapted;
+				mythril::GraphTexture nextAdapted;
+				float adaptionSpeed = 0.f;
+			};
+			graph.addComputePass<Adaptation>("adaptation", [&](mythril::ComputePassBuilder& b, Adaptation& d) {
+				currentLuminance = b.dependency(currentLuminance, mythril::TextureAccess::StorageReadWrite);
+				b.dependency(adaptedLuminance, mythril::TextureAccess::StorageReadWrite);
+				const auto ct = std::chrono::steady_clock::now();
+				const float dt = std::chrono::duration<float>(ct - st).count();
+				st = ct;
+				b.async();
+				d = {adaptationComputePipeline.handle(), currentLuminance, adaptedLuminance[lumFlip], adaptedLuminance[!lumFlip], adaptationSpeed * dt};
+			}, [](const Adaptation& d, mythril::ComputeCmd& cmd) {
+				cmd.cmdBindComputePipeline(d.pipeline);
+				struct PushConstant {
+					uint64_t currentSceneLumTex;
+					uint64_t prevAdaptedLumTex;
+					uint64_t nextAdaptedLumTex;
+					float adaptionSpeed;
+				} push {
+					.currentSceneLumTex = cmd.texture(d.currentLuminance).index(),
+					.prevAdaptedLumTex = cmd.texture(d.prevAdapted).index(),
+					.nextAdaptedLumTex = cmd.texture(d.nextAdapted).index(),
+					.adaptionSpeed = d.adaptionSpeed
+				};
+				cmd.cmdPushConstants(push);
+				cmd.cmdDispatchThreadGroup({1, 1});
+			});
+			struct CompositePush {
 				uint64_t colorTex; // 32 bytes
 				uint64_t avgLuminanceTex;
 				uint64_t bloomTex;
@@ -1528,81 +1721,108 @@ int main() {
 				glm::vec3 offset;
 				glm::vec3 power;
 				float saturation;
-			} push {
-				.colorTex = cmd.texture(rgOffscreenColorTarget).index(),
-				.avgLuminanceTex = cmd.texture(rgAdaptedLuminanceTextures[lumFlip]).index(),
-				.bloomTex = cmd.texture(rgOffscreenColorTexs[0]).index(),
-				.sampler = 0,
-				.exposure = exposure_final,
-				.bloomStrength = bloom_strength,
-				.toneMapMode = static_cast<int>(tone_mapping_mode),
-
-				.maxWhite = maxWhite,
-				.P = P,
-				.a = a,
-				.m = m,
-				.l = l,
-				.c = c,
-				.b = b,
-				.startCompression = startCompression,
-				.desaturation = desaturation,
-				.slope = slope,
-				.offset = offset,
-				.power = power,
-				.saturation = saturation
 			};
-			cmd.cmdPushConstants(push);
-			cmd.cmdDraw(3);
-		});
-
-		graph.addGraphicsPass("shadow_pos_debug")
-		.attachment({
-			.texDesc = rgFinalColorTarget,
-			.loadOp = mythril::LoadOp::LOAD,
-			.storeOp = mythril::StoreOp::STORE
-		})
-		.execute([&](mythril::CommandBuffer& cmd) {
-			cmd.cmdBindGraphicsPipeline(redDebugPipeline);
-			cmd.cmdBindDepthState({mythril::CompareOp::Less, true});
-
-			glm::mat4 model = glm::translate(glm::mat4(1.0), scene_center);
-			model = model * glm::mat4_cast(sun_quaternion);
-			model = glm::rotate(model, 90.f, glm::vec3(1, 1, 1));
-			model = glm::rotate(model, 180.f, glm::vec3(0, 1, 0));
-
-			for (const auto& mesh : arrowCompiled.meshes) {
-				struct PushConstant {
-					glm::mat4 model;
-					VkDeviceAddress vba;
-					VkDeviceAddress frame;
-				} push {
-					.model = model,
-					.vba = ctx->gpuAddress(mesh.vertexBufHandle),
-					.frame = ctx->gpuAddress(frameDataHandle)
+			struct Composite {
+				mythril::GraphicsPipelineHandle pipeline;
+				mythril::GraphTexture color;
+				mythril::GraphTexture avgLuminance;
+				mythril::GraphTexture bloom;
+				CompositePush push;
+			};
+			graph.addGraphicsPass<Composite>("composite", [&](mythril::GraphicsPassBuilder& builder, Composite& d) {
+				finalColor = builder.attachment({
+					.texDesc = finalColor,
+					.clearValue = mythril::ClearValue::color(0.f, 0.f, 0.f, 1.f),
+					.loadOp = mythril::LoadOp::CLEAR,
+					.storeOp = mythril::StoreOp::STORE
+				}).texture;
+				builder.dependency(offscreenColor, mythril::TextureAccess::Sampled);
+				builder.dependency(bloomMips[0], mythril::TextureAccess::Sampled);
+				builder.dependency(adaptedLuminance, mythril::TextureAccess::Sampled);
+				d.pipeline = fullscreenCompositePipeline.handle();
+				d.color = offscreenColor;
+				d.avgLuminance = adaptedLuminance[lumFlip];
+				d.bloom = bloomMips[0];
+				d.push = {
+					.sampler = 0,
+					.exposure = exposure_final,
+					.bloomStrength = bloom_strength,
+					.toneMapMode = static_cast<int>(tone_mapping_mode),
+					.maxWhite = maxWhite,
+					.P = P,
+					.a = a,
+					.m = m,
+					.l = l,
+					.c = c,
+					.b = b,
+					.startCompression = startCompression,
+					.desaturation = desaturation,
+					.slope = slope,
+					.offset = offset,
+					.power = power,
+					.saturation = saturation
 				};
+			}, [](const Composite& d, mythril::GraphicsCmd& cmd) {
+				cmd.cmdBindGraphicsPipeline(d.pipeline);
+				CompositePush push = d.push;
+				push.colorTex = cmd.texture(d.color).index();
+				push.avgLuminanceTex = cmd.texture(d.avgLuminance).index();
+				push.bloomTex = cmd.texture(d.bloom).index();
 				cmd.cmdPushConstants(push);
-				cmd.cmdBindIndexBuffer(mesh.indexBufHandle);
-				cmd.cmdDrawIndexed(mesh.indexCount);
-			}
-		});
-
-		graph.addGraphicsPass("gui")
-		.attachment({
-			.texDesc = rgFinalColorTarget,
-			.loadOp = mythril::LoadOp::LOAD,
-			.storeOp = mythril::StoreOp::STORE
-		})
-		.dependency(rgAdaptedLuminanceTextures, mythril::TextureAccess::Sampled)
-		.dependency(rgOffscreenColorTexs, mythril::TextureAccess::Sampled)
-		.execute([&](mythril::CommandBuffer& cmd) {
-			cmd.cmdDrawImGui();
-		});
-
-		graph.addIntermediate("present")
-		.blit(rgFinalColorTarget, graph.backBuffer())
-		.finish();
-		graph.compile(*ctx);
-
+				cmd.cmdDraw(3);
+			});
+			struct ShadowPosDebug {
+				const AssetCompiled* arrow = nullptr;
+				mythril::GraphicsPipelineHandle pipeline;
+				glm::mat4 model;
+				VkDeviceAddress frame;
+			};
+			graph.addGraphicsPass<ShadowPosDebug>("shadow_pos_debug", [&](mythril::GraphicsPassBuilder& b, ShadowPosDebug& d) {
+				finalColor = b.attachment({
+					.texDesc = finalColor,
+					.loadOp = mythril::LoadOp::LOAD,
+					.storeOp = mythril::StoreOp::STORE
+				}).texture;
+				b.dependency(frameBuffer, mythril::BufferAccess::ShaderRead);
+				glm::mat4 model = glm::translate(glm::mat4(1.0), scene_center);
+				model = model * glm::mat4_cast(sun_quaternion);
+				model = glm::rotate(model, 90.f, glm::vec3(1, 1, 1));
+				model = glm::rotate(model, 180.f, glm::vec3(0, 1, 0));
+				d = {&arrowCompiled, redDebugPipeline.handle(), model, ctx->gpuAddress(frameDataHandle)};
+			}, [](const ShadowPosDebug& d, mythril::GraphicsCmd& cmd) {
+				cmd.cmdBindGraphicsPipeline(d.pipeline);
+				cmd.cmdBindDepthState({mythril::CompareOp::Less, true});
+				for (const auto& mesh : d.arrow->meshes) {
+					struct PushConstant {
+						glm::mat4 model;
+						VkDeviceAddress vba;
+						VkDeviceAddress frame;
+					} push {
+						.model = d.model,
+						.vba = mesh.vertexAddress,
+						.frame = d.frame
+					};
+					cmd.cmdPushConstants(push);
+					cmd.cmdBindIndexBuffer(mesh.indexBufHandle);
+					cmd.cmdDrawIndexed(mesh.indexCount);
+				}
+			});
+			graph.addGraphicsPass("gui", [&](mythril::GraphicsPassBuilder& b, mythril::NoPassData&) {
+				finalColor = b.attachment({
+					.texDesc = finalColor,
+					.loadOp = mythril::LoadOp::LOAD,
+					.storeOp = mythril::StoreOp::STORE
+				}).texture;
+				b.dependency(adaptedLuminance, mythril::TextureAccess::Sampled);
+				b.dependency(bloomMips, mythril::TextureAccess::Sampled);
+				b.dependency(shadowMap, mythril::TextureAccess::Sampled);
+			}, [](const mythril::NoPassData&, mythril::GraphicsCmd& cmd) {
+				cmd.cmdDrawImGui();
+			});
+			graph.addTransferPass("present", [&](mythril::TransferBuilder& b) {
+				b.blit(finalColor, graph.backBuffer());
+			});
+		};
 		static bool focused = false;
 		SDL_SetWindowRelativeMouseMode(sdlWindow, focused);
 		constexpr float kMouseSensitivity = 0.3f;
@@ -1766,7 +1986,7 @@ int main() {
 
 			ImGuiWindowFlags window_flags = focused ? ImGuiWindowFlags_NoMouseInputs : ImGuiWindowFlags_None;
 			ImGui::Begin("Previews", nullptr, window_flags);
-			ImGui::Image(graph.exported(rgShadowMap), {200, 200});
+			ImGui::Image(rgShadowMap, {200, 200});
 			ImGui::Text("Average Luminance");
 			ImGui::Image(adaptedLuminanceTextures[lumFlip], {100, 100});
 			// for (int face = 0; face < 6; face++) {
@@ -1775,7 +1995,7 @@ int main() {
 			ImGui::Text("Progressively Blurred Color Targets");
 			for (int i = 0; i < kNumColorMips; i++) {
 				mythril::Dimensions dims = {320, 240};
-				ImGui::Image(graph.exported(rgOffscreenColorTexs[kNumColorMips-1-i]), {static_cast<float>(dims.width), static_cast<float>(dims.height)});
+				ImGui::Image(rgOffscreenColorTexs[kNumColorMips-1-i], {static_cast<float>(dims.width), static_cast<float>(dims.height)});
 			}
 			ImGui::End();
 
@@ -1785,7 +2005,7 @@ int main() {
 			ImGui::DragFloat("Particle Speed", &particle_speed);
 			ImGui::DragFloat("Particle Emission", &particle_emission, 0.1f);
 			ImGui::DragFloat("Upsample Blending", &blend, 0.001f);
-			ImGui::DragFloat("Filter Radius", &filter_radius, 0.001f, -1.f, 1.f);
+			ImGui::DragFloat("Filter Radius (texels)", &filter_radius, 0.01f, 0.f, 4.f);
 			ImGui::DragFloat("Bloom Strength", &bloom_strength, 0.01f, 0.0f, 100.f);
 			ImGui::DragFloat("Adaptation Speed", &adaptationSpeed, 0.1f, 0.1f, 10.f);
 			ImGui::DragFloat("Final Exposure", &exposure_final, 0.01f, 0.0001f, 10.f);
@@ -1842,11 +2062,10 @@ int main() {
 			{
 				ImGui::Text("Frame %d", ImGui::GetFrameCount());
 				ImGui::Text("Framerate: %.0f", ImGui::GetIO().Framerate);
-				ImGui::Text("Frametime: %.2f ms", deltaTime * 1000.f);
 				static float smoothedDeltaTime = 0.0f;
 				float alpha = 0.05f; // lower = smoother, range from 0.0-1.0
 				smoothedDeltaTime = smoothedDeltaTime * (1.0f - alpha) + deltaTime * alpha;
-				ImGui::Text("EMA Frametime: %.2f ms", smoothedDeltaTime * 1000.0f);
+				ImGui::Text("CPU EMA Frametime: %.2f ms", smoothedDeltaTime * 1000.0f);
 				ImGui::Text("CPU Usage: %.1f%%", GetCPUUsage());
 				ImGui::Text("Memory Usage: %.1f MB", GetMemoryUsageMB());
 #if defined(__APPLE__)
@@ -1860,6 +2079,29 @@ int main() {
 				ImGui::Text("Framebuffer Size: %dx%d", windowFramebufferSize.width, windowFramebufferSize.height);
 			}
 			ImGui::End();
+			ImGui::SetNextWindowPos({660, 60}, ImGuiCond_FirstUseEver);
+			ImGui::SetNextWindowSize({420, 420}, ImGuiCond_FirstUseEver);
+			ImGui::Begin("Render Graph");
+			if (ImGui::BeginTable("schedule", 5, ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_SizingFixedFit)) {
+				ImGui::TableSetupColumn("Pass");
+				ImGui::TableSetupColumn("Queue");
+				ImGui::TableSetupColumn("Batch");
+				ImGui::TableSetupColumn("Group");
+				ImGui::TableSetupColumn("Culled");
+				ImGui::TableHeadersRow();
+				for (const mythril::ScheduledPass& pass : graph.schedule()) {
+					constexpr const char* kQueueNames[] = {"main", "async compute", "async transfer"};
+					ImGui::TableNextRow();
+					ImGui::TableNextColumn(); ImGui::TextUnformatted(pass.name.c_str());
+					ImGui::TableNextColumn(); ImGui::TextUnformatted(kQueueNames[static_cast<int>(pass.queue)]);
+					ImGui::TableNextColumn(); pass.culled ? ImGui::TextUnformatted("-") : ImGui::Text("%u", pass.batch);
+					ImGui::TableNextColumn(); pass.culled ? ImGui::TextUnformatted("-") : ImGui::Text("%u", pass.mergeGroup);
+					ImGui::TableNextColumn(); ImGui::TextUnformatted(pass.culled ? "yes" : "");
+				}
+				ImGui::EndTable();
+			}
+			ImGui::End();
+			DrawGpuTimeline(gpuTimeline);
 
 			ImGuizmo::BeginFrame();
 			glm::mat4 transformMatrix = glm::translate(glm::mat4(1.f), scene_center) *
@@ -1906,7 +2148,12 @@ int main() {
 			MYTH_PROFILER_ZONE_END();
 			{
 				MYTH_PROFILER_ZONE_COLOR("Execution", MYTH_PROFILER_COLOR_RENDERPASS);
-				graph.executeEXT(*ctx);
+				graph.reset();
+				buildGraph();
+				graph.compile(*ctx);
+				gpuTimeline.collect(*ctx, graph.schedule());
+				graph.execute(*ctx, gpuTimeline.pool.handle(), gpuTimeline.firstQuery());
+				gpuTimeline.advance();
 				MYTH_PROFILER_ZONE_END();
 			}
 			lastFramelightingData = lightingData;

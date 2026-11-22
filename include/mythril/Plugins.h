@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <functional>
 #include <unordered_map>
@@ -12,6 +13,7 @@
 #include <volk.h>
 
 #include "ObjectHandles.h"
+#include "RenderGraphDescriptions.h"
 
 struct ImVec2;
 struct ImGuiContext;
@@ -68,6 +70,7 @@ namespace mythril {
 		inline static ImGuiPlugin* _activePlugin = nullptr;
 
 		friend class CTX;
+		friend class CommandBuffer;
 	};
 #endif
 #ifdef MYTH_ENABLED_TRACY_GPU
@@ -75,13 +78,13 @@ namespace mythril {
 	public:
 		void onInit(CTX& ctx);
 		void onDestroy();
-		tracy::VkCtx* getTracyVkCtx() { return _tracyVkCtx; }
+		// null for a queue the device does not have or that cannot write timestamps
+		tracy::VkCtx* getTracyVkCtx(QueueAffinity queue = QueueAffinity::Graphics) { return _tracyVkCtx[static_cast<size_t>(queue)]; }
 
 	private:
 		CTX* _ctx = nullptr;
-		tracy::VkCtx* _tracyVkCtx = nullptr;
-		VkCommandPool _commandPool = VK_NULL_HANDLE;
-		VkCommandBuffer _commandBuffer = VK_NULL_HANDLE;
+		std::array<tracy::VkCtx*, kQueueCount> _tracyVkCtx{};
+		std::array<VkCommandPool, kQueueCount> _commandPool{};
 	};
 #endif
 } // namespace mythril

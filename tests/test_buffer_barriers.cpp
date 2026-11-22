@@ -168,7 +168,7 @@ namespace {
 			justified(dst, b.dst, later);
 		}
 
-		void run(const vkutil::UpdateBufferBarriers& b) {
+		void run(const vkutil::UpdateBufferBarriers& b, const Use& write) {
 			valid("before.src", b.before.src);
 			valid("before.dst", b.before.dst);
 
@@ -180,10 +180,10 @@ namespace {
 				if (use.write)
 					prior.access |= expandAccess(use.access);
 			}
-			covers("before.dst", b.before.dst, kUpdateWrite, true);
+			covers("before.dst", b.before.dst, write, true);
 			justified("before.src", b.before.src, prior);
-			justified("before.dst", b.before.dst, {expandStages(kUpdateWrite.stage), expandAccess(kUpdateWrite.access)});
-			writeThenConsumers("after.src", "after.dst", b.after, kUpdateWrite);
+			justified("before.dst", b.before.dst, {expandStages(write.stage), expandAccess(write.access)});
+			writeThenConsumers("after.src", "after.dst", b.after, write);
 		}
 	};
 
@@ -196,16 +196,18 @@ namespace {
 	}
 
 	using BarrierFn = vkutil::UpdateBufferBarriers (*)(VkBufferUsageFlags, vkutil::BufferSyncFeatures);
-	using UploadFn = vkutil::BufferBarrier (*)(VkBufferUsageFlags, vkutil::BufferSyncFeatures);
+	struct Upload {
+		BarrierFn fn;
+	};
 
 	std::vector<std::string> check(BarrierFn fn, VkBufferUsageFlags usage, vkutil::BufferSyncFeatures f) {
 		Checker c{usage, f, {}};
-		c.run(fn(usage, f));
+		c.run(fn(usage, f), kUpdateWrite);
 		return c.failures;
 	}
-	std::vector<std::string> check(UploadFn fn, VkBufferUsageFlags usage, vkutil::BufferSyncFeatures f) {
+	std::vector<std::string> check(Upload upload, VkBufferUsageFlags usage, vkutil::BufferSyncFeatures f) {
 		Checker c{usage, f, {}};
-		c.writeThenConsumers("upload.src", "upload.dst", fn(usage, f), kUploadWrite);
+		c.run(upload.fn(usage, f), kUploadWrite);
 		return c.failures;
 	}
 
@@ -285,7 +287,7 @@ namespace {
 			return b;
 		}
 
-		vkutil::BufferBarrier sync1Staging(VkBufferUsageFlags usage, vkutil::BufferSyncFeatures) {
+		vkutil::UpdateBufferBarriers sync1Staging(VkBufferUsageFlags usage, vkutil::BufferSyncFeatures f) {
 			StageAccess dst = {VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_NONE};
 			if (usage & VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT)
 				dst = {dst.stage | VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT, dst.access | VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT};
@@ -295,7 +297,12 @@ namespace {
 				dst.access |= VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT;
 			if (usage & VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR)
 				dst = {dst.stage | VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, dst.access | VK_ACCESS_2_MEMORY_READ_BIT};
-			return {{VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT}, dst};
+			return {vkutil::GetUploadBufferBarriers(usage, f).before, {{VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT}, dst}};
+		}
+		vkutil::UpdateBufferBarriers uploadNoBefore(VkBufferUsageFlags usage, vkutil::BufferSyncFeatures f) {
+			vkutil::UpdateBufferBarriers b = vkutil::GetUploadBufferBarriers(usage, f);
+			b.before = {};
+			return b;
 		}
 	} // namespace known_bad
 } // namespace
@@ -333,7 +340,7 @@ TEST_CASE("cmdUpdateBufferEXT barriers are valid, cover every access, and are ti
 
 TEST_CASE("staging upload barriers are valid, cover every access, and are tight for every buffer createBuffer can make") {
 	// host visible buffers are mapped and written from the host, Device and Memoryless go through staging
-	CHECK(checkEveryBuffer(vkutil::GetUploadBufferBarrier, false) == std::size(kFeatureSets) * (kSubsets + kSubsetsWithTransferDst));
+	CHECK(checkEveryBuffer(Upload{vkutil::GetUploadBufferBarriers}, false) == std::size(kFeatureSets) * (kSubsets + kSubsetsWithTransferDst));
 }
 
 TEST_CASE("every usage bit createBuffer can emit is handled by the barrier table") {
@@ -365,9 +372,12 @@ TEST_CASE("barrier checker rejects each known-bad barrier generator") {
 		CHECK(anyFailureContains(known_bad::widened, device | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, "after.dst: MEMORY_READ/MEMORY_WRITE is banned"));
 	}
 	SUBCASE("sync1 staging: BDA reads of an indirect buffer not made visible") {
-		CHECK(anyFailureContains(known_bad::sync1Staging, device | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, "upload.dst: missing access VK_ACCESS_2_SHADER_STORAGE_READ_BIT"));
+		CHECK(anyFailureContains(Upload{known_bad::sync1Staging}, device | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, "after.dst: missing access VK_ACCESS_2_SHADER_STORAGE_READ_BIT"));
 	}
 	SUBCASE("sync1 staging: later copies not made visible") {
-		CHECK(anyFailureContains(known_bad::sync1Staging, device | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, "upload.dst: missing access VK_ACCESS_2_TRANSFER_READ_BIT"));
+		CHECK(anyFailureContains(Upload{known_bad::sync1Staging}, device | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, "after.dst: missing access VK_ACCESS_2_TRANSFER_READ_BIT"));
+	}
+	SUBCASE("staging upload with no barrier before the copy: earlier shader writes race it") {
+		CHECK(anyFailureContains(Upload{known_bad::uploadNoBefore}, device | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, "before.src: missing stages"));
 	}
 }

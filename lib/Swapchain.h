@@ -19,7 +19,7 @@ namespace mythril {
 		~Swapchain();
 
 	public:
-		// actually used in the loop
+		// VK_NULL_HANDLE when out of date, no image was acquired
 		VkSemaphore acquire();
 		void present(VkSemaphore waitSemaphore);
 
@@ -48,7 +48,6 @@ namespace mythril {
 		// these can be different
 		// indexed by _imageIndex
 		TextureHandle _swapchainTextures[kMAX_SWAPCHAIN_IMAGES] = {};
-		uint64_t _timelineWaitValues[kMAX_SWAPCHAIN_IMAGES] = {}; // this HERE NEEDS FIXING
 
 		// indexed by _frameIndex
 		VkSemaphore _vkAcquireSemaphores[kNUM_FRAMES_IN_FLIGHT] = {};

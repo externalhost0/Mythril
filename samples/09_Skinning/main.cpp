@@ -353,7 +353,7 @@ int main() {
 		mythril::RenderGraph graph;
 		const mythril::GraphTexture rgColorTarget = graph.createTexture({.size = mythril::RelativeSize{}, .format = VK_FORMAT_R8G8B8A8_UNORM, .debugName = "Color Texture"});
 		const mythril::GraphTexture rgDepthTarget = graph.createTexture({.size = mythril::RelativeSize{}, .format = VK_FORMAT_D32_SFLOAT_S8_UINT, .debugName = "Depth Texture"});
-		graph.addIntermediate("per_frame_uploads")
+		graph.addTransferPass("per_frame_uploads")
 		.update(jointMatrixBuffer, [&] { return mythril::UploadData{pose.jointMatrices.data(), pose.jointMatrices.size() * sizeof(glm::mat4)}; })
 		.update(jointDualQuatBuffer, [&] { return mythril::UploadData{pose.jointDualQuats.data(), pose.jointDualQuats.size() * sizeof(mythril::GPU::DualQuat)}; })
 		.update(frameDataBuffer, [&] { return mythril::UploadData{&frameData, sizeof(frameData)}; })
@@ -402,7 +402,7 @@ int main() {
 			cmd.cmdDrawImGui();
 		});
 
-		graph.addIntermediate("presentation")
+		graph.addTransferPass("presentation")
 		.blit(rgColorTarget, graph.backBuffer())
 		.finish();
 

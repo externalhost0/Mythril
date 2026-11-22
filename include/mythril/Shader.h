@@ -93,11 +93,18 @@ namespace mythril {
 		uint32_t id;
 	};
 
+	struct PushResourceField {
+		enum class Kind : uint8_t { SampledTexture, StorageTexture, Pointer };
+		std::string varName;
+		uint32_t offset;
+		Kind kind;
+	};
 	struct PipelineLayoutSignature {
 		// this will always be the index of slang's __slang_resource_heap
 		// however it is not gauranteed to be 0 and thus should be resolved
 		std::optional<uint32_t> bindlessSetIndex;
 		std::vector<VkPushConstantRange> pushes;
+		std::vector<PushResourceField> pushResources;
 	};
 	struct SpecializationInfo {
 		std::vector<SpecializationConstant> specializationConstants;

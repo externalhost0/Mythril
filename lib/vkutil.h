@@ -196,8 +196,13 @@ namespace mythril::vkutil {
 		    .after = {.src = update, .dst = consumers},
 		};
 	}
-	constexpr BufferBarrier GetUploadBufferBarrier(VkBufferUsageFlags usage, BufferSyncFeatures features) {
-		return {.src = {.stage = VK_PIPELINE_STAGE_2_COPY_BIT, .access = VK_ACCESS_2_TRANSFER_WRITE_BIT}, .dst = GetBufferConsumers(usage, features)};
+	constexpr UpdateBufferBarriers GetUploadBufferBarriers(VkBufferUsageFlags usage, BufferSyncFeatures features) {
+		const StageAccess consumers = GetBufferConsumers(usage, features);
+		const StageAccess copy = {.stage = VK_PIPELINE_STAGE_2_COPY_BIT, .access = VK_ACCESS_2_TRANSFER_WRITE_BIT};
+		return {
+		    .before = {.src = {.stage = consumers.stage, .access = consumers.access & kWriteAccess}, .dst = copy},
+		    .after = {.src = copy, .dst = consumers},
+		};
 	}
 
 	constexpr VkPipelineStageFlags2 GetPassShaderStages(PassDesc::Type passType) {
@@ -206,7 +211,7 @@ namespace mythril::vkutil {
 				return VK_PIPELINE_STAGE_2_PRE_RASTERIZATION_SHADERS_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
 			case PassDesc::Type::Compute:
 				return VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-			case PassDesc::Type::Intermediate:
+			case PassDesc::Type::Transfer:
 				return VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
 			case PassDesc::Type::RayTracing:
 				return VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR;

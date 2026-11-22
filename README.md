@@ -6,6 +6,7 @@ It aims to provide a easy to create context and highly abstracted API for Vulkan
 
 ### Features:
 * RenderGraph implementation, automatically builds and optimizes your described frame.
+* Provides async compute, automatic queue ownership transfers, pass culling & merging, and transient resources through the RenderGraph.
 * Fully Bindless design for textures & samplers.
 * Automatic shader reflection.
 * Ray Tracing pipeline & Acceleration Structure support.

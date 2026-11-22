@@ -346,36 +346,60 @@ int main() {
 			.format = VK_FORMAT_R8G8B8A8_UNORM,
 			.debugName = "Raytraced output"
 		});
-		graph.addIntermediate("per_frame_uploads")
-		.update(frameBuffer, [&] { return mythril::UploadData{&frameData, sizeof(frameData)}; })
-		.finish();
+		const mythril::GraphBuffer rgFrameData = graph.importBuffer(frameBuffer);
+		const mythril::GraphBuffer rgSceneVertices = graph.importBuffer(sceneVertexBuffer);
+		const mythril::GraphBuffer rgSceneIndices = graph.importBuffer(sceneIndexBuffer);
 
-		graph.addRayTracingPass("trace shadows")
-		.dependency(rgTracedShadowOutput, mythril::TextureAccess::StorageReadWrite)
-		.dependency(frameBuffer, mythril::BufferAccess::ShaderRead)
-		.execute([&](mythril::CommandBuffer& cmd) {
-			cmd.cmdBindRayTracingPipeline(mainPipeline);
-			const mythril::ResolvedTexture tracedOutput = cmd.texture(rgTracedShadowOutput);
-			const mythril::GPU::ShadowPushConstant push = {
-				.frame = ctx->gpuAddress(frameBuffer),
-				// points toward the light, closestHitMain dots it with the surface normal
-				.lightDir = glm::vec4(1.5, 2.0, 1.0, 0),
-				.vertices = ctx->gpuAddress(sceneVertexBuffer),
-				.indices = ctx->gpuAddress(sceneIndexBuffer),
-				.outTexture = tracedOutput.index(),
-				.tlas = ctx->gpuAddress(tlas),
-				.enableShadows = static_cast<uint32_t>(true),
-				.debugMode = debugMode
-			};
-			cmd.cmdPushConstants(push);
-			// must match the output texture, out of bounds image stores are not discarded without robustness
-			cmd.cmdTraceRays({tracedOutput.dimensions.width, tracedOutput.dimensions.height, 1});
+		struct TracePass {
+			mythril::RayTracingPipelineHandle pipeline;
+			mythril::GraphTexture output;
+			VkDeviceAddress frame = 0;
+			VkDeviceAddress vertices = 0;
+			VkDeviceAddress indices = 0;
+			uint64_t tlas = 0;
+			uint32_t debugMode = 0;
+		};
+		const auto buildGraph = [&] {
+			mythril::GraphBuffer frame = rgFrameData;
+			graph.addTransferPass("per_frame_uploads", [&](mythril::TransferBuilder& b) {
+				frame = b.update(frame, frameData);
+			});
 
-		});
-		graph.addIntermediate("present")
-		.blit(rgTracedShadowOutput, graph.backBuffer())
-		.finish();
-		graph.compile(*ctx);
+			mythril::GraphTexture traced = rgTracedShadowOutput;
+			graph.addRayTracingPass<TracePass>("trace shadows", [&](mythril::RayTracingPassBuilder& b, TracePass& d) {
+				traced = b.dependency(traced, mythril::TextureAccess::StorageWrite);
+				b.dependency(frame, mythril::BufferAccess::ShaderRead);
+				b.dependency(rgSceneVertices, mythril::BufferAccess::ShaderRead);
+				b.dependency(rgSceneIndices, mythril::BufferAccess::ShaderRead);
+				d.pipeline = mainPipeline.handle();
+				d.output = traced;
+				d.frame = ctx->gpuAddress(frameBuffer);
+				d.vertices = ctx->gpuAddress(sceneVertexBuffer);
+				d.indices = ctx->gpuAddress(sceneIndexBuffer);
+				d.tlas = ctx->gpuAddress(tlas);
+				d.debugMode = debugMode;
+			}, [](const TracePass& d, mythril::RayTracingCmd& cmd) {
+				cmd.cmdBindRayTracingPipeline(d.pipeline);
+				const mythril::ResolvedTexture tracedOutput = cmd.texture(d.output);
+				const mythril::GPU::ShadowPushConstant push = {
+					.frame = d.frame,
+					// points toward the light, closestHitMain dots it with the surface normal
+					.lightDir = glm::vec4(1.5, 2.0, 1.0, 0),
+					.vertices = d.vertices,
+					.indices = d.indices,
+					.outTexture = tracedOutput.index(),
+					.tlas = d.tlas,
+					.enableShadows = static_cast<uint32_t>(true),
+					.debugMode = d.debugMode
+				};
+				cmd.cmdPushConstants(push);
+				// must match the output texture, out of bounds image stores are not discarded without robustness
+				cmd.cmdTraceRays({tracedOutput.dimensions.width, tracedOutput.dimensions.height, 1});
+			});
+			graph.addTransferPass("present", [&](mythril::TransferBuilder& b) {
+				b.blit(traced, graph.backBuffer());
+			});
+		};
 
 		bool focused = false;
 		SDL_SetWindowRelativeMouseMode(sdlWindow, focused);
@@ -430,7 +454,10 @@ int main() {
 				.projInverse = glm::inverse(calculateProjectionMatrix(camera)),
 			};
 
-			graph.executeEXT(*ctx);
+			graph.reset();
+			buildGraph();
+			graph.compile(*ctx);
+			graph.execute(*ctx);
 		}
 	}
 	DestroySDLWindow(sdlWindow);

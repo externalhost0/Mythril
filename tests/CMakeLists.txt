@@ -38,6 +38,7 @@ add_executable(mythril_tests
         test_buffer_barriers.cpp
         test_buffer_tracking.cpp
         test_graph_textures.cpp
+        test_graph_schedule.cpp
         test_texture_usage.cpp
 )
 target_include_directories(mythril_tests PRIVATE "${_gen_dir}" "${mythril_SOURCE_DIR}/lib")

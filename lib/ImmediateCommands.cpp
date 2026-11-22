@@ -6,6 +6,7 @@
 #include "mythril/CTX.h"
 #include "Logger.h"
 #include "vkinfo.h"
+#include "vkutil.h"
 #include "mythril/CPUProfiler.h"
 
 namespace mythril {
@@ -25,6 +26,7 @@ namespace mythril {
 		    .queueFamilyIndex = queueFamilyIndex,
 		};
 		VK_CHECK(vkCreateCommandPool(device, &command_pool_ci, nullptr, &_vkCommandPool));
+		_timeline = vkutil::CreateTimelineSemaphore(device, 0);
 
 		// create command buffers
 		const VkCommandBufferAllocateInfo command_buffer_ai = {
@@ -60,6 +62,7 @@ namespace mythril {
 			vkDestroySemaphore(_vkDevice, buf._semaphore, nullptr);
 		}
 		vkDestroyCommandPool(_vkDevice, _vkCommandPool, nullptr);
+		vkDestroySemaphore(_vkDevice, _timeline, nullptr);
 	}
 	const detail::CommandBufferWrapper& ImmediateCommands::acquire() {
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_ACQUIRE);
@@ -178,22 +181,23 @@ namespace mythril {
 		ASSERT_MSG(wrapper._isEncoding, "Command buffer must be encoding!");
 		VK_CHECK(vkEndCommandBuffer(wrapper._cmdBuf));
 
-		VkSemaphoreSubmitInfo waitSemaphores[] = {{}, {}};
+		std::array<VkSemaphoreSubmitInfo, 2 + std::tuple_size_v<decltype(_timelineWaits)>> waitSemaphores{};
 		uint32_t numWaitSemaphores = 0;
+		for (uint32_t i = 0; i < _numTimelineWaits; ++i)
+			waitSemaphores[numWaitSemaphores++] = _timelineWaits[i];
 		if (_waitSemaphore.semaphore) {
 			waitSemaphores[numWaitSemaphores++] = _waitSemaphore;
 		}
 		if (_lastSubmitSemaphore.semaphore) {
 			waitSemaphores[numWaitSemaphores++] = _lastSubmitSemaphore;
 		}
-		VkSemaphoreSubmitInfo signalSemaphores[] = {
+		std::array<VkSemaphoreSubmitInfo, 2 + std::tuple_size_v<decltype(_signals)>> signalSemaphores = {
 		    VkSemaphoreSubmitInfo{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO, .semaphore = wrapper._semaphore, .stageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT},
-		    {},
+		    VkSemaphoreSubmitInfo{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO, .semaphore = _timeline, .value = _timelineValue + 1, .stageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT},
 		};
-		uint32_t numSignalSemaphores = 1;
-		if (_signalSemaphore.semaphore) {
-			signalSemaphores[numSignalSemaphores++] = _signalSemaphore;
-		}
+		uint32_t numSignalSemaphores = 2;
+		for (uint32_t i = 0; i < _numSignals; ++i)
+			signalSemaphores[numSignalSemaphores++] = _signals[i];
 
 		const VkCommandBufferSubmitInfo command_buffer_si = {
 		    .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
@@ -202,18 +206,20 @@ namespace mythril {
 		const VkSubmitInfo2 si = {
 		    .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
 		    .waitSemaphoreInfoCount = numWaitSemaphores,
-		    .pWaitSemaphoreInfos = waitSemaphores,
+		    .pWaitSemaphoreInfos = waitSemaphores.data(),
 		    .commandBufferInfoCount = 1u,
 		    .pCommandBufferInfos = &command_buffer_si,
 		    .signalSemaphoreInfoCount = numSignalSemaphores,
-		    .pSignalSemaphoreInfos = signalSemaphores,
+		    .pSignalSemaphoreInfos = signalSemaphores.data(),
 		};
 		VK_CHECK(vkQueueSubmit2(_vkQueue, 1u, &si, wrapper._fence));
 
+		++_timelineValue;
+		_numTimelineWaits = 0;
 		_lastSubmitSemaphore.semaphore = wrapper._semaphore;
 		_lastSubmitHandle = wrapper._handle;
 		_waitSemaphore.semaphore = VK_NULL_HANDLE;
-		_signalSemaphore.semaphore = VK_NULL_HANDLE;
+		_numSignals = 0;
 
 		// reset
 		const_cast<detail::CommandBufferWrapper&>(wrapper)._isEncoding = false;
@@ -230,9 +236,19 @@ namespace mythril {
 		_waitSemaphore.semaphore = semaphore;
 	}
 	void ImmediateCommands::signalSemaphore(VkSemaphore semaphore, uint64_t signalValue) {
-		ASSERT_MSG(_signalSemaphore.semaphore == VK_NULL_HANDLE, "Signal semaphore has already been set!");
-		_signalSemaphore.semaphore = semaphore;
-		_signalSemaphore.value = signalValue;
+		ASSERT_MSG(_numSignals < _signals.size(), "Too many signal semaphores on one submit.");
+		_signals[_numSignals++] = {.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO, .semaphore = semaphore, .value = signalValue, .stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT};
+	}
+	void ImmediateCommands::waitTimeline(VkSemaphore semaphore, const uint64_t value, const VkPipelineStageFlags2 stageMask) {
+		for (uint32_t i = 0; i < _numTimelineWaits; ++i) {
+			if (_timelineWaits[i].semaphore == semaphore) {
+				_timelineWaits[i].value = std::max(_timelineWaits[i].value, value);
+				_timelineWaits[i].stageMask |= stageMask;
+				return;
+			}
+		}
+		ASSERT_MSG(_numTimelineWaits < _timelineWaits.size(), "Too many timeline waits on one submit.");
+		_timelineWaits[_numTimelineWaits++] = {.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO, .semaphore = semaphore, .value = value, .stageMask = stageMask};
 	}
 	VkFence ImmediateCommands::getVkFence(SubmitHandle handle) const {
 		if (handle.empty()) {

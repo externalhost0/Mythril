@@ -479,62 +479,90 @@ int main() {
 		mythril::RenderGraph graph;
 		const mythril::GraphTexture rgColorTarget = graph.createTexture({.size = mythril::RelativeSize{}, .format = VK_FORMAT_R8G8B8A8_UNORM, .debugName = "Color Texture"});
 		const mythril::GraphTexture rgDepthTarget = graph.createTexture({.size = mythril::RelativeSize{}, .format = VK_FORMAT_D32_SFLOAT_S8_UINT, .debugName = "Depth Texture"});
-		graph.addIntermediate("per_frame_uploads")
-		.update(objectDataBuf, [&] { return mythril::UploadData{objects, sizeof(objects)}; })
-		.update(perFrameDataBuffer, [&] { return mythril::UploadData{&frameData, sizeof(frameData)}; })
-		.update(perMaterialDataBuffer, [&] { return mythril::UploadData{&matData, sizeof(matData)}; })
-		.finish();
+		const mythril::GraphBuffer rgCubeVertices = graph.importBuffer(cubeVertexBuffer);
+		const mythril::GraphBuffer rgCubeIndices = graph.importBuffer(cubeIndexBuffer);
+		const mythril::GraphBuffer rgObjectData = graph.importBuffer(objectDataBuf);
+		const mythril::GraphBuffer rgPerFrameData = graph.importBuffer(perFrameDataBuffer);
+		const mythril::GraphBuffer rgPerMaterialData = graph.importBuffer(perMaterialDataBuffer);
 
-		graph.addGraphicsPass("geometry")
-		.attachment({
-			.texDesc = rgColorTarget,
-			.clearValue = mythril::ClearValue::color(0.2f, 0.2f, 0.2f, 1.f),
-			.loadOp = mythril::LoadOp::CLEAR,
-			.storeOp = mythril::StoreOp::STORE
-		})
-		.attachment({
-			.texDesc = rgDepthTarget,
-			.clearValue = mythril::ClearValue::depth(1.f, 0),
-			.loadOp = mythril::LoadOp::CLEAR,
-		})
-		.dependency(objectDataBuf, mythril::BufferAccess::ShaderRead)
-		.dependency(perFrameDataBuffer, mythril::BufferAccess::ShaderRead)
-		.dependency(perMaterialDataBuffer, mythril::BufferAccess::ShaderRead)
-		.execute([&](mythril::CommandBuffer& cmd) {
-			cmd.cmdBindGraphicsPipeline(mainPipeline);
-			cmd.cmdBindDepthState({mythril::CompareOp::LessEqual, true});
+		struct GeometryPass {
+			mythril::GraphicsPipelineHandle pipeline;
+			mythril::BufferHandle indexBuffer;
+			uint32_t indexCount = 0;
+			glm::mat4 model{};
+			VkDeviceAddress vertices = 0;
+			VkDeviceAddress perFrame = 0;
+			VkDeviceAddress perMaterial = 0;
+		};
+		const auto buildGraph = [&] {
+			mythril::GraphBuffer objectData = rgObjectData;
+			mythril::GraphBuffer perFrameData = rgPerFrameData;
+			mythril::GraphBuffer perMaterialData = rgPerMaterialData;
+			graph.addTransferPass("per_frame_uploads", [&](mythril::TransferBuilder& b) {
+				objectData = b.update(objectData, objects);
+				perFrameData = b.update(perFrameData, frameData);
+				perMaterialData = b.update(perMaterialData, matData);
+			});
 
-			const auto currentTime = std::chrono::high_resolution_clock::now();
-			const float time = std::chrono::duration<float>(currentTime - startTime).count();
-			// rotating cube!
-			glm::mat4 modelmatrix = glm::rotate(glm::mat4(1.0f), time, glm::vec3(0.0f, 1.0f, 0.0f));
-			modelmatrix = glm::rotate(modelmatrix, time * 0.5f, glm::vec3(1.0f, 0.0f, 0.0f));
-			const mythril::GPU::GeometryPushConstant push {
-				.model =  modelmatrix,
-				.vertexBufferAddress = ctx->gpuAddress(cubeVertexBuffer),
-				.perFrame = ctx->gpuAddress(perFrameDataBuffer),
-				.perMaterial = ctx->gpuAddress(perMaterialDataBuffer)
-			};
-			cmd.cmdPushConstants(push);
-			cmd.cmdBindIndexBuffer(cubeIndexBuffer);
-			cmd.cmdDrawIndexed(cubeIndices.size(), kNumObjects);
-		});
+			mythril::GraphTexture color = rgColorTarget;
+			graph.addGraphicsPass<GeometryPass>("geometry", [&](mythril::GraphicsPassBuilder& b, GeometryPass& d) {
+				color = b.attachment({
+					.texDesc = color,
+					.clearValue = mythril::ClearValue::color(0.2f, 0.2f, 0.2f, 1.f),
+					.loadOp = mythril::LoadOp::CLEAR,
+					.storeOp = mythril::StoreOp::STORE
+				}).texture;
+				b.attachment({
+					.texDesc = rgDepthTarget,
+					.clearValue = mythril::ClearValue::depth(1.f, 0),
+					.loadOp = mythril::LoadOp::CLEAR,
+				});
+				b.dependency(rgCubeVertices, mythril::BufferAccess::ShaderRead);
+				b.dependency(rgCubeIndices, mythril::BufferAccess::IndexRead);
+				b.dependency(objectData, mythril::BufferAccess::ShaderRead);
+				b.dependency(perFrameData, mythril::BufferAccess::ShaderRead);
+				b.dependency(perMaterialData, mythril::BufferAccess::ShaderRead);
 
-		graph.addGraphicsPass("gui")
-		.attachment({
-			.texDesc = {rgColorTarget},
-			.loadOp = mythril::LoadOp::LOAD,
-			.storeOp = mythril::StoreOp::STORE
-		})
-		.execute([&](mythril::CommandBuffer& cmd) {
-			cmd.cmdDrawImGui();
-		});
+				const auto currentTime = std::chrono::high_resolution_clock::now();
+				const float time = std::chrono::duration<float>(currentTime - startTime).count();
+				// rotating cube!
+				glm::mat4 modelmatrix = glm::rotate(glm::mat4(1.0f), time, glm::vec3(0.0f, 1.0f, 0.0f));
+				modelmatrix = glm::rotate(modelmatrix, time * 0.5f, glm::vec3(1.0f, 0.0f, 0.0f));
+				d.pipeline = mainPipeline.handle();
+				d.indexBuffer = cubeIndexBuffer.handle();
+				d.indexCount = static_cast<uint32_t>(cubeIndices.size());
+				d.model = modelmatrix;
+				d.vertices = ctx->gpuAddress(cubeVertexBuffer);
+				d.perFrame = ctx->gpuAddress(perFrameDataBuffer);
+				d.perMaterial = ctx->gpuAddress(perMaterialDataBuffer);
+			}, [](const GeometryPass& d, mythril::GraphicsCmd& cmd) {
+				cmd.cmdBindGraphicsPipeline(d.pipeline);
+				cmd.cmdBindDepthState({mythril::CompareOp::LessEqual, true});
+				const mythril::GPU::GeometryPushConstant push {
+					.model = d.model,
+					.vertexBufferAddress = d.vertices,
+					.perFrame = d.perFrame,
+					.perMaterial = d.perMaterial
+				};
+				cmd.cmdPushConstants(push);
+				cmd.cmdBindIndexBuffer(d.indexBuffer);
+				cmd.cmdDrawIndexed(d.indexCount, kNumObjects);
+			});
 
-		graph.addIntermediate("presentation")
-		.blit(rgColorTarget, graph.backBuffer())
-		.finish();
+			graph.addGraphicsPass("gui", [&](mythril::GraphicsPassBuilder& b, mythril::NoPassData&) {
+				color = b.attachment({
+					.texDesc = color,
+					.loadOp = mythril::LoadOp::LOAD,
+					.storeOp = mythril::StoreOp::STORE
+				}).texture;
+			}, [](const mythril::NoPassData&, mythril::GraphicsCmd& cmd) {
+				cmd.cmdDrawImGui();
+			});
 
-		graph.compile(*ctx);
+			graph.addTransferPass("presentation", [&](mythril::TransferBuilder& b) {
+				b.blit(color, graph.backBuffer());
+			});
+		};
 
 		std::srand(std::time(nullptr));
 		bool quit = false;
@@ -626,9 +654,10 @@ int main() {
 				.time = time
 			};
 
-			mythril::CommandBuffer& cmd = ctx->acquireCommand(mythril::CommandBuffer::Type::Graphics);
-			graph.execute(cmd);
-			ctx->submitCommand(cmd);
+			graph.reset();
+			buildGraph();
+			graph.compile(*ctx);
+			graph.execute(*ctx);
 		}
 	}
 	DestroySDLWindow(sdlWindow);

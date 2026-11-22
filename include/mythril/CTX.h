@@ -14,6 +14,7 @@
 #include "Specs.h"
 #include "SwapchainSpec.h"
 
+#include <array>
 #include <deque>
 #include <filesystem>
 #include <future>
@@ -84,13 +85,15 @@ namespace mythril {
 		bool isSwapchainDirty() const;
 		const TextureHandle& getCurrentSwapchainTexHandle() const;
 		Dimensions getSwapchainDimensions() const;
+		uint64_t getCurrentFrameNumber() const { return _currentFrameNumber; }
+		VkDevice getVkDevice() const { return _vkDevice; }
 
 		const Texture& getNullTexture() const { return this->_dummyTexture; }
 
 		Buffer createBuffer(BufferSpec spec);
 		void resizeBuffer(BufferHandle handle, size_t newSize);
 		Texture createTexture(TextureSpec spec);
-		void resizeTexture(TextureHandle handle, Dimensions newDimensions);
+		void resizeTextureEXT(TextureHandle handle, Dimensions newDimensions);
 		Dimensions getTextureDimensions(TextureHandle handle) const;
 		bool isSwapchainTexture(TextureHandle handle) const;
 
@@ -100,7 +103,7 @@ namespace mythril {
 		TextureHandle getTextureViewHandle(TextureHandle handle, TextureViewKey key) const;
 		Sampler createSampler(SamplerSpec spec);
 		QueryPool createQueryPool(const QueryPoolSpec& spec);
-		// host reset, caller guarantees the queries are not in flight (true for frame N - kNUM_FRAMES_IN_FLIGHT after acquiring a graphics command)
+		// host reset, caller guarantees the queries are not in flight (true for frame N - kNUM_FRAMES_IN_FLIGHT inside a render graph callback)
 		void resetQueryPool(QueryPoolHandle handle, uint32_t first, uint32_t count) const;
 		// non-blocking, returns false if any query in range is unavailable, values are ticks masked to timestampValidBits
 		bool getQueryPoolResults(QueryPoolHandle handle, uint32_t first, std::span<uint64_t> outTicks) const;
@@ -152,9 +155,6 @@ namespace mythril {
 		const VkPhysicalDeviceVulkan12Properties& getPhysicalDeviceProperties12() const { return _propertiesVulkan.props12; }
 		const VkPhysicalDeviceVulkan13Properties& getPhysicalDeviceProperties13() const { return _propertiesVulkan.props13; }
 
-		// temp for now, for samples
-		[[nodiscard]] CommandBuffer& acquireCommand(CommandBuffer::Type type);
-		SubmitHandle submitCommand(CommandBuffer& cmd);
 		void waitIdle() const;
 
 		// literally just for our node editor for now, experimental
@@ -215,6 +215,20 @@ namespace mythril {
 		VkPipeline buildRayTracingPipelineImpl(VkPipelineLayout layout, RayTracingPipelineSpec& spec);
 
 
+		struct QueueFamilies {
+			std::array<uint32_t, kQueueCount> indices{};
+			uint32_t count = 0;
+		};
+		// distinct families of the queues in use, with more than one buffers and sampled-only images are concurrent
+		QueueFamilies queueFamiliesInUse() const;
+		// attachments and storage images stay exclusive across families so they keep compression, the graph transfers their ownership
+		static bool NeedsOwnershipTransfer(VkImageUsageFlags usage) {
+			return usage & (
+				VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+				VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
+				VK_IMAGE_USAGE_STORAGE_BIT);
+		}
+
 		// because they are big functions :(
 		detail::AllocatedBuffer createBufferImpl(VkDeviceSize bufferSize, VkBufferUsageFlags usageFlags, VkMemoryPropertyFlags memFlags);
 		detail::AllocatedTexture createTextureImpl(
@@ -228,7 +242,8 @@ namespace mythril {
 		        uint32_t numLayers,
 		        VkSampleCountFlagBits sampleCountFlagBits,
 		        VkComponentMapping componentMapping,
-		        VkImageCreateFlags createFlags = 0
+		        VkImageCreateFlags createFlags = 0,
+		        bool requestConcurrent = false
 		);
 
 		detail::AllocatedAccelerationStructure createTLASImpl(const AccelerationStructureSpec& spec);
@@ -239,6 +254,12 @@ namespace mythril {
 		void writeTextureDescriptorsImpl(uint32_t first, uint32_t count);
 		void writeSamplerDescriptorsImpl(uint32_t first, uint32_t count);
 		void growBindlessDescriptorPoolImpl(uint32_t newMaxSamplerCount, uint32_t newMaxTextureCount);
+
+		// one frame, driven by RenderGraph::execute, nullptr when the swapchain is out of date
+		[[nodiscard]] CommandBuffer* acquireCommand(bool presents);
+		SubmitHandle submitCommand(CommandBuffer& cmd, bool presents);
+
+		void waitForGraphUse(const detail::AllocatedBuffer& buffer) const;
 
 		// pack tasks
 		void deferTask(std::packaged_task<void()>&& task, SubmitHandle handle = SubmitHandle()) const;
@@ -300,8 +321,6 @@ namespace mythril {
 	private:
 		// my stuff //
 		uint64_t _currentFrameNumber = 0;
-		// bumped whenever graph-relevant resource topology changes (texture resize, swapchain recreate/destroy)
-		uint64_t _resourceEpoch = 0;
 		std::unique_ptr<ImmediateCommands> _immGraphics = nullptr;
 		// both are nullptr when we fail to get a distinct family during setup
 		std::unique_ptr<ImmediateCommands> _immAsyncCompute = nullptr;
@@ -340,7 +359,7 @@ namespace mythril {
 
 		friend class RenderGraph;
 		friend class CommandBuffer;
-		friend class IntermediateBuilder;
+		friend class TransferBuilder;
 		friend class StagingDevice;
 		friend class Swapchain;
 		friend class CTXBuilder;

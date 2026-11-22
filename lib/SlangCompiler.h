@@ -6,6 +6,8 @@
 #include <slang/slang-com-ptr.h>
 #include <slang/slang.h>
 
+#include "mythril/Shader.h"
+
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -29,6 +31,8 @@ namespace mythril {
 
 		friend class SlangCompiler;
 	};
+
+	std::vector<PushResourceField> CollectPushResources(slang::ProgramLayout* layout);
 
 	class SlangCompiler {
 	public:

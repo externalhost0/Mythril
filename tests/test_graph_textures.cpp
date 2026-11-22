@@ -40,9 +40,9 @@ namespace {
 		return 0;
 	}
 
-	using InferFn = Realization (*)(Dimensions, const TextureUses&, bool, bool);
+	using InferFn = Realization (*)(Dimensions, const TextureUses&, bool);
 
-	std::vector<std::string> check(InferFn infer, uint32_t subset, VkFormat format, bool exported) {
+	std::vector<std::string> check(InferFn infer, uint32_t subset, VkFormat format) {
 		const GraphTextureSpec spec = {.size = Dimensions{64, 32}, .format = format};
 		TextureUses uses;
 		VkImageUsageFlags required = 0;
@@ -57,11 +57,9 @@ namespace {
 			uses.addAttachment();
 			required |= attachmentBit;
 		}
-		if (exported)
-			required |= VK_IMAGE_USAGE_SAMPLED_BIT;
 
-		const Realization realization = infer(std::get<Dimensions>(spec.size), uses, exported, false);
-		const Realization confinedRealization = infer(std::get<Dimensions>(spec.size), uses, exported, true);
+		const Realization realization = infer(std::get<Dimensions>(spec.size), uses, false);
+		const Realization confinedRealization = infer(std::get<Dimensions>(spec.size), uses, true);
 		const TextureSpec created = ToTextureSpec(spec, realization);
 		std::vector<std::string> failures;
 		if (confinedRealization.usage != realization.usage || confinedRealization.dimensions != realization.dimensions)
@@ -94,31 +92,31 @@ namespace {
 		size_t checked = 0;
 		for (uint32_t subset = 0; subset < kUseSubsets; ++subset) {
 			for (const VkFormat format: kFormats) {
-				for (const bool exported: {false, true}) {
-					++checked;
-					const std::vector<std::string> failures = check(infer, subset, format, exported);
-					if (failures.empty())
-						continue;
-					if (allFailures) {
-						allFailures->insert(allFailures->end(), failures.begin(), failures.end());
-						continue;
-					}
-					std::string all;
-					for (const std::string& failure: failures)
-						all += "\n  " + failure;
-					FAIL_CHECK("subset " << subset << " format " << string_VkFormat(format) << " exported " << exported << all);
+				++checked;
+				const std::vector<std::string> failures = check(infer, subset, format);
+				if (failures.empty())
+					continue;
+				if (allFailures) {
+					allFailures->insert(allFailures->end(), failures.begin(), failures.end());
+					continue;
 				}
+				std::string all;
+				for (const std::string& failure: failures)
+					all += "\n  " + failure;
+				FAIL_CHECK("subset " << subset << " format " << string_VkFormat(format) << all);
 			}
 		}
 		return checked;
 	}
 
 	namespace known_bad {
-		Realization superset(const Dimensions dimensions, const TextureUses&, bool, bool) {
+		Realization superset(const Dimensions dimensions, const TextureUses&, bool) {
 			return {.dimensions = dimensions, .usage = TextureUsageBits_Attachment | TextureUsageBits_Sampled | TextureUsageBits_Storage};
 		}
-		Realization exportNotSampled(const Dimensions dimensions, const TextureUses& uses, bool, const bool confined) {
-			return InferRealization(dimensions, uses, false, confined);
+		Realization sampledDropped(const Dimensions dimensions, const TextureUses& uses, const bool confined) {
+			Realization realization = InferRealization(dimensions, uses, confined);
+			realization.usage &= ~TextureUsageBits_Sampled;
+			return realization;
 		}
 	}
 
@@ -130,36 +128,46 @@ namespace {
 }
 
 TEST_CASE("inferred graph texture usage covers every declared access and nothing else") {
-	CHECK(checkEverySubset(InferRealization) == kUseSubsets * std::size(kFormats) * 2);
+	CHECK(checkEverySubset(InferRealization) == kUseSubsets * std::size(kFormats));
 }
 
 TEST_CASE("usage checker catches hand picked and dropped usage") {
 	CHECK(anyFailureContains(known_bad::superset, "unjustified VK_IMAGE_USAGE_STORAGE_BIT"));
-	CHECK(anyFailureContains(known_bad::exportNotSampled, "missing VK_IMAGE_USAGE_SAMPLED_BIT"));
+	CHECK(anyFailureContains(known_bad::sampledDropped, "missing VK_IMAGE_USAGE_SAMPLED_BIT"));
 }
 
-TEST_CASE("an exported texture keeps its last writer alive with no reader in the graph") {
+TEST_CASE("culling keeps every write the graph cannot see and drops unread declared writes") {
+	const GraphBuffer buffer = GraphBufferAccess::make(0);
+	std::vector<GraphResource> textures(2);
+	textures[0].source = DeclaredTexture{.spec = {.size = Dimensions{16, 16}, .format = VK_FORMAT_R8G8B8A8_UNORM}};
+	textures[1].source = ImportedTexture{};
 	RenderGraph graph;
-	const GraphTexture preview = graph.createTexture({.size = Dimensions{16, 16}, .format = VK_FORMAT_D16_UNORM, .debugName = "preview"});
+	const GraphTexture declared = graph.createTexture({.size = Dimensions{16, 16}, .format = VK_FORMAT_R8G8B8A8_UNORM, .debugName = "declared"});
 	const GraphTexture backBuffer = graph.backBuffer();
 
-	std::vector<PassDesc> passes(2);
-	passes[0].name = "writes preview";
-	passes[0].type = PassDesc::Type::Graphics;
-	passes[0].attachmentOperations.push_back({.texDesc = preview});
-	passes[1].name = "writes back buffer";
-	passes[1].type = PassDesc::Type::Graphics;
-	passes[1].attachmentOperations.push_back({.texDesc = backBuffer});
-	const std::vector<uint32_t> order = {0, 1};
-	const std::vector<std::unordered_set<uint32_t>> predecessors(2);
+	std::vector<PassDesc> passes(6);
+	for (PassDesc& pass: passes)
+		pass.type = PassDesc::Type::Compute;
+	passes[0].name = "writes declared, read by the buffer writer";
+	passes[0].textureDependencyOperations.emplace_back(declared, TextureAccess::StorageWrite);
+	passes[1].name = "writes buffer";
+	passes[1].textureDependencyOperations.emplace_back(declared, TextureAccess::StorageRead);
+	passes[1].bufferDependencyOperations.push_back({buffer, {}, BufferAccess::ShaderWrite});
+	passes[2].name = "writes import";
+	passes[2].textureDependencyOperations.emplace_back(backBuffer, TextureAccess::StorageWrite);
+	passes[3].name = "side effect";
+	passes[3].sideEffect = true;
+	passes[4].name = "only reads buffer";
+	passes[4].bufferDependencyOperations.push_back({buffer, {}, BufferAccess::ShaderRead});
+	passes[5].name = "writes declared, never read";
+	passes[5].textureDependencyOperations.emplace_back(declared, TextureAccess::StorageWrite);
 
-	for (const bool exported: {false, true}) {
-		std::vector<GraphResource> textures(2);
-		textures[0].source = DeclaredTexture{.spec = {.size = Dimensions{16, 16}, .format = VK_FORMAT_D16_UNORM}, .exported = exported};
-		textures[1].source = SwapchainTexture{};
-		const std::vector<uint32_t> kept = cull_unused_passes(order, predecessors, passes, textures);
-		CHECK_MESSAGE(kept == (exported ? std::vector<uint32_t>{0, 1} : std::vector<uint32_t>{1}), "exported " << exported);
-	}
+	std::vector<std::unordered_set<uint32_t>> predecessors(passes.size());
+	predecessors[1] = {0};
+	predecessors[4] = {1};
+	predecessors[5] = {1};
+	const std::vector<uint32_t> order = {0, 1, 2, 3, 4, 5};
+	CHECK(cull_unused_passes(order, predecessors, passes, textures) == std::vector<uint32_t>{0, 1, 2, 3});
 }
 
 TEST_CASE("relative sizes floor each axis and never reach zero") {
@@ -268,8 +276,7 @@ TEST_CASE("only an attachment-only confined texture is inferred memoryless") {
 	TextureUses sampled = attachmentOnly;
 	sampled.add(TextureAccess::Sampled);
 	constexpr Dimensions kSize{16, 16};
-	CHECK(InferRealization(kSize, attachmentOnly, false, true).storage == StorageType::Memoryless);
-	CHECK(InferRealization(kSize, attachmentOnly, false, false).storage == StorageType::Device);
-	CHECK(InferRealization(kSize, attachmentOnly, true, true).storage == StorageType::Device);
-	CHECK(InferRealization(kSize, sampled, false, true).storage == StorageType::Device);
+	CHECK(InferRealization(kSize, attachmentOnly, true).storage == StorageType::Memoryless);
+	CHECK(InferRealization(kSize, attachmentOnly, false).storage == StorageType::Device);
+	CHECK(InferRealization(kSize, sampled, true).storage == StorageType::Device);
 }

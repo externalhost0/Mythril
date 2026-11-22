@@ -42,6 +42,8 @@ namespace mythril {
 		};
 		std::vector<StagedBufferCopy> stageBufferCopy(detail::AllocatedBuffer& buffer, const void* data, size_t size, size_t dstOffset);
 		void recordBufferCopies(VkCommandBuffer cmd, std::span<const StagedBufferCopy> copies);
+		VkDeviceSize stageContiguous(const void* data, size_t size);
+		VkBuffer getStagingVkBuffer() const;
 		void onGraphSubmit(SubmitHandle submit);
 		void resetPending();
 		void

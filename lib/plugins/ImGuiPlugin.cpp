@@ -2,6 +2,7 @@
 // Created by Hayden Rivas on 10/11/25.
 //
 #include "../HandleAccess.h"
+#include "../RenderGraphInternal.h"
 #include "mythril/Plugins.h"
 
 #include <array>
@@ -230,5 +231,10 @@ namespace ImGui {
 	}
 	void Image(const mythril::Texture& texture, const mythril::Sampler& sampler, const ImVec2& image_size, const ImVec2& uv0, const ImVec2& uv1) {
 		Image(texture.handle(), sampler.handle(), image_size, uv0, uv1);
+	}
+	void Image(const mythril::GraphTexture texture, const ImVec2& image_size, const ImVec2& uv0, const ImVec2& uv1) {
+		ASSERT_MSG(texture.valid(), "ImGui::Image called with an invalid GraphTexture.");
+		ASSERT_MSG(image_size.x > 0 && image_size.y > 0, "ImGui::Image(GraphTexture) needs a size, the image is not known until the graph records.");
+		ImGui::Image(static_cast<ImTextureID>(mythril::kImGuiGraphTextureTag | mythril::GraphTextureAccess::index(texture)), image_size, uv0, uv1);
 	}
 } // namespace ImGui

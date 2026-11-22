@@ -42,18 +42,18 @@ int main() {
 
 
 		mythril::RenderGraph graph;
-		graph.addGraphicsPass("main")
-		.attachment({
-			.texDesc = graph.backBuffer(),
-			.clearValue = mythril::ClearValue::color(1.f, 0.f, 0.f, 1.f),
-			.loadOp = mythril::LoadOp::CLEAR,
-			.storeOp = mythril::StoreOp::STORE
-		})
-		.execute([&](mythril::CommandBuffer& cmd) {
-			// do absolutely nothing, just begin and end a pass
-		});
-
-		graph.compile(*ctx);
+		const auto buildGraph = [&] {
+			graph.addGraphicsPass("main", [&](mythril::GraphicsPassBuilder& b, mythril::NoPassData&) {
+				b.attachment({
+					.texDesc = graph.backBuffer(),
+					.clearValue = mythril::ClearValue::color(1.f, 0.f, 0.f, 1.f),
+					.loadOp = mythril::LoadOp::CLEAR,
+					.storeOp = mythril::StoreOp::STORE
+				});
+			}, [](const mythril::NoPassData&, mythril::GraphicsCmd&) {
+				// do absolutely nothing, just begin and end a pass
+			});
+		};
 
 		bool quit = false;
 		while(!quit) {
@@ -62,9 +62,10 @@ int main() {
 				if (e.type == SDL_EVENT_QUIT) quit = true;
 			}
 
-			mythril::CommandBuffer& cmd = ctx->acquireCommand(mythril::CommandBuffer::Type::Graphics);
-			graph.execute(cmd);
-			ctx->submitCommand(cmd);
+			graph.reset();
+			buildGraph();
+			graph.compile(*ctx);
+			graph.execute(*ctx);
 		}
 	}
 	DestroySDLWindow(sdlWindow);

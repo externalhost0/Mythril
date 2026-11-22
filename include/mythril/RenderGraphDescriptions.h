@@ -6,8 +6,9 @@
 
 #include "Objects.h"
 
-#include <functional>
+#include <cstddef>
 #include <optional>
+#include <span>
 #include <string>
 #include <variant>
 #include <vector>
@@ -67,7 +68,8 @@ namespace mythril {
 
 	class RenderGraph;
 	struct GraphTextureAccess;
-	// a texture as one RenderGraph knows it, only the graph can mint a valid one
+	struct GraphBufferAccess;
+	// one version of a texture as one RenderGraph knows it, a pass that writes it returns the next version
 	class GraphTexture {
 	public:
 		constexpr GraphTexture() = default;
@@ -75,10 +77,25 @@ namespace mythril {
 		constexpr bool operator==(const GraphTexture&) const = default;
 	private:
 		static constexpr uint32_t kInvalid = UINT32_MAX;
-		explicit constexpr GraphTexture(uint32_t index) : _index(index) {}
+		explicit constexpr GraphTexture(uint32_t index, uint32_t version = 0) : _index(index), _version(version) {}
 		uint32_t _index = kInvalid;
+		uint32_t _version = 0;
 		friend class RenderGraph;
 		friend struct GraphTextureAccess;
+	};
+	// one version of a buffer imported into a RenderGraph, a pass that writes it returns the next version
+	class GraphBuffer {
+	public:
+		constexpr GraphBuffer() = default;
+		constexpr bool valid() const { return _index != kInvalid; }
+		constexpr bool operator==(const GraphBuffer&) const = default;
+	private:
+		static constexpr uint32_t kInvalid = UINT32_MAX;
+		explicit constexpr GraphBuffer(uint32_t index, uint32_t version = 0) : _index(index), _version(version) {}
+		uint32_t _index = kInvalid;
+		uint32_t _version = 0;
+		friend class RenderGraph;
+		friend struct GraphBufferAccess;
 	};
 
 	class GraphExtent {
@@ -108,7 +125,7 @@ namespace mythril {
 		std::string debugName = "Unnamed Graph Texture";
 	};
 
-	// what CommandBuffer::texture returns, valid for the pass being recorded including the dry run
+	// what CommandBuffer::texture returns, valid for the pass being recorded
 	struct ResolvedTexture {
 		TextureHandle handle;
 		Dimensions dimensions;
@@ -133,6 +150,11 @@ namespace mythril {
 		StoreOp storeOp = StoreOp::DONT_CARE;
 		std::optional<TextureDesc> resolveTexDesc;
 	};
+	// the versions an attachment writes, resolve is invalid without a resolve target
+	struct AttachmentOutput {
+		GraphTexture texture;
+		GraphTexture resolve;
+	};
 	enum class TextureAccess : uint8_t {
 		Sampled,
 		StorageRead,
@@ -156,14 +178,11 @@ namespace mythril {
 		TextureAccess access = TextureAccess::Sampled;
 	};
 	struct BufferDependencyDesc {
-		Buffer& buffer;
+		GraphBuffer buffer;
+		BufferHandle handle;
 		BufferAccess access = BufferAccess::ShaderRead;
 	};
 
-	struct UploadData {
-		const void* data = nullptr;
-		size_t size = 0;
-	};
 	struct CopyOp {
 		GraphTexture src;
 		GraphTexture dst;
@@ -172,38 +191,74 @@ namespace mythril {
 		GraphTexture src;
 		GraphTexture dst;
 	};
+	// bytes live in the graph's per-frame arena
 	struct UpdateOp {
 		BufferHandle dst;
 		size_t dstOffset = 0;
-		std::function<UploadData()> dataCb;
+		std::span<const std::byte> bytes;
 	};
 	struct UploadOp {
 		BufferHandle dst;
 		size_t dstOffset = 0;
-		std::function<UploadData()> dataCb;
+		std::span<const std::byte> bytes;
 	};
-	using IntermediateOp = std::variant<CopyOp, BlitOp, UpdateOp, UploadOp>;
+	struct BufferCopyOp {
+		BufferHandle src;
+		BufferHandle dst;
+	};
+	struct ReadbackOp {
+		TextureDesc src;
+		BufferHandle dst;
+	};
+	struct GenerateMipsOp {
+		GraphTexture texture;
+	};
+	struct ImageUploadOp {
+		TextureDesc dst;
+		std::span<const std::byte> bytes;
+	};
+	using TransferOp = std::variant<CopyOp, BlitOp, UpdateOp, UploadOp, BufferCopyOp, ReadbackOp, GenerateMipsOp, ImageUploadOp>;
+
+	// sync with work outside the graph (OpenXR, video, CUDA, another process), pass it on import every frame
+	struct ExternalAccess {
+		// the first batch that uses the resource waits on it
+		VkSemaphore waitSemaphore = VK_NULL_HANDLE;
+		uint64_t waitValue = 0;
+		// the last batch that uses the resource signals it
+		VkSemaphore signalSemaphore = VK_NULL_HANDLE;
+		uint64_t signalValue = 0;
+		// textures only, UNDEFINED on entry drops the contents and on exit keeps the graph's last layout
+		VkImageLayout entryLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		VkImageLayout exitLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		// the family that owns it outside the frame, the transfers keep the layout (entry on acquire, exit on release)
+		uint32_t ownerFamily = VK_QUEUE_FAMILY_IGNORED;
+	};
+
+	struct PassExecute {
+		void (*invoke)(const PassExecute& self, CommandBuffer& cmd) = nullptr;
+	};
 
 	// user defined information from addPass and RenderPassBuilder
 	struct PassDesc {
 		enum class Type {
 			Graphics,
 			Compute,
-			Intermediate,
+			Transfer,
 			RayTracing
 		};
 		// these first three members are sent straight over to PassCompiled
 		std::string name;
 		Type type;
-		std::function<void(CommandBuffer&)> executeCallback{};
-		std::vector<IntermediateOp> intermediateOps;
+		const PassExecute* execute = nullptr;
+		std::vector<TransferOp> transferOps;
 		std::vector<AttachmentDesc> attachmentOperations;
 		std::vector<TextureDependencyDesc> textureDependencyOperations;
 		std::vector<BufferDependencyDesc> bufferDependencyOperations;
 		uint32_t layerCount = 1;
 		uint32_t viewMask = 0;
-		std::function<bool()> conditionCallback{};
-    	QueueAffinity queue;
+		// the queue comes from the pass kind at compile, async only asks for one
+		bool async = false;
 		bool executeInOrder = false;
+		bool sideEffect = false;
 	};
 } // namespace mythril

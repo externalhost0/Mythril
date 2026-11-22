@@ -23,6 +23,7 @@
 #include "ImmediateCommands.h"
 #include "SlangCompiler.h"
 #include "HelperMacros.h"
+#include "GPUProfiler.h"
 
 #include "mythril/CPUProfiler.h"
 #include "mythril/CTXBuilder.h"
@@ -108,6 +109,17 @@ namespace mythril {
 		}
 		return usage;
 	}
+	CTX::QueueFamilies CTX::queueFamiliesInUse() const {
+		QueueFamilies families;
+		for (const ImmediateCommands* imm: {_immGraphics.get(), _immAsyncCompute.get(), _immAsyncTransfer.get()}) {
+			if (!imm)
+				continue;
+			const uint32_t family = imm->getQueueFamilyIndex();
+			if (std::find(families.indices.begin(), families.indices.begin() + families.count, family) == families.indices.begin() + families.count)
+				families.indices[families.count++] = family;
+		}
+		return families;
+	}
 	void CTX::construct() {
 		ASSERT(this->_vkInstance != VK_NULL_HANDLE);
 		ASSERT(this->_vkPhysicalDevice != VK_NULL_HANDLE);
@@ -115,13 +127,13 @@ namespace mythril {
 
 		// ACTUAL INIT
 		this->_immGraphics = std::make_unique<ImmediateCommands>(this->_vkDevice, this->_graphicsQueueFamilyIndex, this->_vkGraphicsQueue);
-		if (_computeQueueFamilyIndex != _graphicsQueueFamilyIndex && _vkComputeQueue)
+		if (_vkComputeQueue && _vkComputeQueue != _vkGraphicsQueue)
 			this->_immAsyncCompute = std::make_unique<ImmediateCommands>(this->_vkDevice, this->_computeQueueFamilyIndex, this->_vkComputeQueue);
-		if (_transferQueueFamilyIndex != _graphicsQueueFamilyIndex &&
-			_transferQueueFamilyIndex != _computeQueueFamilyIndex && _vkTransferQueue)
+		if (_vkTransferQueue && _vkTransferQueue != _vkGraphicsQueue && _vkTransferQueue != _vkComputeQueue)
 			this->_immAsyncTransfer = std::make_unique<ImmediateCommands>(this->_vkDevice, this->_transferQueueFamilyIndex, this->_vkTransferQueue);
 
 		this->_staging = std::make_unique<StagingDevice>(*this);
+		this->_timelineSemaphore = vkutil::CreateTimelineSemaphore(this->_vkDevice, 0);
 		// DEFAULT VULKAN OBJECTS
 		{
 			// pattern xor
@@ -195,6 +207,7 @@ namespace mythril {
 		destroy(this->_staging->_stagingBuffer);
 		this->_staging.reset(nullptr);
 		this->destroySwapchain();
+		vkDestroySemaphore(this->_vkDevice, this->_timelineSemaphore, nullptr);
 		this->_dummyTexture.release();
 		this->_dummyLinearSampler.release();
 
@@ -255,10 +268,8 @@ namespace mythril {
 	}
 
 	void CTX::recreateSwapchain(const SwapchainSpec& spec) {
-		VK_CHECK(vkDeviceWaitIdle(this->_vkDevice));
 		destroySwapchain();
 		createSwapchain(spec);
-		// destroy+create already each bump _resourceEpoch; no additional bump needed here.
 	}
 
 	void CTX::destroySwapchain() {
@@ -266,9 +277,8 @@ namespace mythril {
 			LOG_SYSTEM(LogType::Warning, "CTX::destroySwapchain called when no existing swapchain exists!");
 			return;
 		}
+		VK_CHECK(vkDeviceWaitIdle(this->_vkDevice));
 		this->_swapchain.reset(nullptr);
-		vkDestroySemaphore(_vkDevice, this->_timelineSemaphore, nullptr);
-		++_resourceEpoch;
 	}
 
 	template<typename T>
@@ -300,9 +310,7 @@ namespace mythril {
 		// trivial win which opens the ability for the swapchian to reuse existing indicies that are now available
 		waitDeferredTasks();
 		this->_swapchain = std::make_unique<Swapchain>(*this, new_swapchain_spec);
-		this->_timelineSemaphore = vkutil::CreateTimelineSemaphore(_vkDevice, this->_swapchain->getNumOfSwapchainImages() - 1);
 		lastSwapchainSpec = new_swapchain_spec;
-		++_resourceEpoch;
 	}
 
 	void CTX::checkAndUpdateBindlessDescriptorSetImpl() {
@@ -566,6 +574,10 @@ namespace mythril {
 					}
 					out.pushes.push_back(src);
 				}
+			}
+			for (const PushResourceField& field: sig.pushResources) {
+				if (std::ranges::none_of(out.pushResources, [&](const PushResourceField& existing) { return existing.offset == field.offset; }))
+					out.pushResources.push_back(field);
 			}
 		}
 		return out;
@@ -1209,15 +1221,16 @@ namespace mythril {
 		obj._vkUsageFlags = usageFlags;
 		obj._vkMemoryPropertyFlags = memFlags;
 
+		const QueueFamilies families = queueFamiliesInUse();
 		const VkBufferCreateInfo buffer_ci = {
 		    .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
 		    .pNext = nullptr,
 		    .flags = 0,
 		    .size = bufferSize,
 		    .usage = usageFlags,
-		    .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-		    .queueFamilyIndexCount = 0,
-		    .pQueueFamilyIndices = nullptr,
+		    .sharingMode = families.count > 1 ? VK_SHARING_MODE_CONCURRENT : VK_SHARING_MODE_EXCLUSIVE,
+		    .queueFamilyIndexCount = families.count > 1 ? families.count : 0,
+		    .pQueueFamilyIndices = families.count > 1 ? families.indices.data() : nullptr,
 		};
 		VmaAllocationCreateInfo vmaAllocInfo = {};
 
@@ -1277,10 +1290,9 @@ namespace mythril {
 		buffer->_vkDeviceAddress = newBuf._vkDeviceAddress;
 		buffer->_mappedPtr = newBuf._mappedPtr;
 		buffer->_isCoherentMemory = newBuf._isCoherentMemory;
-		// we dont need an epoch (framegraph doesnt need to recompile)
 	}
 
-	void CTX::resizeTexture(TextureHandle handle, Dimensions newDimensions) {
+	void CTX::resizeTextureEXT(TextureHandle handle, Dimensions newDimensions) {
 		ASSERT_MSG(!_currentCommandBuffer._ctx, "Cannot resize a texture while a CommandBuffer is open, already recorded commands reference the old image.");
 		resizeTextureImpl(handle, newDimensions);
 	}
@@ -1330,7 +1342,8 @@ namespace mythril {
 		        image->_numLayers,
 		        image->getVkSampleCountBits(),
 		        image->_vkComponentMappings,
-		        createFlags
+		        createFlags,
+		        image->_concurrent
 		);
 		vmaSetAllocationName(_vmaAllocator, newImage._vmaAllocation, newImage._debugName);
 		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_IMAGE, reinterpret_cast<uint64_t>(newImage._vkImage), image->getDebugName().data());
@@ -1351,7 +1364,6 @@ namespace mythril {
 		// reset of state
 		image->setLayout(image->getWholeRange(), VK_IMAGE_LAYOUT_UNDEFINED);
 		image->_mappedPtr = newImage._mappedPtr;
-		++_resourceEpoch;
 		// the slot is rewritten in place, pending frames may still read the old view through it
 		_immGraphics->wait(_immGraphics->getLastSubmitHandle());
 		writeTextureDescriptorsImpl(handle.index(), 1);
@@ -1423,7 +1435,7 @@ namespace mythril {
 				assert(false);
 		}
 		const VkComponentMapping component_mappings = spec.components.toVkComponentMapping();
-		AllocatedTexture obj = createTextureImpl(usage_flags, mem_flags, extent3D, spec.format, _imagetype, _imageviewtype, _numLevels, _numLayers, sample_bits, component_mappings, _imageCreateFlags);
+		AllocatedTexture obj = createTextureImpl(usage_flags, mem_flags, extent3D, spec.format, _imagetype, _imageviewtype, _numLevels, _numLayers, sample_bits, component_mappings, _imageCreateFlags, spec.concurrent);
 		// members that are only needed for recreation
 		obj._vkMemoryPropertyFlags = mem_flags;
 		obj._vkImageViewType = _imageviewtype;
@@ -1516,7 +1528,8 @@ namespace mythril {
 	        uint32_t numLayers,
 	        VkSampleCountFlagBits sampleCountFlagBits,
 	        VkComponentMapping componentMapping,
-	        VkImageCreateFlags createFlags
+	        VkImageCreateFlags createFlags,
+	        const bool requestConcurrent
 	) {
 		ASSERT_MSG(numLevels > 0, "The texture must contain at least one mip-level!");
 		ASSERT_MSG(numLayers > 0, "The texture must contain at least one layer!");
@@ -1525,6 +1538,8 @@ namespace mythril {
 		ASSERT_MSG(extent3D.depth > 0, "The texture must have a depth greater than 0!");
 
 
+		const QueueFamilies families = queueFamiliesInUse();
+		const bool concurrent = families.count > 1 && (requestConcurrent || !NeedsOwnershipTransfer(usageFlags));
 		VkImageCreateInfo image_ci = {
 		    .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
 		    .pNext = nullptr,
@@ -1538,10 +1553,9 @@ namespace mythril {
 		    .samples = sampleCountFlagBits,
 		    .tiling = VK_IMAGE_TILING_OPTIMAL,
 		    .usage = usageFlags,
-		    .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-
-		    .queueFamilyIndexCount = 0,
-		    .pQueueFamilyIndices = nullptr,
+		    .sharingMode = concurrent ? VK_SHARING_MODE_CONCURRENT : VK_SHARING_MODE_EXCLUSIVE,
+		    .queueFamilyIndexCount = concurrent ? families.count : 0,
+		    .pQueueFamilyIndices = concurrent ? families.indices.data() : nullptr,
 		    .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
 		};
 
@@ -1558,6 +1572,7 @@ namespace mythril {
 		VK_CHECK(vmaCreateImage(_vmaAllocator, &image_ci, &allocation_ci, &obj._vkImage, &obj._vmaAllocation, nullptr));
 		obj._vkExtent = extent3D;
 		obj._vkUsageFlags = usageFlags;
+		obj._concurrent = concurrent;
 		obj._sampleCount = sampleCountFlagBits;
 		obj._vkImageType = imageType;
 		obj._vkImageViewType = imageViewType;
@@ -1612,9 +1627,7 @@ namespace mythril {
 	GraphicsPipeline CTX::createGraphicsPipeline(const GraphicsPipelineSpec& spec) {
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_CREATE);
 		// all creating a pipeline does is assign the spec to it
-		// actual construction was done upon first use (lazily)
-		// now its done when compile is called && has been by a dryRun,
-		// if that fails then we do compile on first actual use
+		// actual construction is done upon first bind (lazily)
 		AllocatedGraphicsPipeline obj = {};
 		obj._spec = spec;
 		snprintf(obj._shared.debugName, sizeof(obj._shared.debugName), "%s", spec.debugName);
@@ -1672,6 +1685,9 @@ namespace mythril {
 		// always reflect spirv AFTER we make changes to it
 		ReflectionResult reflection_result = ReflectSPIRV(code, size);
 		obj._pipelineSignature = reflection_result.pipelineLayoutSignature;
+#ifdef DEBUG
+		obj._pipelineSignature.pushResources = CollectPushResources(compile_result.getSlangProgramLayout());
+#endif
 		obj._descriptorSets = std::move(reflection_result.retrievedDescriptorSets);
 		obj._pushConstants = std::move(reflection_result.retrivedPushConstants);
 		// specialization constants need to be stored until they are used in resolving a pipeline
@@ -1859,9 +1875,9 @@ namespace mythril {
 		};
 		// just stuff it into this ig
 		const VkAccelerationStructureBuildRangeInfoKHR* accelerationBuildStructureRangeInfos = { &accelerationBuildStructureRangeInfo };
-		CommandBuffer& cmd = acquireCommand(CommandBuffer::Type::General);
-		vkCmdBuildAccelerationStructuresKHR(cmd._wrapper->_cmdBuf, 1, &buildGeometryInfo, &accelerationBuildStructureRangeInfos);
-		_immGraphics->wait(submitCommand(cmd));
+		const detail::CommandBufferWrapper& wrapper = _immGraphics->acquire();
+		vkCmdBuildAccelerationStructuresKHR(wrapper._cmdBuf, 1, &buildGeometryInfo, &accelerationBuildStructureRangeInfos);
+		_immGraphics->wait(_immGraphics->submit(wrapper));
 
 		// retrieve data abt acceleration structure: device address
 		const VkAccelerationStructureDeviceAddressInfoKHR info = {
@@ -1968,9 +1984,9 @@ namespace mythril {
 		};
 
 		const VkAccelerationStructureBuildRangeInfoKHR* accelerationBuildStructureRangeInfos = { &accelerationBuildStructureRangeInfo };
-		CommandBuffer& cmd = acquireCommand(CommandBuffer::Type::General);
-		vkCmdBuildAccelerationStructuresKHR(cmd._wrapper->_cmdBuf, 1, &buildGeometryInfo, &accelerationBuildStructureRangeInfos);
-		_immGraphics->wait(submitCommand(cmd));
+		const detail::CommandBufferWrapper& wrapper = _immGraphics->acquire();
+		vkCmdBuildAccelerationStructuresKHR(wrapper._cmdBuf, 1, &buildGeometryInfo, &accelerationBuildStructureRangeInfos);
+		_immGraphics->wait(_immGraphics->submit(wrapper));
 
 		// retrieve data abt acceleration structure: device address
 		const VkAccelerationStructureDeviceAddressInfoKHR info = {
@@ -2008,7 +2024,7 @@ namespace mythril {
 
 	// functions that wrap around existing functions for AllocatedObjects
 	void CTX::generateMipmaps(TextureHandle handle) {
-		ASSERT_MSG(!_currentCommandBuffer._ctx, "Cannot generate mipmaps immediately while a CommandBuffer is open, use IntermediateBuilder::generateMipmaps instead.");
+		ASSERT_MSG(!_currentCommandBuffer._ctx, "Cannot generate mipmaps immediately while a CommandBuffer is open, use TransferBuilder::generateMipmaps instead.");
 		if (handle.empty()) {
 			LOG_SYSTEM(LogType::Warning, "Generate mipmap with empty handle!");
 			return;
@@ -2035,7 +2051,22 @@ namespace mythril {
 		ASSERT_MSG(buffer, "CTX::upload: handle does not resolve to a live buffer.");
 		ASSERT_MSG(offset + size <= buffer->_bufferSize, "CTX::upload: offset + size ({}) exceeds buffer '{}' size ({}).", offset + size, buffer->_debugName, buffer->_bufferSize);
 		ASSERT_MSG(buffer->isMapped() || (buffer->_vkUsageFlags & VK_BUFFER_USAGE_TRANSFER_DST_BIT), "CTX::upload: device buffer '{}' was not created with TRANSFER_DST usage.", buffer->_debugName);
+		if (buffer->isMapped())
+			waitForGraphUse(*buffer);
 		_staging->bufferSubData(*buffer, offset, size, data);
+	}
+	void CTX::waitForGraphUse(const AllocatedBuffer& buffer) const {
+		// a value above the frame number belongs to a frame that compiled but never submitted, nothing on the GPU uses it yet
+		const uint64_t value = buffer._graphTimelineValue;
+		if (value == 0 || value > _currentFrameNumber)
+			return;
+		const VkSemaphoreWaitInfo waitInfo = {
+		    .sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
+		    .semaphoreCount = 1,
+		    .pSemaphores = &_timelineSemaphore,
+		    .pValues = &value,
+		};
+		VK_CHECK(vkWaitSemaphores(_vkDevice, &waitInfo, UINT64_MAX));
 	}
 	void CTX::download(BufferHandle handle, void* data, size_t size, size_t offset) {
 		MYTH_PROFILER_FUNCTION();
@@ -2053,6 +2084,8 @@ namespace mythril {
 			LOG_SYSTEM(LogType::Error, "Buffer request to download is out of range!");
 			return;
 		}
+		if (buffer->isMapped())
+			waitForGraphUse(*buffer);
 		buffer->getBufferSubData(*this, offset, size, data);
 	}
 	void CTX::upload(TextureHandle handle, const void* data, const TexRange& range) {
@@ -2112,34 +2145,42 @@ namespace mythril {
 		);
 	}
 
-	CommandBuffer& CTX::acquireCommand(CommandBuffer::Type type) {
+	CommandBuffer* CTX::acquireCommand(const bool presents) {
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_ACQUIRE);
 		ASSERT_MSG(!_currentCommandBuffer._ctx, "Cannot open more than 1 CommandBuffer on the same thread simultaneously!");
-		_staging->resetPending();
-		if (type == CommandBuffer::Type::Graphics) {
-			VkSemaphore acquire_semaphore = _swapchain->acquire();
-			_immGraphics->waitSemaphore(acquire_semaphore);
+		// frame N signals N + 1, so this waits for frame N - kNUM_FRAMES_IN_FLIGHT
+		if (_currentFrameNumber >= kNUM_FRAMES_IN_FLIGHT) {
+			const uint64_t waitValue = _currentFrameNumber + 1 - kNUM_FRAMES_IN_FLIGHT;
+			const VkSemaphoreWaitInfo waitInfo = {
+			    .sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
+			    .semaphoreCount = 1,
+			    .pSemaphores = &_timelineSemaphore,
+			    .pValues = &waitValue,
+			};
+			VK_CHECK(vkWaitSemaphores(_vkDevice, &waitInfo, UINT64_MAX));
 		}
-		_currentCommandBuffer = CommandBuffer(this, type);
-		return _currentCommandBuffer;
+		if (presents) {
+			ASSERT_MSG(_swapchain, "RenderGraph::backBuffer() needs a swapchain.");
+			VkSemaphore acquireSemaphore = _swapchain->acquire();
+			if (acquireSemaphore == VK_NULL_HANDLE)
+				return nullptr;
+			_immGraphics->waitSemaphore(acquireSemaphore);
+		}
+		_staging->resetPending();
+		_currentCommandBuffer = CommandBuffer(this);
+		return &_currentCommandBuffer;
 	}
-	SubmitHandle CTX::submitCommand(CommandBuffer& cmd) {
+	SubmitHandle CTX::submitCommand(CommandBuffer& cmd, const bool presents) {
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_SUBMIT);
 		ASSERT(cmd._ctx);
 		ASSERT(cmd._wrapper);
 #ifdef MYTH_ENABLED_TRACY_GPU
 		TracyVkCollect(_tracyPlugin.getTracyVkCtx(), cmd._wrapper->_cmdBuf);
 #endif
-		const bool isPresenting = cmd._cmdType == CommandBuffer::Type::Graphics;
-		if (isPresenting) {
-			const uint32_t frameIndex = _swapchain->getCurrentFrameIndex();
-			const uint64_t signalValue = _currentFrameNumber + _swapchain->getNumOfSwapchainImages();
-			_swapchain->_timelineWaitValues[frameIndex] = signalValue;
-			_immGraphics->signalSemaphore(_timelineSemaphore, signalValue);
-		}
+		_immGraphics->signalSemaphore(_timelineSemaphore, _currentFrameNumber + 1);
 		cmd._lastSubmitHandle = _immGraphics->submit(*cmd._wrapper);
 		_staging->onGraphSubmit(cmd._lastSubmitHandle);
-		if (isPresenting) {
+		if (presents) {
 			const AllocatedTexture* backBuffer = _texturePool.get(_swapchain->getCurrentSwapchainTextureHandle());
 			ASSERT(backBuffer->getImageLayout(backBuffer->getWholeRange()) == VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
 			_swapchain->present(_immGraphics->acquireLastSubmitSemaphore());
