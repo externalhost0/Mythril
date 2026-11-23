@@ -1047,7 +1047,7 @@ int main() {
 		lightingData.directionalLights.intensity = 8.0f;
 		GPU::FrameData frameData{};
 
-		float near = 1.f, far = 450.f;
+		float shadowNear = 1.f, shadowFar = 450.f;
 		float depthBiasConstant = 1.25f, depthBiasSlope = 1.75f;
 
 		glm::mat4 lightSpaceMatrix{};
@@ -1213,7 +1213,7 @@ int main() {
 		float particle_speed = 4.f;
 
 
-		constexpr unsigned int kNumColorMips = 7;
+		static constexpr unsigned int kNumColorMips = 7;
 		mythril::GraphTexture rgOffscreenColorTexs[kNumColorMips];
 		for (int i = 0; i < kNumColorMips; i++) {
 			char namebuf[64];
@@ -1430,12 +1430,12 @@ int main() {
 			{
 				const glm::vec3 lightDir = glm::normalize(lightingData.directionalLights.direction);
 				const glm::vec3 lightPos = scene_center - lightDir * distance_from_center;
-				if (far < near) {
-					far = near;
+				if (shadowFar < shadowNear) {
+					shadowFar = shadowNear;
 				}
-				assert(far >= near);
+				assert(shadowFar >= shadowNear);
 				const glm::mat4 lightView = glm::lookAt(lightPos, scene_center, glm::vec3(0, 1, 0));
-				const glm::mat4 lightProj = glm::ortho(-orthoSize, orthoSize, -orthoSize, orthoSize, near, far);
+				const glm::mat4 lightProj = glm::ortho(-orthoSize, orthoSize, -orthoSize, orthoSize, shadowNear, shadowFar);
 				lightSpaceMatrix = lightProj * lightView;
 			}
 			struct ShadowMapData {
@@ -2024,8 +2024,8 @@ int main() {
 				.position = camera.position,
 				.uvToViewA = ray11 - ray00,
 				.uvToViewB = ray00,
-				.far = camera.farPlane,
-				.near = camera.nearPlane
+				.farPlane = camera.farPlane,
+				.nearPlane = camera.nearPlane
 			};
 
 			ImGui_ImplVulkan_NewFrame();
@@ -2033,8 +2033,8 @@ int main() {
 			ImGui::NewFrame();
 
 			ImGui::Begin("shadow_controls");
-			ImGui::DragFloat("Near Plane", &near, 0.1f, 100.f);
-			ImGui::DragFloat("Far Plane", &far, 0.1f, 1000.f);
+			ImGui::DragFloat("Near Plane", &shadowNear, 0.1f, 100.f);
+			ImGui::DragFloat("Far Plane", &shadowFar, 0.1f, 1000.f);
 			ImGui::DragFloat("Depth Bias Constant", &depthBiasConstant, 0.01f, 0.01f, 10.f, "%.1f");
 			ImGui::DragFloat("Depth Bias Slope", &depthBiasSlope, 0.01f,  0.01f, 10.f, "%.1f");
 			//		ImGui::DragFloat3("Sun Position", &sun_pos[0], 0.1f, 1000.f);
@@ -2046,7 +2046,6 @@ int main() {
 
 			ImGuiWindowFlags window_flags = focused ? ImGuiWindowFlags_NoMouseInputs : ImGuiWindowFlags_None;
 			ImGui::Begin("Previews", nullptr, window_flags);
-			ImGui::Image(rgMsaaDepthTarget, {200, 200});
 			ImGui::Image(rgShadowMap, {200, 200});
 			ImGui::Text("Average Luminance");
 			ImGui::Image(adaptedLuminanceTextures[lumFlip], {100, 100});

@@ -158,8 +158,8 @@ struct CameraData
     float3 position;
     float2 g_f2UVToViewA;
     float2 g_f2UVToViewB;
-    float far;
-    float near;
+    float farPlane;
+    float nearPlane;
 
     float3 getRight() { return right; }
     float3 getUp() { return up; }

@@ -24,8 +24,8 @@ namespace GPU {
 		glm::vec3 position;
 		glm::vec2 uvToViewA;
 		glm::vec2 uvToViewB;
-		float far;
-		float near;
+		float farPlane;
+		float nearPlane;
 	};
 
 	struct EnvironmentLight {

@@ -47,8 +47,8 @@ v2f vs_main(VSInput input) {
 
 float linearizeDepth(float vertexZ, CameraData camera) {
     float ndc = vertexZ; // already in [-1,1]
-    float linearDepth = (2.0 * camera.near * camera.far) / (camera.far + camera.near - ndc * (camera.far - camera.near));
-    return linearDepth / camera.far;
+    float linearDepth = (2.0 * camera.nearPlane * camera.farPlane) / (camera.farPlane + camera.nearPlane - ndc * (camera.farPlane - camera.nearPlane));
+    return linearDepth / camera.farPlane;
 }
 
 float3 TransformTangentNormal(float3 n, float3 T, float3 B, float3 N) {

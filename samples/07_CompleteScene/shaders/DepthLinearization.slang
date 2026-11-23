@@ -107,7 +107,7 @@ float3 UVToView(float2 UV, float viewDepth) {
 }
 float3 FetchFullResViewPos(float2 uv) {
     float d = push.depthTexture.SampleLevel(push.sampler, uv, 0).r;
-    float viewDepth = LinearizeDepth(d, push.frame.camera.near, push.frame.camera.far);
+    float viewDepth = LinearizeDepth(d, push.frame.camera.nearPlane, push.frame.camera.farPlane);
     return UVToView(uv, viewDepth);
 }
 float3 MinDiff(float3 P, float3 Pr, float3 Pl) {
@@ -142,7 +142,7 @@ float4 ReconstructNormal_PS(float2 uv) {
 FSOutput fs_main(v2f input) {
     FSOutput output;
     float depth = push.depthTexture.Sample(push.sampler, input.UV).r;
-    float linearDepth = LinearizeDepthReverseZ(depth, push.frame.camera.near, push.frame.camera.far);
+    float linearDepth = LinearizeDepthReverseZ(depth, push.frame.camera.nearPlane, push.frame.camera.farPlane);
     output.FragColor = float4(float3(linearDepth), 1);
     output.FragNormals = float4(ReconstructNormalFromDepth_Derivatives(input.UV, depth, push.frame.camera.invProj), 1);
     return output;

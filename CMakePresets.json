@@ -22,7 +22,8 @@
       "inherits": "base",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "MYTH_BUILD_SAMPLES": "ON"
+        "MYTH_BUILD_SAMPLES": "ON",
+        "MYTH_ENABLE_TRACY": "ON"
       }
     },
     {
