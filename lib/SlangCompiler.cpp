@@ -8,6 +8,7 @@
 #include <array>
 #include <cstring>
 #include <filesystem>
+#include <string>
 #include <fstream>
 #include <vector>
 
@@ -94,10 +95,14 @@ export T getDescriptorFromHandle<T : IOpaqueDescriptor>(DescriptorHandle<T> hand
 		};
 
 		ASSERT_MSG(this->_shaderSearchPaths.size() <= 16, "You cannot have more than 16 searchpaths in SlangCompiler, this is arbitrary btw lol");
+		// path::c_str() is wchar_t on Windows, slang wants char
+		std::array<std::string, 16> sp_strings = {};
 		std::array<const char*, 16> sp_cstrings = {};
 		int64_t sp_count = 0;
 		for (const std::filesystem::path& path: this->_shaderSearchPaths) {
-			sp_cstrings[sp_count++] = path.c_str();
+			sp_strings[sp_count] = path.string();
+			sp_cstrings[sp_count] = sp_strings[sp_count].c_str();
+			sp_count++;
 		}
 
 		const slang::SessionDesc sessionDesc = {

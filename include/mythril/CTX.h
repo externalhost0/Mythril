@@ -321,13 +321,13 @@ namespace mythril {
 	private:
 		// my stuff //
 		uint64_t _currentFrameNumber = 0;
-		std::unique_ptr<ImmediateCommands> _immGraphics = nullptr;
+		std::unique_ptr<ImmediateCommands> _immGraphics;
 		// both are nullptr when we fail to get a distinct family during setup
-		std::unique_ptr<ImmediateCommands> _immAsyncCompute = nullptr;
-		std::unique_ptr<ImmediateCommands> _immAsyncTransfer = nullptr;
+		std::unique_ptr<ImmediateCommands> _immAsyncCompute;
+		std::unique_ptr<ImmediateCommands> _immAsyncTransfer;
 
-		std::unique_ptr<Swapchain> _swapchain = nullptr;
-		std::unique_ptr<StagingDevice> _staging = nullptr;
+		std::unique_ptr<Swapchain> _swapchain;
+		std::unique_ptr<StagingDevice> _staging;
 
 		SwapchainSpec lastSwapchainSpec{
 		    .width = 1280,
