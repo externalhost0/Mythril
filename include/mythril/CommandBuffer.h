@@ -70,7 +70,7 @@ namespace mythril {
 		void cmdTraceRays(const Dimensions& queryDimension);
 
 		void cmdBindIndexBuffer(BufferHandle buffer);
-		void cmdPushConstants(const void* data, uint32_t size, uint32_t offset);
+		void cmdPushConstants(const void* data, uint32_t size, uint32_t offset, uint32_t alignment);
 		void cmdUpdateBufferEXT(BufferHandle handle, size_t offset, size_t size, const void* data);
 
 		void cmdDraw(uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstInstance);
@@ -170,9 +170,9 @@ namespace mythril {
 		template<class Struct>
 		void cmdPushConstants(const Struct& value, uint32_t offset = 0) {
 			static_assert(std::is_trivially_copyable_v<Struct> && !std::is_pointer_v<Struct>, "cmdPushConstant takes struct by value, not a pointer to it");
-			_cmd.cmdPushConstants(&value, static_cast<uint32_t>(sizeof(Struct)), offset);
+			_cmd.cmdPushConstants(&value, static_cast<uint32_t>(sizeof(Struct)), offset, static_cast<uint32_t>(alignof(Struct)));
 		}
-		void cmdPushConstantsEXT(const void* data, uint32_t size, uint32_t offset) { _cmd.cmdPushConstants(data, size, offset); }
+		void cmdPushConstantsEXT(const void* data, uint32_t size, uint32_t offset) { _cmd.cmdPushConstants(data, size, offset, 1); }
 
 		void cmdWriteTimestamp(QueryPoolHandle pool, uint32_t query) { _cmd.cmdWriteTimestamp(pool, query); }
 		void cmdWriteTimestamp(const QueryPool& pool, uint32_t query) { _cmd.cmdWriteTimestamp(pool.handle(), query); }

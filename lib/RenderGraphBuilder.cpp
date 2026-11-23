@@ -1786,14 +1786,22 @@ namespace mythril {
 	}
 
 #ifdef DEBUG
+	static constexpr uint8_t kSampledUse = 1;
+	static constexpr uint8_t kStorageUse = 2;
 	void RenderGraph::checkPushResources(const CTX& rCtx, const CompiledPass& pass, const PassMember& member, const std::string_view pipeline, const std::span<const PushResourceField> fields, const void* data, const uint32_t size, const uint32_t offset) const {
 		const auto isNew = [&](std::string key) { return _recordFindings.insert(key).second && !_lastRecordFindings.contains(key); };
+		ObservedDispatches& dispatches = _observedDispatches;
+		if (dispatches.dispatchedSincePush) {
+			dispatches.next.clear();
+			dispatches.dispatchedSincePush = false;
+		}
 		for (const PushResourceField& field: fields) {
 			if (field.offset < offset || field.offset + sizeof(uint64_t) > offset + size)
 				continue;
 			uint64_t value = 0;
 			std::memcpy(&value, static_cast<const std::byte*>(data) + (field.offset - offset), sizeof(value));
 			if (field.kind == PushResourceField::Kind::Pointer) {
+				dispatches.untracked = true;
 				for (const GraphBufferResource& buffer: _buffers) {
 					const AllocatedBuffer& allocated = rCtx.view(buffer.handle);
 					if (value < allocated._vkDeviceAddress || value >= allocated._vkDeviceAddress + allocated._bufferSize)
@@ -1805,7 +1813,8 @@ namespace mythril {
 				continue;
 			}
 			const auto index = static_cast<uint32_t>(value);
-			for (uint32_t id = 0; id < _textures.size(); ++id) {
+			uint32_t id = 0;
+			for (; id < _textures.size(); ++id) {
 				TextureHandle handle;
 				if (const auto* declared = std::get_if<DeclaredTexture>(&_textures[id].source))
 					handle = declared->texture;
@@ -1814,12 +1823,33 @@ namespace mythril {
 				if (!handle.valid() || handle.index() != index)
 					continue;
 				const GraphTexture texture = GraphTextureAccess::make(id);
-				_observedUses[id] |= field.kind == PushResourceField::Kind::StorageTexture ? 2 : 1;
+				const uint8_t use = field.kind == PushResourceField::Kind::StorageTexture ? kStorageUse : kSampledUse;
+				_observedUses[id] |= use;
+				dispatches.next[id] |= use;
 				if (!std::ranges::binary_search(member.sortedDeclaredTextures, id, {}, IdOf) && isNew("undeclared texture " + member.name + " " + std::string(nameOf(texture))))
 					LOG_PASS(LogType::Warning, pass, "'{}' passes graph texture '{}' as '{}' of pipeline '{}' without declaring it, so nothing orders or transitions it. Declare the texture.", member.name, nameOf(texture), field.varName, pipeline);
 				break;
 			}
+			if (id == _textures.size())
+				dispatches.untracked = true;
 		}
+	}
+	void RenderGraph::observeDispatch(const CompiledPass& pass, const PassMember& member) const {
+		const auto isNew = [&](std::string key) { return _recordFindings.insert(key).second && !_lastRecordFindings.contains(key); };
+		ObservedDispatches& dispatches = _observedDispatches;
+		for (const auto& [id, use]: dispatches.next) {
+			const auto it = dispatches.earlier.find(id);
+			if (it == dispatches.earlier.end() || ((use | it->second) & kStorageUse) == 0)
+				continue;
+			dispatches.dependent = true;
+			const std::string_view name = nameOf(GraphTextureAccess::make(id));
+			if (!pass.inOrderBarrier && isNew("unordered dispatch " + member.name))
+				LOG_PASS(LogType::Warning, pass, "'{}' dispatches use '{}' after an earlier dispatch in the pass used it, one of them through a storage handle, but nothing orders the dispatches. Call executeCmdsInOrder().", member.name, name);
+		}
+		for (const auto& [id, use]: dispatches.next)
+			dispatches.earlier[id] |= use;
+		++dispatches.count;
+		dispatches.dispatchedSincePush = true;
 	}
 	void RenderGraph::reportDepthBlockedMerges(const size_t passIdx, const bool drewFixedFormats) const {
 		for (const uint32_t g: _depthBlockedMerges) {
@@ -1838,13 +1868,19 @@ namespace mythril {
 		const auto isNew = [&](std::string key) { return _recordFindings.insert(key).second && !_lastRecordFindings.contains(key); };
 		for (const TextureDependencyDesc& dependency: member.textureDependencies) {
 			const auto it = _observedUses.find(IdOf(dependency.texDesc.texture));
-			if (!isWrite(dependency.access) || it == _observedUses.end() || it->second != 1)
+			if (it == _observedUses.end())
 				continue;
 			const std::string_view name = nameOf(dependency.texDesc.texture);
-			if (isNew("wider access " + member.name + " " + std::string(name)))
+			if (dependency.access == TextureAccess::Sampled && (it->second & kStorageUse) && isNew("storage as sampled " + member.name + " " + std::string(name)))
+				LOG_PASS(LogType::Warning, pass, "'{}' declares '{}' Sampled, but its pipelines use it through a storage handle. Its barriers and layout only cover a sampled read, so a write races. Declare StorageRead, StorageWrite or StorageReadWrite.", member.name, name);
+			else if (isWrite(dependency.access) && it->second == kSampledUse && isNew("wider access " + member.name + " " + std::string(name)))
 				LOG_PASS(LogType::Suggestion, pass, "'{}' declares '{}' as a write, but its pipelines only read it through sampled handles. Declare Sampled or StorageRead.", member.name, name);
 		}
+		const ObservedDispatches& dispatches = _observedDispatches;
+		if (pass.inOrderBarrier && dispatches.count > 0 && !dispatches.dependent && !dispatches.untracked && isNew("needless in order " + member.name))
+			LOG_PASS(LogType::Suggestion, pass, "'{}' calls executeCmdsInOrder(), but no dispatch uses a texture that an earlier dispatch used through a storage handle. Remove executeCmdsInOrder() to skip the barrier between dispatches.", member.name);
 		_observedUses.clear();
+		_observedDispatches = {};
 	}
 #endif
 

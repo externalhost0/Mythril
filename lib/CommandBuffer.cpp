@@ -194,6 +194,10 @@ namespace mythril {
 		vkCmdDispatchIndirect(_wrapper->_cmdBuf, buf._vkBuffer, offset);
 	}
 	void CommandBuffer::orderAfterPreviousDispatchImpl() {
+#ifdef DEBUG
+		if (_graph && _activePass && _activeMember)
+			_graph->observeDispatch(*_activePass, *_activeMember);
+#endif
 		const bool needsBarrier = _hasDispatchedInPass && _activePass && _activePass->inOrderBarrier.has_value();
 		_hasDispatchedInPass = true;
 		if (!needsBarrier)
@@ -368,7 +372,7 @@ namespace mythril {
 		cmdCopyImageImpl(source, destination, _ctx->view(source).getExtentAs2D());
 	}
 
-	void CommandBuffer::cmdPushConstants(const void* data, uint32_t size, uint32_t offset) {
+	void CommandBuffer::cmdPushConstants(const void* data, uint32_t size, uint32_t offset, const uint32_t alignment) {
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_COMMAND);
 		MYTH_PROFILER_GPU_COMMAND_ZONE("cmdPushConstants()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
 		if (!_currentPipelineInfo) {
@@ -394,6 +398,8 @@ namespace mythril {
 			LOG_CMD_ONCE(LogType::Warning, "Pipeline '{}' has no push constant range overlapping [{}, {}), skipping push constants!", _currentPipelineInfo->debugName, offset, offset + size);
 			return;
 		}
+		// a C++ struct may carry tail padding past a scalar layout range
+		ASSERT_MSG(size <= (rangeEnd - offset + alignment - 1) / alignment * alignment, "Pushes {} bytes at offset {} on pipeline '{}', but its push constant range ends at byte {}, so the shader never sees the rest. Make the struct match the shader's push block.", size, offset, _currentPipelineInfo->debugName, rangeEnd);
 		size = std::min(size, rangeEnd - offset);
 #ifdef DEBUG
 		if (const auto& pushes = _currentPipelineInfo->core.signature.pushes; std::ranges::none_of(pushes, [size](const VkPushConstantRange& push) { return push.size == size; })) {
