@@ -353,60 +353,96 @@ int main() {
 		mythril::RenderGraph graph;
 		const mythril::GraphTexture rgColorTarget = graph.createTexture({.size = mythril::RelativeSize{}, .format = VK_FORMAT_R8G8B8A8_UNORM, .debugName = "Color Texture"});
 		const mythril::GraphTexture rgDepthTarget = graph.createTexture({.size = mythril::RelativeSize{}, .format = VK_FORMAT_D32_SFLOAT_S8_UINT, .debugName = "Depth Texture"});
-		graph.addTransferPass("per_frame_uploads")
-		.update(jointMatrixBuffer, [&] { return mythril::UploadData{pose.jointMatrices.data(), pose.jointMatrices.size() * sizeof(glm::mat4)}; })
-		.update(jointDualQuatBuffer, [&] { return mythril::UploadData{pose.jointDualQuats.data(), pose.jointDualQuats.size() * sizeof(mythril::GPU::DualQuat)}; })
-		.update(frameDataBuffer, [&] { return mythril::UploadData{&frameData, sizeof(frameData)}; })
-		.finish();
+		const mythril::GraphBuffer rgJointMatrices = graph.importBuffer(jointMatrixBuffer);
+		const mythril::GraphBuffer rgJointDualQuats = graph.importBuffer(jointDualQuatBuffer);
+		const mythril::GraphBuffer rgFrameData = graph.importBuffer(frameDataBuffer);
+		const mythril::GraphBuffer rgVertices = graph.importBuffer(vertexBuffer);
+		const mythril::GraphBuffer rgIndices = graph.importBuffer(indexBuffer);
 
-		graph.addGraphicsPass("skinned geometry")
-		.attachment({
-			.texDesc = rgColorTarget,
-			.clearValue = mythril::ClearValue::color(0.18f, 0.18f, 0.2f, 1.f),
-			.loadOp = mythril::LoadOp::CLEAR,
-			.storeOp = mythril::StoreOp::STORE
-		})
-		.attachment({
-			.texDesc = rgDepthTarget,
-			.clearValue = mythril::ClearValue::depth(1.f, 0),
-			.loadOp = mythril::LoadOp::CLEAR
-		})
-		.dependency(jointMatrixBuffer, mythril::BufferAccess::ShaderRead)
-		.dependency(jointDualQuatBuffer, mythril::BufferAccess::ShaderRead)
-		.dependency(frameDataBuffer, mythril::BufferAccess::ShaderRead)
-		.execute([&](mythril::CommandBuffer& cmd) {
-			cmd.cmdBindGraphicsPipeline(skinningPipeline);
-			cmd.cmdBindDepthState({mythril::CompareOp::LessEqual, true});
-			const mythril::GPU::SkinPushConstant push = {
-				.model = pose.globals[model.meshNode],
-				.vertices = ctx->gpuAddress(vertexBuffer),
-				.frame = ctx->gpuAddress(frameDataBuffer),
-				.jointMatrices = ctx->gpuAddress(jointMatrixBuffer),
-				.jointDualQuats = ctx->gpuAddress(jointDualQuatBuffer),
-				.skinningMode = static_cast<uint32_t>(skinningMode),
-				.viewMode = static_cast<uint32_t>(viewMode),
-				.selectedJoint = static_cast<uint32_t>(selectedSlot)
-			};
-			cmd.cmdPushConstants(push);
-			cmd.cmdBindIndexBuffer(indexBuffer);
-			cmd.cmdDrawIndexed(model.indices.size());
-		});
+		struct SkinPass {
+			mythril::GraphicsPipelineHandle pipeline;
+			mythril::BufferHandle indexBuffer;
+			uint32_t indexCount = 0;
+			glm::mat4 model{};
+			VkDeviceAddress vertices = 0;
+			VkDeviceAddress frame = 0;
+			VkDeviceAddress jointMatrices = 0;
+			VkDeviceAddress jointDualQuats = 0;
+			uint32_t skinningMode = 0;
+			uint32_t viewMode = 0;
+			uint32_t selectedJoint = 0;
+		};
+		const auto buildGraph = [&] {
+			mythril::GraphBuffer jointMatrices = rgJointMatrices;
+			mythril::GraphBuffer jointDualQuats = rgJointDualQuats;
+			mythril::GraphBuffer frame = rgFrameData;
+			graph.addTransferPass("per_frame_uploads", [&](mythril::TransferBuilder& b) {
+				jointMatrices = b.update(jointMatrices, pose.jointMatrices);
+				jointDualQuats = b.update(jointDualQuats, pose.jointDualQuats);
+				frame = b.update(frame, frameData);
+			});
 
-		graph.addGraphicsPass("gui")
-		.attachment({
-			.texDesc = {rgColorTarget},
-			.loadOp = mythril::LoadOp::LOAD,
-			.storeOp = mythril::StoreOp::STORE
-		})
-		.execute([&](mythril::CommandBuffer& cmd) {
-			cmd.cmdDrawImGui();
-		});
+			mythril::GraphTexture color = rgColorTarget;
+			graph.addGraphicsPass<SkinPass>("skinned geometry", [&](mythril::GraphicsPassBuilder& b, SkinPass& d) {
+				color = b.attachment({
+					.texDesc = color,
+					.clearValue = mythril::ClearValue::color(0.18f, 0.18f, 0.2f, 1.f),
+					.loadOp = mythril::LoadOp::CLEAR,
+					.storeOp = mythril::StoreOp::STORE
+				}).texture;
+				b.attachment({
+					.texDesc = rgDepthTarget,
+					.clearValue = mythril::ClearValue::depth(1.f, 0),
+					.loadOp = mythril::LoadOp::CLEAR
+				});
+				b.dependency(jointMatrices, mythril::BufferAccess::ShaderRead);
+				b.dependency(jointDualQuats, mythril::BufferAccess::ShaderRead);
+				b.dependency(frame, mythril::BufferAccess::ShaderRead);
+				b.dependency(rgVertices, mythril::BufferAccess::ShaderRead);
+				b.dependency(rgIndices, mythril::BufferAccess::IndexRead);
+				d.pipeline = skinningPipeline.handle();
+				d.indexBuffer = indexBuffer.handle();
+				d.indexCount = static_cast<uint32_t>(model.indices.size());
+				d.model = pose.globals[model.meshNode];
+				d.vertices = ctx->gpuAddress(vertexBuffer);
+				d.frame = ctx->gpuAddress(frameDataBuffer);
+				d.jointMatrices = ctx->gpuAddress(jointMatrixBuffer);
+				d.jointDualQuats = ctx->gpuAddress(jointDualQuatBuffer);
+				d.skinningMode = static_cast<uint32_t>(skinningMode);
+				d.viewMode = static_cast<uint32_t>(viewMode);
+				d.selectedJoint = static_cast<uint32_t>(selectedSlot);
+			}, [](const SkinPass& d, mythril::GraphicsCmd& cmd) {
+				cmd.cmdBindGraphicsPipeline(d.pipeline);
+				cmd.cmdBindDepthState({mythril::CompareOp::LessEqual, true});
+				const mythril::GPU::SkinPushConstant push = {
+					.model = d.model,
+					.vertices = d.vertices,
+					.frame = d.frame,
+					.jointMatrices = d.jointMatrices,
+					.jointDualQuats = d.jointDualQuats,
+					.skinningMode = d.skinningMode,
+					.viewMode = d.viewMode,
+					.selectedJoint = d.selectedJoint
+				};
+				cmd.cmdPushConstants(push);
+				cmd.cmdBindIndexBuffer(d.indexBuffer);
+				cmd.cmdDrawIndexed(d.indexCount);
+			});
 
-		graph.addTransferPass("presentation")
-		.blit(rgColorTarget, graph.backBuffer())
-		.finish();
+			graph.addGraphicsPass("gui", [&](mythril::GraphicsPassBuilder& b, mythril::NoPassData&) {
+				color = b.attachment({
+					.texDesc = color,
+					.loadOp = mythril::LoadOp::LOAD,
+					.storeOp = mythril::StoreOp::STORE
+				}).texture;
+			}, [](const mythril::NoPassData&, mythril::GraphicsCmd& cmd) {
+				cmd.cmdDrawImGui();
+			});
 
-		graph.compile(*ctx);
+			graph.addTransferPass("presentation", [&](mythril::TransferBuilder& b) {
+				b.blit(color, graph.backBuffer());
+			});
+		};
 
 		glm::vec3 boundsMin(FLT_MAX), boundsMax(-FLT_MAX);
 		for (const mythril::GPU::SkinnedVertex& v : model.vertices) {
@@ -552,9 +588,10 @@ int main() {
 			if (showSkeleton)
 				drawSkeletonOverlay(model, pose, nodeToSlot, viewProj, selectedSlot);
 
-			mythril::CommandBuffer& cmd = ctx->acquireCommand(mythril::CommandBuffer::Type::Graphics);
-			graph.execute(cmd);
-			ctx->submitCommand(cmd);
+			graph.reset();
+			buildGraph();
+			graph.compile(*ctx);
+			graph.execute(*ctx);
 		}
 	}
 	DestroySDLWindow(sdlWindow);
