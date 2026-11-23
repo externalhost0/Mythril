@@ -124,6 +124,11 @@ namespace mythril {
 		// for buffers
 		void upload(BufferHandle handle, const void* data, size_t size, size_t offset = 0);
 		void download(BufferHandle handle, void* data, size_t size, size_t offset);
+		void upload(BufferHandle handle, HostBytes data, size_t offset = 0) { upload(handle, data.bytes.data(), data.bytes.size(), offset); }
+		template<std::ranges::contiguous_range Range> requires (std::is_trivially_copyable_v<std::ranges::range_value_t<Range>> && !std::is_const_v<std::remove_reference_t<std::ranges::range_reference_t<Range>>>)
+		void download(BufferHandle handle, Range&& range, size_t offset = 0) { download(handle, std::ranges::data(range), std::ranges::size(range) * sizeof(std::ranges::range_value_t<Range>), offset); }
+		template<typename T> requires (std::is_trivially_copyable_v<T> && !std::ranges::range<T> && !std::is_pointer_v<T> && !std::is_const_v<T>)
+		void download(BufferHandle handle, T& value, size_t offset = 0) { download(handle, &value, sizeof(T), offset); }
 		// for textures
 		void upload(TextureHandle handle, const void* data, const TexRange& range);
 		void download(TextureHandle handle, void* data, const TexRange& range);

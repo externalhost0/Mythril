@@ -69,7 +69,7 @@ namespace mythril {
     };
     struct Realization {
         Dimensions dimensions;
-        uint8_t usage = 0;
+        TextureUsageBits usage{};
         StorageType storage = StorageType::Device;
         bool concurrent = false;
         bool operator==(const Realization&) const = default;
@@ -79,7 +79,7 @@ namespace mythril {
         return {scaled(extent.width), scaled(extent.height), 1};
     }
     inline Realization InferRealization(const Dimensions dimensions, const TextureUses& uses, const bool confined) {
-        uint8_t usage = 0;
+        TextureUsageBits usage{};
         if (uses.attachment)
             usage |= TextureUsageBits_Attachment;
         if (uses.sampled)

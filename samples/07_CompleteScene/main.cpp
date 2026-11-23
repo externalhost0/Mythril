@@ -466,7 +466,7 @@ static AssetCompiled compileGLTFAsset(mythril::CTX& ctx, AssetData& data) {
 				.size = sizeof(GPU::GeneralVertex) * primitive_data.vertexData.size(),
 				.usage = mythril::BufferUsageBits::BufferUsageBits_Storage,
 				.storage = mythril::StorageType::Device,
-				.initialData = primitive_data.vertexData.data(),
+				.initialData = primitive_data.vertexData,
 				.debugName = vertex_name_buf
 			}).release();
 			mesh_compiled.vertexBufHandle = mesh_vertex_buffer;
@@ -477,7 +477,7 @@ static AssetCompiled compileGLTFAsset(mythril::CTX& ctx, AssetData& data) {
 				.size = sizeof(uint32_t) * primitive_data.indexData.size(),
 				.usage = mythril::BufferUsageBits::BufferUsageBits_Index,
 				.storage = mythril::StorageType::Device,
-				.initialData = primitive_data.indexData.data(),
+				.initialData = primitive_data.indexData,
 				.debugName = index_name_buf
 			}).release();
 			mesh_compiled.indexBufHandle = mesh_index_buffer;
@@ -979,14 +979,14 @@ int main() {
 				.size = allVertexData.size() * sizeof(GPU::GeneralVertex),
 				.usage = mythril::BufferUsageBits::BufferUsageBits_Storage,
 				.storage = mythril::StorageType::Device,
-				.initialData = allVertexData.data(),
+				.initialData = allVertexData,
 				.debugName = "Sponza Opaque All Vertex Buf"
 			});
 			opaqueSponzaIndexBuf = ctx->createBuffer({
 				.size = allIndexData.size() * sizeof(uint32_t),
 				.usage = mythril::BufferUsageBits::BufferUsageBits_Index,
 				.storage = mythril::StorageType::Device,
-				.initialData = allIndexData.data(),
+				.initialData = allIndexData,
 				.debugName = "Sponza Opaque All Index Buf"
 			});
 
@@ -1008,7 +1008,7 @@ int main() {
 				.size = sizeof(VkDrawIndexedIndirectCommand) * indirectCmds.size(),
 				.usage = mythril::BufferUsageBits::BufferUsageBits_Indirect,
 				.storage = mythril::StorageType::Device,
-				.initialData = indirectCmds.data(),
+				.initialData = indirectCmds,
 				.debugName = "Sponza Indirect Buf"
 			});
 		}
@@ -1112,7 +1112,7 @@ int main() {
 			.size = sizeof(glm::mat4) * kNumPointLights * 6,
 			.usage = mythril::BufferUsageBits::BufferUsageBits_Storage,
 			.storage = mythril::StorageType::Device,
-			.initialData = &shadowMatrices[0][0],
+			.initialData = shadowMatrices,
 			.debugName = "Point Light Shadow Matrices Buffer"
 		});
 
@@ -1190,7 +1190,7 @@ int main() {
 			.size = particles.size() * sizeof(ParticleData),
 			.usage = mythril::BufferUsageBits::BufferUsageBits_Storage,
 			.storage = mythril::StorageType::Device,
-			.initialData = particles.data(),
+			.initialData = particles,
 			.debugName = "Particle Buffer"
 		});
 
@@ -1198,14 +1198,14 @@ int main() {
 			.size = Primitives::kHexVertices.size() * sizeof(Primitives::Vertex2D),
 			.usage = mythril::BufferUsageBits::BufferUsageBits_Storage,
 			.storage = mythril::StorageType::Device,
-			.initialData = Primitives::kHexVertices.data(),
+			.initialData = Primitives::kHexVertices,
 			.debugName = "Quad Vertex Buffer"
 		});
 		mythril::Buffer particle_index_buffer = ctx->createBuffer({
 			.size = Primitives::kHexIndices.size() * sizeof(uint32_t),
 			.usage = mythril::BufferUsageBits::BufferUsageBits_Index,
 			.storage = mythril::StorageType::Device,
-			.initialData = Primitives::kHexIndices.data(),
+			.initialData = Primitives::kHexIndices,
 			.debugName = "Quad Index Buffer"
 		});
 

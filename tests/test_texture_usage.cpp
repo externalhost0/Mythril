@@ -8,15 +8,15 @@ using namespace mythril;
 namespace {
 	struct SampleTexture {
 		const char* where;
-		uint8_t usage;
+		TextureUsageBits usage;
 		StorageType storage;
 		VkFormat format;
 		VkImageUsageFlags expected;
 	};
 
-	constexpr uint8_t kAttach = TextureUsageBits_Attachment;
-	constexpr uint8_t kSampled = TextureUsageBits_Sampled;
-	constexpr uint8_t kStorage = TextureUsageBits_Storage;
+	constexpr TextureUsageBits kAttach = TextureUsageBits_Attachment;
+	constexpr TextureUsageBits kSampled = TextureUsageBits_Sampled;
+	constexpr TextureUsageBits kStorage = TextureUsageBits_Storage;
 	constexpr VkImageUsageFlags kDst = VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 	constexpr VkImageUsageFlags kSrc = VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
 	constexpr VkImageUsageFlags kColor = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;

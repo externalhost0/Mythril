@@ -87,7 +87,7 @@ namespace mythril::vkutil {
 	void ImageMemoryBarrier2(VkCommandBuffer cmd, VkImage image, StageAccess src, StageAccess dst, VkImageLayout oldLayout, VkImageLayout newLayout, VkImageSubresourceRange range);
 	void BufferMemoryBarrier2(VkCommandBuffer cmd, VkBuffer buffer, StageAccess src, StageAccess dst, VkDeviceSize offset, VkDeviceSize size);
 
-	constexpr VkBufferUsageFlags ToVkBufferUsage(uint8_t usageBits, StorageType storage) {
+	constexpr VkBufferUsageFlags ToVkBufferUsage(BufferUsageBits usageBits, StorageType storage) {
 		VkBufferUsageFlags usage = (storage == StorageType::Device) ? VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT : 0;
 		if (usageBits & BufferUsageBits_Index)
 			usage |= VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
@@ -104,7 +104,7 @@ namespace mythril::vkutil {
 		return usage;
 	}
 
-	constexpr VkImageUsageFlags ToVkImageUsage(uint8_t usageBits, StorageType storage, VkFormat format) {
+	constexpr VkImageUsageFlags ToVkImageUsage(TextureUsageBits usageBits, StorageType storage, VkFormat format) {
 		VkImageUsageFlags usage = (storage == StorageType::Device) ? VK_IMAGE_USAGE_TRANSFER_DST_BIT : 0;
 		if (usageBits & TextureUsageBits_Sampled)
 			usage |= VK_IMAGE_USAGE_SAMPLED_BIT;

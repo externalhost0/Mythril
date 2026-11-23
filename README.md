@@ -74,7 +74,7 @@ int main() {
 ![Minimal Example Screenshot][basic_window_img]
 
 ## Requirements
-* C++20 compiler (tested with clang 16.0.0/21.0..0, gcc 13.3.0, MSVC v143)
+* C++20 compiler (tested with clang 16.x.x/21.x.x, gcc 13.x.x, MSVC v143)
 * CMake 3.28+
 * Vulkan SDK 1.4.335.0+ (must include Slang)
 

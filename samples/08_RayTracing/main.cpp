@@ -213,14 +213,14 @@ int main() {
 			.size = sizeof(Vertex) * scene.vertices.size(),
 			.usage = mythril::BufferUsageBits::BufferUsageBits_Storage | mythril::BufferUsageBits_AccelerationStructureInputReadOnly,
 			.storage = mythril::StorageType::Device,
-			.initialData = scene.vertices.data(),
+			.initialData = scene.vertices,
 			.debugName = "Scene Vertex Buffer"
 		});
 		mythril::Buffer sceneIndexBuffer = ctx->createBuffer({
 			.size = sizeof(uint32_t) * scene.indices.size(),
 			.usage = mythril::BufferUsageBits::BufferUsageBits_Storage | mythril::BufferUsageBits_Index | mythril::BufferUsageBits_AccelerationStructureInputReadOnly,
 			.storage = mythril::StorageType::Device,
-			.initialData = scene.indices.data(),
+			.initialData = scene.indices,
 			.debugName = "Scene Index Buffer"
 		});
 
@@ -301,7 +301,7 @@ int main() {
 			.size = sizeof(VkAccelerationStructureInstanceKHR) * instances.size(),
 			.usage = mythril::BufferUsageBits::BufferUsageBits_AccelerationStructureInputReadOnly,
 			.storage = mythril::StorageType::HostVisible,
-			.initialData = instances.data(),
+			.initialData = instances,
 			.debugName = "instances data"
 		});
 		mythril::AccelerationStructure tlas = ctx->createAccelerationStructure({

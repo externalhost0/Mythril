@@ -6,7 +6,11 @@
 
 #include "vkenums.h"
 
+#include <cstddef>
 #include <filesystem>
+#include <ranges>
+#include <span>
+#include <type_traits>
 #include <variant>
 #include <volk.h>
 
@@ -39,6 +43,11 @@ namespace mythril {
 		TextureUsageBits_Storage = 1 << 1,
 		TextureUsageBits_Attachment = 1 << 2,
 	};
+	// combined bits keep the enum type, so buffer and texture usage cannot be mixed
+	constexpr BufferUsageBits operator|(BufferUsageBits a, BufferUsageBits b) { return static_cast<BufferUsageBits>(static_cast<uint8_t>(a) | static_cast<uint8_t>(b)); }
+	constexpr TextureUsageBits operator|(TextureUsageBits a, TextureUsageBits b) { return static_cast<TextureUsageBits>(static_cast<uint8_t>(a) | static_cast<uint8_t>(b)); }
+	constexpr BufferUsageBits& operator|=(BufferUsageBits& a, BufferUsageBits b) { return a = a | b; }
+	constexpr TextureUsageBits& operator|=(TextureUsageBits& a, TextureUsageBits b) { return a = a | b; }
 
 	// strict enums can be whatever
 	enum class StorageType : uint8_t {
@@ -117,11 +126,23 @@ namespace mythril {
 		uint32_t count = 0;
 		const char* debugName = "";
 	};
+	// no raw pointers, so the size always matches the data
+	struct HostBytes {
+		std::span<const std::byte> bytes;
+
+		HostBytes() = default;
+		HostBytes(std::nullptr_t) {}
+		template<std::ranges::contiguous_range Range> requires std::is_trivially_copyable_v<std::ranges::range_value_t<Range>>
+		HostBytes(const Range& range) : bytes(std::as_bytes(std::span(range))) {}
+		template<typename T> requires (std::is_trivially_copyable_v<T> && !std::ranges::range<T> && !std::is_pointer_v<T>)
+		HostBytes(const T& value) : bytes(std::as_bytes(std::span(&value, 1))) {}
+	};
 	struct BufferSpec {
 		size_t size = 0;
-		uint8_t usage = {};
+		BufferUsageBits usage = {};
 		StorageType storage = StorageType::HostVisible;
-		const void* initialData = nullptr;
+		// size 0 takes the size of initialData
+		HostBytes initialData = {};
 		const char* debugName = "Unnamed Buffer";
 	};
 	struct TextureSpec {
@@ -129,7 +150,7 @@ namespace mythril {
 		TextureType type = TextureType::Type_2D;
 		VkFormat format = VK_FORMAT_UNDEFINED;
 		SampleCount samples = SampleCount::X1;
-		uint8_t usage = {};
+		TextureUsageBits usage = {};
 		StorageType storage = StorageType::Device;
 
 		uint32_t numMipLevels = 1;

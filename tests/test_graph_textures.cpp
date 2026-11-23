@@ -115,7 +115,7 @@ namespace {
 		}
 		Realization sampledDropped(const Dimensions dimensions, const TextureUses& uses, const bool confined) {
 			Realization realization = InferRealization(dimensions, uses, confined);
-			realization.usage &= ~TextureUsageBits_Sampled;
+			realization.usage = static_cast<TextureUsageBits>(realization.usage & ~TextureUsageBits_Sampled);
 			return realization;
 		}
 	}

@@ -441,14 +441,14 @@ int main() {
 			.size = sizeof(mythril::GPU::Vertex) * cubeVertices.size(),
 			.usage = mythril::BufferUsageBits::BufferUsageBits_Storage,
 			.storage = mythril::StorageType::Device,
-			.initialData = cubeVertices.data(),
+			.initialData = cubeVertices,
 			.debugName = "Cube Vertex Buffer"
 		});
 		mythril::Buffer cubeIndexBuffer = ctx->createBuffer({
 			.size = sizeof(uint32_t) * cubeIndices.size(),
 			.usage = mythril::BufferUsageBits::BufferUsageBits_Index,
 			.storage = mythril::StorageType::Device,
-			.initialData = cubeIndices.data(),
+			.initialData = cubeIndices,
 			.debugName = "Cube Index Buffer"
 		});
 		mythril::Buffer perFrameDataBuffer = ctx->createBuffer({

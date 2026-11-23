@@ -40,8 +40,9 @@ namespace mythril {
 		class AllocatedAccelerationStructure;
 
 
+		// discarding a returned holder destroys the resource at once
 		template<typename InternalHandle>
-		class Holder {
+		class [[nodiscard]] Holder {
 			friend class ::mythril::CTX;
 		public:
 			Holder() = default;
@@ -76,7 +77,7 @@ namespace mythril {
 			// wrapper functionality
 			void reset();
 			// releases handle from being automatically cleaned, allows manual management
-			InternalHandle release() {
+			[[nodiscard]] InternalHandle release() {
 				_pCtx = nullptr;
 				return std::exchange(_handle, InternalHandle{});
 			}

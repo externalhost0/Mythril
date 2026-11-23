@@ -312,7 +312,7 @@ static size_t checkEveryBuffer(Fn fn, bool includeHostVisible) {
 	size_t checked = 0;
 	for (uint32_t bits = 0; bits < (1u << kUsageBitCount); ++bits) {
 		for (StorageType storage : kStorageTypes) {
-			const VkBufferUsageFlags usage = vkutil::ToVkBufferUsage(static_cast<uint8_t>(bits), storage);
+			const VkBufferUsageFlags usage = vkutil::ToVkBufferUsage(static_cast<BufferUsageBits>(bits), storage);
 			if (!(usage & VK_BUFFER_USAGE_TRANSFER_DST_BIT) || (storage == StorageType::HostVisible && !includeHostVisible))
 				continue;
 			for (vkutil::BufferSyncFeatures f : kFeatureSets) {
@@ -347,7 +347,7 @@ TEST_CASE("every usage bit createBuffer can emit is handled by the barrier table
 	VkBufferUsageFlags emitted = 0;
 	for (uint32_t bits = 0; bits < (1u << kUsageBitCount); ++bits)
 		for (StorageType storage : kStorageTypes)
-			emitted |= vkutil::ToVkBufferUsage(static_cast<uint8_t>(bits), storage);
+			emitted |= vkutil::ToVkBufferUsage(static_cast<BufferUsageBits>(bits), storage);
 	CHECK_MESSAGE((emitted & ~vkutil::kHandledBufferUsage) == 0, "unhandled usage " << usageNames(emitted & ~vkutil::kHandledBufferUsage));
 }
 

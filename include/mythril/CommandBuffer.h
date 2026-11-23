@@ -168,7 +168,10 @@ namespace mythril {
 		ResolvedTexture texture(GraphTexture texture) const { return _cmd.texture(texture); }
 
 		template<class Struct>
-		void cmdPushConstants(const Struct& value, uint32_t offset = 0) { _cmd.cmdPushConstants(&value, static_cast<uint32_t>(sizeof(Struct)), offset); }
+		void cmdPushConstants(const Struct& value, uint32_t offset = 0) {
+			static_assert(std::is_trivially_copyable_v<Struct> && !std::is_pointer_v<Struct>, "cmdPushConstant takes struct by value, not a pointer to it");
+			_cmd.cmdPushConstants(&value, static_cast<uint32_t>(sizeof(Struct)), offset);
+		}
 		void cmdPushConstants(const void* data, uint32_t size, uint32_t offset) { _cmd.cmdPushConstants(data, size, offset); }
 
 		void cmdWriteTimestamp(QueryPoolHandle pool, uint32_t query) { _cmd.cmdWriteTimestamp(pool, query); }

@@ -314,14 +314,14 @@ int main() {
 			.size = sizeof(mythril::GPU::SkinnedVertex) * model.vertices.size(),
 			.usage = mythril::BufferUsageBits::BufferUsageBits_Storage,
 			.storage = mythril::StorageType::Device,
-			.initialData = model.vertices.data(),
+			.initialData = model.vertices,
 			.debugName = "Skinned Vertex Buffer"
 		});
 		mythril::Buffer indexBuffer = ctx->createBuffer({
 			.size = sizeof(uint32_t) * model.indices.size(),
 			.usage = mythril::BufferUsageBits::BufferUsageBits_Index,
 			.storage = mythril::StorageType::Device,
-			.initialData = model.indices.data(),
+			.initialData = model.indices,
 			.debugName = "Skinned Index Buffer"
 		});
 		mythril::Buffer jointMatrixBuffer = ctx->createBuffer({

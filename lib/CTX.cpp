@@ -208,8 +208,8 @@ namespace mythril {
 		this->_staging.reset(nullptr);
 		this->destroySwapchain();
 		vkDestroySemaphore(this->_vkDevice, this->_timelineSemaphore, nullptr);
-		this->_dummyTexture.release();
-		this->_dummyLinearSampler.release();
+		(void)this->_dummyTexture.release();
+		(void)this->_dummyLinearSampler.release();
 
 		// TODO::fixing the allocation not being proerly freed for buffers VMA
 		auto destroyAll = [this]<typename H, typename O>(HandlePool<H, O>& pool, const char* name) {
@@ -1202,14 +1202,17 @@ namespace mythril {
 
 		ASSERT_MSG(usage_flags, "Invalid buffer creation specification!");
 		const VkMemoryPropertyFlags mem_flags = StorageTypeToVkMemoryPropertyFlags(spec.storage);
+		if (spec.size == 0)
+			spec.size = spec.initialData.bytes.size();
+		ASSERT_MSG(spec.initialData.bytes.size() <= spec.size, "Buffer '{}' initialData ({} bytes) is larger than its size ({} bytes)!", spec.debugName, spec.initialData.bytes.size(), spec.size);
 
 		AllocatedBuffer obj = this->createBufferImpl(spec.size, usage_flags, mem_flags);
 		snprintf(obj._debugName, sizeof(obj._debugName), "%s", spec.debugName);
 		vmaSetAllocationName(_vmaAllocator, obj._vmaAllocation, obj._debugName);
 		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_BUFFER, reinterpret_cast<uint64_t>(obj._vkBuffer), obj.getDebugName().data());
 		BufferHandle handle = _bufferPool.create(std::move(obj));
-		if (spec.initialData) {
-			upload(handle, spec.initialData, spec.size);
+		if (!spec.initialData.bytes.empty()) {
+			upload(handle, spec.initialData.bytes.data(), spec.initialData.bytes.size());
 		}
 		return {this, handle};
 	}

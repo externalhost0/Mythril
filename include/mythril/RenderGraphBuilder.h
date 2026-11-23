@@ -63,7 +63,7 @@ namespace mythril {
 		uint32_t numMips{};
 		uint32_t numLayers{};
 		ComponentMapping components{};
-		uint8_t usage{};
+		TextureUsageBits usage{};
 		StorageType storage{};
 		bool concurrent{};
 		bool operator==(const TransientKey&) const = default;
