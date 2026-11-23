@@ -8,6 +8,7 @@
 #include "mythril/ObjectHandles.h"
 #include "mythril/SubmitHandle.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <span>
 #include <vector>
@@ -47,9 +48,9 @@ namespace mythril {
 		void onGraphSubmit(SubmitHandle submit);
 		void resetPending();
 		void
-		imageData2D(detail::AllocatedTexture& image, const VkRect2D& imageRegion, uint32_t baseMipLevel, uint32_t numMipLevels, uint32_t layerCheck, uint32_t numLayers, VkFormat format, const void* data);
-		void imageData3D(detail::AllocatedTexture& image, const VkOffset3D& offset, const VkExtent3D& extent, VkFormat format, const void* data);
-		void getImageData(detail::AllocatedTexture& image, const VkOffset3D& offset, const VkExtent3D& extent, VkImageSubresourceRange range, VkFormat format, void* outData);
+		imageData2D(detail::AllocatedTexture& image, const VkRect2D& imageRegion, uint32_t baseMipLevel, uint32_t numMipLevels, uint32_t layerCheck, uint32_t numLayers, VkFormat format, std::span<const std::byte> data);
+		void imageData3D(detail::AllocatedTexture& image, const VkOffset3D& offset, const VkExtent3D& extent, VkFormat format, std::span<const std::byte> data);
+		void getImageData(detail::AllocatedTexture& image, const VkOffset3D& offset, const VkExtent3D& extent, VkImageSubresourceRange range, VkFormat format, std::span<std::byte> outData);
 
 	private:
 		static constexpr int kStagingBufferAlignment = 16;

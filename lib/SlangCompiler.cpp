@@ -54,6 +54,23 @@ export T getDescriptorFromHandle<T : IOpaqueDescriptor>(DescriptorHandle<T> hand
 
 	void SlangCompiler::addSearchPath(const std::filesystem::path& searchPath) { this->_shaderSearchPaths.push_back(searchPath); }
 	void SlangCompiler::clearSearchPaths() { this->_shaderSearchPaths.clear(); }
+	void SlangCompiler::setMatrixLayoutMode(const SlangCfg::MatrixMode mode) {
+		ASSERT_MSG(!_sessionExists, "The matrix layout must be set before the Slang session is created.");
+		_matrixLayoutMode = mode;
+	}
+	void SlangCompiler::addCompilerOptions(const std::span<const slang::CompilerOptionEntry> options) {
+		ASSERT_MSG(!_sessionExists, "Compiler options must be added before the Slang session is created.");
+		const auto ownString = [this](const char* str) -> const char* { return str ? _userOptionStrings.emplace_back(str).c_str() : nullptr; };
+		for (slang::CompilerOptionEntry entry: options) {
+			ASSERT_MSG(
+			        entry.name != slang::CompilerOptionName::BindlessSpaceIndex && entry.name != slang::CompilerOptionName::VulkanUseEntryPointName && entry.name != slang::CompilerOptionName::ForceCLayout,
+			        "Slang compiler option {} is required by Mythril and cannot be overridden.", static_cast<int>(entry.name)
+			);
+			entry.value.stringValue0 = ownString(entry.value.stringValue0);
+			entry.value.stringValue1 = ownString(entry.value.stringValue1);
+			_userOptions.push_back(entry);
+		}
+	}
 
 	static const char* ResolveDiagnosticsMessage(const Slang::ComPtr<slang::IBlob>& diagnostics_blob) {
 		return diagnostics_blob ? static_cast<const char*>(diagnostics_blob->getBufferPointer()) : "(no diagnostics available)";
@@ -105,17 +122,21 @@ export T getDescriptorFromHandle<T : IOpaqueDescriptor>(DescriptorHandle<T> hand
 			sp_count++;
 		}
 
+		// slang keeps the first entry for each option, so user options go first to override the defaults
+		std::vector<slang::CompilerOptionEntry> options = _userOptions;
+		options.insert(options.end(), entries.begin(), entries.end());
+
 		const slang::SessionDesc sessionDesc = {
 		    .targets = &targetDesc,
 		    .targetCount = 1,
 
-		    .defaultMatrixLayoutMode = SLANG_MATRIX_LAYOUT_COLUMN_MAJOR,
+		    .defaultMatrixLayoutMode = SlangMatrixModeFromMythrilMatrixMode(_matrixLayoutMode),
 
 		    .searchPaths = sp_cstrings.data(),
 		    .searchPathCount = sp_count,
 
-		    .compilerOptionEntries = entries.data(),
-		    .compilerOptionEntryCount = entries.size(),
+		    .compilerOptionEntries = options.data(),
+		    .compilerOptionEntryCount = static_cast<uint32_t>(options.size()),
 		};
 		const SlangResult session_result = this->_globalSlangSession->createSession(sessionDesc, this->_slangSession.writeRef());
 		ASSERT_MSG(SLANG_SUCCEEDED(session_result), "Slang failed to create session!");

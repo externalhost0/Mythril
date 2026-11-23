@@ -6,9 +6,12 @@
 #include <slang/slang-com-ptr.h>
 #include <slang/slang.h>
 
+#include "mythril/CTXBuilder.h"
 #include "mythril/Shader.h"
 
+#include <deque>
 #include <filesystem>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -44,6 +47,8 @@ namespace mythril {
 
 		void addSearchPath(const std::filesystem::path& searchPath);
 		void clearSearchPaths();
+		void addCompilerOptions(std::span<const slang::CompilerOptionEntry> options);
+		void setMatrixLayoutMode(SlangCfg::MatrixMode mode);
 
 		CompileResult compileSlangFromDisk(const std::filesystem::path& filepath);
 		CompileResult compileSlangFromSourceString(const std::string& code);
@@ -61,5 +66,9 @@ namespace mythril {
 		bool _sessionExists = false;
 
 		std::vector<std::filesystem::path> _shaderSearchPaths = {};
+		SlangCfg::MatrixMode _matrixLayoutMode = SlangCfg::MatrixMode::ColMajor;
+		std::vector<slang::CompilerOptionEntry> _userOptions = {};
+		// owns the option strings, deque keeps them in place as it grows
+		std::deque<std::string> _userOptionStrings = {};
 	};
 } // namespace mythril

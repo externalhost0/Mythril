@@ -2,7 +2,7 @@
 // Created by Hayden Rivas on 11/1/25.
 //
 
-#include "mythril/Shader.h"
+#include "ShaderReflection.h"
 #include "HelperMacros.h"
 #include "Logger.h"
 #include <vulkan/vk_enum_string_helper.h>
@@ -18,6 +18,9 @@
 #include "mythril/Objects.h"
 
 namespace mythril {
+	// SPIR-V names are optional, a stripped or unnamed member reflects as null
+	static const char* SpvName(const char* name) { return name ? name : ""; }
+
 	using namespace detail;
 
 	const char* FieldKindToString(FieldKind fieldKind) {
@@ -96,7 +99,7 @@ namespace mythril {
 
 	static bool DetectMatrixType(const SpvReflectTypeDescription& typeDesc) {
 		if (typeDesc.struct_type_description) {
-			std::string s = typeDesc.type_name;
+			const std::string s = SpvName(typeDesc.type_name);
 			return s.find("MatrixStorage") != std::string::npos;
 		}
 		return false;
@@ -156,7 +159,7 @@ namespace mythril {
 			FieldInfo field;
 			field.size = memberVar.size;
 			field.offset = memberVar.offset;
-			field.varName = memberVar.name;
+			field.varName = SpvName(memberVar.name);
 			field.kind = ResolveKind(memberType);
 
 			switch (field.kind) {
@@ -168,7 +171,7 @@ namespace mythril {
 					field.typeName = "Pointer";
 				} break;
 				case FieldKind::Struct: {
-					field.typeName = memberType.type_name;
+					field.typeName = SpvName(memberType.type_name);
 					CollectFieldsRecursively(field.fields, memberVar);
 				} break;
 				case FieldKind::Array: {
@@ -181,7 +184,7 @@ namespace mythril {
 				} break;
 				case FieldKind::Matrix: {
 					field.typeName = "Matrix";
-					std::optional<MatrixDims> extracted_dims = ExtractMatrixDims(memberType.type_name);
+					std::optional<MatrixDims> extracted_dims = ExtractMatrixDims(SpvName(memberType.type_name));
 					if (auto dims = extracted_dims) {
 						field.rowCount = dims->rows;
 						field.columnCount = dims->cols;
@@ -207,8 +210,8 @@ namespace mythril {
 		info.setIndex = descriptorBind.set;
 		info.bindingIndex = descriptorBind.binding;
 		// top level info
-		info.typeName = blockType.type_name;
-		info.varName = descriptorBind.name;
+		info.typeName = SpvName(blockType.type_name);
+		info.varName = SpvName(descriptorBind.name);
 
 		CollectFieldsRecursively(info.fields, descriptorBind.block);
 		return info;
@@ -222,8 +225,8 @@ namespace mythril {
 		// top level info
 		info.size = blockVar.size;
 		info.offset = blockVar.offset;
-		info.varName = blockVar.name;
-		info.typeName = blockType.type_name;
+		info.varName = SpvName(blockVar.name);
+		info.typeName = SpvName(blockType.type_name);
 
 		CollectFieldsRecursively(info.fields, blockVar);
 		return info;
@@ -361,7 +364,7 @@ namespace mythril {
 			const SpvReflectTypeDescription& spvConstantTyoe = *reflected_constant->type_description;
 			SpecializationConstant info = {};
 
-			info.varName = reflected_constant->name;
+			info.varName = SpvName(reflected_constant->name);
 			info.typeName = "Scalar";
 			info.scalarKind = ResolveScalarKindFromType(spvConstantTyoe);
 			info.id = reflected_constant->constant_id;
@@ -391,7 +394,7 @@ namespace mythril {
 			for (int binding_index = 0; binding_index < spvReflectedSet->binding_count; binding_index++) {
 				const SpvReflectDescriptorBinding* spvReflectedBinding = spvReflectedSet->bindings[binding_index];
 
-				if (strcmp(spvReflectedBinding->name, "__slang_resource_heap") == 0) {
+				if (strcmp(SpvName(spvReflectedBinding->name), "__slang_resource_heap") == 0) {
 					isBindless = true;
 					continue;
 				}
@@ -400,7 +403,7 @@ namespace mythril {
 				        false,
 				        "Shader declares non-bindless descriptor binding '{}' at set={}, binding={}. "
 				        "Mythril is fully bindless: use Ptr<T> in push constants or DescriptorHandle<T>.",
-				        spvReflectedBinding->name,
+				        SpvName(spvReflectedBinding->name),
 				        spvReflectedSet->set,
 				        spvReflectedBinding->binding
 				);

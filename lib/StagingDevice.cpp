@@ -160,10 +160,11 @@ namespace mythril {
 			region.state_ = MemoryRegionDesc::State::Free;
 		}
 	}
-	void StagingDevice::imageData3D(AllocatedTexture& image, const VkOffset3D& offset, const VkExtent3D& extent, VkFormat format, const void* data) {
+	void StagingDevice::imageData3D(AllocatedTexture& image, const VkOffset3D& offset, const VkExtent3D& extent, VkFormat format, std::span<const std::byte> data) {
 		ASSERT_MSG(image._numLevels == 1, "Can handle only 3D images with exactly 1 mip-level");
 		ASSERT_MSG((offset.x == 0) && (offset.y == 0) && (offset.z == 0), "Can upload only full-size 3D images");
 		const uint32_t storageSize = extent.width * extent.height * extent.depth * vkutil::GetBytesPerPixel(format);
+		ASSERT_MSG(data.size() == storageSize, "Texture '{}' upload got {} bytes, the range needs {}.", image._debugName, data.size(), storageSize);
 
 		ensureStagingBufferSize(storageSize);
 
@@ -174,7 +175,7 @@ namespace mythril {
 		AllocatedBuffer* stagingBuffer = _ctx._bufferPool.get(_stagingBuffer);
 
 		// 1. Copy the pixel data into the host visible staging buffer
-		stagingBuffer->bufferSubData(_ctx, desc.offset_, storageSize, data);
+		stagingBuffer->bufferSubData(_ctx, desc.offset_, storageSize, data.data());
 
 		const detail::CommandBufferWrapper& wrapper = _ctx._immGraphics->acquire();
 
@@ -218,7 +219,7 @@ namespace mythril {
 		_regions.push_back(desc);
 	}
 	void StagingDevice::imageData2D(
-	        AllocatedTexture& image, const VkRect2D& imageRegion, uint32_t baseMipLevel, uint32_t numMipLevels, uint32_t layerCheck, uint32_t numLayers, VkFormat format, const void* data
+	        AllocatedTexture& image, const VkRect2D& imageRegion, uint32_t baseMipLevel, uint32_t numMipLevels, uint32_t layerCheck, uint32_t numLayers, VkFormat format, std::span<const std::byte> data
 	) {
 		ASSERT(numMipLevels <= kMaxMipLevels);
 
@@ -242,6 +243,7 @@ namespace mythril {
 			//			height = height <= 1 ? 1 : height >> 1;
 		}
 		const uint32_t storageSize = layerStorageSize * numLayers;
+		ASSERT_MSG(data.size() == storageSize, "Texture '{}' upload got {} bytes, the range needs {}.", image._debugName, data.size(), storageSize);
 
 		ensureStagingBufferSize(storageSize);
 		ASSERT(storageSize <= _stagingBufferSize);
@@ -250,7 +252,7 @@ namespace mythril {
 		const detail::CommandBufferWrapper& wrapper = _ctx._immGraphics->acquire();
 
 		AllocatedBuffer* stagingBuffer = _ctx._bufferPool.get(_stagingBuffer);
-		stagingBuffer->bufferSubData(_ctx, desc.offset_, storageSize, data);
+		stagingBuffer->bufferSubData(_ctx, desc.offset_, storageSize, data.data());
 
 		uint32_t offset = 0;
 		const uint32_t numPlanes = vkutil::GetNumImagePlanes(image._vkFormat);
@@ -333,12 +335,13 @@ namespace mythril {
 		desc.state_ = MemoryRegionDesc::State::Busy;
 		_regions.push_back(desc);
 	}
-	void StagingDevice::getImageData(AllocatedTexture& image, const VkOffset3D& offset, const VkExtent3D& extent, VkImageSubresourceRange range, VkFormat format, void* outData) {
+	void StagingDevice::getImageData(AllocatedTexture& image, const VkOffset3D& offset, const VkExtent3D& extent, VkImageSubresourceRange range, VkFormat format, std::span<std::byte> outData) {
 		const VkImageLayout originalLayout = image.getImageLayout(image.toSubresourceRange(range));
 		ASSERT(originalLayout != VK_IMAGE_LAYOUT_UNDEFINED);
 		ASSERT(range.layerCount == 1);
 
 		const uint32_t storageSize = extent.width * extent.height * extent.depth * vkutil::GetBytesPerPixel(format);
+		ASSERT_MSG(outData.size() == storageSize, "Texture '{}' download got {} bytes, the range needs {}.", image._debugName, outData.size(), storageSize);
 
 		ensureStagingBufferSize(storageSize);
 
@@ -389,7 +392,7 @@ namespace mythril {
 		}
 
 		// 3. Copy data from staging buffer into data
-		memcpy(outData, stagingBuffer->getMappedPtr() + desc.offset_, storageSize);
+		memcpy(outData.data(), stagingBuffer->getMappedPtr() + desc.offset_, storageSize);
 
 		// 4. Transition back to the initial image layout
 		const detail::CommandBufferWrapper& wrapper2 = _ctx._immGraphics->acquire();

@@ -43,11 +43,37 @@ namespace mythril {
 		TextureUsageBits_Storage = 1 << 1,
 		TextureUsageBits_Attachment = 1 << 2,
 	};
-	// combined bits keep the enum type, so buffer and texture usage cannot be mixed
-	constexpr BufferUsageBits operator|(BufferUsageBits a, BufferUsageBits b) { return static_cast<BufferUsageBits>(static_cast<uint8_t>(a) | static_cast<uint8_t>(b)); }
-	constexpr TextureUsageBits operator|(TextureUsageBits a, TextureUsageBits b) { return static_cast<TextureUsageBits>(static_cast<uint8_t>(a) | static_cast<uint8_t>(b)); }
-	constexpr BufferUsageBits& operator|=(BufferUsageBits& a, BufferUsageBits b) { return a = a | b; }
-	constexpr TextureUsageBits& operator|=(TextureUsageBits& a, TextureUsageBits b) { return a = a | b; }
+	// just so you can do everything as expected with C enum
+	constexpr BufferUsageBits operator|(BufferUsageBits a, BufferUsageBits b) {
+		return static_cast<BufferUsageBits>(static_cast<uint8_t>(a) | static_cast<uint8_t>(b));
+	}
+	constexpr TextureUsageBits operator|(TextureUsageBits a, TextureUsageBits b) {
+		return static_cast<TextureUsageBits>(static_cast<uint8_t>(a) | static_cast<uint8_t>(b));
+	}
+	constexpr BufferUsageBits& operator|=(BufferUsageBits& a, BufferUsageBits b) {
+		return a = a | b;
+	}
+	constexpr TextureUsageBits& operator|=(TextureUsageBits& a, TextureUsageBits b) {
+		return a = a | b;
+	}
+	constexpr BufferUsageBits operator&(BufferUsageBits a, BufferUsageBits b) {
+		return static_cast<BufferUsageBits>(static_cast<uint8_t>(a) & static_cast<uint8_t>(b));
+	}
+	constexpr TextureUsageBits operator&(TextureUsageBits a, TextureUsageBits b) {
+		return static_cast<TextureUsageBits>(static_cast<uint8_t>(a) & static_cast<uint8_t>(b));
+	}
+	constexpr BufferUsageBits& operator&=(BufferUsageBits& a, BufferUsageBits b) {
+		return a = a & b;
+	}
+	constexpr TextureUsageBits& operator&=(TextureUsageBits& a, TextureUsageBits b) {
+		return a = a & b;
+	}
+	constexpr BufferUsageBits operator~(BufferUsageBits a) {
+		return static_cast<BufferUsageBits>(~static_cast<uint8_t>(a));
+	}
+	constexpr TextureUsageBits operator~(TextureUsageBits a) {
+		return static_cast<TextureUsageBits>(~static_cast<uint8_t>(a));
+	}
 
 	// strict enums can be whatever
 	enum class StorageType : uint8_t {
@@ -157,7 +183,7 @@ namespace mythril {
 		uint32_t numLayers = 1;
 		ComponentMapping components = {};
 
-		const void* initialData = nullptr;
+		HostBytes initialData = {};
 		uint32_t dataNumMipLevels = 1; // how many mip-levels we want to create & fill in when uploading data
 		bool generateMipmaps = false; // works only if initialData is not nulll
 		// readable by every queue family in use at once with no ownership transfer, can cost compression on AMD

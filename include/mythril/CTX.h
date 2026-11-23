@@ -122,16 +122,22 @@ namespace mythril {
 		VkDeviceAddress gpuAddress(AccelerationStructureHandle handle) const;
 
 		// for buffers
-		void upload(BufferHandle handle, const void* data, size_t size, size_t offset = 0);
-		void download(BufferHandle handle, void* data, size_t size, size_t offset);
-		void upload(BufferHandle handle, HostBytes data, size_t offset = 0) { upload(handle, data.bytes.data(), data.bytes.size(), offset); }
+		void uploadEXT(BufferHandle handle, const void* data, size_t size, size_t offset = 0);
+		void downloadEXT(BufferHandle handle, void* data, size_t size, size_t offset);
+		// compile time safe versions
+		void upload(BufferHandle handle, HostBytes data, size_t offset = 0) { uploadEXT(handle, data.bytes.data(), data.bytes.size(), offset); }
 		template<std::ranges::contiguous_range Range> requires (std::is_trivially_copyable_v<std::ranges::range_value_t<Range>> && !std::is_const_v<std::remove_reference_t<std::ranges::range_reference_t<Range>>>)
-		void download(BufferHandle handle, Range&& range, size_t offset = 0) { download(handle, std::ranges::data(range), std::ranges::size(range) * sizeof(std::ranges::range_value_t<Range>), offset); }
+		void download(BufferHandle handle, Range&& range, size_t offset = 0) { downloadEXT(handle, std::ranges::data(range), std::ranges::size(range) * sizeof(std::ranges::range_value_t<Range>), offset); }
 		template<typename T> requires (std::is_trivially_copyable_v<T> && !std::ranges::range<T> && !std::is_pointer_v<T> && !std::is_const_v<T>)
-		void download(BufferHandle handle, T& value, size_t offset = 0) { download(handle, &value, sizeof(T), offset); }
-		// for textures
-		void upload(TextureHandle handle, const void* data, const TexRange& range);
-		void download(TextureHandle handle, void* data, const TexRange& range);
+		void download(BufferHandle handle, T& value, size_t offset = 0) { downloadEXT(handle, &value, sizeof(T), offset); }
+
+		// for textures, data must be exactly the bytes the range covers
+		void upload(TextureHandle handle, HostBytes data, const TexRange& range);
+		void download(TextureHandle handle, std::span<std::byte> data, const TexRange& range);
+		template<std::ranges::contiguous_range Range> requires (std::is_trivially_copyable_v<std::ranges::range_value_t<Range>> && !std::is_const_v<std::remove_reference_t<std::ranges::range_reference_t<Range>>>)
+		void download(TextureHandle handle, Range&& data, const TexRange& range) { download(handle, std::as_writable_bytes(std::span(data)), range); }
+		template<typename T> requires (std::is_trivially_copyable_v<T> && !std::ranges::range<T> && !std::is_pointer_v<T> && !std::is_const_v<T>)
+		void download(TextureHandle handle, T& value, const TexRange& range) { download(handle, std::as_writable_bytes(std::span(&value, 1)), range); }
 
 	public:
 		// for automatic cleanup of resources

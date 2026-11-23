@@ -432,7 +432,7 @@ static mythril::Texture loadTexture(mythril::CTX& ctx, const std::filesystem::pa
 		.usage = mythril::TextureUsageBits_Sampled,
 		.storage = mythril::StorageType::Device,
 		.numMipLevels = sample::CalcNumMipLevels(w, h),
-		.initialData = image_data,
+		.initialData = std::span(image_data, static_cast<size_t>(w) * h * 4),
 		.generateMipmaps = true,
 		.debugName = filepath.filename().string().c_str()
 	});
@@ -501,7 +501,7 @@ static AssetCompiled compileGLTFAsset(mythril::CTX& ctx, AssetData& data) {
 				.format = VK_FORMAT_R8G8B8A8_UNORM,
 				.usage = mythril::TextureUsageBits::TextureUsageBits_Sampled,
 				.numMipLevels = sample::CalcNumMipLevels(texture_data.width, texture_data.height),
-				.initialData = texture_data.pixels.get(),
+				.initialData = std::span(texture_data.pixels.get(), static_cast<size_t>(texture_data.width) * texture_data.height * 4),
 				.generateMipmaps = true,
 				.debugName = texture_name_buf
 			}).release();
@@ -919,7 +919,7 @@ int main() {
 			.usage = mythril::TextureUsageBits::TextureUsageBits_Sampled | mythril::TextureUsageBits_Storage,
 			.storage = mythril::StorageType::Device,
 			.components = red_swizzle,
-			.initialData = &brightPixel,
+			.initialData = brightPixel,
 			.debugName = "Luminance Adaptation 0"
 		};
 		mythril::TextureSpec lumtexspec1 = lumtexspec0;

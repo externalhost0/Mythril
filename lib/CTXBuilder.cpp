@@ -900,6 +900,8 @@ missing_features.append("\n\t(" version ") " #feature);
 		for (const auto& path: this->_slangCfg.searchpaths) {
 			ctx->_slangCompiler->addSearchPath(path);
 		}
+		ctx->_slangCompiler->addCompilerOptions(this->_slangCfg.compilerOptions);
+		ctx->_slangCompiler->setMatrixLayoutMode(this->_slangCfg.matrixLayoutMode);
 		// now we can build plugins!
 #ifdef MYTH_ENABLED_IMGUI
 		if (_usingImGui) {

@@ -172,7 +172,7 @@ namespace mythril {
 			static_assert(std::is_trivially_copyable_v<Struct> && !std::is_pointer_v<Struct>, "cmdPushConstant takes struct by value, not a pointer to it");
 			_cmd.cmdPushConstants(&value, static_cast<uint32_t>(sizeof(Struct)), offset);
 		}
-		void cmdPushConstants(const void* data, uint32_t size, uint32_t offset) { _cmd.cmdPushConstants(data, size, offset); }
+		void cmdPushConstantsEXT(const void* data, uint32_t size, uint32_t offset) { _cmd.cmdPushConstants(data, size, offset); }
 
 		void cmdWriteTimestamp(QueryPoolHandle pool, uint32_t query) { _cmd.cmdWriteTimestamp(pool, query); }
 		void cmdWriteTimestamp(const QueryPool& pool, uint32_t query) { _cmd.cmdWriteTimestamp(pool.handle(), query); }
@@ -251,7 +251,7 @@ namespace mythril {
 	public:
 		template<class Struct>
 		void cmdPushConstants(const Struct&, uint32_t = 0) = delete;
-		void cmdPushConstants(const void*, uint32_t, uint32_t) = delete;
+		void cmdPushConstantsEXT(const void*, uint32_t, uint32_t) = delete;
 	private:
 		explicit TransferCmd(CommandBuffer& cmd) : PassCmd(cmd) {}
 		friend class RenderGraph;

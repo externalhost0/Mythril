@@ -22,6 +22,7 @@
 #include "StagingDevice.h"
 #include "ImmediateCommands.h"
 #include "SlangCompiler.h"
+#include "ShaderReflection.h"
 #include "HelperMacros.h"
 #include "GPUProfiler.h"
 
@@ -151,7 +152,7 @@ namespace mythril {
 			        {.dimension = {texWidth, texHeight},
 			         .format = VK_FORMAT_R8G8B8A8_UNORM,
 			         .usage = TextureUsageBits::TextureUsageBits_Sampled | TextureUsageBits::TextureUsageBits_Storage,
-			         .initialData = pixels.data(),
+			         .initialData = pixels,
 			         .debugName = "Internal_Dummy_Texture"}
 			);
 			// fallback sampler, index 0
@@ -952,7 +953,7 @@ namespace mythril {
 		writeRegion(raygenSize, numMiss);
 		writeRegion(raygenSize + missSize, numHit);
 		writeRegion(raygenSize + missSize + hitSize, numCallable);
-		upload(pipeline._sbtBuffer.handle(), table.data(), table.size());
+		upload(pipeline._sbtBuffer.handle(), table);
 
 		pipeline._sbtEntryRayGen = VkStridedDeviceAddressRegionKHR{.deviceAddress = raygenAddress, .stride = raygenSize, .size = raygenSize};
 		pipeline._sbtEntryMiss = numMiss ? VkStridedDeviceAddressRegionKHR{.deviceAddress = raygenAddress + raygenSize, .stride = handleStride, .size = missSize} : VkStridedDeviceAddressRegionKHR{};
@@ -1212,7 +1213,7 @@ namespace mythril {
 		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_BUFFER, reinterpret_cast<uint64_t>(obj._vkBuffer), obj.getDebugName().data());
 		BufferHandle handle = _bufferPool.create(std::move(obj));
 		if (!spec.initialData.bytes.empty()) {
-			upload(handle, spec.initialData.bytes.data(), spec.initialData.bytes.size());
+			upload(handle, spec.initialData);
 		}
 		return {this, handle};
 	}
@@ -1395,7 +1396,7 @@ namespace mythril {
 	Texture CTX::createTexture(TextureSpec spec) {
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_CREATE);
 		ASSERT_MSG(spec.usage, "The usage field for TextureSpec is required, however '{}' was not given one!", spec.debugName);
-		ASSERT_MSG(!(spec.generateMipmaps && spec.initialData == nullptr), "'generateMipMaps' can only be true when 'initialData' is non-null!");
+		ASSERT_MSG(!(spec.generateMipmaps && spec.initialData.bytes.empty()), "'generateMipMaps' can only be true when 'initialData' is non-null!");
 		ASSERT_MSG(!(spec.usage & TextureUsageBits_Sampled) || !vkutil::IsFormatDepthAndStencil(spec.format), "VkFormat cannot have both depth & stencil components and be used for sampling! Occurs because of texture '{}'", spec.debugName);
 		ASSERT_MSG(!(spec.usage & TextureUsageBits_Storage) || spec.samples == SampleCount::X1, "Storage images cannot be multisampled!");
 		const VkImageUsageFlags usage_flags = vkutil::ToVkImageUsage(spec.usage, spec.storage, spec.format);
@@ -1460,7 +1461,7 @@ namespace mythril {
 		TextureHandle handle = _texturePool.create(std::move(obj));
 		writeTextureDescriptorsImpl(handle.index(), 1);
 		// if we have some data we want to upload, do that
-		if (spec.initialData) {
+		if (!spec.initialData.bytes.empty()) {
 			// enforces that the number of miplevels we want to upload will be accomadated by the texture
 			ASSERT(spec.dataNumMipLevels <= spec.numMipLevels);
 			ASSERT(spec.type == TextureType::Type_2D || spec.type == TextureType::Type_Cube);
@@ -2041,7 +2042,7 @@ namespace mythril {
 		image->generateMipmap(wrapper._cmdBuf);
 		_immGraphics->submit(wrapper);
 	}
-	void CTX::upload(BufferHandle handle, const void* data, size_t size, size_t offset) {
+	void CTX::uploadEXT(BufferHandle handle, const void* data, size_t size, size_t offset) {
 		MYTH_PROFILER_FUNCTION();
 		if (!data) {
 			LOG_SYSTEM(LogType::Warning, "Attempting to upload data which is null!");
@@ -2071,7 +2072,7 @@ namespace mythril {
 		};
 		VK_CHECK(vkWaitSemaphores(_vkDevice, &waitInfo, UINT64_MAX));
 	}
-	void CTX::download(BufferHandle handle, void* data, size_t size, size_t offset) {
+	void CTX::downloadEXT(BufferHandle handle, void* data, size_t size, size_t offset) {
 		MYTH_PROFILER_FUNCTION();
 		if (!data) {
 			LOG_SYSTEM(LogType::Warning, "Data is null");
@@ -2091,11 +2092,11 @@ namespace mythril {
 			waitForGraphUse(*buffer);
 		buffer->getBufferSubData(*this, offset, size, data);
 	}
-	void CTX::upload(TextureHandle handle, const void* data, const TexRange& range) {
+	void CTX::upload(TextureHandle handle, HostBytes data, const TexRange& range) {
 		MYTH_PROFILER_FUNCTION();
 		ASSERT_MSG(!_currentCommandBuffer._ctx, "Cannot upload a texture while a CommandBuffer is open, the immediate submit would run before it.");
 		ASSERT_MSG(handle.valid(), "CTX::upload called with an invalid TextureHandle.");
-		if (!data) {
+		if (data.bytes.empty()) {
 			LOG_SYSTEM(LogType::Warning, "Attempting to upload data which is null!");
 			return;
 		}
@@ -2106,20 +2107,20 @@ namespace mythril {
 		// why is this here
 		if (image->_vkImageType == VK_IMAGE_TYPE_3D) {
 			_staging->imageData3D(
-			        *image, VkOffset3D{range.offset.x, range.offset.y, range.offset.z}, VkExtent3D{range.dimensions.width, range.dimensions.height, range.dimensions.depth}, image->_vkFormat, data
+			        *image, VkOffset3D{range.offset.x, range.offset.y, range.offset.z}, VkExtent3D{range.dimensions.width, range.dimensions.height, range.dimensions.depth}, image->_vkFormat, data.bytes
 			);
 		} else {
 			const VkRect2D image_region = {
 			    .offset = {.x = range.offset.x, .y = range.offset.y},
 			    .extent = {.width = range.dimensions.width, .height = range.dimensions.height},
 			};
-			_staging->imageData2D(*image, image_region, range.mipLevel, range.numMipLevels, range.layer, range.numLayers, image->_vkFormat, data);
+			_staging->imageData2D(*image, image_region, range.mipLevel, range.numMipLevels, range.layer, range.numLayers, image->_vkFormat, data.bytes);
 		}
 	}
-	void CTX::download(TextureHandle handle, void* data, const TexRange& range) {
+	void CTX::download(TextureHandle handle, std::span<std::byte> data, const TexRange& range) {
 		MYTH_PROFILER_FUNCTION();
 		ASSERT_MSG(!_currentCommandBuffer._ctx, "Cannot download a texture while a CommandBuffer is open, the immediate submit would run before it.");
-		if (!data) {
+		if (data.empty()) {
 			LOG_SYSTEM(LogType::Warning, "Data is null.");
 			return;
 		}

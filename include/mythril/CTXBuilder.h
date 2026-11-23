@@ -75,8 +75,7 @@ namespace mythril {
 		};
 		MatrixMode matrixLayoutMode = MatrixMode::ColMajor;
 		std::vector<std::string> searchpaths = {};
-		slang::CompilerOptionEntry* compilerOptionsData = nullptr;
-		size_t compilerOptionsCount = 0;
+		std::span<const slang::CompilerOptionEntry> compilerOptions = {};
 	};
 
 	struct VulkanInfoSpec {
