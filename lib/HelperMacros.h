@@ -31,6 +31,7 @@
 #define ASSUME_(cond) ((void)0)
 #endif
 
+// asserts are debug only, release never evaluates or assumes the condition
 #ifdef DEBUG
 // DO NOT PASS SIDE EFFECT FUNCTIONS
 #define ASSERT_MSG(ERROR, FORMAT, ...) do { \
@@ -38,36 +39,32 @@
         fmt::print(stderr, "[ASSERT_MSG] | {}:{} -> {} -> MSG:\n" FORMAT "\n", __FILE__, __LINE__, __func__ __VA_OPT__(,) __VA_ARGS__); \
         std::raise(SIGABRT); \
     } \
-    ASSUME_(ERROR); \
 } while(0)
-#else
-#define ASSERT_MSG(ERROR, FORMAT, ...) ASSUME_(ERROR)
-#endif
-
-#ifdef DEBUG
-// DO NOT PASS SIDE EFFECT FUNCTIONS
-#define ASSERT_MSG_NOSOURCE(ERROR, FORMAT, ...) do { \
-    if (!static_cast<bool>(ERROR)) [[unlikely]] {                         \
-        fmt::print(stderr, "[ASSERT_MSG] | {} -> ERROR:\n" FORMAT "\n", __func__ __VA_OPT__(,) __VA_ARGS__); \
-        std::raise(SIGABRT); \
-    } \
-    ASSUME_(ERROR); \
-} while(0)
-#else
-#define ASSERT_MSG_NOSOURCE(ERROR, FORMAT, ...) ASSUME_(ERROR)
-#endif
-
-#ifdef DEBUG
 // DO NOT PASS SIDE EFFECT FUNCTIONS, pass must be a PassDesc or CompiledPass
 #define ASSERT_PASS(ERROR, PASS, FORMAT, ...) do { \
     if (!static_cast<bool>(ERROR)) [[unlikely]] {                         \
         fmt::print(stderr, "[ASSERT_PASS] | {}:{} -> Pass '{}' -> MSG:\n" FORMAT "\n", __FILE__, __LINE__, ::mythril::PassLogName(PASS) __VA_OPT__(,) __VA_ARGS__); \
         std::raise(SIGABRT); \
     } \
-    ASSUME_(ERROR); \
+} while(0)
+#define ASSERT(ERROR) do { \
+    if (!static_cast<bool>(ERROR)) [[unlikely]] {        \
+        fmt::print(stderr, "[ASSERT] | {}:{} -> {} -> Expression: " #ERROR "\n", __FILE__, __LINE__, __func__); \
+        std::raise(SIGABRT); \
+    } \
+} while(0)
+// the only assumption, for code that cannot be reached, release reaching it is undefined behavior
+#define UNREACHABLE(FORMAT, ...) do { \
+    fmt::print(stderr, "[UNREACHABLE] | {}:{} -> {} -> MSG:\n" FORMAT "\n", __FILE__, __LINE__, __func__ __VA_OPT__(,) __VA_ARGS__); \
+    std::raise(SIGABRT); \
+    ASSUME_(false); \
 } while(0)
 #else
-#define ASSERT_PASS(ERROR, PASS, FORMAT, ...) ASSUME_(ERROR)
+// unevaluated, keeps variables used only by an assert from warning
+#define ASSERT_MSG(ERROR, FORMAT, ...) ((void)sizeof(!(ERROR)))
+#define ASSERT_PASS(ERROR, PASS, FORMAT, ...) ((void)sizeof(!(ERROR)))
+#define ASSERT(ERROR) ((void)sizeof(!(ERROR)))
+#define UNREACHABLE(FORMAT, ...) ASSUME_(false)
 #endif
 
 
@@ -75,15 +72,3 @@
 #define MYTHRIL_INVALID_U16 ((uint16_t)0xFFFFu)
 #define MYTHRIL_INVALID_U32 0xFFFFFFFFu
 #define MYTHRIL_INVALID_U64 0xFFFFFFFFFFFFFFFFull
-
-#ifdef DEBUG
-#define ASSERT(ERROR) do { \
-    if (!static_cast<bool>(ERROR)) [[unlikely]] {        \
-        fmt::print(stderr, "[ASSERT] | {}:{} -> {} -> Expression: " #ERROR "\n", __FILE__, __LINE__, __func__); \
-        std::raise(SIGABRT); \
-    } \
-    ASSUME_(ERROR); \
-} while(0)
-#else
-#define ASSERT(ERROR) ((void)0)
-#endif

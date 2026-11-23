@@ -99,7 +99,7 @@ namespace mythril::vkutil {
 		if (auto it = std::lower_bound(kTextureFormatTable.begin(), kTextureFormatTable.end(), format, cmp); it != kTextureFormatTable.end() && it->format == format) {
 			return &(*it);
 		}
-		ASSERT_MSG(false, "VkFormat '{}' not currently supported!", string_VkFormat(format));
+		UNREACHABLE("VkFormat '{}' not currently supported!", string_VkFormat(format));
 	}
 	uint32_t GetTextureBytesPerLayer(uint32_t width, uint32_t height, VkFormat format, uint32_t level) {
 		const uint32_t levelWidth = std::max(width >> level, 1u);
@@ -119,7 +119,7 @@ namespace mythril::vkutil {
 	}
 	uint32_t GetTextureBytesPerPlane(uint32_t width, uint32_t height, VkFormat format, uint32_t plane) {
 		const TextureFormatProperties* props = GetFormatProperties(format);
-		ASSERT(plane < props->numPlanes);
+		ASSERT_MSG(plane < props->numPlanes, "Plane index is out of range for the format.");
 		switch (format) {
 			case VK_FORMAT_G8_B8R8_2PLANE_420_UNORM:
 				return width * height / (plane + 1);
@@ -250,7 +250,7 @@ namespace mythril::vkutil {
 				    .access = VK_ACCESS_2_NONE | VK_ACCESS_2_SHADER_WRITE_BIT,
 				};
 			default:
-				ASSERT_MSG(false, "Unsupported image layout transition!");
+				UNREACHABLE("Unsupported image layout transition!");
 		}
 	};
 	VkSemaphore CreateTimelineSemaphore(VkDevice device, unsigned int numImages) {

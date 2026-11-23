@@ -147,15 +147,12 @@ namespace mythril {
 				VK_CHECK(vkResetFences(_vkDevice, 1, &buf._fence));
 				buf._cmdBuf = VK_NULL_HANDLE;
 				_numAvailableCommandBuffers++;
-			} else {
-				if (result != VK_TIMEOUT) {
-					ASSERT(result);
-				}
 			}
+			ASSERT_MSG(result == VK_SUCCESS || result == VK_TIMEOUT, "vkWaitForFences failed while purging command buffers.");
 		}
 	}
 	bool ImmediateCommands::isReady(const SubmitHandle handle, const bool fastCheckNoVulkan) const {
-		ASSERT(handle.bufferIndex_ < kMaxCommandBuffers);
+		ASSERT_MSG(handle.bufferIndex_ < kMaxCommandBuffers, "Submit handle buffer index is out of range.");
 
 		if (handle.empty()) {
 			// a null handle

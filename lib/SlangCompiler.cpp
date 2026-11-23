@@ -285,33 +285,12 @@ export T getDescriptorFromHandle<T : IOpaqueDescriptor>(DescriptorHandle<T> hand
 		return result;
 	}
 
-	// experimental, cant be imported into other files rn
-	// NOLINT(readability-make-member-function-const)
-	// ReSharper disable once CppMemberFunctionMayBeConst
-	CompileResult SlangCompiler::compileSlangFromSourceString(const std::string& code) {
-		MYTH_PROFILER_FUNCTION();
-		Slang::ComPtr<slang::IModule> slang_module;
-		Slang::ComPtr<slang::IBlob> diagnostics_blob;
-		const std::string module_name = std::to_string(std::hash<std::string>{}(code));
-		slang_module = this->_slangSession->loadModuleFromSourceString(module_name.c_str(), nullptr, code.c_str(), diagnostics_blob.writeRef());
-		ASSERT_MSG(
-			slang_module,
-			"-------------------------- SEARCH_PATHS: -------------------------- \n{} -------------------------- ERROR: -------------------------- \nSlang failed to load module, this might happen for a bunch of different reasons like the shader is ill-formatted or invalid.\n"
-			"Diagnostics Below:\n{}",
-			JoinActiveSearchPathsLog(this->_shaderSearchPaths),
-			ResolveDiagnosticsMessage(diagnostics_blob)
-		);
-		diagnostics_blob.setNull();
-		return compileSlangImpl(slang_module, diagnostics_blob);
-	}
-
-
 	// this isnt const, loadModule
 	// NOLINT(readability-make-member-function-const)
 	// ReSharper disable once CppMemberFunctionMayBeConst
 	CompileResult SlangCompiler::compileSlangFromDisk(const std::filesystem::path& filepath) {
 		MYTH_PROFILER_FUNCTION();
-		ASSERT(exists(filepath));
+		ASSERT_MSG(exists(filepath), "Shader file '{}' does not exist.", filepath.string());
 		// 1. load module
 		Slang::ComPtr<slang::IModule> slang_module;
 		Slang::ComPtr<slang::IBlob> diagnostics_blob;

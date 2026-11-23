@@ -23,7 +23,7 @@ namespace mythril {
 		}
 		template<typename InternalHandle>
 		void Holder<InternalHandle>::reset() {
-			ASSERT(_pCtx);
+			ASSERT_MSG(_pCtx, "Holder is empty, there is nothing to reset!");
 			_pCtx->destroy(_handle);
 			_pCtx = nullptr;
 			_handle = InternalHandle{};

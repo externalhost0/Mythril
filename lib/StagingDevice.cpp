@@ -221,7 +221,7 @@ namespace mythril {
 	void StagingDevice::imageData2D(
 	        AllocatedTexture& image, const VkRect2D& imageRegion, uint32_t baseMipLevel, uint32_t numMipLevels, uint32_t layerCheck, uint32_t numLayers, VkFormat format, std::span<const std::byte> data
 	) {
-		ASSERT(numMipLevels <= kMaxMipLevels);
+		ASSERT_MSG(numMipLevels <= kMaxMipLevels, "StagingDevice::imageData2D numMipLevels exceeds the maximum mip level count.");
 
 		// divide the width and height by 2 until we get to the size of level 'baseMipLevel'
 		uint32_t width = image._vkExtent.width >> baseMipLevel;
@@ -246,7 +246,7 @@ namespace mythril {
 		ASSERT_MSG(data.size() == storageSize, "Texture '{}' upload got {} bytes, the range needs {}.", image._debugName, data.size(), storageSize);
 
 		ensureStagingBufferSize(storageSize);
-		ASSERT(storageSize <= _stagingBufferSize);
+		ASSERT_MSG(storageSize <= _stagingBufferSize, "StagingDevice::imageData2D upload is larger than the staging buffer maximum.");
 		MemoryRegionDesc desc = getNextContiguousOffset(storageSize);
 
 		const detail::CommandBufferWrapper& wrapper = _ctx._immGraphics->acquire();
@@ -257,11 +257,11 @@ namespace mythril {
 		uint32_t offset = 0;
 		const uint32_t numPlanes = vkutil::GetNumImagePlanes(image._vkFormat);
 		if (numPlanes > 1) {
-			ASSERT(layerCheck == 0 && baseMipLevel == 0);
-			ASSERT(numLayers == 1 && numMipLevels == 1);
-			ASSERT(imageRegion.offset.x == 0 && imageRegion.offset.y == 0);
-			ASSERT(image._vkImageType == VK_IMAGE_TYPE_2D);
-			ASSERT(image._vkExtent.width == imageRegion.extent.width && image._vkExtent.height == imageRegion.extent.height);
+			ASSERT_MSG(layerCheck == 0 && baseMipLevel == 0, "Multi-plane image uploads must start at layer 0 and mip level 0.");
+			ASSERT_MSG(numLayers == 1 && numMipLevels == 1, "Multi-plane image uploads support exactly one layer and one mip level.");
+			ASSERT_MSG(imageRegion.offset.x == 0 && imageRegion.offset.y == 0, "Multi-plane image uploads must start at offset (0, 0).");
+			ASSERT_MSG(image._vkImageType == VK_IMAGE_TYPE_2D, "Multi-plane image uploads need a 2D image.");
+			ASSERT_MSG(image._vkExtent.width == imageRegion.extent.width && image._vkExtent.height == imageRegion.extent.height, "Multi-plane image uploads must cover the whole image extent.");
 		}
 		VkImageAspectFlags imageAspect = VK_IMAGE_ASPECT_COLOR_BIT;
 		if (numPlanes == 2) {
@@ -337,15 +337,15 @@ namespace mythril {
 	}
 	void StagingDevice::getImageData(AllocatedTexture& image, const VkOffset3D& offset, const VkExtent3D& extent, VkImageSubresourceRange range, VkFormat format, std::span<std::byte> outData) {
 		const VkImageLayout originalLayout = image.getImageLayout(image.toSubresourceRange(range));
-		ASSERT(originalLayout != VK_IMAGE_LAYOUT_UNDEFINED);
-		ASSERT(range.layerCount == 1);
+		ASSERT_MSG(originalLayout != VK_IMAGE_LAYOUT_UNDEFINED, "Cannot download from a texture whose layout is undefined.");
+		ASSERT_MSG(range.layerCount == 1, "Texture download supports exactly one layer at a time.");
 
 		const uint32_t storageSize = extent.width * extent.height * extent.depth * vkutil::GetBytesPerPixel(format);
 		ASSERT_MSG(outData.size() == storageSize, "Texture '{}' download got {} bytes, the range needs {}.", image._debugName, outData.size(), storageSize);
 
 		ensureStagingBufferSize(storageSize);
 
-		ASSERT(storageSize <= _stagingBufferSize);
+		ASSERT_MSG(storageSize <= _stagingBufferSize, "StagingDevice::getImageData download is larger than the staging buffer maximum.");
 
 		MemoryRegionDesc desc = getNextContiguousOffset(storageSize);
 
@@ -523,7 +523,7 @@ namespace mythril {
 			waitAndReset();
 			desc = getNextFreeOffset(size);
 		}
-		ASSERT(desc.size_ >= size);
+		ASSERT_MSG(desc.size_ >= size, "StagingDevice could not allocate a contiguous staging region of {} bytes.", size);
 		return desc;
 	}
 	void StagingDevice::waitAndReset() {

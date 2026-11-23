@@ -171,7 +171,7 @@ namespace mythril {
 		}
 		this->_numSwapchainImages = imageCount;
 		ASSERT(_numSwapchainImages <= kMAX_SWAPCHAIN_IMAGES);
-		ASSERT((caps.minImageCount <= _numSwapchainImages) && (caps.maxImageCount == 0 || _numSwapchainImages <= caps.maxImageCount));
+		ASSERT_MSG((caps.minImageCount <= _numSwapchainImages) && (caps.maxImageCount == 0 || _numSwapchainImages <= caps.maxImageCount), "Swapchain image count is outside the surface capabilities range!");
 
 		std::vector<VkImage> images(imageCount);
 		VK_CHECK(vkGetSwapchainImagesKHR(_ctx._vkDevice, _vkSwapchain, &imageCount, images.data()));

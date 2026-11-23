@@ -614,7 +614,7 @@ namespace mythril {
 		const bool hasDepth = _activePass->depthAttachment.has_value();
 		const VkRect2D renderArea = _activePass->renderArea;
 		std::array<VkRenderingAttachmentInfo, kMaxColorAttachments> vk_color_attachment_infos{};
-		ASSERT(vk_color_attachment_infos.size() >= _activePass->colorAttachments.size());
+		ASSERT_MSG(vk_color_attachment_infos.size() >= _activePass->colorAttachments.size(), "A pass can have at most {} color attachments, it has {}.", kMaxColorAttachments, _activePass->colorAttachments.size());
 		for (int i = 0; i < _activePass->colorAttachments.size(); i++) {
 			const auto& attachmentInfo = _activePass->colorAttachments[i];
 			vk_color_attachment_infos[i] = attachmentInfo.getAsVkRenderingAttachmentInfo();

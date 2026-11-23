@@ -593,7 +593,7 @@ namespace mythril {
 		if (it != map.end()) {
 			return it->second;
 		}
-		ASSERT_MSG(false, "Your specialization constant entry '{}' could not be found", name);
+		UNREACHABLE("Your specialization constant entry '{}' could not be found", name);
 	}
 
 	struct SpecializationInfoBundle {
@@ -980,7 +980,7 @@ namespace mythril {
 
 		// things we gather in the middle of the renderpass (attachment formats)
 		// looks at the current pass and reflects those formats in use
-		ASSERT(_currentCommandBuffer._activePass);
+		ASSERT_MSG(_currentCommandBuffer._activePass, "A graphics pipeline can only be resolved inside a render graph pass!");
 		const CompiledPass& current_pass_info = *_currentCommandBuffer._activePass;
 		std::vector<VkFormat> colorFormats;
 		colorFormats.reserve(current_pass_info.colorAttachments.size());
@@ -1264,7 +1264,7 @@ namespace mythril {
 			    .buffer = obj._vkBuffer,
 			};
 			obj._vkDeviceAddress = vkGetBufferDeviceAddress(_vkDevice, &buffer_device_ai);
-			ASSERT(obj._vkDeviceAddress);
+			ASSERT_MSG(obj._vkDeviceAddress, "Buffer device address is zero after creation!");
 		}
 		return obj;
 	}
@@ -1463,8 +1463,8 @@ namespace mythril {
 		// if we have some data we want to upload, do that
 		if (!spec.initialData.bytes.empty()) {
 			// enforces that the number of miplevels we want to upload will be accomadated by the texture
-			ASSERT(spec.dataNumMipLevels <= spec.numMipLevels);
-			ASSERT(spec.type == TextureType::Type_2D || spec.type == TextureType::Type_Cube);
+			ASSERT_MSG(spec.dataNumMipLevels <= spec.numMipLevels, "dataNumMipLevels must not exceed numMipLevels!");
+			ASSERT_MSG(spec.type == TextureType::Type_2D || spec.type == TextureType::Type_Cube, "Initial texture data is only supported for 2D and Cube textures!");
 			const TexRange range = {.dimensions = extent3D, .numLayers = static_cast<uint32_t>((spec.type == TextureType::Type_Cube) ? 6 : 1), .numMipLevels = spec.dataNumMipLevels};
 			this->upload(handle, spec.initialData, range);
 			if (spec.generateMipmaps) {
@@ -1663,17 +1663,8 @@ namespace mythril {
 			_slangCompiler->create();
 		}
 
-		CompileResult compile_result;
-		if (std::holds_alternative<std::filesystem::path>(spec.source)) {
-			const auto& filepath = std::get<std::filesystem::path>(spec.source);
-			ASSERT_MSG(std::filesystem::exists(filepath), "Shader filepath '{}' does not exist.", filepath.string());
-			compile_result = _slangCompiler->compileSlangFromDisk(filepath);
-		} else if (std::holds_alternative<std::string>(spec.source)) {
-			const auto& code = std::get<std::string>(spec.source);
-			ASSERT_MSG(!code.empty(), "Shader source code is empty.", code);
-			compile_result = _slangCompiler->compileSlangFromSourceString(code);
-		}
-		ASSERT(compile_result.getSpirvCode());
+		CompileResult compile_result = _slangCompiler->compileSlangFromDisk(spec.source);
+		ASSERT_MSG(compile_result.getSpirvCode(), "Shader '{}' produced no SPIR-V code!", spec.source.string());
 		// TODO: this is some of the worst code i have ever written in my life, i am so sorry future me who will come back here and have to clean it
 		// thank you past me you were right but now it should be alot better
 		AllocatedShader obj{};
@@ -1722,7 +1713,7 @@ namespace mythril {
 			case AccelerationStructureSpec::GeometryType::Instances:
 				return VK_GEOMETRY_TYPE_INSTANCES_KHR;
 			case AccelerationStructureSpec::GeometryType::INVALID:
-				ASSERT_MSG(false, "You passed in AccelerationStructureSpec::GeometryType::INVALID, whice is, per the name, INVALID, please pick an actual geometry type.");
+				UNREACHABLE("You passed in AccelerationStructureSpec::GeometryType::INVALID, whice is, per the name, INVALID, please pick an actual geometry type.");
 		}
 	}
 	void CTX::getBLASBuildInfo(const BottomLevelBuildDesc& desc,
@@ -1806,9 +1797,9 @@ namespace mythril {
 
 	AllocatedAccelerationStructure CTX::createTLASImpl(const AccelerationStructureSpec& spec) {
 		ASSERT_MSG(spec.type == AccelerationStructureSpec::Type::TLAS, "Really why are you calling this (createTLAS) when the type isnt even TLAS");
-		ASSERT(spec.instancesBuffer.valid());
-		ASSERT(spec.buildRange.primitiveCount);
-		ASSERT(spec.geometryType == AccelerationStructureSpec::GeometryType::Instances);
+		ASSERT_MSG(spec.instancesBuffer.valid(), "TLAS spec needs a valid instancesBuffer!");
+		ASSERT_MSG(spec.buildRange.primitiveCount, "TLAS spec buildRange.primitiveCount must be greater than 0!");
+		ASSERT_MSG(spec.geometryType == AccelerationStructureSpec::GeometryType::Instances, "TLAS spec geometryType must be Instances!");
 
 		AllocatedAccelerationStructure obj {};
 		obj._isTLAS = true;
@@ -1894,7 +1885,7 @@ namespace mythril {
 
 	AllocatedAccelerationStructure CTX::createBLASImpl(const AccelerationStructureSpec& spec) {
 		ASSERT_MSG(spec.type == AccelerationStructureSpec::Type::BLAS, "Really why are you calling this (createBLAS) when the type isnt even BLAS");
-		ASSERT(spec.geometryType == AccelerationStructureSpec::GeometryType::Triangle);
+		ASSERT_MSG(spec.geometryType == AccelerationStructureSpec::GeometryType::Triangle, "BLAS spec geometryType must be Triangle!");
 
 		AllocatedAccelerationStructure obj {};
 

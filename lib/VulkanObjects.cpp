@@ -18,7 +18,7 @@ namespace mythril::detail {
 		if (!_mappedPtr) {
 			return;
 		}
-		ASSERT(offset + size <= _bufferSize);
+		ASSERT_MSG(offset + size <= _bufferSize, "Buffer write of offset + size exceeds the buffer size!");
 		if (data) {
 			memcpy((uint8_t*) _mappedPtr + offset, data, size);
 		} else {
@@ -34,7 +34,7 @@ namespace mythril::detail {
 		if (!_mappedPtr) {
 			return;
 		}
-		ASSERT(offset + size <= _bufferSize);
+		ASSERT_MSG(offset + size <= _bufferSize, "Buffer read of offset + size exceeds the buffer size!");
 		if (!_isCoherentMemory) {
 			invalidateMappedMemory(ctx, offset, size);
 		}
@@ -121,7 +121,7 @@ namespace mythril::detail {
 		const VkImageAspectFlags imageAspectFlags = vkutil::AspectMaskFromFormat(_vkFormat);
 		const SubresourceRange baseMip = {0, 1, 0, _numLayers};
 		const VkImageLayout originalImageLayout = getImageLayout(baseMip);
-		ASSERT(originalImageLayout != VK_IMAGE_LAYOUT_UNDEFINED);
+		ASSERT_MSG(originalImageLayout != VK_IMAGE_LAYOUT_UNDEFINED, "Cannot generate mipmaps from a texture whose base level layout is undefined!");
 		// transfer base image to be ready for blitting
 		this->transitionLayout(cmd, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, baseMip);
 

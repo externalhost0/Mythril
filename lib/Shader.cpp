@@ -147,7 +147,7 @@ namespace mythril {
 			default:
 				break;
 		}
-		ASSERT_MSG(false, "Something went horribly wrong, this should never happen!");
+		UNREACHABLE("Something went horribly wrong, this should never happen!");
 	}
 
 	static void CollectFieldsRecursively(std::vector<FieldInfo>& fields, const SpvReflectBlockVariable& blockVar) {

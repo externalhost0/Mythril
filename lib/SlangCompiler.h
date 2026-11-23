@@ -51,7 +51,6 @@ namespace mythril {
 		void setMatrixLayoutMode(SlangCfg::MatrixMode mode);
 
 		CompileResult compileSlangFromDisk(const std::filesystem::path& filepath);
-		CompileResult compileSlangFromSourceString(const std::string& code);
 
 		bool sessionExists() const { return _sessionExists; }
 

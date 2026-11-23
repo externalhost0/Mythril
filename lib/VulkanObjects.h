@@ -108,7 +108,7 @@ namespace mythril {
 				case 32: return VK_SAMPLE_COUNT_32_BIT;
 				case 64: return VK_SAMPLE_COUNT_64_BIT;
 				default:
-					ASSERT_MSG(false, "Something went horribly wrong! The _sampleCount of texture '{}' is not 2^n where n is in the range of integars 1-6, its '{}'.", getDebugName(), _sampleCount);
+					UNREACHABLE("Something went horribly wrong! The _sampleCount of texture '{}' is not 2^n where n is in the range of integars 1-6, its '{}'.", getDebugName(), _sampleCount);
 			}
 		}
 

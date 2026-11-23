@@ -11,7 +11,6 @@
 #include <ranges>
 #include <span>
 #include <type_traits>
-#include <variant>
 #include <volk.h>
 
 namespace mythril {
@@ -201,7 +200,7 @@ namespace mythril {
 		const char* debugName = "Unnamed Texture View";
 	};
 	struct ShaderSpec {
-		std::variant<std::filesystem::path, std::string> source;
+		std::filesystem::path source;
 		const char* debugName = "Unnamed Shader";
 	};
 

@@ -241,7 +241,7 @@ namespace mythril {
 
 	BasePassBuilder::BasePassBuilder(RenderGraph& rGraph, const char* pName, const PassDesc::Type type)
 		: _rGraph(rGraph), _passSource(pName, type) {
-		ASSERT(!_passSource.name.empty());
+		ASSERT_MSG(!_passSource.name.empty(), "A pass needs a non empty name.");
 	}
 
 	GraphTexture TransferBuilder::blit(TextureDesc src, TextureDesc dst) {
