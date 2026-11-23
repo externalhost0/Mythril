@@ -232,7 +232,7 @@ namespace mythril {
         const PassExecute* execute = nullptr;
         std::vector<GraphTexture> sortedDeclaredTextures;
         std::vector<TextureDependencyDesc> textureDependencies;
-        std::vector<BufferHandle> declaredBuffers;
+        std::vector<BufferDependencyDesc> bufferDependencies;
     };
 
     struct CompiledPass {

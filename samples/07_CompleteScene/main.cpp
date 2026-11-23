@@ -1727,8 +1727,9 @@ int main() {
 				float adaptionSpeed = 0.f;
 			};
 			graph.addComputePass<Adaptation>("adaptation", [&](mythril::ComputePassBuilder& b, Adaptation& d) {
-				currentLuminance = b.dependency(currentLuminance, mythril::TextureAccess::StorageReadWrite);
-				b.dependency(adaptedLuminance, mythril::TextureAccess::StorageReadWrite);
+				b.dependency(currentLuminance, mythril::TextureAccess::StorageRead);
+				b.dependency(adaptedLuminance[lumFlip], mythril::TextureAccess::StorageRead);
+				adaptedLuminance[!lumFlip] = b.dependency(adaptedLuminance[!lumFlip], mythril::TextureAccess::StorageWrite);
 				const auto ct = std::chrono::steady_clock::now();
 				const float dt = std::chrono::duration<float>(ct - st).count();
 				st = ct;

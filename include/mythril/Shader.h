@@ -95,9 +95,12 @@ namespace mythril {
 
 	struct PushResourceField {
 		enum class Kind : uint8_t { SampledTexture, StorageTexture, Pointer };
+		// what the shader does through the field, Unknown when the SPIR-V walk lost the trace
+		enum class Access : uint8_t { None = 0, Read = 1, Write = 2, ReadWrite = 3, Unknown = 4 };
 		std::string varName;
 		uint32_t offset;
 		Kind kind;
+		Access access = Access::None;
 	};
 	struct PipelineLayoutSignature {
 		// this will always be the index of slang's __slang_resource_heap

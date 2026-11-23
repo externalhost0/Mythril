@@ -82,7 +82,7 @@ namespace mythril {
 	VkBuffer CommandBuffer::vkBuffer(const GraphBuffer buffer) const {
 		ASSERT_MSG(_graph && _activePass && _activeMember, "vkBuffer is only valid inside a render graph callback.");
 		const BufferHandle handle = _graph->handleOf(buffer);
-		ASSERT_PASS(std::ranges::find(_activeMember->declaredBuffers, handle) != _activeMember->declaredBuffers.end(), *_activePass, "'{}' uses buffer '{}' without declaring it.", _activeMember->name, _ctx->view(handle).getDebugName());
+		ASSERT_PASS(std::ranges::find(_activeMember->bufferDependencies, handle, &BufferDependencyDesc::handle) != _activeMember->bufferDependencies.end(), *_activePass, "'{}' uses buffer '{}' without declaring it.", _activeMember->name, _ctx->view(handle).getDebugName());
 		return _ctx->view(handle)._vkBuffer;
 	}
 	VkImage CommandBuffer::vkImage(const GraphTexture texture) const {

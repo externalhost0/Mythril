@@ -7,9 +7,14 @@
 #include "Logger.h"
 #include <vulkan/vk_enum_string_helper.h>
 
+#include <algorithm>
+#include <array>
 #include <cctype>
 #include <optional>
+#include <ranges>
+#include <span>
 #include <string>
+#include <unordered_set>
 
 #include <slang/slang-com-ptr.h>
 #include <slang/slang.h>
@@ -647,4 +652,451 @@ namespace mythril {
 	//		};
 	//		plSignature.pushes.push_back(range);
 	//	}
+#ifdef DEBUG
+	namespace {
+		constexpr uint8_t kReadBit = 1;
+		constexpr uint8_t kWriteBit = 2;
+		constexpr uint8_t kUnknownBit = 4;
+		constexpr uint32_t kNoClass = UINT32_MAX;
+
+		// byte ranges of the push block a value comes from
+		struct ByteRange {
+			uint32_t lo;
+			uint32_t hi;
+			bool operator==(const ByteRange&) const = default;
+		};
+		using Tag = std::vector<ByteRange>;
+
+		// forward walk from the push block to the image, pointer and atomic ops that use it
+		class PushAccessWalk {
+		public:
+			PushAccessWalk(const std::span<const uint32_t> words, std::vector<PushResourceField>& fields) : _fields(fields), _bits(fields.size(), 0) {
+				_bound = words[3];
+				_typeOp.assign(_bound, SpvOpNop);
+				_typeArgs.assign(_bound, {0, 0});
+				_resultType.assign(_bound, 0);
+				_variableClass.assign(_bound, kNoClass);
+				_root.assign(_bound, 0);
+				_tags.assign(_bound, {});
+				_contents.assign(_bound, {});
+				if (!parse(words)) {
+					std::ranges::fill(_bits, kUnknownBit);
+					return;
+				}
+				for (uint32_t pass = 0; pass < 64; ++pass) {
+					_changed = false;
+					for (const std::span<const uint32_t> inst: _body)
+						transfer(inst);
+					if (!_changed)
+						return;
+				}
+				std::ranges::fill(_bits, kUnknownBit);
+			}
+			void write() const {
+				for (size_t i = 0; i < _fields.size(); ++i)
+					_fields[i].access = _bits[i] & kUnknownBit ? PushResourceField::Access::Unknown : static_cast<PushResourceField::Access>(_bits[i]);
+			}
+
+		private:
+			bool parse(const std::span<const uint32_t> words) {
+				bool inFunction = false;
+				for (size_t i = 5; i < words.size();) {
+					const uint32_t count = words[i] >> 16;
+					if (count == 0 || i + count > words.size())
+						return false;
+					const std::span<const uint32_t> w = words.subspan(i, count);
+					i += count;
+					const auto op = static_cast<SpvOp>(w[0] & 0xffff);
+					const auto id = [&](const size_t k) { return k < w.size() && w[k] < _bound ? w[k] : 0u; };
+					switch (op) {
+						case SpvOpExtInstImport:
+							if (std::string_view(reinterpret_cast<const char*>(&w[2])).starts_with("NonSemantic."))
+								_nonSemanticSets.insert(w[1]);
+							break;
+						case SpvOpDecorate:
+							if (count >= 4 && w[2] == SpvDecorationArrayStride)
+								_arrayStrides[w[1]] = w[3];
+							break;
+						case SpvOpMemberDecorate:
+							if (count >= 5 && w[3] == SpvDecorationOffset)
+								_memberOffsets[(uint64_t{w[1]} << 32) | w[2]] = w[4];
+							break;
+						case SpvOpTypeInt:
+						case SpvOpTypeFloat:
+						case SpvOpTypeVector:
+						case SpvOpTypeMatrix:
+						case SpvOpTypeArray:
+						case SpvOpTypeRuntimeArray:
+						case SpvOpTypePointer:
+							if (id(1)) {
+								_typeOp[w[1]] = op;
+								_typeArgs[w[1]] = {count > 2 ? w[2] : 0, count > 3 ? w[3] : 0};
+							}
+							break;
+						case SpvOpTypeStruct:
+							if (id(1)) {
+								_typeOp[w[1]] = op;
+								_structMembers[w[1]].assign(w.begin() + 2, w.end());
+							}
+							break;
+						case SpvOpConstant:
+							if (count >= 4)
+								_constants[w[2]] = w[3];
+							break;
+						case SpvOpVariable:
+							if (!id(2))
+								return false;
+							_resultType[w[2]] = w[1];
+							_variableClass[w[2]] = w[3];
+							if (w[3] == SpvStorageClassPushConstant)
+								_tags[w[2]] = {{0, sizeOf(pointee(w[1]))}};
+							if (w[3] == SpvStorageClassFunction || w[3] == SpvStorageClassPrivate)
+								_root[w[2]] = w[2];
+							break;
+						case SpvOpFunction:
+							inFunction = true;
+							break;
+						case SpvOpFunctionEnd:
+							inFunction = false;
+							break;
+						default:
+							break;
+					}
+					if (inFunction)
+						_body.push_back(w);
+				}
+				return true;
+			}
+
+			uint32_t pointee(const uint32_t pointerType) const { return _typeOp[pointerType] == SpvOpTypePointer ? _typeArgs[pointerType][1] : 0; }
+			uint32_t storageClass(const uint32_t value) const {
+				const uint32_t type = _resultType[value];
+				return _typeOp[type] == SpvOpTypePointer ? _typeArgs[type][0] : kNoClass;
+			}
+			std::optional<uint32_t> constant(const uint32_t value) const {
+				const auto it = _constants.find(value);
+				return it == _constants.end() ? std::nullopt : std::optional(it->second);
+			}
+			std::optional<uint32_t> memberOffset(const uint32_t type, const uint32_t member) const {
+				const auto it = _memberOffsets.find((uint64_t{type} << 32) | member);
+				return it == _memberOffsets.end() ? std::nullopt : std::optional(it->second);
+			}
+			std::optional<uint32_t> arrayStride(const uint32_t type) const {
+				const auto it = _arrayStrides.find(type);
+				return it == _arrayStrides.end() ? std::nullopt : std::optional(it->second);
+			}
+			uint32_t sizeOf(const uint32_t type) const {
+				if (type >= _bound)
+					return 0;
+				const auto [a, b] = _typeArgs[type];
+				switch (_typeOp[type]) {
+					case SpvOpTypeInt:
+					case SpvOpTypeFloat:
+						return a / 8;
+					case SpvOpTypeVector:
+					case SpvOpTypeMatrix:
+						return b * sizeOf(a);
+					case SpvOpTypeArray:
+						return constant(b).value_or(0) * arrayStride(type).value_or(sizeOf(a));
+					case SpvOpTypeRuntimeArray:
+						return UINT32_MAX / 2;
+					case SpvOpTypePointer:
+						return 8;
+					case SpvOpTypeStruct: {
+						uint32_t end = 0;
+						const std::vector<uint32_t>& members = _structMembers.at(type);
+						for (uint32_t m = 0; m < members.size(); ++m)
+							end = std::max(end, memberOffset(type, m).value_or(end) + sizeOf(members[m]));
+						return end;
+					}
+					default:
+						return 0;
+				}
+			}
+			// narrows a range of a value of 'type' to its element 'index', a dynamic index gives every element
+			bool step(const uint32_t type, const ByteRange range, const std::optional<uint32_t> index, std::vector<std::pair<uint32_t, ByteRange>>& out) const {
+				const auto [a, b] = _typeArgs[type];
+				switch (_typeOp[type]) {
+					case SpvOpTypeStruct: {
+						const std::vector<uint32_t>& members = _structMembers.at(type);
+						const std::optional<uint32_t> offset = index && *index < members.size() ? memberOffset(type, *index) : std::nullopt;
+						if (!offset)
+							return false;
+						out.emplace_back(members[*index], ByteRange{range.lo + *offset, range.lo + *offset + sizeOf(members[*index])});
+						return true;
+					}
+					case SpvOpTypeArray:
+					case SpvOpTypeVector: {
+						// scalar layout packs elements, so a missing ArrayStride means the element size
+						const uint32_t stride = _typeOp[type] == SpvOpTypeVector ? sizeOf(a) : arrayStride(type).value_or(sizeOf(a));
+						const uint32_t length = _typeOp[type] == SpvOpTypeVector ? b : constant(b).value_or(0);
+						const uint32_t first = index.value_or(0);
+						const uint32_t last = index ? *index + 1 : length;
+						if (stride == 0 || last > length)
+							return false;
+						for (uint32_t element = first; element < last; ++element)
+							out.emplace_back(a, ByteRange{range.lo + element * stride, range.lo + (element + 1) * stride});
+						return true;
+					}
+					case SpvOpTypeMatrix:
+						out.emplace_back(a, range);
+						return true;
+					default:
+						return false;
+				}
+			}
+			Tag narrow(const uint32_t type, const Tag& tag, const std::span<const uint32_t> indices, const bool literal) {
+				std::vector<std::pair<uint32_t, ByteRange>> current;
+				std::vector<std::pair<uint32_t, ByteRange>> next;
+				for (const ByteRange& range: tag)
+					current.emplace_back(type, range);
+				for (const uint32_t index: indices) {
+					next.clear();
+					for (const auto& [elementType, range]: current) {
+						if (!step(elementType, range, literal ? std::optional(index) : constant(index), next)) {
+							effect(tag, kUnknownBit);
+							return {};
+						}
+					}
+					std::swap(current, next);
+				}
+				Tag out;
+				for (const ByteRange& range: current | std::views::values)
+					out.push_back(range);
+				return out;
+			}
+			void merge(Tag& into, const Tag& tag) {
+				for (const ByteRange& range: tag) {
+					if (std::ranges::find(into, range) == into.end()) {
+						into.push_back(range);
+						_changed = true;
+					}
+				}
+			}
+			void add(const uint32_t value, const Tag& tag) { merge(_tags[value], tag); }
+			void effect(const Tag& tag, const uint8_t bit) {
+				for (const ByteRange& range: tag)
+					for (size_t i = 0; i < _fields.size(); ++i)
+						if (_fields[i].offset >= range.lo && _fields[i].offset < range.hi)
+							_bits[i] |= bit;
+			}
+			const Tag& tagOf(const uint32_t value) const {
+				static const Tag kEmpty;
+				return value < _bound ? _tags[value] : kEmpty;
+			}
+			// a local holding more than one field would blur them on load, so only single fields are followed
+			bool holdsOneField(const Tag& tag) const {
+				size_t hits = 0;
+				for (const ByteRange& range: tag)
+					for (const PushResourceField& field: _fields)
+						hits += field.offset >= range.lo && field.offset < range.hi;
+				return hits <= 1;
+			}
+
+			void transfer(const std::span<const uint32_t> w) {
+				const auto op = static_cast<SpvOp>(w[0] & 0xffff);
+				const auto count = static_cast<uint32_t>(w.size());
+				switch (op) {
+					case SpvOpAccessChain:
+					case SpvOpInBoundsAccessChain: {
+						_resultType[w[2]] = w[1];
+						const uint32_t base = w[3];
+						if (_root[base])
+							_root[w[2]] = _root[base];
+						if (!tagOf(base).empty())
+							add(w[2], storageClass(base) == SpvStorageClassPushConstant ? narrow(pointee(_resultType[base]), tagOf(base), w.subspan(4), false) : tagOf(base));
+						for (uint32_t k = 4; k < count; ++k) {
+							if (tagOf(w[k]).empty())
+								continue;
+							if (_variableClass[base] == SpvStorageClassUniformConstant)
+								add(w[2], tagOf(w[k]));
+							else
+								effect(tagOf(w[k]), kUnknownBit);
+						}
+						return;
+					}
+					case SpvOpPtrAccessChain:
+					case SpvOpInBoundsPtrAccessChain:
+						_resultType[w[2]] = w[1];
+						if (_root[w[3]])
+							_root[w[2]] = _root[w[3]];
+						add(w[2], tagOf(w[3]));
+						for (uint32_t k = 4; k < count; ++k)
+							effect(tagOf(w[k]), kUnknownBit);
+						return;
+					case SpvOpLoad: {
+						_resultType[w[2]] = w[1];
+						const uint32_t pointer = w[3];
+						if (_root[pointer])
+							add(w[2], _contents[_root[pointer]]);
+						if (tagOf(pointer).empty())
+							return;
+						switch (storageClass(pointer)) {
+							case SpvStorageClassPhysicalStorageBuffer:
+								effect(tagOf(pointer), kReadBit);
+								return;
+							case SpvStorageClassPushConstant:
+							case SpvStorageClassUniformConstant:
+								add(w[2], tagOf(pointer));
+								return;
+							default:
+								effect(tagOf(pointer), kUnknownBit);
+								return;
+						}
+					}
+					case SpvOpStore: {
+						const uint32_t pointer = w[1];
+						const Tag& object = tagOf(w[2]);
+						if (!tagOf(pointer).empty())
+							effect(tagOf(pointer), storageClass(pointer) == SpvStorageClassPhysicalStorageBuffer ? kWriteBit : kUnknownBit);
+						if (object.empty())
+							return;
+						if (_root[pointer] && holdsOneField(object))
+							merge(_contents[_root[pointer]], object);
+						else
+							effect(object, kUnknownBit);
+						return;
+					}
+					case SpvOpCompositeExtract:
+						_resultType[w[2]] = w[1];
+						if (!tagOf(w[3]).empty())
+							add(w[2], narrow(_resultType[w[3]], tagOf(w[3]), w.subspan(4), true));
+						return;
+					case SpvOpCopyObject:
+					case SpvOpCopyLogical:
+					case SpvOpBitcast:
+					case SpvOpConvertUToPtr:
+					case SpvOpConvertPtrToU:
+					case SpvOpImage:
+						_resultType[w[2]] = w[1];
+						if (_root[w[3]])
+							_root[w[2]] = _root[w[3]];
+						add(w[2], tagOf(w[3]));
+						return;
+					case SpvOpPhi:
+						_resultType[w[2]] = w[1];
+						for (uint32_t k = 3; k < count; k += 2)
+							add(w[2], tagOf(w[k]));
+						return;
+					case SpvOpSelect:
+						_resultType[w[2]] = w[1];
+						effect(tagOf(w[3]), kUnknownBit);
+						add(w[2], tagOf(w[4]));
+						add(w[2], tagOf(w[5]));
+						return;
+					case SpvOpSampledImage:
+						_resultType[w[2]] = w[1];
+						add(w[2], tagOf(w[3]));
+						add(w[2], tagOf(w[4]));
+						return;
+					case SpvOpImageTexelPointer:
+						_resultType[w[2]] = w[1];
+						add(w[2], tagOf(w[3]));
+						return;
+					case SpvOpImageSampleImplicitLod:
+					case SpvOpImageSampleExplicitLod:
+					case SpvOpImageSampleDrefImplicitLod:
+					case SpvOpImageSampleDrefExplicitLod:
+					case SpvOpImageSampleProjImplicitLod:
+					case SpvOpImageSampleProjExplicitLod:
+					case SpvOpImageSampleProjDrefImplicitLod:
+					case SpvOpImageSampleProjDrefExplicitLod:
+					case SpvOpImageFetch:
+					case SpvOpImageGather:
+					case SpvOpImageDrefGather:
+					case SpvOpImageRead:
+					case SpvOpImageSparseSampleImplicitLod:
+					case SpvOpImageSparseSampleExplicitLod:
+					case SpvOpImageSparseSampleDrefImplicitLod:
+					case SpvOpImageSparseSampleDrefExplicitLod:
+					case SpvOpImageSparseFetch:
+					case SpvOpImageSparseGather:
+					case SpvOpImageSparseDrefGather:
+					case SpvOpImageSparseRead:
+						effect(tagOf(w[3]), kReadBit);
+						return;
+					case SpvOpImageWrite:
+						effect(tagOf(w[1]), kWriteBit);
+						return;
+					case SpvOpImageQueryFormat:
+					case SpvOpImageQueryOrder:
+					case SpvOpImageQuerySizeLod:
+					case SpvOpImageQuerySize:
+					case SpvOpImageQueryLod:
+					case SpvOpImageQueryLevels:
+					case SpvOpImageQuerySamples:
+						return;
+					case SpvOpAtomicLoad:
+						effect(tagOf(w[3]), kReadBit);
+						return;
+					case SpvOpAtomicStore:
+						effect(tagOf(w[1]), kWriteBit);
+						effect(tagOf(w[4]), kUnknownBit);
+						return;
+					case SpvOpAtomicExchange:
+					case SpvOpAtomicCompareExchange:
+					case SpvOpAtomicCompareExchangeWeak:
+					case SpvOpAtomicIIncrement:
+					case SpvOpAtomicIDecrement:
+					case SpvOpAtomicIAdd:
+					case SpvOpAtomicISub:
+					case SpvOpAtomicSMin:
+					case SpvOpAtomicUMin:
+					case SpvOpAtomicSMax:
+					case SpvOpAtomicUMax:
+					case SpvOpAtomicAnd:
+					case SpvOpAtomicOr:
+					case SpvOpAtomicXor:
+					case SpvOpAtomicFlagTestAndSet:
+					case SpvOpAtomicFMinEXT:
+					case SpvOpAtomicFMaxEXT:
+					case SpvOpAtomicFAddEXT:
+						effect(tagOf(w[3]), kReadBit | kWriteBit);
+						for (uint32_t k = 4; k < count; ++k)
+							effect(tagOf(w[k]), kUnknownBit);
+						return;
+					case SpvOpAtomicFlagClear:
+						effect(tagOf(w[1]), kWriteBit);
+						return;
+					case SpvOpExtInst:
+						if (_nonSemanticSets.contains(w[3]))
+							return;
+						break;
+					default:
+						break;
+				}
+				// an op the walk does not model loses the trace of every field it touches
+				for (uint32_t k = 1; k < count; ++k)
+					effect(tagOf(w[k]), kUnknownBit);
+			}
+
+			std::vector<PushResourceField>& _fields;
+			std::vector<uint8_t> _bits;
+			uint32_t _bound = 0;
+			std::vector<SpvOp> _typeOp;
+			std::vector<std::array<uint32_t, 2>> _typeArgs;
+			std::unordered_map<uint32_t, std::vector<uint32_t>> _structMembers;
+			std::unordered_map<uint64_t, uint32_t> _memberOffsets;
+			std::unordered_map<uint32_t, uint32_t> _arrayStrides;
+			std::unordered_map<uint32_t, uint32_t> _constants;
+			std::unordered_set<uint32_t> _nonSemanticSets;
+			std::vector<uint32_t> _resultType;
+			std::vector<uint32_t> _variableClass;
+			// the Function or Private variable a pointer points into
+			std::vector<uint32_t> _root;
+			std::vector<Tag> _tags;
+			// what was stored into each Function or Private variable
+			std::vector<Tag> _contents;
+			std::vector<std::span<const uint32_t>> _body;
+			bool _changed = false;
+		};
+	} // namespace
+
+	void AnalyzePushAccess(const uint32_t* code, const size_t size, std::vector<PushResourceField>& fields) {
+		const std::span<const uint32_t> words(code, size / sizeof(uint32_t));
+		if (fields.empty() || words.size() < 5 || words[0] != SpvMagicNumber)
+			return;
+		PushAccessWalk(words, fields).write();
+	}
+#endif
 } // namespace mythril

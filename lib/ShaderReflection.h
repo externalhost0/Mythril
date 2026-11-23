@@ -23,4 +23,11 @@ namespace mythril {
 
 	void PatchSpecConstants(uint32_t*& code, size_t& size);
 	ReflectionResult ReflectSPIRV(const uint32_t* code, size_t size);
+#ifdef DEBUG
+	void AnalyzePushAccess(const uint32_t* code, size_t size, std::vector<PushResourceField>& fields);
+#endif
+	inline PushResourceField::Access MergeAccess(const PushResourceField::Access a, const PushResourceField::Access b) {
+		const auto merged = static_cast<uint8_t>(static_cast<uint8_t>(a) | static_cast<uint8_t>(b));
+		return merged & static_cast<uint8_t>(PushResourceField::Access::Unknown) ? PushResourceField::Access::Unknown : static_cast<PushResourceField::Access>(merged);
+	}
 } // namespace mythril

@@ -577,7 +577,9 @@ namespace mythril {
 				}
 			}
 			for (const PushResourceField& field: sig.pushResources) {
-				if (std::ranges::none_of(out.pushResources, [&](const PushResourceField& existing) { return existing.offset == field.offset; }))
+				if (const auto it = std::ranges::find(out.pushResources, field.offset, &PushResourceField::offset); it != out.pushResources.end())
+					it->access = MergeAccess(it->access, field.access);
+				else
 					out.pushResources.push_back(field);
 			}
 		}
@@ -1682,6 +1684,7 @@ namespace mythril {
 		obj._pipelineSignature = reflection_result.pipelineLayoutSignature;
 #ifdef DEBUG
 		obj._pipelineSignature.pushResources = CollectPushResources(compile_result.getSlangProgramLayout());
+		AnalyzePushAccess(code, size, obj._pipelineSignature.pushResources);
 #endif
 		obj._descriptorSets = std::move(reflection_result.retrievedDescriptorSets);
 		obj._pushConstants = std::move(reflection_result.retrivedPushConstants);

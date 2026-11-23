@@ -479,9 +479,13 @@ namespace mythril {
     	PassArena _arena;
 #ifdef DEBUG
     	std::unordered_set<std::string> _findings;
+    	// keys seen this record and the last one, a key in both happens every frame
     	mutable std::unordered_set<std::string> _recordFindings;
     	std::unordered_set<std::string> _lastRecordFindings;
+    	// a record finding prints once for the life of the graph, ping-pong resources would repeat it every other frame
+    	mutable std::unordered_set<std::string> _shownRecordFindings;
     	mutable std::unordered_map<uint32_t, uint8_t> _observedUses;
+    	mutable std::vector<std::pair<BufferHandle, uint8_t>> _observedBufferUses;
     	struct ObservedDispatches {
     		// graph textures the pushes since the last dispatch name, the next dispatch uses them
     		std::unordered_map<uint32_t, uint8_t> next;
