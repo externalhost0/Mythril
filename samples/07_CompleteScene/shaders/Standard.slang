@@ -34,7 +34,7 @@ v2f vs_main(VSInput input) {
 
 
     float4 worldpos = mul(push.model, float4(v.position, 1));
-    output.ClipPos = mul(push.frame.camera.projView, float4(worldpos.xyz, 1));
+    output.ClipPos = mul(push.mvp, float4(v.position, 1));
 
     output.Normal = mul(push.model, float4(v.normal, 0)).xyz;
     output.UV = float2(v.uv_x, v.uv_y);

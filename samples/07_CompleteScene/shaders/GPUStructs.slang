@@ -176,6 +176,7 @@ struct FrameData
 struct GeometryPushConstants
 {
     float4x4 model;
+    float4x4 mvp;
     Ptr<Vertex> vba;
     Ptr<FrameData> frame;
     float4 tintColor;

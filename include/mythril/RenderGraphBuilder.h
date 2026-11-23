@@ -315,6 +315,7 @@ namespace mythril {
 	};
     class RenderGraph {
     public:
+    	// really dont worry about these you wont need them, purely debugging
         struct Options {
             bool cull = true;
             bool merge = true;

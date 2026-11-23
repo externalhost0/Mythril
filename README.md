@@ -96,8 +96,8 @@ Be aware that Mythril exposes the `Vulkan` and `volk` headers to consumers.
 ### Building the samples
 Samples are off by default. To build and run them locally:
 ```bash
-cmake --preset samples
-cmake --build build/debug
+cmake --preset debug-samples
+cmake --build build/debug-samples
 ```
 
 ### CMake Options

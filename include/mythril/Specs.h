@@ -7,6 +7,7 @@
 #include "vkenums.h"
 
 #include <filesystem>
+#include <variant>
 #include <volk.h>
 
 namespace mythril {

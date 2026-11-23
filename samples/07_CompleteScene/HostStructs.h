@@ -58,6 +58,7 @@ namespace GPU {
 
 	struct GeometryPushConstants {
 		glm::mat4 model;
+		glm::mat4 mvp;
 		VkDeviceAddress vba;
 		VkDeviceAddress frame;
 		glm::vec4 tintColor;

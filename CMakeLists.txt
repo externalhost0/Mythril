@@ -42,6 +42,9 @@ set(ALL_SAMPLES
 # ==================== C++ Standard ====================
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+if (APPLE)
+    add_compile_definitions(_LIBCPP_REMOVE_TRANSITIVE_INCLUDES)
+endif()
 set(CMAKE_CXX_EXTENSIONS OFF)
 # for msvc compat
 if(MSVC)

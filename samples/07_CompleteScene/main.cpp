@@ -856,7 +856,7 @@ int main() {
 		});
 
 		mythril::Shader shadowShader = ctx->createShader({
-			.source = kDataDir / "shaders/DirectionalShadow.slang",
+			.source = kDataDir / "shaders/DepthOnly.slang",
 			.debugName = "Shadow Shader"
 		});
 
@@ -865,6 +865,14 @@ int main() {
 			.fragmentShader = {shadowShader},
 			.cull = mythril::CullMode::OFF,
 			.debugName = "Shadow Graphics Pipeline"
+		});
+
+		mythril::GraphicsPipeline depthPrepassPipeline = ctx->createGraphicsPipeline({
+			.vertexShader = {shadowShader},
+			.fragmentShader = {shadowShader},
+			.cull = mythril::CullMode::BACK,
+			.multisample = mythril::SampleCount::X4,
+			.debugName = "Depth Prepass Pipeline"
 		});
 
 		mythril::Shader redDebugShader = ctx->createShader({
@@ -1261,6 +1269,7 @@ int main() {
 			.debugName = "Adaptation Compute Pipeline"
 		});
 
+		
 		float adaptationSpeed = 1.5f;
 		bool lumFlip = false;
 		auto st = std::chrono::steady_clock::now();
@@ -1276,19 +1285,19 @@ int main() {
 			KhronosPBR = 3,
 			AgX = 4
 		} tone_mapping_mode = ToneMappingMode::KhronosPBR;
-		float maxWhite = 1.5f;
-		float P = 1.f;
-		float a = 1.05f;
-		float m = 0.1f;
-		float l = 0.8f;
-		float c = 3.0f;
-		float b = 0.0f;
-		float startCompression = 0.15f;
-		float desaturation = 0.15f;
-		glm::vec3 slope = {1.f, 1.f, 1.f};
-		glm::vec3 offset = {0.f, 0.f, 0.f};
-		glm::vec3 power = {1.f, 1.f, 1.f};
-		float saturation = 1.f;
+		float reinhardMaxWhite = 1.5f;
+		float uchimuraP = 1.f;
+		float uchimuraA = 1.05f;
+		float uchimuraM = 0.1f;
+		float uchimuraL = 0.8f;
+		float uchimuraC = 3.0f;
+		float uchimuraB = 0.0f;
+		float khronosStartCompression = 0.15f;
+		float khronosDesaturation = 0.15f;
+		glm::vec3 agxSlope = {1.f, 1.f, 1.f};
+		glm::vec3 agxOffset = {0.f, 0.f, 0.f};
+		glm::vec3 agxPower = {1.f, 1.f, 1.f};
+		float agxSaturation = 1.f;
 
 		const mythril::GraphBuffer rgFrameData = graph.importBuffer(frameDataHandle);
 		const mythril::GraphBuffer rgPointLightShadowMatrices = graph.importBuffer(pointLightShadowMatrixBuf);
@@ -1309,7 +1318,8 @@ int main() {
 
 			static void draw(const SponzaDraw& d, mythril::GraphicsCmd& cmd) {
 				cmd.cmdBindGraphicsPipeline(d.pipeline);
-				cmd.cmdBindDepthState({mythril::CompareOp::Greater, true});
+				// opaque depth comes from depth_prepass, so only shade the surface that won
+				cmd.cmdBindDepthState(d.transparent ? mythril::DepthState{mythril::CompareOp::Greater, true} : mythril::DepthState{mythril::CompareOp::GreaterEqual, false});
 				GPU::GeometryPushConstants push = d.push;
 				push.shadowTexture = cmd.texture(d.shadowMap).index();
 				for (int i = 0; i < kNumPointLights; i++)
@@ -1328,6 +1338,7 @@ int main() {
 				}
 			}
 		};
+		glm::mat4 projViewFromCamera;
 		const auto setupSponzaDraw = [&](SponzaDraw& d, const mythril::GraphicsPipeline& pipeline, bool transparent) {
 			d.asset = &sponzaCompiled;
 			d.pipeline = pipeline.handle();
@@ -1336,6 +1347,7 @@ int main() {
 			std::ranges::copy(rgPointLightShadowTex, d.pointShadowMaps);
 			d.push = {
 				.model = scaledModel,
+				.mvp = projViewFromCamera * scaledModel,
 				.frame = ctx->gpuAddress(frameDataHandle),
 				.tintColor = {1, 1, 1, 1},
 				.samplerState = repeatSampler.index(),
@@ -1384,6 +1396,37 @@ int main() {
 			mythril::GraphBuffer frameBuffer = rgFrameData;
 			mythril::GraphBuffer shadowMatrixBuffer = rgPointLightShadowMatrices;
 			mythril::GraphBuffer particleBuffer = rgParticles;
+
+			struct DepthPrepassData {
+				DepthOnlyDraw draw;
+				struct {
+					glm::mat4 mvp;
+					VkDeviceAddress vba;
+				} push;
+			};
+			graph.addGraphicsPass<DepthPrepassData>("depth_prepass", [&](mythril::GraphicsPassBuilder& b, DepthPrepassData& d) {
+				msaaDepth = b.attachment({
+					.texDesc = msaaDepth,
+					.clearValue = mythril::ClearValue::depth(kReverseZFarDepth, 0),
+					.loadOp = mythril::LoadOp::CLEAR,
+					.storeOp = mythril::StoreOp::STORE,
+				}).texture;
+				b.dependency(rgOpaqueSponzaVertices, mythril::BufferAccess::ShaderRead);
+				b.dependency(rgOpaqueSponzaIndices, mythril::BufferAccess::IndexRead);
+				b.dependency(rgOpaqueSponzaIndirect, mythril::BufferAccess::IndirectRead);
+				d.draw = {.pipeline = depthPrepassPipeline.handle(), .indexBuffer = opaqueSponzaIndexBuf.handle(), .indirectBuffer = &opaqueSponzaIndirectBuf, .drawCount = opaqueDrawCount};
+				d.push = {
+					.mvp = projViewFromCamera * scaledModel,
+					.vba = ctx->gpuAddress(opaqueSponzaVertexBuf)
+				};
+			}, [](const DepthPrepassData& d, mythril::GraphicsCmd& cmd) {
+				cmd.cmdBindGraphicsPipeline(d.draw.pipeline);
+				cmd.cmdBindDepthState({mythril::CompareOp::Greater, true});
+				cmd.cmdPushConstants(d.push);
+				cmd.cmdBindIndexBuffer(d.draw.indexBuffer);
+				cmd.cmdDrawIndexedIndirect(*d.draw.indirectBuffer, 0, d.draw.drawCount);
+			});
+
 			{
 				const glm::vec3 lightDir = glm::normalize(lightingData.directionalLights.direction);
 				const glm::vec3 lightPos = scene_center - lightDir * distance_from_center;
@@ -1395,14 +1438,14 @@ int main() {
 				const glm::mat4 lightProj = glm::ortho(-orthoSize, orthoSize, -orthoSize, orthoSize, near, far);
 				lightSpaceMatrix = lightProj * lightView;
 			}
-			struct ShadowMap {
+			struct ShadowMapData {
 				DepthOnlyDraw draw;
 				struct {
 					glm::mat4 mvp;
 					VkDeviceAddress vba;
 				} push;
 			};
-			graph.addGraphicsPass<ShadowMap>("shadow_map", [&](mythril::GraphicsPassBuilder& b, ShadowMap& d) {
+			graph.addGraphicsPass<ShadowMapData>("shadow_map", [&](mythril::GraphicsPassBuilder& b, ShadowMapData& d) {
 				shadowMap = b.attachment({
 					.texDesc = {shadowMap},
 					.clearValue = mythril::ClearValue::depth(1.f, 0),
@@ -1412,9 +1455,19 @@ int main() {
 				b.dependency(rgOpaqueSponzaVertices, mythril::BufferAccess::ShaderRead);
 				b.dependency(rgOpaqueSponzaIndices, mythril::BufferAccess::IndexRead);
 				b.dependency(rgOpaqueSponzaIndirect, mythril::BufferAccess::IndirectRead);
-				d.draw = {shadowPipeline.handle(), depthBiasConstant, depthBiasSlope, opaqueSponzaIndexBuf.handle(), &opaqueSponzaIndirectBuf, opaqueDrawCount};
-				d.push = {.mvp = lightSpaceMatrix * scaledModel, .vba = ctx->gpuAddress(opaqueSponzaVertexBuf)};
-			}, [](const ShadowMap& d, mythril::GraphicsCmd& cmd) {
+				d.draw = {
+					shadowPipeline.handle(),
+					depthBiasConstant,
+					depthBiasSlope,
+					opaqueSponzaIndexBuf.handle(),
+					&opaqueSponzaIndirectBuf,
+					opaqueDrawCount
+				};
+				d.push = {
+					.mvp = lightSpaceMatrix * scaledModel,
+					.vba = ctx->gpuAddress(opaqueSponzaVertexBuf)
+				};
+			}, [](const ShadowMapData& d, mythril::GraphicsCmd& cmd) {
 				cmd.cmdBindGraphicsPipeline(d.draw.pipeline);
 				cmd.cmdBindDepthState({mythril::CompareOp::LessEqual, true});
 				cmd.cmdSetDepthBiasEnable(true);
@@ -1480,8 +1533,7 @@ int main() {
 				}).texture;
 				msaaDepth = b.attachment({
 					.texDesc = msaaDepth,
-					.clearValue = mythril::ClearValue::depth(kReverseZFarDepth, 0),
-					.loadOp = mythril::LoadOp::CLEAR,
+					.loadOp = mythril::LoadOp::LOAD,
 					.storeOp = mythril::StoreOp::STORE,
 				}).texture;
 				b.dependency(frameBuffer, mythril::BufferAccess::ShaderRead);
@@ -1489,6 +1541,8 @@ int main() {
 				d.push = {.frame = ctx->gpuAddress(frameDataHandle), .sunDirection = sun_quaternion * glm::vec3(0.f, 0.f, -1.f)};
 			}, [](const Sky& d, mythril::GraphicsCmd& cmd) {
 				cmd.cmdBindGraphicsPipeline(d.pipeline);
+				// sky sits at the reverse-Z far plane, so it only shades pixels the prepass left empty
+				cmd.cmdBindDepthState({mythril::CompareOp::Equal, false});
 				cmd.cmdPushConstants(d.push);
 				cmd.cmdDraw(3);
 			});
@@ -1748,19 +1802,19 @@ int main() {
 					.exposure = exposure_final,
 					.bloomStrength = bloom_strength,
 					.toneMapMode = static_cast<int>(tone_mapping_mode),
-					.maxWhite = maxWhite,
-					.P = P,
-					.a = a,
-					.m = m,
-					.l = l,
-					.c = c,
-					.b = b,
-					.startCompression = startCompression,
-					.desaturation = desaturation,
-					.slope = slope,
-					.offset = offset,
-					.power = power,
-					.saturation = saturation
+					.maxWhite = reinhardMaxWhite,
+					.P = uchimuraP,
+					.a = uchimuraA,
+					.m = uchimuraM,
+					.l = uchimuraL,
+					.c = uchimuraC,
+					.b = uchimuraB,
+					.startCompression = khronosStartCompression,
+					.desaturation = khronosDesaturation,
+					.slope = agxSlope,
+					.offset = agxOffset,
+					.power = agxPower,
+					.saturation = agxSaturation
 				};
 			}, [](const Composite& d, mythril::GraphicsCmd& cmd) {
 				cmd.cmdBindGraphicsPipeline(d.pipeline);
@@ -1788,7 +1842,12 @@ int main() {
 				model = model * glm::mat4_cast(sun_quaternion);
 				model = glm::rotate(model, 90.f, glm::vec3(1, 1, 1));
 				model = glm::rotate(model, 180.f, glm::vec3(0, 1, 0));
-				d = {&arrowCompiled, redDebugPipeline.handle(), model, ctx->gpuAddress(frameDataHandle)};
+				d = {
+					.arrow = &arrowCompiled,
+					.pipeline = redDebugPipeline.handle(),
+					.model = model,
+					.frame = ctx->gpuAddress(frameDataHandle)
+				};
 			}, [](const ShadowPosDebug& d, mythril::GraphicsCmd& cmd) {
 				cmd.cmdBindGraphicsPipeline(d.pipeline);
 				cmd.cmdBindDepthState({mythril::CompareOp::Less, true});
@@ -1955,8 +2014,9 @@ int main() {
 			glm::vec3 view11 = UVToViewRay({1,1}, invProj);
 			glm::vec2 ray00 = { view00.x / view00.z, view00.y / view00.z };
 			glm::vec2 ray11 = { view11.x / view11.z, view11.y / view11.z };
+			projViewFromCamera = reversedCameraProj * cameraView;
 			const GPU::CameraData cameraData = {
-				.projView = reversedCameraProj * cameraView,
+				.projView = projViewFromCamera,
 				.invProj = invProj,
 				.forward = glm::normalize(-glm::vec3(cameraView[0][2], cameraView[1][2], cameraView[2][2])),
 				.up = glm::normalize(glm::vec3(cameraView[0][1], cameraView[1][1], cameraView[2][1])),
@@ -1986,6 +2046,7 @@ int main() {
 
 			ImGuiWindowFlags window_flags = focused ? ImGuiWindowFlags_NoMouseInputs : ImGuiWindowFlags_None;
 			ImGui::Begin("Previews", nullptr, window_flags);
+			ImGui::Image(rgMsaaDepthTarget, {200, 200});
 			ImGui::Image(rgShadowMap, {200, 200});
 			ImGui::Text("Average Luminance");
 			ImGui::Image(adaptedLuminanceTextures[lumFlip], {100, 100});
@@ -2025,28 +2086,28 @@ int main() {
 				} break;
 				case ToneMappingMode::Reinhard: {
 					ImGui::Text("Reinhard Options");
-					ImGui::DragFloat("Max White", &maxWhite, 0.01f, 0.0001f, 10.f);
+					ImGui::DragFloat("Max White", &reinhardMaxWhite, 0.01f, 0.0001f, 10.f);
 				} break;
 				case ToneMappingMode::Uchimira: {
 					ImGui::Text("Uchimura Options");
-					ImGui::DragFloat("Max Display Brightness", &P, 0.01f, 0.0001f, 10.f);
-					ImGui::DragFloat("Contrast", &a, 0.01f, 0.0001f, 10.f);
-					ImGui::DragFloat("Linear Section Start", &m, 0.01f, 0.0001f, 10.f);
-					ImGui::DragFloat("Linear Section Length", &l, 0.01f, 0.0001f, 10.f);
-					ImGui::DragFloat("Black Tighness", &c, 0.01f, 0.0001f, 10.f);
-					ImGui::DragFloat("Pedestal", &b, 0.01f, 0.0001f, 10.f);
+					ImGui::DragFloat("Max Display Brightness", &uchimuraP, 0.01f, 0.0001f, 10.f);
+					ImGui::DragFloat("Contrast", &uchimuraA, 0.01f, 0.0001f, 10.f);
+					ImGui::DragFloat("Linear Section Start", &uchimuraM, 0.01f, 0.0001f, 10.f);
+					ImGui::DragFloat("Linear Section Length", &uchimuraL, 0.01f, 0.0001f, 10.f);
+					ImGui::DragFloat("Black Tighness", &uchimuraC, 0.01f, 0.0001f, 10.f);
+					ImGui::DragFloat("Pedestal", &uchimuraB, 0.01f, 0.0001f, 10.f);
 				} break;
 				case ToneMappingMode::KhronosPBR: {
 					ImGui::Text("KhronosPBR Options");
-					ImGui::DragFloat("Highlight Compression Start", &startCompression, 0.01f, 0.04f, 0.8f);
-					ImGui::DragFloat("Desaturation", &desaturation, 0.01f, 0.001f, 1.f);
+					ImGui::DragFloat("Highlight Compression Start", &khronosStartCompression, 0.01f, 0.04f, 0.8f);
+					ImGui::DragFloat("Desaturation", &khronosDesaturation, 0.01f, 0.001f, 1.f);
 				} break;
 				case ToneMappingMode::AgX: {
 					ImGui::Text("AgX Options");
-					ImGui::SliderFloat3("Slope", &slope[0], 0.f, 1.f);
-					ImGui::SliderFloat3("Offset", &offset[0], 0.f, 1.f);
-					ImGui::SliderFloat3("Power", &power[0], 0.f, 1.f);
-					ImGui::DragFloat("Saturation", &saturation, 0.1f, 0.1f, 10.f);
+					ImGui::SliderFloat3("Slope", &agxSlope[0], 0.f, 1.f);
+					ImGui::SliderFloat3("Offset", &agxOffset[0], 0.f, 1.f);
+					ImGui::SliderFloat3("Power", &agxPower[0], 0.f, 1.f);
+					ImGui::DragFloat("Saturation", &agxSaturation, 0.1f, 0.1f, 10.f);
 				} break;
 			}
 
@@ -2069,10 +2130,11 @@ int main() {
 				ImGui::Text("CPU Usage: %.1f%%", GetCPUUsage());
 				ImGui::Text("Memory Usage: %.1f MB", GetMemoryUsageMB());
 #if defined(__APPLE__)
-				ImGui::Text("GPU Allocations: %.1f MB", static_cast<double>(ctx->getGPUMemoryUsage()) / (1024.0 * 1024.0));
+				static const char* title = "GPU Allocations";
 #else
-				ImGui::Text("GPU Memory Usage: %.1f MB", static_cast<double>(ctx->getGPUMemoryUsage()) / (1024.0 * 1024.0));
+				static const char* title = "GPU Memory Usage";
 #endif
+				ImGui::Text("%s: %.1f MB", title, static_cast<double>(ctx->getGPUMemoryUsage()) / (1024.0 * 1024.0));
 				ImGui::Text("ImGui Backend: %s", ImGui::GetIO().BackendRendererName);
 				ImGui::Text("Display Size: %.0fx%.0f", ImGui::GetIO().DisplaySize.x, ImGui::GetIO().DisplaySize.y);
 				ImGui::Text("Display Framebuffer Scale: %.0fx%.0f", ImGui::GetIO().DisplayFramebufferScale.x, ImGui::GetIO().DisplayFramebufferScale.y);
