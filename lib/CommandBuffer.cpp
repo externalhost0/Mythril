@@ -24,78 +24,48 @@
 #endif
 
 #ifdef DEBUG
+// logs each distinct message once per pass, tagged with the pass when recorded inside one
+#define LOG_CMD_ONCE(level, message, ...) \
+	do { \
+		const std::string onceMsg = fmt::format(message __VA_OPT__(, __VA_ARGS__)); \
+		if (FirstReport(_activeMember, onceMsg)) { \
+			if (_activeMember) \
+				LOG_PASS(level, *_activeMember, "{}", onceMsg); \
+			else \
+				LOG_SYSTEM(level, "{}", onceMsg); \
+		} \
+	} while (0)
+#else
+#define LOG_CMD_ONCE(level, message, ...) ((void)0)
+#endif
+
+#ifdef DEBUG
 #define CHECK_SHOULD_BE_RENDERING() \
 	if (!_isRendering) \
-		LOG_SYSTEM_NOSOURCE(LogType::Warning, "Calling '{}' must be done between cmdBeginRendering() and cmdEndRendering()", __func__);
+		LOG_CMD_ONCE(LogType::Warning, "Calling '{}' must be done between cmdBeginRendering() and cmdEndRendering()", __func__);
 #else
 #define CHECK_SHOULD_BE_RENDERING() (void(0))
 #endif
 
 
-#ifdef DEBUG
 #define CHECK_PIPELINE_REBIND(common, lastBound, debugName) \
 	do { \
 		if ((common)->_vkPipeline == (lastBound)) { \
-			static std::unordered_map<VkPipeline, int> g_rebindWarningCount; \
-			int& count = g_rebindWarningCount[(common)->_vkPipeline]; \
-			static constexpr unsigned int kMaxWarns = 5; \
-			if (count < kMaxWarns) { \
-				LOG_SYSTEM(LogType::Warning, "Called to rebind already bound pipeline '{}'", debugName); \
-			} else if (count == kMaxWarns) { \
-				LOG_SYSTEM(LogType::Warning, "Pipeline '{}' has triggered this warning >{} times and will now be silenced.", debugName, kMaxWarns); \
-			} \
-			count++; \
+			LOG_CMD_ONCE(LogType::Warning, "Called to rebind already bound pipeline '{}'", debugName); \
 			return; \
 		} \
 	} while(0)
-#else
-#define CHECK_PIPELINE_REBIND(common, lastBound, debugName) \
-	do { \
-		if ((common)->_vkPipeline == (lastBound)) { \
-			return; \
-		} \
-	} while(0)
-#endif
 
 
 namespace mythril {
 	using namespace detail;
 
-	static void MaybeWarnPushConstantSizeMismatch(const PipelineCoreData& common, uint32_t cpuSize, std::string_view pipelineName) {
-		static std::unordered_map<VkPipeline, int> g_pushConstantWarningCount;
-		int& count = g_pushConstantWarningCount[common._vkPipeline];
-		static constexpr unsigned int kMaxWarns = 5;
-
-		bool matches = false;
-		for (const VkPushConstantRange& push: common.signature.pushes) {
-			if (push.size == cpuSize) {
-				matches = true;
-				break;
-			}
-		}
-		if (!matches) {
-			if (count < kMaxWarns) {
-				std::ostringstream ss;
-				bool first = true;
-				for (const VkPushConstantRange& push: common.signature.pushes) {
-					if (!first)
-						ss << ", ";
-					first = false;
-					ss << push.size;
-				}
-				LOG_SYSTEM(
-				        LogType::Warning,
-				        "Push constant CPU size is different than GPU size in pipeline '{}'! Your CPU structure has a size of '{}' while the shader's push constant has sizes '[{}]' respectively.",
-				        pipelineName,
-				        cpuSize,
-				        ss.str()
-				);
-			} else if (count == kMaxWarns) {
-				LOG_SYSTEM(LogType::Warning, "Push constant size mismatch for pipeline '{}' has triggered this warning >{} times and will now be silenced.", pipelineName, kMaxWarns);
-			}
-			count++;
-		}
+#ifdef DEBUG
+	static bool FirstReport(const PassMember* member, const std::string& message) {
+		static std::unordered_set<std::string> seen;
+		return seen.insert(member ? member->name + '\n' + message : message).second;
 	}
+#endif
 
 	constexpr uint16_t kMaxColorAttachments = 16;
 	// enforce that a valid CommandBuffer can only be created via this constructor
@@ -124,11 +94,8 @@ namespace mythril {
 		_viewMask = viewMask;
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_COMMAND);
 #ifdef DEBUG
-		static bool hasTriggered = false;
-		if ((_currentPipelineInfo && (layerCount != 1 || viewMask != 0) && !hasTriggered)) {
-			LOG_SYSTEM(LogType::Warning, "Calling cmdBeginRendering() with a specified layerCount & viewMask after cmdBind*Pipeline() is not supported, and will lead to broken rendering!");
-			hasTriggered = true;
-		}
+		if (_currentPipelineInfo && (layerCount != 1 || viewMask != 0))
+			LOG_CMD_ONCE(LogType::Warning, "Calling cmdBeginRendering() with a specified layerCount & viewMask after cmdBind*Pipeline() is not supported, and will lead to broken rendering!");
 #endif
 		this->cmdBeginRenderingImpl(layerCount, viewMask);
 	}
@@ -240,7 +207,7 @@ namespace mythril {
 	}
 	void CommandBuffer::cmdTraceRays(const Dimensions& queryDimension) {
 		if (!_ctx->isExtensionEnabled(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME)) {
-			LOG_SYSTEM(LogType::Warning, "You are calling cmdTraceRays without VK_KHR_ray_tracing_pipeline extension enabled.");
+			LOG_CMD_ONCE(LogType::Warning, "You are calling cmdTraceRays without VK_KHR_ray_tracing_pipeline extension enabled.");
 			return;
 		}
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_COMMAND);
@@ -259,12 +226,12 @@ namespace mythril {
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_COMMAND);
 
 		if (handle.empty()) {
-			LOG_SYSTEM(LogType::Warning, "Texture handle '{}' is invalid!", this->_ctx->view(handle).getDebugName());
+			LOG_CMD_ONCE(LogType::Warning, "cmdGenerateMipmap was given an empty texture handle!");
 			return;
 		}
 		AllocatedTexture* tex = this->_ctx->_texturePool.get(handle);
 		if (tex->_numLevels <= 1) {
-			LOG_SYSTEM(LogType::Warning, "Texture cannot have mipmaps when # of levels is less than 2.");
+			LOG_CMD_ONCE(LogType::Warning, "Texture '{}' cannot have mipmaps when # of levels is less than 2.", tex->getDebugName());
 			return;
 		}
 		tex->generateMipmap(_wrapper->_cmdBuf);
@@ -315,7 +282,7 @@ namespace mythril {
 		auto& destinationObject = _ctx->view(destinationHandle);
 		constexpr SubresourceRange baseSubresource = {0, 1, 0, 1};
 		if (sourceObject.getImageLayout(baseSubresource) != VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) {
-			LOG_SYSTEM(
+			LOG_CMD_ONCE(
 			        LogType::Info,
 			        "Automatically resolved texture ({}) to be in correct layout (VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) before {}. Was in ({})",
 			        sourceObject._debugName,
@@ -325,7 +292,7 @@ namespace mythril {
 			this->cmdTransitionLayout(sourceHandle, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
 		}
 		if (destinationObject.getImageLayout(baseSubresource) != VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
-			LOG_SYSTEM(
+			LOG_CMD_ONCE(
 			        LogType::Info,
 			        "Automatically resolved texture ({}) to be in correct layout (VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) before {}. Was in ({})",
 			        destinationObject._debugName,
@@ -347,7 +314,7 @@ namespace mythril {
 		CheckTextureRenderingUsage(sourceTex, destinationTex, "blit");
 		// check if copy could have been used instead
 		if (CheckTextureCopyInstead(sourceTex, destinationTex)) {
-			LOG_SYSTEM(LogType::Suggestion, "Usage of cmdBlitImage can be replaced by cmdCopyImage between src: '{}' and dest: '{}'", sourceTex.getDebugName(), destinationTex.getDebugName());
+			LOG_CMD_ONCE(LogType::Suggestion, "Usage of cmdBlitImage can be replaced by cmdCopyImage between src: '{}' and dest: '{}'", sourceTex.getDebugName(), destinationTex.getDebugName());
 		}
 #endif
 		ASSERT_MSG(sourceTex.getSampleCount() == VK_SAMPLE_COUNT_1_BIT, "You cannot blit a image with more than 1 samples.");
@@ -380,7 +347,7 @@ namespace mythril {
 		CheckTextureRenderingUsage(sourceTex, destinationTex, "blit");
 		// check if copy could have been used instead
 		if (CheckTextureCopyInstead(sourceTex, destinationTex)) {
-			LOG_SYSTEM(LogType::Suggestion, "Usage of cmdBlitImage can be replaced by cmdCopyImage between src: '{}' and dest: '{}'", sourceTex.getDebugName(), destinationTex.getDebugName());
+			LOG_CMD_ONCE(LogType::Suggestion, "Usage of cmdBlitImage can be replaced by cmdCopyImage between src: '{}' and dest: '{}'", sourceTex.getDebugName(), destinationTex.getDebugName());
 		}
 #endif
 		ASSERT_MSG(sourceTex.getSampleCount() == VK_SAMPLE_COUNT_1_BIT, "You cannot blit a image with more than 1 samples.");
@@ -405,13 +372,14 @@ namespace mythril {
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_COMMAND);
 		MYTH_PROFILER_GPU_COMMAND_ZONE("cmdPushConstants()", _wrapper->_cmdBuf, MYTH_PROFILER_COLOR_COMMAND);
 		if (!_currentPipelineInfo) {
-			LOG_SYSTEM(LogType::Warning, "No pipeline currently bound, will not perform push constants!");
+			LOG_CMD_ONCE(LogType::Warning, "No pipeline currently bound, will not perform push constants!");
 			return;
 		}
 
 		ASSERT_MSG(size % 4 == 0, "Push constant size needs to be a multiple of 4. Is size {}", size);
 		if (const VkPhysicalDeviceLimits& limits = _ctx->getPhysicalDeviceProperties10().limits; size + offset > limits.maxPushConstantsSize) {
-			LOG_SYSTEM(LogType::Error, "Push constants size exceeded %u (max %u bytes)", size + offset, limits.maxPushConstantsSize);
+			LOG_CMD_ONCE(LogType::Error, "Pushes {} bytes of push constants on pipeline '{}' (max {} bytes), skipping push constants!", size + offset, _currentPipelineInfo->debugName, limits.maxPushConstantsSize);
+			return;
 		}
 
 		VkShaderStageFlags stages = 0;
@@ -422,13 +390,18 @@ namespace mythril {
 				rangeEnd = std::max(rangeEnd, range.offset + range.size);
 			}
 		}
-		size = std::min(size, rangeEnd - offset);
 		if (!stages) {
-			LOG_SYSTEM(LogType::Warning, "Pipeline '{}' has no push constant range overlapping [{}, {}), skipping push constants!", _currentPipelineInfo->debugName, offset, offset + size);
+			LOG_CMD_ONCE(LogType::Warning, "Pipeline '{}' has no push constant range overlapping [{}, {}), skipping push constants!", _currentPipelineInfo->debugName, offset, offset + size);
 			return;
 		}
+		size = std::min(size, rangeEnd - offset);
 #ifdef DEBUG
-		MaybeWarnPushConstantSizeMismatch(_currentPipelineInfo->core, size, _currentPipelineInfo->debugName);
+		if (const auto& pushes = _currentPipelineInfo->core.signature.pushes; std::ranges::none_of(pushes, [size](const VkPushConstantRange& push) { return push.size == size; })) {
+			std::string gpuSizes;
+			for (const VkPushConstantRange& push: pushes)
+				fmt::format_to(std::back_inserter(gpuSizes), "{}{}", gpuSizes.empty() ? "" : ", ", push.size);
+			LOG_CMD_ONCE(LogType::Warning, "Push constant CPU size is different than GPU size in pipeline '{}'! Your CPU structure has a size of '{}' while the shader's push constant has sizes '[{}]' respectively.", _currentPipelineInfo->debugName, size, gpuSizes);
+		}
 		if (_graph && _activePass && _activeMember)
 			_graph->checkPushResources(*_ctx, *_activePass, *_activeMember, _currentPipelineInfo->debugName, _currentPipelineInfo->core.signature.pushResources, data, size, offset);
 #endif
@@ -462,7 +435,7 @@ namespace mythril {
 		ASSERT(this->_ctx);
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_COMMAND);
 		if (handle.empty()) {
-			LOG_SYSTEM(LogType::Warning, "Binded render pipeline was invalid/empty!");
+			LOG_CMD_ONCE(LogType::Warning, "Binded render pipeline was invalid/empty!");
 			return;
 		}
 		AllocatedGraphicsPipeline* pipeline = _ctx->_graphicsPipelinePool.get(handle);
@@ -491,7 +464,7 @@ namespace mythril {
 		ASSERT(this->_ctx);
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_COMMAND);
 		if (handle.empty()) {
-			LOG_SYSTEM(LogType::Warning, "Binded compute pipeline was invalid/empty!");
+			LOG_CMD_ONCE(LogType::Warning, "Binded compute pipeline was invalid/empty!");
 			return;
 		}
 		AllocatedComputePipeline* pipeline = _ctx->_computePipelinePool.get(handle);
@@ -508,7 +481,7 @@ namespace mythril {
 		ASSERT(this->_ctx);
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_COMMAND);
 		if (handle.empty()) {
-			LOG_SYSTEM(LogType::Warning, "Binded raytracing pipeline was invalid/empty!");
+			LOG_CMD_ONCE(LogType::Warning, "Binded raytracing pipeline was invalid/empty!");
 			return;
 		}
 		AllocatedRayTracingPipeline* pipeline = _ctx->_rayTracingPipelinePool.get(handle);
@@ -535,7 +508,7 @@ namespace mythril {
 		ASSERT_MSG(offset + size <= buf->_bufferSize, "cmdUpdateBufferEXT: offset + size exceeds buffer '{}' size ({} > {}).", buf->_debugName, offset + size, buf->_bufferSize);
 		ASSERT_MSG(buf->_vkUsageFlags & VK_BUFFER_USAGE_TRANSFER_DST_BIT, "cmdUpdateBufferEXT: buffer '{}' was not created with TRANSFER_DST usage.", buf->_debugName);
 		if (!data) {
-			LOG_SYSTEM(LogType::Warning, "You are updating buffer '{}' with empty data.", buf->_debugName);
+			LOG_CMD_ONCE(LogType::Warning, "You are updating buffer '{}' with empty data.", buf->_debugName);
 			return;
 		}
 
