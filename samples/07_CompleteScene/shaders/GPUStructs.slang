@@ -171,6 +171,8 @@ struct FrameData
     CameraData camera;
     LightingData lighting;
     float time;
+    float deltaTime;
+    float4x4 lightSpaceMatrix;
 };
 
 struct GeometryPushConstants
@@ -186,7 +188,6 @@ struct GeometryPushConstants
     DescriptorHandle<SamplerState> linearSampler;
     DescriptorHandle<Texture2D<float>> shadowTexture;
     DescriptorHandle<SamplerComparisonState> shadowSamplerComparison;
-    float4x4 lightSpaceMatrix;
     DescriptorHandle<TextureCube<float>> pointLightCubemaps[4];
     float pointLightFarPlane;
 };

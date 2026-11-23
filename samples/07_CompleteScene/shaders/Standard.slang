@@ -40,7 +40,7 @@ v2f vs_main(VSInput input) {
     output.UV = float2(v.uv_x, v.uv_y);
     output.WorldPosition = worldpos.xyz;
     output.Tangent = float4(mul(push.model, float4(v.tangent.xyz, 0)).xyz, v.tangent.w);
-    output.LightSpacePos = mul(biasMat, mul(push.lightSpaceMatrix, worldpos));
+    output.LightSpacePos = mul(biasMat, mul(push.frame.lightSpaceMatrix, worldpos));
 
     return output;
 }

@@ -1352,7 +1352,6 @@ int main() {
 				.tintColor = {1, 1, 1, 1},
 				.samplerState = repeatSampler.index(),
 				.shadowSampler = shadowSampler.index(),
-				.lightSpaceMatrix = lightSpaceMatrix,
 				.pointLightFarPlane = pointlight_farplane
 			};
 		};
@@ -1437,6 +1436,7 @@ int main() {
 				const glm::mat4 lightView = glm::lookAt(lightPos, scene_center, glm::vec3(0, 1, 0));
 				const glm::mat4 lightProj = glm::ortho(-orthoSize, orthoSize, -orthoSize, orthoSize, shadowNear, shadowFar);
 				lightSpaceMatrix = lightProj * lightView;
+				frameData.lightSpaceMatrix = lightSpaceMatrix;
 			}
 			struct ShadowMapData {
 				DepthOnlyDraw draw;
