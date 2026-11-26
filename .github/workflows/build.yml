@@ -2,7 +2,12 @@ name: build
 
 on:
   push:
-    branches: [dev]
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'samples/**'
+      - 'tests/**'
   workflow_dispatch:
 
 concurrency:
@@ -15,98 +20,54 @@ env:
 
 jobs:
   build:
-    name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - name: linux-gcc
-            os: ubuntu-24.04
-            ccache: -DUSE_CCACHE=ON
-          # Ccache.cmake needs a shell, so MSVC uses the plain launchers, /Z7 (CMP0141) because /Zi objects are uncacheable
-          - name: windows-msvc
-            os: windows-2022
-            ccache: >-
-              -DCMAKE_C_COMPILER_LAUNCHER=ccache
-              -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
-              -DCMAKE_POLICY_DEFAULT_CMP0141=NEW
-              -DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded
+        os: [ubuntu-24.04, windows-2022]
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Linux packages
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            ninja-build xz-utils
-
-      - name: Cache Vulkan SDK
-        id: sdk-cache
-        uses: actions/cache@v4
+      - uses: actions/cache@v4
         with:
           path: ${{ runner.os == 'Linux' && '~/vulkan-sdk' || 'C:\VulkanSDK' }}
           key: vulkan-sdk-${{ runner.os }}-${{ env.VULKAN_SDK_VERSION }}
 
       - name: Install Vulkan SDK (Linux)
-        if: runner.os == 'Linux' && steps.sdk-cache.outputs.cache-hit != 'true'
-        run: |
-          mkdir -p ~/vulkan-sdk
-          curl -fsSL "https://sdk.lunarg.com/sdk/download/${VULKAN_SDK_VERSION}/linux/vulkan_sdk.tar.xz" \
-            | tar -xJ -C ~/vulkan-sdk
-
-      - name: Install Vulkan SDK (Windows)
-        if: runner.os == 'Windows' && steps.sdk-cache.outputs.cache-hit != 'true'
-        shell: pwsh
-        run: |
-          curl.exe -fsSL -o vulkan_sdk.exe "https://sdk.lunarg.com/sdk/download/$env:VULKAN_SDK_VERSION/windows/vulkan_sdk.exe"
-          $p = Start-Process -FilePath .\vulkan_sdk.exe -Wait -PassThru -ArgumentList @(
-            '--root', "C:\VulkanSDK\$env:VULKAN_SDK_VERSION",
-            '--accept-licenses', '--default-answer', '--confirm-command', 'install')
-          if ($p.ExitCode -ne 0) { throw "Vulkan SDK installer failed with $($p.ExitCode)" }
-
-      - name: Export Vulkan SDK environment (Linux)
         if: runner.os == 'Linux'
         run: |
-          sdk="$HOME/vulkan-sdk/$VULKAN_SDK_VERSION/x86_64"
-          echo "VULKAN_SDK=$sdk" >> "$GITHUB_ENV"
-          echo "CC=gcc-13" >> "$GITHUB_ENV"
-          echo "CXX=g++-13" >> "$GITHUB_ENV"
+          if [ ! -d ~/vulkan-sdk/$VULKAN_SDK_VERSION ]; then
+            mkdir -p ~/vulkan-sdk
+            curl -fsSL "https://sdk.lunarg.com/sdk/download/$VULKAN_SDK_VERSION/linux/vulkan_sdk.tar.xz" | tar -xJ -C ~/vulkan-sdk
+          fi
+          echo "VULKAN_SDK=$HOME/vulkan-sdk/$VULKAN_SDK_VERSION/x86_64" >> "$GITHUB_ENV"
 
-      - name: Export Vulkan SDK environment (Windows)
+      - name: Install Vulkan SDK (Windows)
         if: runner.os == 'Windows'
-        shell: pwsh
         run: |
           $sdk = "C:\VulkanSDK\$env:VULKAN_SDK_VERSION"
+          if (-not (Test-Path $sdk)) {
+            curl.exe -fsSL -o vulkan_sdk.exe "https://sdk.lunarg.com/sdk/download/$env:VULKAN_SDK_VERSION/windows/vulkan_sdk.exe"
+            $p = Start-Process .\vulkan_sdk.exe -Wait -PassThru -ArgumentList '--root', $sdk, '--accept-licenses', '--default-answer', '--confirm-command', 'install'
+            if ($p.ExitCode -ne 0) { throw "Vulkan SDK installer failed with $($p.ExitCode)" }
+          }
           "VULKAN_SDK=$sdk" >> $env:GITHUB_ENV
 
-      - name: Set up MSVC
-        if: runner.os == 'Windows'
-        uses: ilammy/msvc-dev-cmd@v1
-
-      - name: Set up ccache
-        uses: hendrikmuhs/ccache-action@v1.2
-        with:
-          key: ${{ matrix.name }}
-
-      - name: Cache CPM dependencies
-        uses: actions/cache@v4
+      - uses: actions/cache@v4
         with:
           path: ${{ env.CPM_SOURCE_CACHE }}
-          key: cpm-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'samples/CMakeLists.txt', 'tests/CMakeLists.txt', 'cmake/CPM.cmake') }}
+          key: cpm-${{ runner.os }}-${{ hashFiles('**/CMakeLists.txt', 'cmake/CPM.cmake') }}
           restore-keys: cpm-${{ runner.os }}-
 
       - name: Configure
         run: >
-          cmake -S . -B build -G Ninja
+          cmake -S . -B build
           -DCMAKE_BUILD_TYPE=Debug
-          ${{ matrix.ccache }}
           -DMYTH_BUILD_SAMPLES=OFF
           -DMYTH_BUILD_TESTS=OFF
           -DMYTH_ENABLE_IMGUI_STANDARD=ON
           -DMYTH_ENABLE_TRACY=ON
 
       - name: Build
-        run: cmake --build build --target mythril
+        run: cmake --build build --config Debug --target mythril --parallel
