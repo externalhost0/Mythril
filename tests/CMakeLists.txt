@@ -59,4 +59,5 @@ set(_gpu_spirv_dir "${CMAKE_CURRENT_BINARY_DIR}/gpu_spirv")
 target_compile_definitions(mythril_gpu_tests PRIVATE MYTH_TEST_SPIRV_DIR="${_gpu_spirv_dir}")
 mythril_reflect_shaders(mythril_gpu_tests SPIRV_DIR "${_gpu_spirv_dir}" SOURCES gpu/roundtrip.slang gpu/reload.slang UNTYPED_SOURCES gpu/reload_edit.slang gpu/reload_entry.slang gpu/reload_layout.slang gpu/reload_pointee.slang gpu/reload_reorder.slang gpu/reload_spec.slang gpu/reload_spec_wide.slang)
 add_test(NAME mythril_gpu_tests COMMAND mythril_gpu_tests)
-set_tests_properties(mythril_gpu_tests PROPERTIES LABELS gpu SKIP_RETURN_CODE 77)
+# CTXBuilder::DebugCallback tags every validation layer message with [Validation], so any message fails the run
+set_tests_properties(mythril_gpu_tests PROPERTIES LABELS gpu SKIP_RETURN_CODE 77 FAIL_REGULAR_EXPRESSION "\\[Validation\\]")
