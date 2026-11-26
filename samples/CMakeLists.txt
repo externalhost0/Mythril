@@ -13,6 +13,13 @@ CPMAddPackage(
         "SDL_DISABLE_INSTALL ON"
         "SDL_DISABLE_INSTALL_DOCS ON"
         "SDL_INSTALL_TESTS OFF"
+        "SDL_RENDER OFF"
+        "SDL_GPU OFF"
+        "SDL_CAMERA OFF"
+        "SDL_OPENGL OFF"
+        "SDL_OPENGLES OFF"
+        "SDL_DIALOG OFF"
+        "SDL_VIDEO_RENDER_VULKAN OFF"
 )
 
 # ==================== Sample Creation Macro ====================

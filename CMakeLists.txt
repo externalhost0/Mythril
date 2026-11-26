@@ -61,7 +61,6 @@ elseif(CMAKE_BUILD_TYPE STREQUAL "Debug")
 endif()
 
 # ==================== CPM Package Manager ====================
-set(CPM_SOURCE_CACHE "${CMAKE_CURRENT_SOURCE_DIR}/.cache/cpm" CACHE STRING "CPM cache path")
 set(CPM_USE_NAMED_CACHE_DIRECTORIES ON)
 include(cmake/QuietDeps.cmake)
 QUIET_DEPS_START()

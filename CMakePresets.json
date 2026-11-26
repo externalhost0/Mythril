@@ -13,7 +13,7 @@
       "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": {
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "CPM_SOURCE_CACHE": "${sourceDir}/.cache/cpm"
+        "CPM_SOURCE_CACHE": "$env{HOME}/.cache/CPM"
       }
     },
     {
