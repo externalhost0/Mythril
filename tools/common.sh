@@ -4,7 +4,7 @@ root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 
 # find_tool <binary> <override>: the override if set, else PATH, else homebrew llvm
 find_tool() {
-	local bin=$1 override=$2 found=${2:-$(command -v "$1" || true)}
+	local bin=$1 found=${2:-$(command -v "$1" || true)}
 	if [[ -z $found && -x /opt/homebrew/opt/llvm/bin/$bin ]]; then
 		found=/opt/homebrew/opt/llvm/bin/$bin
 	fi

@@ -67,6 +67,9 @@ QUIET_DEPS_START()
 include(cmake/CPM.cmake)
 QUIET_DEPS_END()
 
+# opt in with -DUSE_CCACHE=ON, uses shell launcher scripts so it does not work with MSVC
+CPMAddPackage("gh:TheLartians/Ccache.cmake@1.2.5")
+
 # ==================== Vulkan SDK ====================
 if(DEFINED ENV{VULKAN_SDK})
     set(VULKAN_SDK_DIR "$ENV{VULKAN_SDK}")
