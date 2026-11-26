@@ -1,26 +1,21 @@
 #!/usr/bin/env bash
-# runs clang-tidy on the given files against a preset's compile database.
+# runs clang-tidy on the given files (default: every tracked c++ source) against a preset's compile database.
 # a header has no compile command, so it is checked through the translation units of its directory.
 # env: MYTH_TIDY_PRESET (default debug-samples), MYTH_TIDY_JOBS (default 4), CLANG_TIDY (binary), VULKAN_SDK.
 set -euo pipefail
 
-root=$(cd "$(dirname "$0")/.." && pwd)
+name=clang-tidy.sh
+source "$(dirname "$0")/common.sh"
+
 preset=${MYTH_TIDY_PRESET:-debug-samples}
 db=$root/build/$preset
 
 if [[ ! -f $db/compile_commands.json ]]; then
-	echo "clang-tidy.sh: missing $db/compile_commands.json, run: cmake --preset $preset" >&2
+	echo "$name: missing $db/compile_commands.json, run: cmake --preset $preset" >&2
 	exit 1
 fi
 
-tidy=${CLANG_TIDY:-$(command -v clang-tidy || true)}
-if [[ -z $tidy && -x /opt/homebrew/opt/llvm/bin/clang-tidy ]]; then
-	tidy=/opt/homebrew/opt/llvm/bin/clang-tidy
-fi
-if [[ -z $tidy ]]; then
-	echo "clang-tidy.sh: clang-tidy not found, set CLANG_TIDY" >&2
-	exit 1
-fi
+tidy=$(find_tool clang-tidy "${CLANG_TIDY:-}")
 
 # a standalone clang-tidy does not know the apple sdk, libc++ or vulkan headers the real build finds
 extra=()
@@ -35,11 +30,15 @@ if [[ -n ${VULKAN_SDK:-} ]]; then
 	extra+=("--extra-arg=-isystem$VULKAN_SDK/include")
 fi
 
-[[ $# -gt 0 ]] || exit 0
+collect_files "$@"
+if [[ ${#files[@]} -eq 0 ]]; then
+	report_no_files
+	exit 0
+fi
 
 sources=()
 headers=()
-for f in "$@"; do
+for f in "${files[@]}"; do
 	abs=$(cd "$(dirname "$f")" && pwd)/$(basename "$f")
 	case $f in
 		*.h | *.hpp) headers+=("$abs") ;;
@@ -90,9 +89,18 @@ if [[ ${#headers[@]} -gt 0 ]]; then
 fi
 
 # one header is reached from many units, print each diagnostic once
-awk '/^[^ ].*: (warning|error): / { show = !seen[$0]++ } show' "$log"
+report=$(awk '/^[^ ].*: (warning|error): / { show = !seen[$0]++ } show' "$log")
+if [[ -n $report ]]; then
+	echo "$report"
+	diag_files=$(echo "$report" | grep -oE '^[^ :]+:[0-9]+:[0-9]+: (warning|error)' | cut -d: -f1 | sort -u | wc -l | tr -d ' ')
+	diag_count=$(echo "$report" | grep -cE '^[^ ].*: (warning|error): ')
+	echo "$name: $diag_count diagnostics in $diag_files files (${#files[@]} files checked)"
+	status=1
+elif [[ $status -eq 0 ]]; then
+	report_clean ${#files[@]}
+fi
 
 if grep -q "shadergen.h' file not found" "$log"; then
-	echo "clang-tidy.sh: generated shader headers are missing, run: cmake --build build/$preset" >&2
+	echo "$name: generated shader headers are missing, run: cmake --build build/$preset" >&2
 fi
 exit $status
