@@ -82,12 +82,10 @@ TEST_CASE("every push block and pointee field reaches the GPU where the generate
 		b.dependency(rgPointee, mythril::BufferAccess::ShaderRead);
 		b.dependency(rgOut, mythril::BufferAccess::ShaderWrite);
 		b.sideEffect();
-		d = {pipeline.handle(), push};
-	}, [](const RoundTripPass& d, mythril::ComputeCmd& cmd) {
+		d = {pipeline.handle(), push}; }, [](const RoundTripPass& d, mythril::ComputeCmd& cmd) {
 		cmd.cmdBindComputePipeline(d.pipeline);
 		cmd.cmdPushConstants(d.push);
-		cmd.cmdDispatchThreadGroup({1, 1, 1});
-	});
+		cmd.cmdDispatchThreadGroup({1, 1, 1}); });
 	graph.compile(*ctx);
 	graph.execute(*ctx);
 	ctx->waitIdle();

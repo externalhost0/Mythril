@@ -144,21 +144,21 @@ namespace mythril::vkutil {
 	                                        VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR | VK_ACCESS_2_MEMORY_WRITE_BIT;
 	// every way a buffer made by CTX::createBuffer can be accessed on the device
 	constexpr BufferUse kBufferUses[] = {
-	    {VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, kAnyShaderStage, VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT, BufferUseGate::None},
-	    {VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR | VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR, BufferUseGate::AccelerationStructure},
-	    {VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_PIPELINE_STAGE_2_INDEX_INPUT_BIT, VK_ACCESS_2_INDEX_READ_BIT, BufferUseGate::None},
-	    {VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT, VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT, VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT, BufferUseGate::None},
-	    {VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT, VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT, BufferUseGate::AccelerationStructure},
-	    {VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR, VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, VK_ACCESS_2_SHADER_READ_BIT, BufferUseGate::AccelerationStructure},
-	    {VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR, VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR | VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_COPY_BIT_KHR, VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR | VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR, BufferUseGate::AccelerationStructure},
-	    {VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR, kAnyShaderStage, VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR, BufferUseGate::AccelerationStructure},
-	    {VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR, VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR, VK_ACCESS_2_SHADER_BINDING_TABLE_READ_BIT_KHR, BufferUseGate::RayTracingPipeline},
-	    {VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, BufferUseGate::None},
-	    {VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_PIPELINE_STAGE_2_COPY_BIT | VK_PIPELINE_STAGE_2_CLEAR_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, BufferUseGate::None},
+		{VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, kAnyShaderStage, VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT, BufferUseGate::None},
+		{VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR | VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR, BufferUseGate::AccelerationStructure},
+		{VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_PIPELINE_STAGE_2_INDEX_INPUT_BIT, VK_ACCESS_2_INDEX_READ_BIT, BufferUseGate::None},
+		{VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT, VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT, VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT, BufferUseGate::None},
+		{VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT, VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT, BufferUseGate::AccelerationStructure},
+		{VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR, VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, VK_ACCESS_2_SHADER_READ_BIT, BufferUseGate::AccelerationStructure},
+		{VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR, VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR | VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_COPY_BIT_KHR, VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR | VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR, BufferUseGate::AccelerationStructure},
+		{VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR, kAnyShaderStage, VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR, BufferUseGate::AccelerationStructure},
+		{VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR, VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR, VK_ACCESS_2_SHADER_BINDING_TABLE_READ_BIT_KHR, BufferUseGate::RayTracingPipeline},
+		{VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, BufferUseGate::None},
+		{VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_PIPELINE_STAGE_2_COPY_BIT | VK_PIPELINE_STAGE_2_CLEAR_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, BufferUseGate::None},
 	};
 	constexpr VkBufferUsageFlags kHandledBufferUsage = [] {
 		VkBufferUsageFlags usage = 0;
-		for (const BufferUse& use : kBufferUses)
+		for (const BufferUse& use: kBufferUses)
 			usage |= use.usage;
 		return usage;
 	}();
@@ -183,7 +183,7 @@ namespace mythril::vkutil {
 		const VkPipelineStageFlags2 enabledStages = features.rayTracingPipeline ? ~VkPipelineStageFlags2{0} : ~VkPipelineStageFlags2{VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR};
 
 		StageAccess consumers = {};
-		for (const BufferUse& use : kBufferUses) {
+		for (const BufferUse& use: kBufferUses) {
 			if (!(use.usage & usage) || !gateOpen(use.gate))
 				continue;
 			consumers.stage |= use.stages & enabledStages;
@@ -195,16 +195,16 @@ namespace mythril::vkutil {
 		const StageAccess consumers = GetBufferConsumers(usage, features);
 		const StageAccess update = {.stage = VK_PIPELINE_STAGE_2_COPY_BIT | VK_PIPELINE_STAGE_2_CLEAR_BIT, .access = VK_ACCESS_2_TRANSFER_WRITE_BIT};
 		return {
-		    .before = {.src = {.stage = consumers.stage, .access = consumers.access & kWriteAccess}, .dst = update},
-		    .after = {.src = update, .dst = consumers},
+			.before = {.src = {.stage = consumers.stage, .access = consumers.access & kWriteAccess}, .dst = update},
+			.after = {.src = update, .dst = consumers},
 		};
 	}
 	constexpr UpdateBufferBarriers GetUploadBufferBarriers(VkBufferUsageFlags usage, BufferSyncFeatures features) {
 		const StageAccess consumers = GetBufferConsumers(usage, features);
 		const StageAccess copy = {.stage = VK_PIPELINE_STAGE_2_COPY_BIT, .access = VK_ACCESS_2_TRANSFER_WRITE_BIT};
 		return {
-		    .before = {.src = {.stage = consumers.stage, .access = consumers.access & kWriteAccess}, .dst = copy},
-		    .after = {.src = copy, .dst = consumers},
+			.before = {.src = {.stage = consumers.stage, .access = consumers.access & kWriteAccess}, .dst = copy},
+			.after = {.src = copy, .dst = consumers},
 		};
 	}
 
@@ -252,9 +252,9 @@ namespace mythril::vkutil {
 	}
 
 	struct BufferAccessTracker {
-		StageAccess write;
+		StageAccess write{};
 		std::array<VkPipelineStageFlags2, 64> visible{};
-		VkPipelineStageFlags2 readStages;
+		VkPipelineStageFlags2 readStages{};
 	};
 	constexpr std::optional<BufferBarrier> TrackBufferAccess(BufferAccessTracker& tracker, StageAccess access) {
 		if (access.access & kWriteAccess) {
@@ -280,7 +280,7 @@ namespace mythril::vkutil {
 
 	VkSemaphore CreateTimelineSemaphore(VkDevice device, unsigned int numImages);
 
-	//constexpr uint32_t CalcNumMipLevels(uint32_t width, uint32_t height) {
+	// constexpr uint32_t CalcNumMipLevels(uint32_t width, uint32_t height) {
 	//	uint32_t levels = 1;
 	//	while ((width | height) >> levels)
 	//		levels++;

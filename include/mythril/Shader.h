@@ -38,9 +38,23 @@ namespace mythril {
 
 	// a field of a push block or of what a pointer in it points to, Slang's array and matrix wrapper structs are folded away
 	struct PushField {
-		enum class Kind : uint8_t { Scalar, Vector, Matrix, Array, Struct, Pointer, SampledTexture, StorageTexture, Sampler, AccelerationStructure, Unknown };
+		enum class Kind : uint8_t { Scalar,
+			Vector,
+			Matrix,
+			Array,
+			Struct,
+			Pointer,
+			SampledTexture,
+			StorageTexture,
+			Sampler,
+			AccelerationStructure,
+			Unknown };
 		// what the shader does through the field, Unknown when the SPIR-V walk lost the trace
-		enum class Access : uint8_t { None = 0, Read = 1, Write = 2, ReadWrite = 3, Unknown = 4 };
+		enum class Access : uint8_t { None = 0,
+			Read = 1,
+			Write = 2,
+			ReadWrite = 3,
+			Unknown = 4 };
 		std::string name;
 		// struct name without Slang's layout suffix
 		std::string typeName;
@@ -94,27 +108,27 @@ namespace mythril {
 	};
 
 	namespace detail {
-	class AllocatedShader {
-	public:
-		// replaced on hot reload
-		std::span<const PushBlockLayout> viewPushBlocks() const { return _pipelineSignature.pushBlocks; }
-		const PipelineLayoutSignature& getPipelineLayoutSignature() const { return _pipelineSignature; }
-		std::string_view getDebugName() const { return _debugName; }
+		class AllocatedShader {
+		public:
+			// replaced on hot reload
+			std::span<const PushBlockLayout> viewPushBlocks() const { return _pipelineSignature.pushBlocks; }
+			const PipelineLayoutSignature& getPipelineLayoutSignature() const { return _pipelineSignature; }
+			std::string_view getDebugName() const { return _debugName; }
 
-	private:
-		// a shader defines not only the module obviously, but a pipelineLayout
-		VkShaderModule _vkShaderModule;
-		PipelineLayoutSignature _pipelineSignature;
-		SpecializationInfo _specializationInfo; // holds both info and a map when varName is used to resolve ID
+		private:
+			// a shader defines not only the module obviously, but a pipelineLayout
+			VkShaderModule _vkShaderModule{};
+			PipelineLayoutSignature _pipelineSignature;
+			SpecializationInfo _specializationInfo; // holds both info and a map when varName is used to resolve ID
 #ifdef DEBUG
-		std::vector<ShaderEntryPoint> _entryPoints;
+			std::vector<ShaderEntryPoint> _entryPoints;
 #endif
 
-		char _debugName[kMaxDebugNameLength] = {0};
+			char _debugName[kMaxDebugNameLength] = {0};
 
-		friend class ::mythril::CTX;
-		friend class ::mythril::CommandBuffer;
-	};
+			friend class ::mythril::CTX;
+			friend class ::mythril::CommandBuffer;
+		};
 	} // namespace detail
 
 } // namespace mythril

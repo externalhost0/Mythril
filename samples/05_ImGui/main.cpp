@@ -23,52 +23,36 @@ int main() {
 		Uint32 sdlExtensionCount = 0;
 		const char* const* sdlExtensions = SDL_Vulkan_GetInstanceExtensions(&sdlExtensionCount);
 		auto ctx = mythril::CTXBuilder{}
-		.set_vulkan_cfg({
-			.app_name = "Cool App Name",
-			.engine_name = "Cool Engine Name"
-		})
-		.set_window_surface({
-			.instanceExtensions = std::span(sdlExtensions, sdlExtensionCount),
-			.createFunc = [sdlWindow](VkInstance instance) {
+		               .set_vulkan_cfg({.app_name = "Cool App Name",
+						   .engine_name = "Cool Engine Name"})
+		               .set_window_surface({.instanceExtensions = std::span(sdlExtensions, sdlExtensionCount),
+						   .createFunc = [sdlWindow](VkInstance instance) {
 				VkSurfaceKHR surface;
 				SDL_Vulkan_CreateSurface(sdlWindow, instance, nullptr, &surface);
-				return surface;
-			},
-			.destroyFunc = [](VkInstance instance, VkSurfaceKHR surface) {
-				SDL_Vulkan_DestroySurface(instance, surface, nullptr);
-			}
-		})
-		.with_default_swapchain({
-			.width = static_cast<uint32_t>(w),
-			.height = static_cast<uint32_t>(h)
-		})
-		.with_ImGui({
-			.windowInitFunction = [sdlWindow] { ImGui_ImplSDL3_InitForVulkan(sdlWindow); },
-			.windowDestroyFunction = [] { ImGui_ImplSDL3_Shutdown(); }
-		})
-		.build();
+				return surface; },
+						   .destroyFunc = [](VkInstance instance, VkSurfaceKHR surface) { SDL_Vulkan_DestroySurface(instance, surface, nullptr); }})
+		               .with_default_swapchain({.width = static_cast<uint32_t>(w),
+						   .height = static_cast<uint32_t>(h)})
+		               .with_ImGui({.windowInitFunction = [sdlWindow] { ImGui_ImplSDL3_InitForVulkan(sdlWindow); },
+						   .windowDestroyFunction = [] { ImGui_ImplSDL3_Shutdown(); }})
+		               .build();
 
 		mythril::RenderGraph graph;
 		const mythril::GraphTexture rgColorTarget = graph.createTexture({.size = mythril::RelativeSize{}, .format = VK_FORMAT_R8G8B8A8_UNORM, .debugName = "Color Texture"});
 		const auto buildGraph = [&] {
 			mythril::GraphTexture color = rgColorTarget;
-			graph.addGraphicsPass("main", [&](mythril::GraphicsPassBuilder& b, mythril::NoPassData&) {
-				color = b.attachment({
-					.texDesc = color,
-					.clearValue = mythril::ClearValue::color(1.f, 0.f, 0.f, 1.f),
-					.loadOp = mythril::LoadOp::CLEAR,
-					.storeOp = mythril::StoreOp::STORE
-				}).texture;
-			}, [](const mythril::NoPassData&, mythril::GraphicsCmd& cmd) {
-				cmd.cmdDrawImGui();
-			});
+			graph.addGraphicsPass("main", [&](mythril::GraphicsPassBuilder& b, mythril::NoPassData&) { color = b.attachment({.texDesc = color,
+																																.clearValue = mythril::ClearValue::color(1.f, 0.f, 0.f, 1.f),
+																																.loadOp = mythril::LoadOp::CLEAR,
+																																.storeOp = mythril::StoreOp::STORE})
+				                                                                                                   .texture; }, [](const mythril::NoPassData&, mythril::GraphicsCmd& cmd) { cmd.cmdDrawImGui(); });
 			graph.addTransferPass("present", [&](mythril::TransferBuilder& b) {
 				b.blit(color, graph.backBuffer());
 			});
 		};
 
 		bool quit = false;
-		while(!quit) {
+		while (!quit) {
 			SDL_Event e;
 			while (SDL_PollEvent(&e)) {
 				ImGui_ImplSDL3_ProcessEvent(&e);
@@ -78,10 +62,8 @@ int main() {
 			// mandatory for resizeability
 			SDL_GetWindowSizeInPixels(sdlWindow, &w, &h);
 			if (ctx->isSwapchainDirty()) {
-				ctx->recreateSwapchain({
-					.width = static_cast<uint32_t>(w),
-					.height = static_cast<uint32_t>(h)
-				});
+				ctx->recreateSwapchain({.width = static_cast<uint32_t>(w),
+					.height = static_cast<uint32_t>(h)});
 			}
 
 

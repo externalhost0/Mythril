@@ -20,8 +20,7 @@
 
 // must match the kDebug* constants in raytrace.slang
 static constexpr const char* kDebugModeNames[] = {
-	"Lit", "Normals", "Hit Distance", "Primitive ID", "Barycentrics", "Shadow Rays", "Ray Direction", "Bounds"
-};
+	"Lit", "Normals", "Hit Distance", "Primitive ID", "Barycentrics", "Shadow Rays", "Ray Direction", "Bounds"};
 static constexpr uint32_t kNumDebugModes = std::size(kDebugModeNames);
 static_assert(kNumDebugModes == shaders::raytrace::kDebugBounds + 1);
 static constexpr uint32_t kUnionBoxCount = 1;
@@ -67,8 +66,7 @@ int main() {
 		VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
 		VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
 		VK_KHR_RAY_QUERY_EXTENSION_NAME,
-		VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME
-	};
+		VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME};
 	VkPhysicalDeviceAccelerationStructureFeaturesKHR accelerationStructureFeatures = {
 		.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR,
 		.accelerationStructure = VK_TRUE,
@@ -94,105 +92,66 @@ int main() {
 		Uint32 sdlExtensionCount = 0;
 		const char* const* sdlExtensions = SDL_Vulkan_GetInstanceExtensions(&sdlExtensionCount);
 		auto ctx = mythril::CTXBuilder{}
-		.set_vulkan_cfg({
-			.app_name = "Cool App Name",
-			.engine_name = "Cool Engine Name",
-			.app_version = {0, 0, 1},
-			.engine_version = {0, 0, 1},
-			.enableValidation = true,
-			.deviceExtensionNames = vulkan_extensions,
-			.additionalDeviceFeatures = { .shaderInt64 = VK_TRUE },
-			.deviceExtensionFeatureChain = &rayQueryFeatures
-		})
-		.set_window_surface({
-			.instanceExtensions = std::span(sdlExtensions, sdlExtensionCount),
-			.createFunc = [sdlWindow](VkInstance instance) {
+		               .set_vulkan_cfg({.app_name = "Cool App Name",
+						   .engine_name = "Cool Engine Name",
+						   .app_version = {0, 0, 1},
+						   .engine_version = {0, 0, 1},
+						   .enableValidation = true,
+						   .deviceExtensionNames = vulkan_extensions,
+						   .additionalDeviceFeatures = {.shaderInt64 = VK_TRUE},
+						   .deviceExtensionFeatureChain = &rayQueryFeatures})
+		               .set_window_surface({.instanceExtensions = std::span(sdlExtensions, sdlExtensionCount),
+						   .createFunc = [sdlWindow](VkInstance instance) {
 				VkSurfaceKHR surface;
 				SDL_Vulkan_CreateSurface(sdlWindow, instance, nullptr, &surface);
-				return surface;
-			},
-			.destroyFunc = [](VkInstance instance, VkSurfaceKHR surface) {
-				SDL_Vulkan_DestroySurface(instance, surface, nullptr);
-			}
-		})
-		.with_default_swapchain({
-			.width = initialWindowSize.width,
-			.height = initialWindowSize.height,
-			.presentMode = VK_PRESENT_MODE_IMMEDIATE_KHR,
-		})
-		.build();
+				return surface; },
+						   .destroyFunc = [](VkInstance instance, VkSurfaceKHR surface) { SDL_Vulkan_DestroySurface(instance, surface, nullptr); }})
+		               .with_default_swapchain({
+						   .width = initialWindowSize.width,
+						   .height = initialWindowSize.height,
+						   .presentMode = VK_PRESENT_MODE_IMMEDIATE_KHR,
+					   })
+		               .build();
 
-		mythril::Shader raytraceShader = ctx->createShader({
-			.path = kDataDir / shaders::raytrace::kSpirvFile,
-			.debugName = "Raytrace Shader"
-		});
-		mythril::RayTracingPipeline mainPipeline = ctx->createRayTracingPipeline({
-			.rayGenShaders = {
-				{ raytraceShader, "raygenMain" }
-			},
-			.missShaders = {
-				{ raytraceShader, "missMain" },
-				{ raytraceShader, "missShadowMain" }
-			},
-			.closestHitShaders = {
-				{ raytraceShader, "closestHitMain" }
-			},
-			.debugName = "Main Pipeline"
-		});
-		mythril::Shader windShader = ctx->createShader({
-			.path = kDataDir / shaders::Wind::kSpirvFile,
-			.debugName = "Wind Shader"
-		});
-		mythril::ComputePipeline windPipeline = ctx->createComputePipeline({
-			.shader = windShader.handle(),
-			.debugName = "Wind Pipeline"
-		});
-		mythril::Shader leavesShader = ctx->createShader({
-			.path = kDataDir / shaders::Leaves::kSpirvFile,
-			.debugName = "Leaves Shader"
-		});
-		mythril::ComputePipeline leavesPipeline = ctx->createComputePipeline({
-			.shader = leavesShader.handle(),
-			.debugName = "Leaves Pipeline"
-		});
-		mythril::Shader boundsShader = ctx->createShader({
-			.path = kDataDir / shaders::InstanceBounds::kSpirvFile,
-			.debugName = "Bounds Shader"
-		});
-		mythril::ComputePipeline boundsPipeline = ctx->createComputePipeline({
-			.shader = boundsShader.handle(),
-			.debugName = "Bounds Pipeline"
-		});
-		mythril::Shader boundsLinesShader = ctx->createShader({
-			.path = kDataDir / shaders::BoundsLines::kSpirvFile,
-			.debugName = "Bounds Lines Shader"
-		});
-		mythril::GraphicsPipeline boundsLinesPipeline = ctx->createGraphicsPipeline({
-			.vertexShader = {boundsLinesShader},
+		mythril::Shader raytraceShader = ctx->createShader({.path = kDataDir / shaders::raytrace::kSpirvFile,
+			.debugName = "Raytrace Shader"});
+		mythril::RayTracingPipeline mainPipeline = ctx->createRayTracingPipeline({.rayGenShaders = {
+																					  {raytraceShader, "raygenMain"}},
+			.missShaders = {{raytraceShader, "missMain"}, {raytraceShader, "missShadowMain"}},
+			.closestHitShaders = {{raytraceShader, "closestHitMain"}},
+			.debugName = "Main Pipeline"});
+		mythril::Shader windShader = ctx->createShader({.path = kDataDir / shaders::Wind::kSpirvFile,
+			.debugName = "Wind Shader"});
+		mythril::ComputePipeline windPipeline = ctx->createComputePipeline({.shader = windShader.handle(),
+			.debugName = "Wind Pipeline"});
+		mythril::Shader leavesShader = ctx->createShader({.path = kDataDir / shaders::Leaves::kSpirvFile,
+			.debugName = "Leaves Shader"});
+		mythril::ComputePipeline leavesPipeline = ctx->createComputePipeline({.shader = leavesShader.handle(),
+			.debugName = "Leaves Pipeline"});
+		mythril::Shader boundsShader = ctx->createShader({.path = kDataDir / shaders::InstanceBounds::kSpirvFile,
+			.debugName = "Bounds Shader"});
+		mythril::ComputePipeline boundsPipeline = ctx->createComputePipeline({.shader = boundsShader.handle(),
+			.debugName = "Bounds Pipeline"});
+		mythril::Shader boundsLinesShader = ctx->createShader({.path = kDataDir / shaders::BoundsLines::kSpirvFile,
+			.debugName = "Bounds Lines Shader"});
+		mythril::GraphicsPipeline boundsLinesPipeline = ctx->createGraphicsPipeline({.vertexShader = {boundsLinesShader},
 			.fragmentShader = {boundsLinesShader},
 			.blend = mythril::BlendingMode::ALPHA_BLEND,
-			.debugName = "Bounds Lines Pipeline"
-		});
+			.debugName = "Bounds Lines Pipeline"});
 
-		mythril::Buffer frameBuffer = ctx->createBuffer({
-			.size = sizeof(shaders::PerFrame),
+		mythril::Buffer frameBuffer = ctx->createBuffer({.size = sizeof(shaders::PerFrame),
 			.usage = mythril::BufferUsageBits::BufferUsageBits_Storage,
 			.storage = mythril::StorageType::Device,
-			.debugName = "Frame Uniforms"
-		});
+			.debugName = "Frame Uniforms"});
 		const Scene scene = createScene(*ctx);
 
 		mythril::RenderGraph graph;
-		const mythril::GraphTexture rgTracedShadowOutput = graph.createTexture({
-			.size = mythril::RelativeSize{},
+		const mythril::GraphTexture rgTracedShadowOutput = graph.createTexture({.size = mythril::RelativeSize{},
 			.format = VK_FORMAT_R8G8B8A8_UNORM,
-			.debugName = "Raytraced output"
-		});
-		const mythril::GraphTexture rgSceneDistance = graph.createTexture({
-			.size = mythril::RelativeSize{},
+			.debugName = "Raytraced output"});
+		const mythril::GraphTexture rgSceneDistance = graph.createTexture({.size = mythril::RelativeSize{},
 			.format = VK_FORMAT_R32_SFLOAT,
-			.debugName = "Scene distance"
-		});
+			.debugName = "Scene distance"});
 		const mythril::GraphBuffer rgFrameData = graph.importBuffer(frameBuffer);
 		const SceneGraphResources rg = importScene(graph, scene);
 
@@ -228,14 +187,12 @@ int main() {
 						.vertexCount = tree.bent.vertexCount,
 						.phase = tree.phase,
 					};
-				}
-			}, [](const WindPass& d, mythril::ComputeCmd& cmd) {
+				} }, [](const WindPass& d, mythril::ComputeCmd& cmd) {
 				cmd.cmdBindComputePipeline(d.pipeline);
 				for (const shaders::WindPushConstant& push: d.pushes) {
 					cmd.cmdPushConstants(push);
 					cmd.cmdDispatchThreadGroup(sample::GroupsFor({push.vertexCount}, shaders::Wind::kThreadGroupSize));
-				}
-			});
+				} });
 
 			mythril::GraphBuffer instances = rg.instances;
 			graph.addComputePass<LeavesPass>("blow leaves", [&](mythril::ComputePassBuilder& b, LeavesPass& d) {
@@ -251,12 +208,10 @@ int main() {
 					.windDirection = kWindDirection,
 					.time = windTime,
 					.leafCount = kLeafCount,
-				};
-			}, [](const LeavesPass& d, mythril::ComputeCmd& cmd) {
+				}; }, [](const LeavesPass& d, mythril::ComputeCmd& cmd) {
 				cmd.cmdBindComputePipeline(d.pipeline);
 				cmd.cmdPushConstants(d.push);
-				cmd.cmdDispatchThreadGroup(sample::GroupsFor({d.push.leafCount}, shaders::Leaves::kThreadGroupSize));
-			});
+				cmd.cmdDispatchThreadGroup(sample::GroupsFor({d.push.leafCount}, shaders::Leaves::kThreadGroupSize)); });
 
 			std::array<mythril::GraphAccelerationStructure, kTreeCount> treeBlas = rg.treeBlas;
 			graph.addTransferPass("refit trees", [&](mythril::TransferBuilder& b) {
@@ -285,12 +240,10 @@ int main() {
 						.geometries = ctx->gpuAddress(scene.geometries),
 						.bounds = ctx->gpuAddress(scene.bounds),
 						.instanceCount = scene.instanceCount,
-					};
-				}, [](const BoundsPass& d, mythril::ComputeCmd& cmd) {
+					}; }, [](const BoundsPass& d, mythril::ComputeCmd& cmd) {
 					cmd.cmdBindComputePipeline(d.pipeline);
 					cmd.cmdPushConstants(d.push);
-					cmd.cmdDispatchThreadGroup({d.push.instanceCount, 1, 1});
-				});
+					cmd.cmdDispatchThreadGroup({d.push.instanceCount, 1, 1}); });
 			}
 
 			mythril::GraphTexture traced = rgTracedShadowOutput;
@@ -309,8 +262,7 @@ int main() {
 				d.tlas = ctx->gpuAddress(scene.tlas);
 				if (showBounds)
 					d.distance = distance = b.dependency(distance, mythril::TextureAccess::StorageWrite);
-				d.debugMode = debugMode;
-			}, [](const TracePass& d, mythril::RayTracingCmd& cmd) {
+				d.debugMode = debugMode; }, [](const TracePass& d, mythril::RayTracingCmd& cmd) {
 				cmd.cmdBindRayTracingPipeline(d.pipeline);
 				const mythril::ResolvedTexture tracedOutput = cmd.texture(d.output);
 				const shaders::ShadowPushConstant push = {
@@ -326,8 +278,7 @@ int main() {
 				};
 				cmd.cmdPushConstants(push);
 				// must match the output texture, out of bounds image stores are not discarded without robustness
-				cmd.cmdTraceRays({tracedOutput.dimensions.width, tracedOutput.dimensions.height, 1});
-			});
+				cmd.cmdTraceRays({tracedOutput.dimensions.width, tracedOutput.dimensions.height, 1}); });
 			if (showBounds) {
 				graph.addGraphicsPass<BoundsLinesPass>("draw bounds", [&](mythril::GraphicsPassBuilder& b, BoundsLinesPass& d) {
 					traced = b.attachment({
@@ -344,16 +295,14 @@ int main() {
 						.boundsCount = scene.instanceCount,
 						.bounds = ctx->gpuAddress(scene.bounds),
 						.halfWidth = 1.5f,
-					};
-				}, [](const BoundsLinesPass& d, mythril::GraphicsCmd& cmd) {
+					}; }, [](const BoundsLinesPass& d, mythril::GraphicsCmd& cmd) {
 					const mythril::ResolvedTexture distance = cmd.texture(d.distance);
 					shaders::BoundsLinesPushConstant push = d.push;
 					push.sceneDistance = distance;
 					push.viewportSize = glm::vec2(distance.dimensions.width, distance.dimensions.height);
 					cmd.cmdBindGraphicsPipeline(d.pipeline);
 					cmd.cmdPushConstants(push);
-					cmd.cmdDraw(shaders::BoundsLines::kVerticesPerBox * (push.boundsCount + kUnionBoxCount));
-				});
+					cmd.cmdDraw(shaders::BoundsLines::kVerticesPerBox * (push.boundsCount + kUnionBoxCount)); });
 			}
 			graph.addTransferPass("present", [&](mythril::TransferBuilder& b) {
 				b.blit(traced, graph.backBuffer());

@@ -51,7 +51,7 @@ namespace mythril {
 	}
 
 	Swapchain::Swapchain(CTX& ctx, SwapchainSpec args) :
-	    _ctx(ctx) {
+		_ctx(ctx) {
 		ASSERT_MSG(args.width > 0 && args.height > 0, "Swapchain width & height must both be greater than 0!");
 		uint16_t width = args.width, height = args.height;
 
@@ -132,7 +132,7 @@ namespace mythril {
 
 		uint32_t minImageCount = std::max<uint32_t>(kNUM_FRAMES_IN_FLIGHT, caps.minImageCount);
 		if (caps.maxImageCount != 0 && minImageCount > caps.maxImageCount) {
-			LOG_SYSTEM(LogType::Warning, "Surface max image count ({}) is below frames in flight ({}), clamping!", caps.maxImageCount, (int) kNUM_FRAMES_IN_FLIGHT);
+			LOG_SYSTEM(LogType::Warning, "Surface max image count ({}) is below frames in flight ({}), clamping!", caps.maxImageCount, (int)kNUM_FRAMES_IN_FLIGHT);
 			minImageCount = caps.maxImageCount;
 		}
 
@@ -167,7 +167,7 @@ namespace mythril {
 		uint32_t imageCount = 0;
 		VK_CHECK(vkGetSwapchainImagesKHR(_ctx._vkDevice, _vkSwapchain, &imageCount, nullptr));
 		if (imageCount > kMAX_SWAPCHAIN_IMAGES) {
-			LOG_SYSTEM(LogType::FatalError, "Swapchain image count ({}) exceeds max supported swapchain images ({})!", (int) imageCount, (int) kMAX_SWAPCHAIN_IMAGES);
+			LOG_SYSTEM(LogType::FatalError, "Swapchain image count ({}) exceeds max supported swapchain images ({})!", (int)imageCount, (int)kMAX_SWAPCHAIN_IMAGES);
 		}
 		this->_numSwapchainImages = imageCount;
 		ASSERT(_numSwapchainImages <= kMAX_SWAPCHAIN_IMAGES);
@@ -248,12 +248,12 @@ namespace mythril {
 	void Swapchain::present(VkSemaphore waitSemaphore) {
 		MYTH_PROFILER_FUNCTION_N("Swapchain Present");
 		const VkPresentInfoKHR present_info = {
-		    .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
-		    .waitSemaphoreCount = 1,
-		    .pWaitSemaphores = &waitSemaphore,
-		    .swapchainCount = 1,
-		    .pSwapchains = &_vkSwapchain,
-		    .pImageIndices = &_imageIndex,
+			.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+			.waitSemaphoreCount = 1,
+			.pWaitSemaphores = &waitSemaphore,
+			.swapchainCount = 1,
+			.pSwapchains = &_vkSwapchain,
+			.pImageIndices = &_imageIndex,
 		};
 		const VkResult presentResult = vkQueuePresentKHR(_ctx._vkGraphicsQueue, &present_info);
 		if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR || _isDirty) {

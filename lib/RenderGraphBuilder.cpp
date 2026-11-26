@@ -244,8 +244,9 @@ namespace mythril {
 		return std::get<Dimensions>(spec.size);
 	}
 
-	BasePassBuilder::BasePassBuilder(RenderGraph& rGraph, const char* pName, const PassDesc::Type type)
-		: _rGraph(rGraph), _passSource(pName, type) {
+	BasePassBuilder::BasePassBuilder(RenderGraph& rGraph, const char* pName, const PassDesc::Type type) :
+		_rGraph(rGraph),
+		_passSource(pName, type) {
 		ASSERT_MSG(!_passSource.name.empty(), "A pass needs a non empty name.");
 	}
 
@@ -377,8 +378,8 @@ namespace mythril {
 		const VkImageAspectFlags aspect = vkutil::AspectMaskFromFormat(tex.getFormat());
 		ASSERT_PASS(std::has_single_bit(aspect), pass, "'{}' has depth and stencil, which one copy cannot cover.", tex.getDebugName());
 		return {
-		    .region = {.imageSubresource = {aspect, mip, baseLayer, numLayers}, .imageExtent = extent},
-		    .bytes = VkDeviceSize{extent.width} * extent.height * extent.depth * numLayers * vkutil::GetBytesPerPixel(tex.getFormat()),
+			.region = {.imageSubresource = {aspect, mip, baseLayer, numLayers}, .imageExtent = extent},
+			.bytes = VkDeviceSize{extent.width} * extent.height * extent.depth * numLayers * vkutil::GetBytesPerPixel(tex.getFormat()),
 		};
 	}
 	void RenderGraph::RecordReadback(CommandBuffer& cmd, const CompiledPass& pass, const ReadbackOp& op) const {
@@ -415,10 +416,10 @@ namespace mythril {
 		};
 		for (uint32_t i = 1; i < numMips; ++i) {
 			const VkImageBlit blit = {
-			    .srcSubresource = {aspect, i - 1, 0, numLayers},
-			    .srcOffsets = {{0, 0, 0}, extentOf(i - 1)},
-			    .dstSubresource = {aspect, i, 0, numLayers},
-			    .dstOffsets = {{0, 0, 0}, extentOf(i)},
+				.srcSubresource = {aspect, i - 1, 0, numLayers},
+				.srcOffsets = {{0, 0, 0}, extentOf(i - 1)},
+				.dstSubresource = {aspect, i, 0, numLayers},
+				.dstOffsets = {{0, 0, 0}, extentOf(i)},
 			};
 			vkCmdBlitImage(cmd, tex.getImage(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, tex.getImage(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, linear ? VK_FILTER_LINEAR : VK_FILTER_NEAREST);
 			if (i + 1 < numMips)
@@ -452,8 +453,7 @@ namespace mythril {
 				AllocatedBuffer& buf = cmd._ctx->access(upload->dst);
 				ASSERT_PASS(upload->dstOffset + data.size() <= buf._bufferSize, pass, "TransferBuilder::upload: offset + size exceeds buffer '{}' size.", buf._debugName);
 				ASSERT_PASS(
-				        buf.isMapped() || (buf._vkUsageFlags & VK_BUFFER_USAGE_TRANSFER_DST_BIT), pass, "TransferBuilder::upload: device buffer '{}' was not created with TRANSFER_DST usage.", buf._debugName
-				);
+					buf.isMapped() || (buf._vkUsageFlags & VK_BUFFER_USAGE_TRANSFER_DST_BIT), pass, "TransferBuilder::upload: device buffer '{}' was not created with TRANSFER_DST usage.", buf._debugName);
 				if (buf.isMapped()) {
 					buf.bufferSubData(*cmd._ctx, upload->dstOffset, data.size(), data.data());
 					continue;
@@ -503,22 +503,22 @@ namespace mythril {
 		if (const auto* declared = std::get_if<DeclaredTexture>(&ResourceOf(_textures, texture).source)) {
 			const GraphTextureSpec& spec = declared->spec;
 			return {
-			    .debugName = spec.debugName,
-			    .format = spec.format,
-			    .sampleCount = static_cast<uint8_t>(toVulkan(spec.samples)),
-			    .dimensions = sizeOf(rCtx, spec),
-			    .numMips = spec.numMipLevels,
-			    .numLayers = spec.type == TextureType::Type_Cube ? 6 * spec.numLayers : spec.numLayers,
+				.debugName = spec.debugName,
+				.format = spec.format,
+				.sampleCount = static_cast<uint8_t>(toVulkan(spec.samples)),
+				.dimensions = sizeOf(rCtx, spec),
+				.numMips = spec.numMipLevels,
+				.numLayers = spec.type == TextureType::Type_Cube ? 6 * spec.numLayers : spec.numLayers,
 			};
 		}
 		const AllocatedTexture& live = rCtx.view(ResolveHandle(_textures, rCtx, texture));
 		return {
-		    .debugName = live.getDebugName(),
-		    .format = live.getFormat(),
-		    .sampleCount = live.getSampleCount(),
-		    .dimensions = live.getDimensions(),
-		    .numMips = live.getNumMips(),
-		    .numLayers = live.getNumLayers(),
+			.debugName = live.getDebugName(),
+			.format = live.getFormat(),
+			.sampleCount = live.getSampleCount(),
+			.dimensions = live.getDimensions(),
+			.numMips = live.getNumMips(),
+			.numLayers = live.getNumLayers(),
 		};
 	}
 
@@ -530,33 +530,31 @@ namespace mythril {
 
 		ASSERT_PASS(baseMip < shape.numMips, pass, "Texture '{}' base mip {} is outside the texture's {} mip levels", shape.debugName, baseMip, shape.numMips);
 		ASSERT_PASS(
-		        numMips > 0 && baseMip + numMips <= shape.numMips,
-		        pass,
-		        "Texture '{}' mip range [{}, {}) is outside the texture's {} mip levels",
-		        shape.debugName,
-		        baseMip,
-		        baseMip + numMips,
-		        shape.numMips
-		);
+			numMips > 0 && baseMip + numMips <= shape.numMips,
+			pass,
+			"Texture '{}' mip range [{}, {}) is outside the texture's {} mip levels",
+			shape.debugName,
+			baseMip,
+			baseMip + numMips,
+			shape.numMips);
 		ASSERT_PASS(baseLayer < shape.numLayers, pass, "Texture '{}' base layer {} is outside the texture's {} layers", shape.debugName, baseLayer, shape.numLayers);
 		ASSERT_PASS(
-		        numLayers > 0 && baseLayer + numLayers <= shape.numLayers,
-		        pass,
-		        "Texture '{}' layer range [{}, {}) is outside the texture's {} layers",
-		        shape.debugName,
-		        baseLayer,
-		        baseLayer + numLayers,
-		        shape.numLayers
-		);
+			numLayers > 0 && baseLayer + numLayers <= shape.numLayers,
+			pass,
+			"Texture '{}' layer range [{}, {}) is outside the texture's {} layers",
+			shape.debugName,
+			baseLayer,
+			baseLayer + numLayers,
+			shape.numLayers);
 
 		return {baseMip, numMips, baseLayer, numLayers};
 	}
 
 	static AttachmentTarget PlanAttachmentTarget(const TextureDesc& texDesc, const TextureShape& shape, const PassDesc& pass) {
 		return {
-		    .resource = BaseOf(texDesc.texture),
-		    .range = ResolveSubresourceRange(texDesc, shape, pass),
-		    .subresourceView = texDesc.baseLayer.has_value() || texDesc.baseLevel.has_value() || texDesc.numLayers.has_value() || texDesc.numLevels.has_value(),
+			.resource = BaseOf(texDesc.texture),
+			.range = ResolveSubresourceRange(texDesc, shape, pass),
+			.subresourceView = texDesc.baseLayer.has_value() || texDesc.baseLevel.has_value() || texDesc.numLayers.has_value() || texDesc.numLevels.has_value(),
 		};
 	}
 
@@ -564,7 +562,7 @@ namespace mythril {
 		if (currentLayout != desiredLayout) return true;
 
 		constexpr VkAccessFlags2 write_flags2 =
-		        VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT;
+			VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT;
 
 		// same layout: only read-after-read can skip the barrier
 		const bool currentWrites = (currentStageAccess.access & write_flags2) != 0;
@@ -650,11 +648,11 @@ namespace mythril {
 		if (src.access == 0)
 			return std::nullopt;
 		return VkMemoryBarrier2{
-		    .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
-		    .srcStageMask = src.stage,
-		    .srcAccessMask = src.access,
-		    .dstStageMask = dst.stage,
-		    .dstAccessMask = dst.access,
+			.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
+			.srcStageMask = src.stage,
+			.srcAccessMask = src.access,
+			.dstStageMask = dst.stage,
+			.dstAccessMask = dst.access,
 		};
 	}
 
@@ -675,45 +673,42 @@ namespace mythril {
 
 			const ClearValue& clear_value = attachment_desc.clearValue;
 			AttachmentInfo attachment_info = {
-			    .imageFormat = shape.format,
-			    .imageView = VK_NULL_HANDLE,
-			    .imageLayout = isDepthAttachment ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-			    .resolveImageView = VK_NULL_HANDLE,
-			    .resolveImageLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+				.imageFormat = shape.format,
+				.imageView = VK_NULL_HANDLE,
+				.imageLayout = isDepthAttachment ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+				.resolveImageView = VK_NULL_HANDLE,
+				.resolveImageLayout = VK_IMAGE_LAYOUT_UNDEFINED,
 
-			    .loadOp = toVulkan(attachment_desc.loadOp),
-			    .storeOp = toVulkan(attachment_desc.storeOp),
-			    .clearValue = isDepthAttachment ? clear_value.getDepthStencilValue() : clear_value.getColorValue(),
-			    .target = PlanAttachmentTarget(texDesc, shape, pass_desc),
+				.loadOp = toVulkan(attachment_desc.loadOp),
+				.storeOp = toVulkan(attachment_desc.storeOp),
+				.clearValue = isDepthAttachment ? clear_value.getDepthStencilValue() : clear_value.getColorValue(),
+				.target = PlanAttachmentTarget(texDesc, shape, pass_desc),
 			};
 			if (attachment_desc.resolveTexDesc.has_value()) {
 				const TextureDesc& resolve_desc = attachment_desc.resolveTexDesc.value();
 				const TextureShape resolve_shape = shapeOf(rCtx, resolve_desc.texture);
 				ASSERT_PASS(
-				        resolve_shape.sampleCount == VK_SAMPLE_COUNT_1_BIT,
-				        pass_desc,
-				        "Resolve Texture must have a sample count of 1 (found '{}' to be of a greater sample count)",
-				        resolve_shape.debugName
-				);
+					resolve_shape.sampleCount == VK_SAMPLE_COUNT_1_BIT,
+					pass_desc,
+					"Resolve Texture must have a sample count of 1 (found '{}' to be of a greater sample count)",
+					resolve_shape.debugName);
 				ASSERT_PASS(shape.sampleCount > VK_SAMPLE_COUNT_1_BIT, pass_desc, "Resolve operation on non-multisampled texture '{}'!", shape.debugName);
 				ASSERT_PASS(
-				        resolve_shape.format == shape.format,
-				        pass_desc,
-				        "Resolve texture must have the same format as the texture it resolves from (found texture '{}' to be of format {} while resolve texture '{}' is of format {})",
-				        shape.debugName,
-				        string_VkFormat(shape.format),
-				        resolve_shape.debugName,
-				        string_VkFormat(resolve_shape.format)
-				);
+					resolve_shape.format == shape.format,
+					pass_desc,
+					"Resolve texture must have the same format as the texture it resolves from (found texture '{}' to be of format {} while resolve texture '{}' is of format {})",
+					shape.debugName,
+					string_VkFormat(shape.format),
+					resolve_shape.debugName,
+					string_VkFormat(resolve_shape.format));
 #ifdef DEBUG
 				if (attachment_desc.storeOp == StoreOp::STORE && !_hasReportedCompile)
 					LOG_PASS(
-					        LogType::Suggestion,
-					        pass_desc,
-					        "Attachment of texture '{}' has StoreOp::STORE and resolves into '{}', can be replaced with StoreOp::DONT_CARE.",
-					        shape.debugName,
-					        resolve_shape.debugName
-					);
+						LogType::Suggestion,
+						pass_desc,
+						"Attachment of texture '{}' has StoreOp::STORE and resolves into '{}', can be replaced with StoreOp::DONT_CARE.",
+						shape.debugName,
+						resolve_shape.debugName);
 #endif
 
 				attachment_info.resolveImageLayout = attachment_info.imageLayout;
@@ -757,12 +752,12 @@ namespace mythril {
 			if (target.range.numLayers == 1 && viewType == VK_IMAGE_VIEW_TYPE_CUBE)
 				viewType = VK_IMAGE_VIEW_TYPE_2D;
 			const TextureViewKey viewKey = rCtx.createTextureView(handle, {
-			    .type = viewType,
-			    .mipLevel = target.range.baseMip,
-			    .numMipLevels = target.range.numMips,
-			    .layer = target.range.baseLayer,
-			    .numLayers = target.range.numLayers,
-			});
+																			  .type = viewType,
+																			  .mipLevel = target.range.baseMip,
+																			  .numMipLevels = target.range.numMips,
+																			  .layer = target.range.baseLayer,
+																			  .numLayers = target.range.numLayers,
+																		  });
 			return rCtx.getTextureView(handle, viewKey);
 		};
 		const auto bindAttachment = [&](AttachmentInfo& attachment) {
@@ -914,7 +909,7 @@ namespace mythril {
 		if (next.layerCount != group.layerCount || next.viewMask != group.viewMask)
 			return "multiview() layer count or view mask";
 		if (next.renderArea.offset.x != group.renderArea.offset.x || next.renderArea.offset.y != group.renderArea.offset.y ||
-		    next.renderArea.extent.width != group.renderArea.extent.width || next.renderArea.extent.height != group.renderArea.extent.height)
+			next.renderArea.extent.width != group.renderArea.extent.width || next.renderArea.extent.height != group.renderArea.extent.height)
 			return "a different render area";
 		if (next.colorAttachments.size() != group.colorAttachments.size())
 			return "a different number of color attachments";
@@ -1012,13 +1007,14 @@ namespace mythril {
 		// now reverse BFS
 		std::unordered_set<uint32_t> reachablePasses;
 		std::queue<uint32_t> worklist;
-		for (uint32_t sink : sinkPasses) {
+		for (uint32_t sink: sinkPasses) {
 			worklist.push(sink);
 			reachablePasses.insert(sink);
 		}
 		while (!worklist.empty()) {
-			const uint32_t node = worklist.front(); worklist.pop();
-			for (uint32_t pred : predecessors[node]) {
+			const uint32_t node = worklist.front();
+			worklist.pop();
+			for (uint32_t pred: predecessors[node]) {
 				if (reachablePasses.insert(pred).second)
 					worklist.push(pred);
 			}
@@ -1026,7 +1022,7 @@ namespace mythril {
 		// filter sortedOrder while preserving order
 		std::vector<uint32_t> result;
 		result.reserve(reachablePasses.size());
-		for (uint32_t passIdx : topo_sorted_order) {
+		for (uint32_t passIdx: topo_sorted_order) {
 			if (reachablePasses.contains(passIdx))
 				result.push_back(passIdx);
 		}
@@ -1103,7 +1099,7 @@ namespace mythril {
 		records.reserve(culled_order.size());
 		constexpr uint32_t kUnscheduled = UINT32_MAX;
 		std::vector<uint32_t> descToNode(this->_passDescriptions.size(), kUnscheduled);
-		for (const uint32_t pass_idx : culled_order) {
+		for (const uint32_t pass_idx: culled_order) {
 			const PassDesc& pass_desc = this->_passDescriptions[pass_idx];
 			descToNode[pass_idx] = static_cast<uint32_t>(records.size());
 			CompiledPass compiled_pass;
@@ -1228,11 +1224,11 @@ namespace mythril {
 		if (const auto presenter = std::ranges::find_if(this->_compiledPasses | std::views::reverse, UsesBackBuffer); presenter != this->_compiledPasses.rend()) {
 			const GraphTexture backBuffer = std::ranges::find_if(presenter->imageBarriers, &CompiledImageBarrier::isSwapchain)->resource;
 			presenter->exitBarriers.push_back({
-			    .resource = backBuffer,
-			    .range = {0, 1, 0, 1},
-			    .dstLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-			    .dstMask = {.stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, .access = VK_ACCESS_2_NONE},
-			    .isSwapchain = true,
+				.resource = backBuffer,
+				.range = {0, 1, 0, 1},
+				.dstLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+				.dstMask = {.stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, .access = VK_ACCESS_2_NONE},
+				.isSwapchain = true,
 			});
 		}
 		planExternal(rCtx);
@@ -1337,11 +1333,11 @@ namespace mythril {
 		if (queue == QueueAffinity::Graphics || ImmOf(rCtx, queue).getQueueFamilyIndex() == rCtx._graphicsQueueFamilyIndex)
 			return mask;
 		constexpr VkPipelineStageFlags2 kTransferStages = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT | VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT | VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT | VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT |
-		    VK_PIPELINE_STAGE_2_COPY_BIT | VK_PIPELINE_STAGE_2_CLEAR_BIT | VK_PIPELINE_STAGE_2_HOST_BIT;
+		                                                  VK_PIPELINE_STAGE_2_COPY_BIT | VK_PIPELINE_STAGE_2_CLEAR_BIT | VK_PIPELINE_STAGE_2_HOST_BIT;
 		constexpr VkPipelineStageFlags2 kComputeStages = kTransferStages | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR |
-		    VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR | VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_COPY_BIT_KHR;
+		                                                 VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR | VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_COPY_BIT_KHR;
 		constexpr VkAccessFlags2 kGraphicsOnlyAccess = VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
-		    VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_2_INPUT_ATTACHMENT_READ_BIT | VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT | VK_ACCESS_2_INDEX_READ_BIT;
+		                                               VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_2_INPUT_ATTACHMENT_READ_BIT | VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT | VK_ACCESS_2_INDEX_READ_BIT;
 		const VkPipelineStageFlags2 allowed = queue == QueueAffinity::AsyncTransfer ? kTransferStages : kComputeStages;
 		if ((mask.stage & ~allowed) == 0)
 			return mask;
@@ -1479,10 +1475,10 @@ namespace mythril {
 			if (use.texture.valid() && use.access.exitLayout != VK_IMAGE_LAYOUT_UNDEFINED) {
 				const TextureShape shape = shapeOf(rCtx, use.texture);
 				_compiledPasses[use.last].exitBarriers.push_back({
-				    .resource = use.texture,
-				    .range = {0, shape.numMips, 0, shape.numLayers},
-				    .dstLayout = use.access.exitLayout,
-				    .dstMask = {.stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, .access = VK_ACCESS_2_NONE},
+					.resource = use.texture,
+					.range = {0, shape.numMips, 0, shape.numLayers},
+					.dstLayout = use.access.exitLayout,
+					.dstMask = {.stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, .access = VK_ACCESS_2_NONE},
 				});
 			}
 		}
@@ -1499,13 +1495,13 @@ namespace mythril {
 			_bufferTrackers[use.buffer] = {};
 			if (acquires) {
 				const VkBufferMemoryBarrier2 barrier = {
-				    .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
-				    .dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
-				    .dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT,
-				    .srcQueueFamilyIndex = access.ownerFamily,
-				    .dstQueueFamilyIndex = imm.getQueueFamilyIndex(),
-				    .buffer = cmd._ctx->view(use.buffer)._vkBuffer,
-				    .size = VK_WHOLE_SIZE,
+					.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
+					.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+					.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT,
+					.srcQueueFamilyIndex = access.ownerFamily,
+					.dstQueueFamilyIndex = imm.getQueueFamilyIndex(),
+					.buffer = cmd._ctx->view(use.buffer)._vkBuffer,
+					.size = VK_WHOLE_SIZE,
 				};
 				const VkDependencyInfo info = {.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO, .bufferMemoryBarrierCount = 1, .pBufferMemoryBarriers = &barrier};
 				vkCmdPipelineBarrier2(cmd._wrapper->_cmdBuf, &info);
@@ -1518,15 +1514,15 @@ namespace mythril {
 		// an UNDEFINED entry drops the contents, so the transfer is skipped
 		if (acquires && access.entryLayout != VK_IMAGE_LAYOUT_UNDEFINED) {
 			const VkImageMemoryBarrier2 barrier = {
-			    .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-			    .dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
-			    .dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT,
-			    .oldLayout = access.entryLayout,
-			    .newLayout = access.entryLayout,
-			    .srcQueueFamilyIndex = access.ownerFamily,
-			    .dstQueueFamilyIndex = imm.getQueueFamilyIndex(),
-			    .image = texture.getImage(),
-			    .subresourceRange = MakeVkRange(texture.getFormat(), whole),
+				.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+				.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+				.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT,
+				.oldLayout = access.entryLayout,
+				.newLayout = access.entryLayout,
+				.srcQueueFamilyIndex = access.ownerFamily,
+				.dstQueueFamilyIndex = imm.getQueueFamilyIndex(),
+				.image = texture.getImage(),
+				.subresourceRange = MakeVkRange(texture.getFormat(), whole),
 			};
 			const VkDependencyInfo info = {.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO, .imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &barrier};
 			vkCmdPipelineBarrier2(cmd._wrapper->_cmdBuf, &info);
@@ -1545,28 +1541,28 @@ namespace mythril {
 			VkImageMemoryBarrier2 imageBarrier{};
 			if (!use.texture.valid()) {
 				bufferBarrier = {
-				    .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
-				    .srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
-				    .srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT,
-				    .srcQueueFamilyIndex = imm.getQueueFamilyIndex(),
-				    .dstQueueFamilyIndex = access.ownerFamily,
-				    .buffer = cmd._ctx->view(use.buffer)._vkBuffer,
-				    .size = VK_WHOLE_SIZE,
+					.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
+					.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+					.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT,
+					.srcQueueFamilyIndex = imm.getQueueFamilyIndex(),
+					.dstQueueFamilyIndex = access.ownerFamily,
+					.buffer = cmd._ctx->view(use.buffer)._vkBuffer,
+					.size = VK_WHOLE_SIZE,
 				};
 				info.bufferMemoryBarrierCount = 1;
 				info.pBufferMemoryBarriers = &bufferBarrier;
 			} else {
 				const AllocatedTexture& texture = cmd._ctx->view(ResolveHandle(_textures, *cmd._ctx, use.texture));
 				imageBarrier = {
-				    .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-				    .srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
-				    .srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT,
-				    .oldLayout = access.exitLayout,
-				    .newLayout = access.exitLayout,
-				    .srcQueueFamilyIndex = imm.getQueueFamilyIndex(),
-				    .dstQueueFamilyIndex = access.ownerFamily,
-				    .image = texture.getImage(),
-				    .subresourceRange = MakeVkRange(texture.getFormat(), {0, texture.getNumMips(), 0, texture.getNumLayers()}),
+					.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+					.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+					.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT,
+					.oldLayout = access.exitLayout,
+					.newLayout = access.exitLayout,
+					.srcQueueFamilyIndex = imm.getQueueFamilyIndex(),
+					.dstQueueFamilyIndex = access.ownerFamily,
+					.image = texture.getImage(),
+					.subresourceRange = MakeVkRange(texture.getFormat(), {0, texture.getNumMips(), 0, texture.getNumLayers()}),
 				};
 				info.imageMemoryBarrierCount = 1;
 				info.pImageMemoryBarriers = &imageBarrier;
@@ -1593,17 +1589,17 @@ namespace mythril {
 		texture._recordedLayout.forEachOverlapping(transfer.range, [&](const SubresourceRange& range, const VkImageLayout layout) {
 			transfer.recordedLayouts.emplace_back(range, layout);
 			barriers.push_back({
-			    .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-			    .srcStageMask = src.stage,
-			    .srcAccessMask = src.access,
-			    .dstStageMask = VK_PIPELINE_STAGE_2_NONE,
-			    .dstAccessMask = VK_ACCESS_2_NONE,
-			    .oldLayout = layout,
-			    .newLayout = returns ? layout : target.dstLayout,
-			    .srcQueueFamilyIndex = transfer.srcFamily,
-			    .dstQueueFamilyIndex = transfer.dstFamily,
-			    .image = texture.getImage(),
-			    .subresourceRange = MakeVkRange(texture.getFormat(), range),
+				.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+				.srcStageMask = src.stage,
+				.srcAccessMask = src.access,
+				.dstStageMask = VK_PIPELINE_STAGE_2_NONE,
+				.dstAccessMask = VK_ACCESS_2_NONE,
+				.oldLayout = layout,
+				.newLayout = returns ? layout : target.dstLayout,
+				.srcQueueFamilyIndex = transfer.srcFamily,
+				.dstQueueFamilyIndex = transfer.dstFamily,
+				.image = texture.getImage(),
+				.subresourceRange = MakeVkRange(texture.getFormat(), range),
 			});
 		});
 		const VkDependencyInfo dependency = {.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO, .imageMemoryBarrierCount = static_cast<uint32_t>(barriers.size()), .pImageMemoryBarriers = barriers.data()};
@@ -1622,17 +1618,17 @@ namespace mythril {
 		std::vector<VkImageMemoryBarrier2> barriers;
 		for (const auto& [range, layout]: transfer.recordedLayouts) {
 			barriers.push_back({
-			    .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-			    .srcStageMask = VK_PIPELINE_STAGE_2_NONE,
-			    .srcAccessMask = VK_ACCESS_2_NONE,
-			    .dstStageMask = dst.stage,
-			    .dstAccessMask = dst.access,
-			    .oldLayout = layout,
-			    .newLayout = returns ? layout : target.dstLayout,
-			    .srcQueueFamilyIndex = transfer.srcFamily,
-			    .dstQueueFamilyIndex = transfer.dstFamily,
-			    .image = texture.getImage(),
-			    .subresourceRange = MakeVkRange(texture.getFormat(), range),
+				.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+				.srcStageMask = VK_PIPELINE_STAGE_2_NONE,
+				.srcAccessMask = VK_ACCESS_2_NONE,
+				.dstStageMask = dst.stage,
+				.dstAccessMask = dst.access,
+				.oldLayout = layout,
+				.newLayout = returns ? layout : target.dstLayout,
+				.srcQueueFamilyIndex = transfer.srcFamily,
+				.dstQueueFamilyIndex = transfer.dstFamily,
+				.image = texture.getImage(),
+				.subresourceRange = MakeVkRange(texture.getFormat(), range),
 			});
 		}
 		const VkDependencyInfo dependency = {.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO, .imageMemoryBarrierCount = static_cast<uint32_t>(barriers.size()), .pImageMemoryBarriers = barriers.data()};
@@ -1679,18 +1675,17 @@ namespace mythril {
 						return;
 					}
 					vkImageBarriers.push_back(
-					        {.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-					         .srcStageMask = currentMask.stage,
-					         .srcAccessMask = currentMask.access,
-					         .dstStageMask = req.dstMask.stage,
-					         .dstAccessMask = req.dstMask.access,
-					         .oldLayout = currentLayout,
-					         .newLayout = req.dstLayout,
-					         .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-					         .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-					         .image = activeTexture.getImage(),
-					         .subresourceRange = MakeVkRange(activeTexture.getFormat(), range)}
-					);
+						{.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+							.srcStageMask = currentMask.stage,
+							.srcAccessMask = currentMask.access,
+							.dstStageMask = req.dstMask.stage,
+							.dstAccessMask = req.dstMask.access,
+							.oldLayout = currentLayout,
+							.newLayout = req.dstLayout,
+							.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+							.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+							.image = activeTexture.getImage(),
+							.subresourceRange = MakeVkRange(activeTexture.getFormat(), range)});
 				});
 			});
 			cache.masks.set(req.range, req.dstMask);
@@ -1707,8 +1702,7 @@ namespace mythril {
 				continue;
 			barrier->src = ClampToQueue(*cmd._ctx, cmd._queue, barrier->src);
 			const AllocatedBuffer& buffer = cmd._ctx->view(req.handle);
-			vkBufferBarriers.push_back({
-				.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
+			vkBufferBarriers.push_back({.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
 				.srcStageMask = barrier->src.stage,
 				.srcAccessMask = barrier->src.access,
 				.dstStageMask = barrier->dst.stage,
@@ -1717,18 +1711,16 @@ namespace mythril {
 				.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
 				.buffer = buffer._vkBuffer,
 				.offset = 0,
-				.size = VK_WHOLE_SIZE}
-			);
+				.size = VK_WHOLE_SIZE});
 		}
 		if (!vkImageBarriers.empty() || !vkBufferBarriers.empty()) {
 			const VkDependencyInfo dependencyInfo = {
-			    .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-			    .pNext = nullptr,
-			    .bufferMemoryBarrierCount = static_cast<uint32_t>(vkBufferBarriers.size()),
-			    .pBufferMemoryBarriers = vkBufferBarriers.data(),
-			    .imageMemoryBarrierCount = static_cast<uint32_t>(vkImageBarriers.size()),
-			    .pImageMemoryBarriers = vkImageBarriers.data()
-			};
+				.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+				.pNext = nullptr,
+				.bufferMemoryBarrierCount = static_cast<uint32_t>(vkBufferBarriers.size()),
+				.pBufferMemoryBarriers = vkBufferBarriers.data(),
+				.imageMemoryBarrierCount = static_cast<uint32_t>(vkImageBarriers.size()),
+				.pImageMemoryBarriers = vkImageBarriers.data()};
 			vkCmdPipelineBarrier2(cmd._wrapper->_cmdBuf, &dependencyInfo);
 		}
 	}
@@ -1911,11 +1903,11 @@ namespace mythril {
 			const bool isGraphics = pass.type == PassDesc::Type::Graphics;
 			if (_options.fullBarriers) {
 				constexpr VkMemoryBarrier2 kFull = {
-				    .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
-				    .srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
-				    .srcAccessMask = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT,
-				    .dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
-				    .dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT,
+					.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
+					.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+					.srcAccessMask = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT,
+					.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+					.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT,
 				};
 				const VkDependencyInfo full = {.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO, .memoryBarrierCount = 1, .pMemoryBarriers = &kFull};
 				vkCmdPipelineBarrier2(cmd._wrapper->_cmdBuf, &full);
@@ -1983,11 +1975,11 @@ namespace mythril {
 		});
 		if (hostReads) {
 			constexpr VkMemoryBarrier2 kToHost = {
-			    .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
-			    .srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
-			    .srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT,
-			    .dstStageMask = VK_PIPELINE_STAGE_2_HOST_BIT,
-			    .dstAccessMask = VK_ACCESS_2_HOST_READ_BIT,
+				.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
+				.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+				.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT,
+				.dstStageMask = VK_PIPELINE_STAGE_2_HOST_BIT,
+				.dstAccessMask = VK_ACCESS_2_HOST_READ_BIT,
 			};
 			const VkDependencyInfo toHost = {.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO, .memoryBarrierCount = 1, .pMemoryBarriers = &kToHost};
 			vkCmdPipelineBarrier2(lanes[0]->_wrapper->_cmdBuf, &toHost);

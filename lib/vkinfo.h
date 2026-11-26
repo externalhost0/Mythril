@@ -32,23 +32,21 @@ namespace mythril::vkinfo {
 	VkRenderingAttachmentInfo
 	CreateColorAttachmentInfo(VkImageView view, const VkClearColorValue* clear, VkImageView resolveView = nullptr, VkResolveModeFlags resolveFlags = VK_RESOLVE_MODE_AVERAGE_BIT);
 	VkRenderingAttachmentInfo CreateColorAttachmentInfo(
-	        VkImageView view,
-	        const VkClearColorValue* clear,
-	        VkAttachmentLoadOp loadOp,
-	        VkAttachmentStoreOp storeOp,
-	        VkImageView resolveView = nullptr,
-	        VkResolveModeFlags resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT
-	);
+		VkImageView view,
+		const VkClearColorValue* clear,
+		VkAttachmentLoadOp loadOp,
+		VkAttachmentStoreOp storeOp,
+		VkImageView resolveView = nullptr,
+		VkResolveModeFlags resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT);
 	VkRenderingAttachmentInfo CreateDepthAttachmentInfo(VkImageView view, const VkClearDepthStencilValue* clear);
 	VkRenderingAttachmentInfo CreateDepthStencilAttachmentInfo(VkImageView view, const VkClearDepthStencilValue* clear);
 	VkRenderingAttachmentInfo CreateDepthStencilAttachmentInfo(
-	        VkImageView view,
-	        const VkClearDepthStencilValue* clear,
-	        VkAttachmentLoadOp loadOp,
-	        VkAttachmentStoreOp storeOp,
-	        VkImageView resolveView = nullptr,
-	        VkResolveModeFlags resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT
-	);
+		VkImageView view,
+		const VkClearDepthStencilValue* clear,
+		VkAttachmentLoadOp loadOp,
+		VkAttachmentStoreOp storeOp,
+		VkImageView resolveView = nullptr,
+		VkResolveModeFlags resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT);
 
 	VkRenderingInfo CreateRenderingInfo(VkExtent2D extent2D, VkRenderingAttachmentInfo* attachment, VkRenderingAttachmentInfo* depthAttachment);
 	VkRenderingInfo CreateRenderingInfo(VkExtent2D extent2D, std::span<VkRenderingAttachmentInfo> colorAttachments, VkRenderingAttachmentInfo* depthAttachment);

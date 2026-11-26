@@ -41,9 +41,9 @@ namespace mythril {
 
 	struct DeferredTask {
 		DeferredTask(std::packaged_task<void()>&& task, SubmitHandle handle, uint64_t frameNum) :
-		    _task(std::move(task)),
-		    _handle(handle),
-		    _frameNumber(frameNum) {}
+			_task(std::move(task)),
+			_handle(handle),
+			_frameNumber(frameNum) {}
 		std::packaged_task<void()> _task;
 		SubmitHandle _handle;
 		uint64_t _frameNumber;
@@ -223,7 +223,7 @@ namespace mythril {
 			fn(_rayTracingPipelinePool);
 		}
 #ifdef DEBUG
-		template <typename Pipeline>
+		template<typename Pipeline>
 		std::string findBuildProblemImpl(const Pipeline& pipeline) const;
 #endif
 		detail::AllocatedShader buildShaderImpl(const SpirvLayout& layout, const char* debugName) const;
@@ -240,28 +240,26 @@ namespace mythril {
 		QueueFamilies queueFamiliesInUse() const;
 		// attachments and storage images stay exclusive across families so they keep compression, the graph transfers their ownership
 		static bool NeedsOwnershipTransfer(VkImageUsageFlags usage) {
-			return usage & (
-				VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-				VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
-				VK_IMAGE_USAGE_STORAGE_BIT);
+			return usage & (VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+							   VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
+							   VK_IMAGE_USAGE_STORAGE_BIT);
 		}
 
 		// because they are big functions :(
 		detail::AllocatedBuffer createBufferImpl(VkDeviceSize bufferSize, VkBufferUsageFlags usageFlags, VkMemoryPropertyFlags memFlags);
 		detail::AllocatedTexture createTextureImpl(
-		        VkImageUsageFlags usageFlags,
-		        VkMemoryPropertyFlags memFlags,
-		        VkExtent3D extent3D,
-		        VkFormat format,
-		        VkImageType imageType,
-		        VkImageViewType imageViewType,
-		        uint32_t numLevels,
-		        uint32_t numLayers,
-		        VkSampleCountFlagBits sampleCountFlagBits,
-		        VkComponentMapping componentMapping,
-		        VkImageCreateFlags createFlags = 0,
-		        bool requestConcurrent = false
-		);
+			VkImageUsageFlags usageFlags,
+			VkMemoryPropertyFlags memFlags,
+			VkExtent3D extent3D,
+			VkFormat format,
+			VkImageType imageType,
+			VkImageViewType imageViewType,
+			uint32_t numLevels,
+			uint32_t numLayers,
+			VkSampleCountFlagBits sampleCountFlagBits,
+			VkComponentMapping componentMapping,
+			VkImageCreateFlags createFlags = 0,
+			bool requestConcurrent = false);
 
 		void recordAccelerationStructureBuild(VkCommandBuffer cmd, const detail::AllocatedAccelerationStructure& structure, bool update) const;
 
@@ -294,11 +292,11 @@ namespace mythril {
 		VmaAllocator _vmaAllocator = VK_NULL_HANDLE;
 
 		// vulkan properties, features, and extensions we query
-		VulkanFeatures _featuresVulkan {};
-		VulkanProperties _propertiesVulkan {};
+		VulkanFeatures _featuresVulkan{};
+		VulkanProperties _propertiesVulkan{};
 		// special case for extensions
-		VkPhysicalDeviceRayTracingPipelinePropertiesKHR _rayTracingProperties {};
-		VkPhysicalDeviceAccelerationStructurePropertiesKHR _accelerationStructureProperties {};
+		VkPhysicalDeviceRayTracingPipelinePropertiesKHR _rayTracingProperties{};
+		VkPhysicalDeviceAccelerationStructurePropertiesKHR _accelerationStructureProperties{};
 		struct TransparentStringHash {
 			using is_transparent = void;
 			size_t operator()(const std::string_view s) const { return std::hash<std::string_view>{}(s); }
@@ -346,11 +344,11 @@ namespace mythril {
 		std::unique_ptr<StagingDevice> _staging;
 
 		SwapchainSpec lastSwapchainSpec{
-		    .width = 1280,
-		    .height = 720,
-		    .format = kDefaultSwapchainFormat,
-		    .colorSpace = kDefaultSwapchainColorSpace,
-		    .presentMode = kDefaultSwapchainPresentMode,
+			.width = 1280,
+			.height = 720,
+			.format = kDefaultSwapchainFormat,
+			.colorSpace = kDefaultSwapchainColorSpace,
+			.presentMode = kDefaultSwapchainPresentMode,
 		};
 
 		HandlePool<BufferHandle, detail::AllocatedBuffer> _bufferPool;

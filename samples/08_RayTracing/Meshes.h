@@ -162,40 +162,86 @@ inline Mesh buildGroundMesh(const float floorHalfExtent, const float floorHeight
 	Mesh mesh = {
 		.vertices = {
 			// front
-			{{-1.f, -1.f, -1.f}}, {{ 1.f, -1.f, -1.f}}, {{ 1.f,  1.f, -1.f}}, {{-1.f,  1.f, -1.f}},
+			{{-1.f, -1.f, -1.f}},
+			{{1.f, -1.f, -1.f}},
+			{{1.f, 1.f, -1.f}},
+			{{-1.f, 1.f, -1.f}},
 			// back
-			{{-1.f, -1.f,  1.f}}, {{ 1.f, -1.f,  1.f}}, {{ 1.f,  1.f,  1.f}}, {{-1.f,  1.f,  1.f}},
+			{{-1.f, -1.f, 1.f}},
+			{{1.f, -1.f, 1.f}},
+			{{1.f, 1.f, 1.f}},
+			{{-1.f, 1.f, 1.f}},
 			// left
-			{{-1.f,  1.f, -1.f}}, {{-1.f, -1.f, -1.f}}, {{-1.f, -1.f,  1.f}}, {{-1.f,  1.f,  1.f}},
+			{{-1.f, 1.f, -1.f}},
+			{{-1.f, -1.f, -1.f}},
+			{{-1.f, -1.f, 1.f}},
+			{{-1.f, 1.f, 1.f}},
 			// right
-			{{ 1.f, -1.f, -1.f}}, {{ 1.f,  1.f, -1.f}}, {{ 1.f,  1.f,  1.f}}, {{ 1.f, -1.f,  1.f}},
+			{{1.f, -1.f, -1.f}},
+			{{1.f, 1.f, -1.f}},
+			{{1.f, 1.f, 1.f}},
+			{{1.f, -1.f, 1.f}},
 			// bottom
-			{{-1.f, -1.f, -1.f}}, {{ 1.f, -1.f, -1.f}}, {{ 1.f, -1.f,  1.f}}, {{-1.f, -1.f,  1.f}},
+			{{-1.f, -1.f, -1.f}},
+			{{1.f, -1.f, -1.f}},
+			{{1.f, -1.f, 1.f}},
+			{{-1.f, -1.f, 1.f}},
 			// top
-			{{ 1.f,  1.f, -1.f}}, {{-1.f,  1.f, -1.f}}, {{-1.f,  1.f,  1.f}}, {{ 1.f,  1.f,  1.f}},
+			{{1.f, 1.f, -1.f}},
+			{{-1.f, 1.f, -1.f}},
+			{{-1.f, 1.f, 1.f}},
+			{{1.f, 1.f, 1.f}},
 		},
 		.indices = {
-			0, 3, 2, 2, 1, 0,
-			4, 5, 6, 6, 7, 4,
-			11, 8, 9, 9, 10, 11,
-			12, 13, 14, 14, 15, 12,
-			16, 17, 18, 18, 19, 16,
-			20, 21, 22, 22, 23, 20,
+			0,
+			3,
+			2,
+			2,
+			1,
+			0,
+			4,
+			5,
+			6,
+			6,
+			7,
+			4,
+			11,
+			8,
+			9,
+			9,
+			10,
+			11,
+			12,
+			13,
+			14,
+			14,
+			15,
+			12,
+			16,
+			17,
+			18,
+			18,
+			19,
+			16,
+			20,
+			21,
+			22,
+			22,
+			23,
+			20,
 		},
 	};
 	const auto base = static_cast<uint32_t>(mesh.vertices.size());
 	const float e = floorHalfExtent;
 	// same winding as the cube's top face so the floor faces +y
 	mesh.vertices.insert(mesh.vertices.end(), {
-		{{ e, floorHeight, -e}},
-		{{-e, floorHeight, -e}},
-		{{-e, floorHeight,  e}},
-		{{ e, floorHeight,  e}},
-	});
-	mesh.indices.insert(mesh.indices.end(), {
-		base + 0, base + 1, base + 2,
-		base + 2, base + 3, base + 0
-	});
+												  {{e, floorHeight, -e}},
+												  {{-e, floorHeight, -e}},
+												  {{-e, floorHeight, e}},
+												  {{e, floorHeight, e}},
+											  });
+	mesh.indices.insert(mesh.indices.end(), {base + 0, base + 1, base + 2,
+												base + 2, base + 3, base + 0});
 	return mesh;
 }
 

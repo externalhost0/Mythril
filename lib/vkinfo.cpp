@@ -117,8 +117,7 @@ namespace mythril::vkinfo {
 		return depthAttachment;
 	}
 	VkRenderingAttachmentInfo CreateDepthStencilAttachmentInfo(
-	        VkImageView view, const VkClearDepthStencilValue* clear, VkAttachmentLoadOp loadOp, VkAttachmentStoreOp storeOp, VkImageView resolveView, VkResolveModeFlags resolveMode
-	) {
+		VkImageView view, const VkClearDepthStencilValue* clear, VkAttachmentLoadOp loadOp, VkAttachmentStoreOp storeOp, VkImageView resolveView, VkResolveModeFlags resolveMode) {
 		VkRenderingAttachmentInfo depthAttachment = {.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO, .pNext = nullptr};
 		depthAttachment.imageView = view;
 		depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
@@ -151,8 +150,8 @@ namespace mythril::vkinfo {
 		info.pNext = nullptr;
 		info.flags = 0;
 		info.renderArea = {
-		    .offset = {0, 0},
-		    .extent = extent2D,
+			.offset = {0, 0},
+			.extent = extent2D,
 		};
 		info.layerCount = 1;
 		info.viewMask = 0;
@@ -169,8 +168,8 @@ namespace mythril::vkinfo {
 		info.pNext = nullptr;
 		info.flags = 0;
 		info.renderArea = {
-		    .offset = {0, 0},
-		    .extent = extent2D,
+			.offset = {0, 0},
+			.extent = extent2D,
 		};
 		info.layerCount = 1;
 		info.viewMask = 0;

@@ -11,7 +11,9 @@
 
 namespace mythril {
 	class CTX;
-	namespace detail { class AllocatedTexture; }
+	namespace detail {
+		class AllocatedTexture;
+	}
 
 	class Swapchain final {
 	public:

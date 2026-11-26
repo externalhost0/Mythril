@@ -20,9 +20,9 @@ namespace mythril::detail {
 		}
 		ASSERT_MSG(offset + size <= _bufferSize, "Buffer write of offset + size exceeds the buffer size!");
 		if (data) {
-			memcpy((uint8_t*) _mappedPtr + offset, data, size);
+			memcpy((uint8_t*)_mappedPtr + offset, data, size);
 		} else {
-			memset((uint8_t*) _mappedPtr + offset, 0, size);
+			memset((uint8_t*)_mappedPtr + offset, 0, size);
 		}
 
 		if (!_isCoherentMemory) {
@@ -38,7 +38,7 @@ namespace mythril::detail {
 		if (!_isCoherentMemory) {
 			invalidateMappedMemory(ctx, offset, size);
 		}
-		memcpy(data, (const uint8_t*) _mappedPtr + offset, size);
+		memcpy(data, (const uint8_t*)_mappedPtr + offset, size);
 	}
 	void AllocatedBuffer::flushMappedMemory(const CTX& ctx, VkDeviceSize offset, VkDeviceSize size) const {
 		if (!isMapped()) {
@@ -83,7 +83,7 @@ namespace mythril::detail {
 				dst = {.stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, .access = VK_ACCESS_2_MEMORY_WRITE_BIT | VK_ACCESS_2_MEMORY_READ_BIT};
 			}
 			// no longer necessary thanks to rendergraph
-			//if (isDepthAttachment() && _isResolveAttachment) {
+			// if (isDepthAttachment() && _isResolveAttachment) {
 			//	// https://registry.khronos.org/vulkan/specs/latest/html/vkspec.html#renderpass-resolve-operations
 			//	src.stage |= VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
 			//	dst.stage |= VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
@@ -133,43 +133,41 @@ namespace mythril::detail {
 			for (uint32_t i = 1; i < _numLevels; ++i) {
 				// 1: Transition the i-th level to VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL; it will be copied into from the (i-1)-th layer
 				vkutil::ImageMemoryBarrier2(
-				        cmd,
-				        _vkImage,
-				        vkutil::StageAccess{.stage = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT, .access = VK_ACCESS_2_NONE},
-				        vkutil::StageAccess{.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = VK_ACCESS_2_TRANSFER_WRITE_BIT},
-				        VK_IMAGE_LAYOUT_UNDEFINED,
-				        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-				        VkImageSubresourceRange{imageAspectFlags, i, 1, layer, 1}
-				);
+					cmd,
+					_vkImage,
+					vkutil::StageAccess{.stage = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT, .access = VK_ACCESS_2_NONE},
+					vkutil::StageAccess{.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = VK_ACCESS_2_TRANSFER_WRITE_BIT},
+					VK_IMAGE_LAYOUT_UNDEFINED,
+					VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+					VkImageSubresourceRange{imageAspectFlags, i, 1, layer, 1});
 
 				const int32_t nextLevelWidth = (mipWidth > 1) ? (mipWidth / 2) : 1;
 				const int32_t nextLevelHeight = (mipHeight > 1) ? (mipHeight / 2) : 1;
 
 				const VkOffset3D srcOffsets[2] = {
-				    VkOffset3D{0, 0, 0},
-				    VkOffset3D{mipWidth, mipHeight, 1},
+					VkOffset3D{0, 0, 0},
+					VkOffset3D{mipWidth, mipHeight, 1},
 				};
 				const VkOffset3D dstOffsets[2] = {
-				    VkOffset3D{0, 0, 0},
-				    VkOffset3D{nextLevelWidth, nextLevelHeight, 1},
+					VkOffset3D{0, 0, 0},
+					VkOffset3D{nextLevelWidth, nextLevelHeight, 1},
 				};
 				const VkImageBlit blit = {
-				    .srcSubresource = VkImageSubresourceLayers{imageAspectFlags, i - 1, layer, 1},
-				    .srcOffsets = {srcOffsets[0], srcOffsets[1]},
-				    .dstSubresource = VkImageSubresourceLayers{imageAspectFlags, i, layer, 1},
-				    .dstOffsets = {dstOffsets[0], dstOffsets[1]},
+					.srcSubresource = VkImageSubresourceLayers{imageAspectFlags, i - 1, layer, 1},
+					.srcOffsets = {srcOffsets[0], srcOffsets[1]},
+					.dstSubresource = VkImageSubresourceLayers{imageAspectFlags, i, layer, 1},
+					.dstOffsets = {dstOffsets[0], dstOffsets[1]},
 				};
 				vkCmdBlitImage(cmd, _vkImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, _vkImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, blitFilter);
 				// 3: Transition i-th level to VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL as it will be read from in the next iteration
 				vkutil::ImageMemoryBarrier2(
-				        cmd,
-				        _vkImage,
-				        vkutil::StageAccess{.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = VK_ACCESS_2_TRANSFER_WRITE_BIT},
-				        vkutil::StageAccess{.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = VK_ACCESS_2_TRANSFER_READ_BIT},
-				        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-				        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-				        VkImageSubresourceRange{imageAspectFlags, i, 1, layer, 1}
-				);
+					cmd,
+					_vkImage,
+					vkutil::StageAccess{.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = VK_ACCESS_2_TRANSFER_WRITE_BIT},
+					vkutil::StageAccess{.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = VK_ACCESS_2_TRANSFER_READ_BIT},
+					VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+					VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+					VkImageSubresourceRange{imageAspectFlags, i, 1, layer, 1});
 
 				mipWidth = nextLevelWidth;
 				mipHeight = nextLevelHeight;
@@ -177,29 +175,27 @@ namespace mythril::detail {
 		}
 		// transition it back to original
 		vkutil::ImageMemoryBarrier2(
-		        cmd,
-		        _vkImage,
-		        vkutil::StageAccess{.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = VK_ACCESS_2_TRANSFER_READ_BIT},
-		        vkutil::StageAccess{.stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, .access = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT},
-		        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-		        originalImageLayout,
-		        VkImageSubresourceRange{imageAspectFlags, 0, _numLevels, 0, _numLayers}
-		);
+			cmd,
+			_vkImage,
+			vkutil::StageAccess{.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = VK_ACCESS_2_TRANSFER_READ_BIT},
+			vkutil::StageAccess{.stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, .access = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT},
+			VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+			originalImageLayout,
+			VkImageSubresourceRange{imageAspectFlags, 0, _numLevels, 0, _numLayers});
 		setLayout(getWholeRange(), originalImageLayout);
 	}
 
 	VkImageView AllocatedTexture::createTextureView(
-	        VkDevice vk_device, VkImageViewType type, VkFormat format, uint32_t baseLevel, uint32_t numLevels, uint32_t baseLayer, uint32_t numLayers, const VkComponentMapping componentMapping
-	) {
+		VkDevice vk_device, VkImageViewType type, VkFormat format, uint32_t baseLevel, uint32_t numLevels, uint32_t baseLayer, uint32_t numLayers, const VkComponentMapping componentMapping) {
 		const VkImageViewCreateInfo ci = {
-		    .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-		    .pNext = nullptr,
-		    .flags = 0,
-		    .image = this->_vkImage,
-		    .viewType = type,
-		    .format = format,
-		    .components = componentMapping,
-		    .subresourceRange = VkImageSubresourceRange{vkutil::AspectMaskFromFormat(format), baseLevel, numLevels, baseLayer, numLayers},
+			.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+			.pNext = nullptr,
+			.flags = 0,
+			.image = this->_vkImage,
+			.viewType = type,
+			.format = format,
+			.components = componentMapping,
+			.subresourceRange = VkImageSubresourceRange{vkutil::AspectMaskFromFormat(format), baseLevel, numLevels, baseLayer, numLayers},
 		};
 		VkImageView image_view = VK_NULL_HANDLE;
 		VK_CHECK(vkCreateImageView(vk_device, &ci, nullptr, &image_view));
@@ -207,4 +203,3 @@ namespace mythril::detail {
 		return image_view;
 	}
 } // namespace mythril::detail
-

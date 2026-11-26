@@ -9,10 +9,11 @@
 namespace mythril {
 
 	ShaderStage::ShaderStage(const Shader& shader) :
-	    handle(shader.handle()) {}
+		handle(shader.handle()) {}
 
 	ShaderStage::ShaderStage(const Shader& shader, const char* entryPoint) :
-	    handle(shader.handle()), entryPoint(entryPoint) {}
+		handle(shader.handle()),
+		entryPoint(entryPoint) {}
 
 	namespace detail {
 		template<typename InternalHandle>

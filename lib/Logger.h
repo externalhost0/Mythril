@@ -32,25 +32,25 @@ namespace mythril {
 	};
 	// clang-format on
 	inline FILE* level_channels[] = {
-	    stdout,
-	    stdout,
-	    stderr,
-	    stderr,
-	    stdout,
+		stdout,
+		stdout,
+		stderr,
+		stderr,
+		stdout,
 	};
-	constexpr const char* GetLogLevelAsString(LogType level) { return level_strings[(int) level]; }
-	constexpr uint32_t GetLogLevelAsColor(LogType level) { return level_colors[(int) level]; }
-	constexpr FILE* GetLogLevelAsFile(LogType level) { return level_channels[(int) level]; }
+	constexpr const char* GetLogLevelAsString(LogType level) { return level_strings[(int)level]; }
+	constexpr uint32_t GetLogLevelAsColor(LogType level) { return level_colors[(int)level]; }
+	constexpr FILE* GetLogLevelAsFile(LogType level) { return level_channels[(int)level]; }
 
-// way to get namespaces and class prefixes without other stuff
-constexpr std::string_view StripPrettyFunction(std::string_view pretty) {
-	const auto lparen = pretty.find('(');
-	if (lparen == std::string_view::npos)
-		return pretty;
-	auto start = pretty.rfind(' ', lparen);
-	start = (start == std::string_view::npos) ? 0 : start + 1;
-	return pretty.substr(start, lparen - start);
-}
+	// way to get namespaces and class prefixes without other stuff
+	constexpr std::string_view StripPrettyFunction(std::string_view pretty) {
+		const auto lparen = pretty.find('(');
+		if (lparen == std::string_view::npos)
+			return pretty;
+		auto start = pretty.rfind(' ', lparen);
+		start = (start == std::string_view::npos) ? 0 : start + 1;
+		return pretty.substr(start, lparen - start);
+	}
 #if defined(__clang__) || defined(__GNUC__)
 #define EXPANDED_FUNCTION mythril::StripPrettyFunction(__PRETTY_FUNCTION__)
 #elif defined(_MSC_VER)
@@ -82,7 +82,7 @@ constexpr std::string_view StripPrettyFunction(std::string_view pretty) {
 
 // pass must be a PassDesc or CompiledPass, see PassLogName in RenderGraphInternal.h
 #ifdef DEBUG
-#define LOG_PASS(level, pass, message, ...) fmt::print(GetLogLevelAsFile(level), fg((fmt::color)GetLogLevelAsColor(level)), "[{}] Pass '{}' | " message "\n", GetLogLevelAsString(level), ::mythril::PassLogName(pass) __VA_OPT__(,) __VA_ARGS__)
+#define LOG_PASS(level, pass, message, ...) fmt::print(GetLogLevelAsFile(level), fg((fmt::color)GetLogLevelAsColor(level)), "[{}] Pass '{}' | " message "\n", GetLogLevelAsString(level), ::mythril::PassLogName(pass) __VA_OPT__(, ) __VA_ARGS__)
 #else
 #define LOG_PASS(level, pass, message, ...) (void(0))
 #endif

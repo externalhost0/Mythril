@@ -6,7 +6,8 @@
 #include <algorithm>
 
 namespace mythril {
-	SpirvLayout::SpirvLayout(std::vector<uint32_t> spirv) : _words(std::move(spirv)) {
+	SpirvLayout::SpirvLayout(std::vector<uint32_t> spirv) :
+		_words(std::move(spirv)) {
 		const std::span<const uint32_t> words = _words;
 		// ids may have gaps, so the bound only has the spec's universal limit
 		constexpr uint32_t kMaxIdBound = 4'194'303;
@@ -206,7 +207,9 @@ namespace mythril {
 	namespace {
 		class PushFieldBuilder {
 		public:
-			PushFieldBuilder(const SpirvLayout& layout, std::vector<PushField>& pointees) : _layout(layout), _pointees(pointees) {}
+			PushFieldBuilder(const SpirvLayout& layout, std::vector<PushField>& pointees) :
+				_layout(layout),
+				_pointees(pointees) {}
 
 			PushField build(const uint32_t id, std::string name, const uint32_t offset) {
 				PushField field;

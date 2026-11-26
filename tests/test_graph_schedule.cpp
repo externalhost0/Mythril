@@ -79,7 +79,12 @@ TEST_CASE("culling follows data edges, so a reader ordered before a kept writer 
 }
 
 TEST_CASE("the scheduler keeps a merge chain whole in every declaration order") {
-	enum : uint32_t { Upload, Sky, Opaque, Transparent, Particles, kCount };
+	enum : uint32_t { Upload,
+		Sky,
+		Opaque,
+		Transparent,
+		Particles,
+		kCount };
 	const std::vector<std::vector<uint32_t>> preds = {{}, {}, {Sky}, {Opaque}, {Transparent, Upload}};
 	std::vector<uint32_t> label(kCount);
 	std::iota(label.begin(), label.end(), 0u);

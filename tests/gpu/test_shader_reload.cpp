@@ -58,12 +58,10 @@ TEST_CASE("reloadShaderEXT takes a code edit and refuses one the C++ push struct
 		graph.addComputePass<ReloadPass>("reload", [&](mythril::ComputePassBuilder& b, ReloadPass& d) {
 			b.dependency(rgOut, mythril::BufferAccess::ShaderWrite);
 			b.sideEffect();
-			d = {pipeline.handle(), {.out = ctx->gpuAddress(outBuffer), .value = 7, .pad = 0}};
-		}, [](const ReloadPass& d, mythril::ComputeCmd& cmd) {
+			d = {pipeline.handle(), {.out = ctx->gpuAddress(outBuffer), .value = 7, .pad = 0}}; }, [](const ReloadPass& d, mythril::ComputeCmd& cmd) {
 			cmd.cmdBindComputePipeline(d.pipeline);
 			cmd.cmdPushConstants(d.push);
-			cmd.cmdDispatchThreadGroup({1, 1, 1});
-		});
+			cmd.cmdDispatchThreadGroup({1, 1, 1}); });
 		graph.compile(*ctx);
 		graph.execute(*ctx);
 		ctx->waitIdle();
@@ -139,12 +137,10 @@ TEST_CASE("a shader whose specialization constant size a pipeline does not give 
 		graph.addComputePass<ReloadPass>("spec", [&](mythril::ComputePassBuilder& b, ReloadPass& d) {
 			b.dependency(rgOut, mythril::BufferAccess::ShaderWrite);
 			b.sideEffect();
-			d = {pipeline.handle(), {.out = ctx->gpuAddress(outBuffer), .value = 7, .pad = 0}};
-		}, [](const ReloadPass& d, mythril::ComputeCmd& cmd) {
+			d = {pipeline.handle(), {.out = ctx->gpuAddress(outBuffer), .value = 7, .pad = 0}}; }, [](const ReloadPass& d, mythril::ComputeCmd& cmd) {
 			cmd.cmdBindComputePipeline(d.pipeline);
 			cmd.cmdPushConstants(d.push);
-			cmd.cmdDispatchThreadGroup({1, 1, 1});
-		});
+			cmd.cmdDispatchThreadGroup({1, 1, 1}); });
 		graph.compile(*ctx);
 		graph.execute(*ctx);
 		ctx->waitIdle();

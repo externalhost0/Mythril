@@ -55,7 +55,7 @@ namespace Helpers {
 		float q = v * (1.0f - s * f);
 		float t = v * (1.0f - s * (1.0f - f));
 
-		switch(i) {
+		switch (i) {
 			case 0: return glm::vec3(v, t, p);
 			case 1: return glm::vec3(q, v, p);
 			case 2: return glm::vec3(p, v, t);

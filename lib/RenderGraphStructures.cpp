@@ -19,10 +19,10 @@ namespace mythril {
 		if (resource.structure)
 			return GraphAccelerationStructureAccess::make(GraphBufferAccess::index(storage));
 		GraphStructureSlot slot = {
-		    .handle = structure.handle(),
-		    .scratch = GraphBufferAccess::index(scratch),
-		    .topLevel = live._isTLAS,
-		    .allowsRefit = (live._spec.buildFlags & VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_KHR) != 0,
+			.handle = structure.handle(),
+			.scratch = GraphBufferAccess::index(scratch),
+			.topLevel = live._isTLAS,
+			.allowsRefit = (live._spec.buildFlags & VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_KHR) != 0,
 		};
 		for (const BufferHandle input: {live._spec.vertexBuffer, live._spec.indexBuffer, live._spec.transformBuffer.value_or(BufferHandle{}), live._spec.instancesBuffer})
 			if (input.valid() && std::ranges::find(slot.inputs, input) == slot.inputs.end())
@@ -74,12 +74,12 @@ namespace mythril {
 		const char* verb = refit ? "refit" : "build";
 		ASSERT_PASS(!refit || slot.allowsRefit, pass, "refits '{}', which was not created with VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_KHR. Add the flag or build it.", resource.debugName);
 		ASSERT_PASS(std::ranges::none_of(pass.transferOps, [&](const TransferOp& op) { const auto* b = std::get_if<AccelerationStructureBuildOp>(&op); return b && b->structure == slot.handle; }), pass,
-		            "builds '{}' twice. Its scratch buffer is shared, so put the second {} in another pass.", resource.debugName, verb);
+			"builds '{}' twice. Its scratch buffer is shared, so put the second {} in another pass.", resource.debugName, verb);
 		for (const BufferHandle input: slot.inputs) {
 			const auto imported = std::ranges::find(graph._buffers, input, &GraphBufferResource::handle);
 			ASSERT_PASS(std::ranges::any_of(inputs, [&](const GraphBuffer buffer) { return graph.handleOf(buffer) == input; }), pass,
-			            "{}s '{}', which reads buffer '{}', but inputs does not name it, so nothing orders the build after its writes. Import it and pass it in inputs.", verb, resource.debugName,
-			            imported != graph._buffers.end() ? imported->debugName : std::string("(not imported)"));
+				"{}s '{}', which reads buffer '{}', but inputs does not name it, so nothing orders the build after its writes. Import it and pass it in inputs.", verb, resource.debugName,
+				imported != graph._buffers.end() ? imported->debugName : std::string("(not imported)"));
 		}
 		for (const GraphBuffer buffer: inputs) {
 			ASSERT_PASS(std::ranges::find(slot.inputs, graph.handleOf(buffer)) != slot.inputs.end(), pass, "{}s '{}' with input '{}', which it was not created from.", verb, resource.debugName, graph._buffers[GraphBufferAccess::index(buffer)].debugName);

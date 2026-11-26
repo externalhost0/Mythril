@@ -12,12 +12,12 @@ using namespace mythril;
 
 namespace {
 	constexpr TextureAccess kAccesses[] = {
-	        TextureAccess::Sampled,
-	        TextureAccess::StorageRead,
-	        TextureAccess::StorageWrite,
-	        TextureAccess::StorageReadWrite,
-	        TextureAccess::TransferRead,
-	        TextureAccess::TransferWrite,
+		TextureAccess::Sampled,
+		TextureAccess::StorageRead,
+		TextureAccess::StorageWrite,
+		TextureAccess::StorageReadWrite,
+		TextureAccess::TransferRead,
+		TextureAccess::TransferWrite,
 	};
 	constexpr uint32_t kAttachmentBit = 1u << std::size(kAccesses);
 	constexpr uint32_t kResolveBit = kAttachmentBit << 1;

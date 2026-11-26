@@ -46,10 +46,14 @@ namespace mythril {
 			friend class ::mythril::CTX;
 		public:
 			Holder() = default;
-			Holder(CTX* ctx, InternalHandle handle) : _handle(handle), _pCtx(ctx) {}
+			Holder(CTX* ctx, InternalHandle handle) :
+				_handle(handle),
+				_pCtx(ctx) {}
 			~Holder();
 			Holder(const Holder&) = delete;
-			Holder(Holder&& other) noexcept : _handle(other._handle), _pCtx(other._pCtx) {
+			Holder(Holder&& other) noexcept :
+				_handle(other._handle),
+				_pCtx(other._pCtx) {
 				other._pCtx = nullptr;
 				other._handle = InternalHandle{};
 			}

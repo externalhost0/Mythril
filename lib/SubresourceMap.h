@@ -36,7 +36,9 @@ namespace mythril {
 			T value;
 		};
 
-		SubresourceMap(uint32_t mips, uint32_t layers, const T& initial = {}) : _totalMips(mips), _totalLayers(layers) {
+		SubresourceMap(uint32_t mips, uint32_t layers, const T& initial = {}) :
+			_totalMips(mips),
+			_totalLayers(layers) {
 			_entries.push_back({wholeRange(), initial});
 		}
 

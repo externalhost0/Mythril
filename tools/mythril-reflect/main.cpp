@@ -111,7 +111,7 @@ namespace {
 	}
 	struct Compiled {
 		std::string name;
-		bool typed;
+		bool typed{};
 		std::filesystem::path source;
 		ReflectedTypes types;
 		std::vector<uint32_t> spirv;

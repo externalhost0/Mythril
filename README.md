@@ -114,11 +114,17 @@ cmake --build build/debug-samples
 > Samples that require an optional feature (e.g. `05_ImGui` needs
 > `MYTH_ENABLE_IMGUI_STANDARD`) are skipped when the requirement is not satisfied.
 
+## Contrubuting
+
+Yeah sure, I currently use the [pre-commit](https://pre-commit.com/) hook to manage format and linting checks so just make sure you have that available.
 
 
 ## License
 This project is distributed under the **Mozilla Public License Version 2.0**, please see `LICENSE.txt` for more.
-
+You only need to run the following once per clone:
+```
+pre-commit install
+```
 # Acknowledgments
 
 - [LightweightVK](https://github.com/corporateshark/lightweightvk/tree/master) - Basically why Mythril exists, I loved how simply lightweightvk is but found we could abstract even more out of it.

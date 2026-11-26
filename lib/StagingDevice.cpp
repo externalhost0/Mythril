@@ -12,7 +12,7 @@
 namespace mythril {
 	using namespace detail;
 	StagingDevice::StagingDevice(CTX& ctx) :
-	    _ctx(ctx) {
+		_ctx(ctx) {
 		const VkPhysicalDeviceLimits& limits = _ctx.getPhysicalDeviceProperties10().limits;
 		// use default value of 128Mb clamped to the max limits
 		_maxBufferSize = std::min(limits.maxStorageBufferRange, 128u * 1024u * 1024u);
@@ -28,24 +28,24 @@ namespace mythril {
 		AllocatedBuffer* stagingBuffer = _ctx._bufferPool.get(_stagingBuffer);
 		ASSERT(stagingBuffer);
 		const vkutil::BufferSyncFeatures features = {
-		    .accelerationStructure = _ctx.isExtensionEnabled(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME),
-		    .rayTracingPipeline = _ctx.isExtensionEnabled(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME),
+			.accelerationStructure = _ctx.isExtensionEnabled(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME),
+			.rayTracingPipeline = _ctx.isExtensionEnabled(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME),
 		};
 		const vkutil::UpdateBufferBarriers barriers = vkutil::GetUploadBufferBarriers(buffer._vkUsageFlags, features);
 
 		while (size) {
 			// get next staging buffer free offset
-			MemoryRegionDesc desc = getNextFreeOffset((uint32_t) size);
-			const uint32_t chunkSize = std::min((uint32_t) size, desc.size_);
+			MemoryRegionDesc desc = getNextFreeOffset((uint32_t)size);
+			const uint32_t chunkSize = std::min((uint32_t)size, desc.size_);
 
 			// copy data into staging buffer
 			stagingBuffer->bufferSubData(_ctx, desc.offset_, chunkSize, data);
 
 			// do the transfer
 			const VkBufferCopy copy = {
-			    .srcOffset = desc.offset_,
-			    .dstOffset = dstOffset,
-			    .size = chunkSize,
+				.srcOffset = desc.offset_,
+				.dstOffset = dstOffset,
+				.size = chunkSize,
 			};
 
 			const detail::CommandBufferWrapper& wrapper = _ctx._immGraphics->acquire();
@@ -58,7 +58,7 @@ namespace mythril {
 			_regions.push_back(desc);
 
 			size -= chunkSize;
-			data = (uint8_t*) data + chunkSize;
+			data = (uint8_t*)data + chunkSize;
 			dstOffset += chunkSize;
 		}
 	}
@@ -181,36 +181,34 @@ namespace mythril {
 
 		// 1. Transition initial image layout into TRANSFER_DST_OPTIMAL
 		vkutil::ImageMemoryBarrier2(
-		        wrapper._cmdBuf,
-		        image._vkImage,
-		        kPriorAccesses,
-		        vkutil::StageAccess{.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = VK_ACCESS_2_TRANSFER_WRITE_BIT},
-		        VK_IMAGE_LAYOUT_UNDEFINED,
-		        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-		        VkImageSubresourceRange{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}
-		);
+			wrapper._cmdBuf,
+			image._vkImage,
+			kPriorAccesses,
+			vkutil::StageAccess{.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = VK_ACCESS_2_TRANSFER_WRITE_BIT},
+			VK_IMAGE_LAYOUT_UNDEFINED,
+			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+			VkImageSubresourceRange{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1});
 
 		// 2. Copy the pixel data from the staging buffer into the image
 		const VkBufferImageCopy copy = {
-		    .bufferOffset = desc.offset_,
-		    .bufferRowLength = 0,
-		    .bufferImageHeight = 0,
-		    .imageSubresource = VkImageSubresourceLayers{VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
-		    .imageOffset = offset,
-		    .imageExtent = extent,
+			.bufferOffset = desc.offset_,
+			.bufferRowLength = 0,
+			.bufferImageHeight = 0,
+			.imageSubresource = VkImageSubresourceLayers{VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
+			.imageOffset = offset,
+			.imageExtent = extent,
 		};
 		vkCmdCopyBufferToImage(wrapper._cmdBuf, stagingBuffer->_vkBuffer, image._vkImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
 
 		// 3. Transition TRANSFER_DST_OPTIMAL into SHADER_READ_ONLY_OPTIMAL
 		vkutil::ImageMemoryBarrier2(
-		        wrapper._cmdBuf,
-		        image._vkImage,
-		        vkutil::StageAccess{.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = VK_ACCESS_2_TRANSFER_WRITE_BIT},
-		        vkutil::StageAccess{.stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, .access = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT},
-		        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-		        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-		        VkImageSubresourceRange{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}
-		);
+			wrapper._cmdBuf,
+			image._vkImage,
+			vkutil::StageAccess{.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = VK_ACCESS_2_TRANSFER_WRITE_BIT},
+			vkutil::StageAccess{.stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, .access = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT},
+			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+			VkImageSubresourceRange{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1});
 
 		image.setLayout({0, 1, 0, 1}, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
@@ -219,8 +217,7 @@ namespace mythril {
 		_regions.push_back(desc);
 	}
 	void StagingDevice::imageData2D(
-	        AllocatedTexture& image, const VkRect2D& imageRegion, uint32_t baseMipLevel, uint32_t numMipLevels, uint32_t layerCheck, uint32_t numLayers, VkFormat format, std::span<const std::byte> data
-	) {
+		AllocatedTexture& image, const VkRect2D& imageRegion, uint32_t baseMipLevel, uint32_t numMipLevels, uint32_t layerCheck, uint32_t numLayers, VkFormat format, std::span<const std::byte> data) {
 		ASSERT_MSG(numMipLevels <= kMaxMipLevels, "StagingDevice::imageData2D numMipLevels exceeds the maximum mip level count.");
 
 		// divide the width and height by 2 until we get to the size of level 'baseMipLevel'
@@ -229,9 +226,8 @@ namespace mythril {
 
 		// not sure
 		ASSERT_MSG(
-		        !imageRegion.offset.x && !imageRegion.offset.y && imageRegion.extent.width == width && imageRegion.extent.height == height,
-		        "Uploading mip-levels with an image region that is smaller than the base mip level is not supported!"
-		);
+			!imageRegion.offset.x && !imageRegion.offset.y && imageRegion.extent.width == width && imageRegion.extent.height == height,
+			"Uploading mip-levels with an image region that is smaller than the base mip level is not supported!");
 
 		// find the storage size for all mip-levels being uploaded
 		uint32_t layerStorageSize = 0;
@@ -278,38 +274,36 @@ namespace mythril {
 
 				// 1. Transition initial image layout into TRANSFER_DST_OPTIMAL
 				vkutil::ImageMemoryBarrier2(
-				        wrapper._cmdBuf,
-				        image._vkImage,
-				        kPriorAccesses,
-				        vkutil::StageAccess{.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = VK_ACCESS_2_TRANSFER_WRITE_BIT},
-				        VK_IMAGE_LAYOUT_UNDEFINED,
-				        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-				        VkImageSubresourceRange{imageAspect, currentMipLevel, 1, layer, 1}
-				);
+					wrapper._cmdBuf,
+					image._vkImage,
+					kPriorAccesses,
+					vkutil::StageAccess{.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = VK_ACCESS_2_TRANSFER_WRITE_BIT},
+					VK_IMAGE_LAYOUT_UNDEFINED,
+					VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+					VkImageSubresourceRange{imageAspect, currentMipLevel, 1, layer, 1});
 
 				// 2. Copy the pixel data from the staging buffer into the image
 				uint32_t planeOffset = 0;
 				for (uint32_t plane = 0; plane != numPlanes; plane++) {
 					const VkExtent2D extent = vkutil::GetImagePlaneExtent(
-					        {
-					            .width = std::max(1u, imageRegion.extent.width >> mipLevel),
-					            .height = std::max(1u, imageRegion.extent.height >> mipLevel),
-					        },
-					        format,
-					        plane
-					);
+						{
+							.width = std::max(1u, imageRegion.extent.width >> mipLevel),
+							.height = std::max(1u, imageRegion.extent.height >> mipLevel),
+						},
+						format,
+						plane);
 					const VkRect2D region = {
-					    .offset = {.x = imageRegion.offset.x >> mipLevel, .y = imageRegion.offset.y >> mipLevel},
-					    .extent = extent,
+						.offset = {.x = imageRegion.offset.x >> mipLevel, .y = imageRegion.offset.y >> mipLevel},
+						.extent = extent,
 					};
 					const VkBufferImageCopy copy = {
-					    // the offset for this level is at the start of all mip-levels plus the size of all previous mip-levels being uploaded
-					    .bufferOffset = desc.offset_ + offset + planeOffset,
-					    .bufferRowLength = 0,
-					    .bufferImageHeight = 0,
-					    .imageSubresource = VkImageSubresourceLayers{numPlanes > 1 ? VK_IMAGE_ASPECT_PLANE_0_BIT << plane : imageAspect, currentMipLevel, layer, 1},
-					    .imageOffset = {.x = region.offset.x, .y = region.offset.y, .z = 0},
-					    .imageExtent = {.width = region.extent.width, .height = region.extent.height, .depth = 1u},
+						// the offset for this level is at the start of all mip-levels plus the size of all previous mip-levels being uploaded
+						.bufferOffset = desc.offset_ + offset + planeOffset,
+						.bufferRowLength = 0,
+						.bufferImageHeight = 0,
+						.imageSubresource = VkImageSubresourceLayers{numPlanes > 1 ? VK_IMAGE_ASPECT_PLANE_0_BIT << plane : imageAspect, currentMipLevel, layer, 1},
+						.imageOffset = {.x = region.offset.x, .y = region.offset.y, .z = 0},
+						.imageExtent = {.width = region.extent.width, .height = region.extent.height, .depth = 1u},
 					};
 					vkCmdCopyBufferToImage(wrapper._cmdBuf, stagingBuffer->_vkBuffer, image._vkImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
 					planeOffset += vkutil::GetTextureBytesPerPlane(imageRegion.extent.width, imageRegion.extent.height, format, plane);
@@ -317,14 +311,13 @@ namespace mythril {
 
 				// 3. Transition TRANSFER_DST_OPTIMAL into SHADER_READ_ONLY_OPTIMAL
 				vkutil::ImageMemoryBarrier2(
-				        wrapper._cmdBuf,
-				        image._vkImage,
-				        vkutil::StageAccess{.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = VK_ACCESS_2_TRANSFER_WRITE_BIT},
-				        vkutil::StageAccess{.stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, .access = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT},
-				        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-				        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-				        VkImageSubresourceRange{imageAspect, currentMipLevel, 1, layer, 1}
-				);
+					wrapper._cmdBuf,
+					image._vkImage,
+					vkutil::StageAccess{.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = VK_ACCESS_2_TRANSFER_WRITE_BIT},
+					vkutil::StageAccess{.stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, .access = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT},
+					VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+					VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+					VkImageSubresourceRange{imageAspect, currentMipLevel, 1, layer, 1});
 
 				offset += vkutil::GetTextureBytesPerLayer(imageRegion.extent.width, imageRegion.extent.height, format, currentMipLevel);
 			}
@@ -355,29 +348,28 @@ namespace mythril {
 
 		// 1. Transition to VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL
 		vkutil::ImageMemoryBarrier2(
-		        wrapper1._cmdBuf,
-		        image._vkImage,
-		        kPriorAccesses,
-		        vkutil::StageAccess{.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = VK_ACCESS_2_TRANSFER_READ_BIT},
-		        originalLayout,
-		        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-		        range
-		);
+			wrapper1._cmdBuf,
+			image._vkImage,
+			kPriorAccesses,
+			vkutil::StageAccess{.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = VK_ACCESS_2_TRANSFER_READ_BIT},
+			originalLayout,
+			VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+			range);
 
 		// 2.  Copy the pixel data from the image into the staging buffer
 		const VkBufferImageCopy copy = {
-		    .bufferOffset = desc.offset_,
-		    .bufferRowLength = 0,
-		    .bufferImageHeight = extent.height,
-		    .imageSubresource =
-		            VkImageSubresourceLayers{
-		                .aspectMask = range.aspectMask,
-		                .mipLevel = range.baseMipLevel,
-		                .baseArrayLayer = range.baseArrayLayer,
-		                .layerCount = range.layerCount,
-		            },
-		    .imageOffset = offset,
-		    .imageExtent = extent,
+			.bufferOffset = desc.offset_,
+			.bufferRowLength = 0,
+			.bufferImageHeight = extent.height,
+			.imageSubresource =
+				VkImageSubresourceLayers{
+					.aspectMask = range.aspectMask,
+					.mipLevel = range.baseMipLevel,
+					.baseArrayLayer = range.baseArrayLayer,
+					.layerCount = range.layerCount,
+				},
+			.imageOffset = offset,
+			.imageExtent = extent,
 		};
 		vkCmdCopyImageToBuffer(wrapper1._cmdBuf, image._vkImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, stagingBuffer->_vkBuffer, 1, &copy);
 
@@ -398,14 +390,13 @@ namespace mythril {
 		const detail::CommandBufferWrapper& wrapper2 = _ctx._immGraphics->acquire();
 
 		vkutil::ImageMemoryBarrier2(
-		        wrapper2._cmdBuf,
-		        image._vkImage,
-		        vkutil::StageAccess{.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = VK_ACCESS_2_TRANSFER_READ_BIT},
-		        vkutil::StageAccess{.stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, .access = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT},
-		        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-		        originalLayout,
-		        range
-		);
+			wrapper2._cmdBuf,
+			image._vkImage,
+			vkutil::StageAccess{.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = VK_ACCESS_2_TRANSFER_READ_BIT},
+			vkutil::StageAccess{.stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, .access = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT},
+			VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+			originalLayout,
+			range);
 
 		_ctx._immGraphics->wait(_ctx._immGraphics->submit(wrapper2));
 	}
@@ -511,10 +502,10 @@ namespace mythril {
 		}
 		// ...and then return the smallest free region that can hold the requested size
 		return {
-		    .offset_ = 0,
-		    .size_ = _stagingBufferSize - unusedSize,
-		    .handle_ = SubmitHandle(),
-		    .state_ = MemoryRegionDesc::State::Free,
+			.offset_ = 0,
+			.size_ = _stagingBufferSize - unusedSize,
+			.handle_ = SubmitHandle(),
+			.state_ = MemoryRegionDesc::State::Free,
 		};
 	}
 	StagingDevice::MemoryRegionDesc StagingDevice::getNextContiguousOffset(uint32_t size) {

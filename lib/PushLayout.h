@@ -15,7 +15,15 @@
 
 namespace mythril {
 	struct ReflectedType {
-		enum class Kind : uint8_t { Scalar, Vector, Matrix, Struct, SampledTexture, StorageTexture, Sampler, AccelerationStructure, Unsupported };
+		enum class Kind : uint8_t { Scalar,
+			Vector,
+			Matrix,
+			Struct,
+			SampledTexture,
+			StorageTexture,
+			Sampler,
+			AccelerationStructure,
+			Unsupported };
 		Kind kind = Kind::Unsupported;
 		slang::TypeReflection::ScalarType scalar = slang::TypeReflection::ScalarType::None;
 		uint32_t rows = 0;

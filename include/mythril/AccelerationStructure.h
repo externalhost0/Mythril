@@ -27,7 +27,7 @@ namespace mythril {
 		std::optional<BufferHandle> transformBuffer;
 	};
 	struct BottomLevelBuildDesc {
-		VkGeometryTypeKHR geometryType;
+		VkGeometryTypeKHR geometryType{};
 		AccelerationStructureGeometry geometry;
 		VkGeometryFlagsKHR geometryFlags = 0;
 		uint32_t maxPrimitiveCount = 0;
@@ -62,9 +62,9 @@ namespace mythril {
 			uint32_t transformOffset = 0;
 		};
 		BufferHandle vertexBuffer;
-		uint32_t numVertices;
-		size_t vertexStride;
-		VkFormat vertexFormat;
+		uint32_t numVertices{};
+		size_t vertexStride{};
+		VkFormat vertexFormat{};
 
 		BufferHandle indexBuffer;
 		VkIndexType indexType = VK_INDEX_TYPE_UINT32;
@@ -87,7 +87,7 @@ namespace mythril {
 			VkAccelerationStructureKHR _vkAccelerationStructure = VK_NULL_HANDLE;
 			Buffer _buffer;
 			Buffer _scratchBuffer;
-			VkDeviceAddress _vkDeviceAddress;
+			VkDeviceAddress _vkDeviceAddress{};
 			bool _isTLAS = false;
 			AccelerationStructureSpec _spec;
 			VkAccelerationStructureGeometryKHR _geometry{};

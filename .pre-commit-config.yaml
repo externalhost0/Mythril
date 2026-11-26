@@ -1,0 +1,17 @@
+repos:
+  - repo: https://github.com/cpp-linter/cpp-linter-hooks
+    rev: v1.9.0
+    hooks:
+      - id: clang-format
+        args: [--style=file]
+        files: ^(lib|include|samples|tests|tools)/.*\.(cpp|cc|cxx|h|hpp)$
+        exclude: ^(tests/push_layout/golden|build|\.cache)/
+  - repo: local
+    hooks:
+      - id: clang-tidy
+        name: clang-tidy
+        entry: tools/clang-tidy.sh
+        language: system
+        require_serial: true
+        files: ^(lib|include|samples|tests|tools)/.*\.(cpp|cc|cxx|h|hpp)$
+        exclude: ^(tests/push_layout/golden|build|\.cache)/

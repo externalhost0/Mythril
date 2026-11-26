@@ -50,15 +50,13 @@ namespace mythril {
 				continue;
 			}
 			const VkCommandPoolCreateInfo command_pool_ci = {
-			    .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
-			    .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT | VK_COMMAND_POOL_CREATE_TRANSIENT_BIT,
-			    .queueFamilyIndex = imm->getQueueFamilyIndex()
-			};
+				.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+				.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT | VK_COMMAND_POOL_CREATE_TRANSIENT_BIT,
+				.queueFamilyIndex = imm->getQueueFamilyIndex()};
 			VK_CHECK(vkCreateCommandPool(vk_device, &command_pool_ci, nullptr, &this->_commandPool[q]));
 			vkutil::SetObjectDebugName(vk_device, VK_OBJECT_TYPE_COMMAND_POOL, reinterpret_cast<uint64_t>(this->_commandPool[q]), "TracyGPU: CommandPool");
 			const VkCommandBufferAllocateInfo command_buffer_ai = {
-			    .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO, .commandPool = this->_commandPool[q], .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY, .commandBufferCount = 1
-			};
+				.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO, .commandPool = this->_commandPool[q], .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY, .commandBufferCount = 1};
 			VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
 			VK_CHECK(vkAllocateCommandBuffers(vk_device, &command_buffer_ai, &commandBuffer));
 			vkutil::SetObjectDebugName(vk_device, VK_OBJECT_TYPE_COMMAND_BUFFER, reinterpret_cast<uint64_t>(commandBuffer), "TracyGPU: CommandBuffer");

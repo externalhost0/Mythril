@@ -27,62 +27,61 @@ struct Camera {
 };
 
 const std::vector<shaders::Vertex> cubeVertices = {
-		// front face
-		{{-1.f, -1.f, -1.f}}, // A 0
-		{{1.f,  -1.f, -1.f}}, // B 1
-		{{1.f,  1.f,  -1.f}}, // C 2
-		{{-1.f, 1.f,  -1.f}}, // D 3
+	// front face
+	{{-1.f, -1.f, -1.f}}, // A 0
+	{{1.f, -1.f, -1.f}}, // B 1
+	{{1.f, 1.f, -1.f}}, // C 2
+	{{-1.f, 1.f, -1.f}}, // D 3
 
-		// back face
-		{{-1.f, -1.f, 1.f}}, // E 4
-		{{1.f,  -1.f, 1.f}}, // F 5
-		{{1.f,  1.f,  1.f}}, // G 6
-		{{-1.f, 1.f,  1.f}},  // H 7
+	// back face
+	{{-1.f, -1.f, 1.f}}, // E 4
+	{{1.f, -1.f, 1.f}}, // F 5
+	{{1.f, 1.f, 1.f}}, // G 6
+	{{-1.f, 1.f, 1.f}}, // H 7
 
-		// left face
-		{{-1.f, 1.f,  -1.f}}, // D 8
-		{{-1.f, -1.f, -1.f}}, // A 9
-		{{-1.f, -1.f, 1.f}}, // E 10
-		{{-1.f, 1.f,  1.f}}, // H 11
+	// left face
+	{{-1.f, 1.f, -1.f}}, // D 8
+	{{-1.f, -1.f, -1.f}}, // A 9
+	{{-1.f, -1.f, 1.f}}, // E 10
+	{{-1.f, 1.f, 1.f}}, // H 11
 
-		// right face
-		{{1.f,  -1.f, -1.f}}, // B 12
-		{{1.f,  1.f,  -1.f}}, // C 13
-		{{1.f,  1.f,  1.f}}, // G 14
-		{{1.f,  -1.f, 1.f}}, // F 15
+	// right face
+	{{1.f, -1.f, -1.f}}, // B 12
+	{{1.f, 1.f, -1.f}}, // C 13
+	{{1.f, 1.f, 1.f}}, // G 14
+	{{1.f, -1.f, 1.f}}, // F 15
 
-		// bottom face
-		{{-1.f, -1.f, -1.f}}, // A 16
-		{{1.f,  -1.f, -1.f}}, // B 17
-		{{1.f,  -1.f, 1.f}}, // F 18
-		{{-1.f, -1.f, 1.f}}, // E 19
+	// bottom face
+	{{-1.f, -1.f, -1.f}}, // A 16
+	{{1.f, -1.f, -1.f}}, // B 17
+	{{1.f, -1.f, 1.f}}, // F 18
+	{{-1.f, -1.f, 1.f}}, // E 19
 
-		// top face
-		{{1.f,  1.f,  -1.f}}, // C 20
-		{{-1.f, 1.f,  -1.f}}, // D 21
-		{{-1.f, 1.f,  1.f}}, // H 22
-		{{1.f,  1.f,  1.f}}, // G 23
+	// top face
+	{{1.f, 1.f, -1.f}}, // C 20
+	{{-1.f, 1.f, -1.f}}, // D 21
+	{{-1.f, 1.f, 1.f}}, // H 22
+	{{1.f, 1.f, 1.f}}, // G 23
 };
 
 const std::vector<uint32_t> cubeIndices = {
-		// front and back
-		0, 3, 2,
-		2, 1, 0,
-		4, 5, 6,
-		6, 7, 4,
-		// left and right
-		11, 8, 9,
-		9, 10, 11,
-		12, 13, 14,
-		14, 15, 12,
-		// bottom and top
-		16, 17, 18,
-		18, 19, 16,
-		20, 21, 22,
-		22, 23, 20
-};
+	// front and back
+	0, 3, 2,
+	2, 1, 0,
+	4, 5, 6,
+	6, 7, 4,
+	// left and right
+	11, 8, 9,
+	9, 10, 11,
+	12, 13, 14,
+	14, 15, 12,
+	// bottom and top
+	16, 17, 18,
+	18, 19, 16,
+	20, 21, 22,
+	22, 23, 20};
 
-glm::mat4 calculateViewMatrix(const Camera &camera) {
+glm::mat4 calculateViewMatrix(const Camera& camera) {
 	return glm::lookAt(camera.position, camera.position + glm::vec3(0, 0, -1), glm::vec3(0, 1, 0));
 }
 
@@ -98,89 +97,60 @@ int main() {
 		Uint32 sdlExtensionCount = 0;
 		const char* const* sdlExtensions = SDL_Vulkan_GetInstanceExtensions(&sdlExtensionCount);
 		auto ctx = mythril::CTXBuilder{}
-		.set_vulkan_cfg({
-			.app_name = "Cool App Name",
-			.engine_name = "Cool Engine Name"
-		})
-		.set_window_surface({
-			.instanceExtensions = std::span(sdlExtensions, sdlExtensionCount),
-			.createFunc = [sdlWindow](VkInstance instance) {
+		               .set_vulkan_cfg({.app_name = "Cool App Name",
+						   .engine_name = "Cool Engine Name"})
+		               .set_window_surface({.instanceExtensions = std::span(sdlExtensions, sdlExtensionCount),
+						   .createFunc = [sdlWindow](VkInstance instance) {
 				VkSurfaceKHR surface;
 				SDL_Vulkan_CreateSurface(sdlWindow, instance, nullptr, &surface);
-				return surface;
-			},
-			.destroyFunc = [](VkInstance instance, VkSurfaceKHR surface) {
-				SDL_Vulkan_DestroySurface(instance, surface, nullptr);
-			}
-		})
-		.with_default_swapchain({
-			.width = initialWindowSize.width,
-			.height = initialWindowSize.height
-		})
-		.build();
+				return surface; },
+						   .destroyFunc = [](VkInstance instance, VkSurfaceKHR surface) { SDL_Vulkan_DestroySurface(instance, surface, nullptr); }})
+		               .with_default_swapchain({.width = initialWindowSize.width,
+						   .height = initialWindowSize.height})
+		               .build();
 
-		mythril::Shader standardShader = ctx->createShader({
-			.path = kDataDir / shaders::BasicRed::kSpirvFile,
-			.debugName = "Red Object Shader"
-		});
-		mythril::GraphicsPipeline mainPipeline = ctx->createGraphicsPipeline({
-			.vertexShader = {standardShader},
+		mythril::Shader standardShader = ctx->createShader({.path = kDataDir / shaders::BasicRed::kSpirvFile,
+			.debugName = "Red Object Shader"});
+		mythril::GraphicsPipeline mainPipeline = ctx->createGraphicsPipeline({.vertexShader = {standardShader},
 			.fragmentShader = {standardShader},
 			.cull = mythril::CullMode::BACK,
 			.multisample = mythril::SampleCount::X4,
-			.debugName = "Main Pipeline"
-		});
-		mythril::Shader postProcessingShader = ctx->createShader({
-			.path = kDataDir / shaders::FullscreenPost::kSpirvFile,
-			.debugName = "Fullscreen Shader"
-		});
-		mythril::GraphicsPipeline postPipeline = ctx->createGraphicsPipeline({
-			.vertexShader = {postProcessingShader},
+			.debugName = "Main Pipeline"});
+		mythril::Shader postProcessingShader = ctx->createShader({.path = kDataDir / shaders::FullscreenPost::kSpirvFile,
+			.debugName = "Fullscreen Shader"});
+		mythril::GraphicsPipeline postPipeline = ctx->createGraphicsPipeline({.vertexShader = {postProcessingShader},
 			.fragmentShader = {postProcessingShader},
-			.debugName = "Post Processing Pipeline"
-		});
+			.debugName = "Post Processing Pipeline"});
 
-		mythril::Buffer cubeVertexBuffer = ctx->createBuffer({
-			.size = sizeof(shaders::Vertex) * cubeVertices.size(),
+		mythril::Buffer cubeVertexBuffer = ctx->createBuffer({.size = sizeof(shaders::Vertex) * cubeVertices.size(),
 			.usage = mythril::BufferUsageBits::BufferUsageBits_Storage,
 			.storage = mythril::StorageType::Device,
 			.initialData = cubeVertices,
-			.debugName = "Cube Vertex Buffer"
-		});
-		mythril::Buffer cubeIndexBuffer = ctx->createBuffer({
-			.size = sizeof(uint32_t) * cubeIndices.size(),
+			.debugName = "Cube Vertex Buffer"});
+		mythril::Buffer cubeIndexBuffer = ctx->createBuffer({.size = sizeof(uint32_t) * cubeIndices.size(),
 			.usage = mythril::BufferUsageBits::BufferUsageBits_Index,
 			.storage = mythril::StorageType::Device,
 			.initialData = cubeIndices,
-			.debugName = "Cube Index Buffer"
-		});
+			.debugName = "Cube Index Buffer"});
 
 
 		auto startTime = std::chrono::high_resolution_clock::now();
 
 		mythril::RenderGraph graph;
-		const mythril::GraphTexture rgColorTarget = graph.createTexture({
-			.size = mythril::RelativeSize{},
+		const mythril::GraphTexture rgColorTarget = graph.createTexture({.size = mythril::RelativeSize{},
 			.format = VK_FORMAT_R8G8B8A8_UNORM,
 			.samples = mythril::SampleCount::X4,
-			.debugName = "Color Texture"
-		});
-		const mythril::GraphTexture rgResolveColorTarget = graph.createTexture({
-			.size = mythril::RelativeSize{},
+			.debugName = "Color Texture"});
+		const mythril::GraphTexture rgResolveColorTarget = graph.createTexture({.size = mythril::RelativeSize{},
 			.format = VK_FORMAT_R8G8B8A8_UNORM,
-			.debugName = "Color Resolve Texture"
-		});
-		const mythril::GraphTexture rgDepthTarget = graph.createTexture({
-			.size = mythril::RelativeSize{},
+			.debugName = "Color Resolve Texture"});
+		const mythril::GraphTexture rgDepthTarget = graph.createTexture({.size = mythril::RelativeSize{},
 			.format = VK_FORMAT_D32_SFLOAT_S8_UINT,
 			.samples = mythril::SampleCount::X4,
-			.debugName = "Depth Texture"
-		});
-		const mythril::GraphTexture rgPostColorTarget = graph.createTexture({
-			.size = mythril::RelativeSize{},
+			.debugName = "Depth Texture"});
+		const mythril::GraphTexture rgPostColorTarget = graph.createTexture({.size = mythril::RelativeSize{},
 			.format = VK_FORMAT_R8G8B8A8_UNORM,
-			.debugName = "Post Process Texture"
-		});
+			.debugName = "Post Process Texture"});
 		const mythril::GraphBuffer rgCubeVertices = graph.importBuffer(cubeVertexBuffer);
 		const mythril::GraphBuffer rgCubeIndices = graph.importBuffer(cubeIndexBuffer);
 
@@ -233,8 +203,7 @@ int main() {
 				d.indexBuffer = cubeIndexBuffer.handle();
 				d.indexCount = static_cast<uint32_t>(cubeIndices.size());
 				d.mvp = calculateProjectionMatrix(camera) * calculateViewMatrix(camera) * model;
-				d.vertices = ctx->gpuAddress(cubeVertexBuffer);
-			}, [](const MainPass& d, mythril::GraphicsCmd& cmd) {
+				d.vertices = ctx->gpuAddress(cubeVertexBuffer); }, [](const MainPass& d, mythril::GraphicsCmd& cmd) {
 				cmd.cmdBindGraphicsPipeline(d.pipeline);
 				const shaders::GeometryPushConstant push = {
 						.mvp = d.mvp,
@@ -242,8 +211,7 @@ int main() {
 				};
 				cmd.cmdPushConstants(push);
 				cmd.cmdBindIndexBuffer(d.indexBuffer);
-				cmd.cmdDrawIndexed(d.indexCount);
-			});
+				cmd.cmdDrawIndexed(d.indexCount); });
 			mythril::GraphTexture post = rgPostColorTarget;
 			graph.addGraphicsPass<PostPass>("post_processing", [&](mythril::GraphicsPassBuilder& b, PostPass& d) {
 				post = b.attachment({
@@ -254,23 +222,21 @@ int main() {
 				d.pipeline = postPipeline.handle();
 				d.color = b.dependency(resolved, mythril::TextureAccess::Sampled);
 				auto currentTime = std::chrono::high_resolution_clock::now();
-				d.time = std::chrono::duration<float>(currentTime - startTime).count();
-			}, [](const PostPass& d, mythril::GraphicsCmd& cmd) {
+				d.time = std::chrono::duration<float>(currentTime - startTime).count(); }, [](const PostPass& d, mythril::GraphicsCmd& cmd) {
 				cmd.cmdBindGraphicsPipeline(d.pipeline);
 				const shaders::FullscreenPushConstant push {
 					.colorTexture = cmd.texture(d.color),
 					.time = d.time
 				};
 				cmd.cmdPushConstants(push);
-				cmd.cmdDraw(3);
-			});
+				cmd.cmdDraw(3); });
 			graph.addTransferPass("present", [&](mythril::TransferBuilder& b) {
 				b.blit(post, graph.backBuffer());
 			});
 		};
 
 		bool quit = false;
-		while(!quit) {
+		while (!quit) {
 			SDL_Event e;
 			while (SDL_PollEvent(&e)) {
 				if (e.type == SDL_EVENT_QUIT) quit = true;

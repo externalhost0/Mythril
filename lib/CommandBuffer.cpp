@@ -56,7 +56,7 @@
 			LOG_CMD_ONCE(LogType::Warning, "Called to rebind already bound pipeline '{}'", debugName); \
 			return; \
 		} \
-	} while(0)
+	} while (0)
 
 
 namespace mythril {
@@ -72,8 +72,8 @@ namespace mythril {
 	constexpr uint16_t kMaxColorAttachments = 16;
 	// enforce that a valid CommandBuffer can only be created via this constructor
 	CommandBuffer::CommandBuffer(CTX* ctx) :
-	    _ctx(ctx),
-	    _wrapper(&ctx->_immGraphics->acquire()) {}
+		_ctx(ctx),
+		_wrapper(&ctx->_immGraphics->acquire()) {}
 
 	CommandBuffer::~CommandBuffer() { ASSERT_MSG(!_isRendering, "Please call to end rendering before destroying a Command Buffer!"); }
 	ResolvedTexture CommandBuffer::texture(const GraphTexture texture) const {
@@ -205,9 +205,9 @@ namespace mythril {
 		if (!needsBarrier)
 			return;
 		const VkDependencyInfo dependencyInfo = {
-		    .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-		    .memoryBarrierCount = 1,
-		    .pMemoryBarriers = &_activePass->inOrderBarrier.value(),
+			.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+			.memoryBarrierCount = 1,
+			.pMemoryBarriers = &_activePass->inOrderBarrier.value(),
 		};
 		vkCmdPipelineBarrier2(_wrapper->_cmdBuf, &dependencyInfo);
 	}
@@ -272,14 +272,12 @@ namespace mythril {
 			VkImageView dest_vkImageView = destination._vkImageView;
 			for (const auto& color_attachment: this->_activePass->colorAttachments) {
 				ASSERT_MSG(
-				        color_attachment.imageView != source_vkImageView && color_attachment.imageView != dest_vkImageView, "You cannot {} an image currently being used by a RenderPass!", operation
-				);
+					color_attachment.imageView != source_vkImageView && color_attachment.imageView != dest_vkImageView, "You cannot {} an image currently being used by a RenderPass!", operation);
 			}
 			if (this->_activePass->depthAttachment.has_value()) {
 				const auto& depth_attachment = this->_activePass->depthAttachment.value();
 				ASSERT_MSG(
-				        depth_attachment.imageView != source_vkImageView && depth_attachment.imageView != dest_vkImageView, "You cannot {} an image currently being used by a RenderPass!", operation
-				);
+					depth_attachment.imageView != source_vkImageView && depth_attachment.imageView != dest_vkImageView, "You cannot {} an image currently being used by a RenderPass!", operation);
 			}
 		}
 	}
@@ -289,22 +287,20 @@ namespace mythril {
 		constexpr SubresourceRange baseSubresource = {0, 1, 0, 1};
 		if (sourceObject.getImageLayout(baseSubresource) != VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) {
 			LOG_CMD_ONCE(
-			        LogType::Info,
-			        "Automatically resolved texture ({}) to be in correct layout (VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) before {}. Was in ({})",
-			        sourceObject._debugName,
-			        operation,
-			        string_VkImageLayout(sourceObject.getImageLayout(baseSubresource))
-			);
+				LogType::Info,
+				"Automatically resolved texture ({}) to be in correct layout (VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) before {}. Was in ({})",
+				sourceObject._debugName,
+				operation,
+				string_VkImageLayout(sourceObject.getImageLayout(baseSubresource)));
 			this->cmdTransitionLayout(sourceHandle, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
 		}
 		if (destinationObject.getImageLayout(baseSubresource) != VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
 			LOG_CMD_ONCE(
-			        LogType::Info,
-			        "Automatically resolved texture ({}) to be in correct layout (VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) before {}. Was in ({})",
-			        destinationObject._debugName,
-			        operation,
-			        string_VkImageLayout(destinationObject.getImageLayout(baseSubresource))
-			);
+				LogType::Info,
+				"Automatically resolved texture ({}) to be in correct layout (VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) before {}. Was in ({})",
+				destinationObject._debugName,
+				operation,
+				string_VkImageLayout(destinationObject.getImageLayout(baseSubresource)));
 			this->cmdTransitionLayout(destinationHandle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 		}
 	}
@@ -535,8 +531,8 @@ namespace mythril {
 		}
 
 		const vkutil::BufferSyncFeatures features = {
-		    .accelerationStructure = _ctx->isExtensionEnabled(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME),
-		    .rayTracingPipeline = _ctx->isExtensionEnabled(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME),
+			.accelerationStructure = _ctx->isExtensionEnabled(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME),
+			.rayTracingPipeline = _ctx->isExtensionEnabled(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME),
 		};
 		const vkutil::UpdateBufferBarriers barriers = vkutil::GetUpdateBufferBarriers(buf->_vkUsageFlags, features);
 		bufferBarrierImpl(*buf, barriers.before.src, barriers.before.dst);
@@ -606,9 +602,8 @@ namespace mythril {
 		for (const auto& color_attachment: this->_activePass->colorAttachments) {
 			ASSERT_MSG(color_attachment.resolveImageView == VK_NULL_HANDLE, "Rendering of ImGui cannot be done inside a multisampled texture!");
 			ASSERT_MSG(
-			        color_attachment.imageFormat == this->_ctx->_imguiPlugin.getFormat(),
-			        "ImGui is drawing to a format that it was not given! Please pass the VkFormat of the texture which ImGui is drawing to when calling 'withImGuiPlugin()'!"
-			);
+				color_attachment.imageFormat == this->_ctx->_imguiPlugin.getFormat(),
+				"ImGui is drawing to a format that it was not given! Please pass the VkFormat of the texture which ImGui is drawing to when calling 'withImGuiPlugin()'!");
 		}
 #endif
 		ImGui::Render();
@@ -646,17 +641,16 @@ namespace mythril {
 			vk_depth_attachment_info = _activePass->depthAttachment->getAsVkRenderingAttachmentInfo();
 		}
 		const VkRenderingInfo info = {
-		    .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
-		    .pNext = nullptr,
-		    .flags = 0,
-		    .renderArea = renderArea,
-		    .layerCount = layerCount,
-		    .viewMask = viewMask,
-		    .colorAttachmentCount = static_cast<uint32_t>(_activePass->colorAttachments.size()),
-		    .pColorAttachments = vk_color_attachment_infos.data(),
-		    .pDepthAttachment = hasDepth ? &vk_depth_attachment_info : nullptr,
-		    .pStencilAttachment = nullptr
-		};
+			.sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
+			.pNext = nullptr,
+			.flags = 0,
+			.renderArea = renderArea,
+			.layerCount = layerCount,
+			.viewMask = viewMask,
+			.colorAttachmentCount = static_cast<uint32_t>(_activePass->colorAttachments.size()),
+			.pColorAttachments = vk_color_attachment_infos.data(),
+			.pDepthAttachment = hasDepth ? &vk_depth_attachment_info : nullptr,
+			.pStencilAttachment = nullptr};
 		_ctx->checkAndUpdateBindlessDescriptorSetImpl();
 
 		vkCmdBeginRendering(_wrapper->_cmdBuf, &info);
@@ -693,11 +687,10 @@ namespace mythril {
 		ASSERT_MSG((destinationTex._vkUsageFlags & VK_IMAGE_USAGE_TRANSFER_DST_BIT) > 0, "Destination image must have VK_IMAGE_USAGE_TRANSFER_DST_BIT!");
 		ASSERT_MSG(sourceTex._numLayers == destinationTex._numLayers, "The images being copied must have the same number of layers!");
 		ASSERT_MSG(
-		        sourceTex._vkFormat == destinationTex._vkFormat,
-		        "The images being copied must be of the same VkFormat (source is '{}' while destination is '{}')!",
-		        string_VkFormat(sourceTex.getFormat()),
-		        string_VkFormat(destinationTex.getFormat())
-		);
+			sourceTex._vkFormat == destinationTex._vkFormat,
+			"The images being copied must be of the same VkFormat (source is '{}' while destination is '{}')!",
+			string_VkFormat(sourceTex.getFormat()),
+			string_VkFormat(destinationTex.getFormat()));
 		ASSERT_MSG(sourceTex._vkExtent.width == destinationTex._vkExtent.width, "The images being copied must be of the same width!");
 		ASSERT_MSG(sourceTex._vkExtent.height == destinationTex._vkExtent.height, "The images being copied must be of the same height!");
 

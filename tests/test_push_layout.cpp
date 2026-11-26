@@ -208,47 +208,47 @@ TEST_CASE("rejected push layouts report exactly their named errors") {
 		std::vector<std::string_view> errors;
 	};
 	const std::vector<Rejected> corpus = {
-	        {"edge.slang",
-	         {
-	                 "entry point parameter 'cs_main::epUniform' is uniform",
-	                 "'Target::flag' is a bool",
-	                 "'Target::big' starts at byte 288, so bytes 284..288 are implicit padding",
-	                 "struct 'Target' ends at byte 300 but its stride is 304",
-	                 "'Push::target' starts at byte 8, so bytes 4..8 are implicit padding",
-	                 "'Push::pflag' is a bool",
-	                 "'Push::inner' starts at byte 68, so bytes 65..68 are implicit padding",
-	                 "'Push::u64' starts at byte 88, so bytes 84..88 are implicit padding",
-	                 "struct 'Push' ends at byte 100 but its stride is 104",
-	                 "'Target::rm34' is column_major but the session is row-major",
-	         }},
-	        // the reflection and SPIR-V disagreements are Slang issue 13188, they go away when Slang fixes it
-	        {"ptrc.slang",
-	         {
-	                 "'S::a' is a bool",
-	                 "'S::b' is a bool",
-	                 "struct 'X' ends at byte 12 but its stride is 16",
-	                 "'Push::pa' is a bool",
-	                 "'Push::pb' is a bool",
-	                 "'Push::pc' starts at byte 20, so bytes 18..20 are implicit padding",
-	                 "'Push::s' points to elements 12 bytes apart in reflection but 8 in the SPIR-V",
-	                 "'S::b' is at byte 4 in reflection but 1 in the SPIR-V",
-	                 "'S::c' is at byte 8 in reflection but 4 in the SPIR-V",
-	                 "'Push::y' points to elements 16 bytes apart in reflection but 24 in the SPIR-V",
-	         }},
-	        {"names.slang",
-	         {
-	                 "two different structs are named 'Light'",
-	                 "two different structs are named 'Pair'",
-	         }},
-	        {"generic.slang", {"two different structs are named 'Pair'"}},
-	        {"unsized.slang", {"'Buf::data' is the unsized array 'float[]'"}},
-	        {"vectors.slang",
-	         {
-	                 "'Push::h' has a type with no C++ equivalent",
-	                 "'Push::s' has a type with no C++ equivalent",
-	                 "'Push::d' has a type with no C++ equivalent",
-	                 "'Push::m' has a type with no C++ equivalent",
-	         }},
+		{"edge.slang",
+			{
+				"entry point parameter 'cs_main::epUniform' is uniform",
+				"'Target::flag' is a bool",
+				"'Target::big' starts at byte 288, so bytes 284..288 are implicit padding",
+				"struct 'Target' ends at byte 300 but its stride is 304",
+				"'Push::target' starts at byte 8, so bytes 4..8 are implicit padding",
+				"'Push::pflag' is a bool",
+				"'Push::inner' starts at byte 68, so bytes 65..68 are implicit padding",
+				"'Push::u64' starts at byte 88, so bytes 84..88 are implicit padding",
+				"struct 'Push' ends at byte 100 but its stride is 104",
+				"'Target::rm34' is column_major but the session is row-major",
+			}},
+		// the reflection and SPIR-V disagreements are Slang issue 13188, they go away when Slang fixes it
+		{"ptrc.slang",
+			{
+				"'S::a' is a bool",
+				"'S::b' is a bool",
+				"struct 'X' ends at byte 12 but its stride is 16",
+				"'Push::pa' is a bool",
+				"'Push::pb' is a bool",
+				"'Push::pc' starts at byte 20, so bytes 18..20 are implicit padding",
+				"'Push::s' points to elements 12 bytes apart in reflection but 8 in the SPIR-V",
+				"'S::b' is at byte 4 in reflection but 1 in the SPIR-V",
+				"'S::c' is at byte 8 in reflection but 4 in the SPIR-V",
+				"'Push::y' points to elements 16 bytes apart in reflection but 24 in the SPIR-V",
+			}},
+		{"names.slang",
+			{
+				"two different structs are named 'Light'",
+				"two different structs are named 'Pair'",
+			}},
+		{"generic.slang", {"two different structs are named 'Pair'"}},
+		{"unsized.slang", {"'Buf::data' is the unsized array 'float[]'"}},
+		{"vectors.slang",
+			{
+				"'Push::h' has a type with no C++ equivalent",
+				"'Push::s' has a type with no C++ equivalent",
+				"'Push::d' has a type with no C++ equivalent",
+				"'Push::m' has a type with no C++ equivalent",
+			}},
 	};
 	for (const Rejected& rejected: corpus) {
 		CAPTURE(rejected.shader);
@@ -283,43 +283,43 @@ TEST_CASE("push resources passed through helper functions keep their kind and ac
 	using Kind = PushField::Kind;
 	using Access = PushField::Access;
 	CheckPushResources(code, {
-	                                 {"tex", 0, Kind::SampledTexture, Access::Read},
-	                                 {"img", 8, Kind::StorageTexture, Access::Write},
-	                                 {"smp", 16, Kind::Sampler, Access::Read},
-	                                 {"out", 24, Kind::Pointer, Access::Write},
-	                         });
+								 {"tex", 0, Kind::SampledTexture, Access::Read},
+								 {"img", 8, Kind::StorageTexture, Access::Write},
+								 {"smp", 16, Kind::Sampler, Access::Read},
+								 {"out", 24, Kind::Pointer, Access::Write},
+							 });
 }
 
 TEST_CASE("push resource handles take the name of the field that holds them") {
 	using Kind = PushField::Kind;
 	using Access = PushField::Access;
 	CheckPushResources(Reflect("handles.slang").spirv, {
-	                                                           {"smp", 0, Kind::Sampler, Access::Read},
-	                                                           {"arr", 16, Kind::SampledTexture, Access::Read},
-	                                                           {"h", 24, Kind::SampledTexture, Access::Read},
-	                                                           {"out", 40, Kind::Pointer, Access::Write},
-	                                                   });
+														   {"smp", 0, Kind::Sampler, Access::Read},
+														   {"arr", 16, Kind::SampledTexture, Access::Read},
+														   {"h", 24, Kind::SampledTexture, Access::Read},
+														   {"out", 40, Kind::Pointer, Access::Write},
+													   });
 }
 
 TEST_CASE("push resource acceleration structure handles are found through their 64-bit address") {
 	using Kind = PushField::Kind;
 	using Access = PushField::Access;
 	CheckPushResources(Reflect("accel.slang").spirv, {
-	                                                         {"tlas", 0, Kind::AccelerationStructure, Access::Read},
-	                                                         {"out", 16, Kind::Pointer, Access::Write},
-	                                                 });
+														 {"tlas", 0, Kind::AccelerationStructure, Access::Read},
+														 {"out", 16, Kind::Pointer, Access::Write},
+													 });
 }
 
 TEST_CASE("push resource handles keep their kind through struct copies and locals") {
 	using Kind = PushField::Kind;
 	using Access = PushField::Access;
 	CheckPushResources(Reflect("locals.slang").spirv, {
-	                                                          {"tex", 0, Kind::SampledTexture, Access::Read},
-	                                                          {"tex", 16, Kind::SampledTexture, Access::Read},
-	                                                          {"a", 32, Kind::SampledTexture, Access::Read},
-	                                                          {"b", 40, Kind::SampledTexture, Access::Read},
-	                                                          {"smp", 48, Kind::Sampler, Access::Read},
-	                                                          {"out", 56, Kind::Pointer, Access::Write},
-	                                                  });
+														  {"tex", 0, Kind::SampledTexture, Access::Read},
+														  {"tex", 16, Kind::SampledTexture, Access::Read},
+														  {"a", 32, Kind::SampledTexture, Access::Read},
+														  {"b", 40, Kind::SampledTexture, Access::Read},
+														  {"smp", 48, Kind::Sampler, Access::Read},
+														  {"out", 56, Kind::Pointer, Access::Write},
+													  });
 }
 #endif

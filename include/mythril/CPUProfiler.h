@@ -45,13 +45,13 @@
 #endif
 #endif
 
-#define MYTH_PROFILER_ZONE_COLOR(name, color)                                                                                                                                                          \
-    {                                                                                                                                                                                                  \
-        ZoneScopedNC(name, color);
+#define MYTH_PROFILER_ZONE_COLOR(name, color) \
+	{ \
+		ZoneScopedNC(name, color);
 
-#define MYTH_PROFILER_ZONE(name)                                                                                                                                                                       \
-    {                                                                                                                                                                                                  \
-        ZoneScopedN(name);
+#define MYTH_PROFILER_ZONE(name) \
+	{ \
+		ZoneScopedN(name);
 
 #define MYTH_PROFILER_ZONE_END() }
 

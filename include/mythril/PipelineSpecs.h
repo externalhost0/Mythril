@@ -20,10 +20,10 @@ namespace mythril {
 		ShaderStage() = default;
 		ShaderStage(const Shader& shader);
 		ShaderStage(ShaderHandle handle) :
-		    handle(handle) {}
+			handle(handle) {}
 		ShaderStage(ShaderHandle handle, const char* entryPoint) :
-		    handle(handle),
-		    entryPoint(entryPoint) {}
+			handle(handle),
+			entryPoint(entryPoint) {}
 		ShaderStage(const Shader& shader, const char* entryPoint);
 
 		bool valid() const noexcept { return handle.valid(); }

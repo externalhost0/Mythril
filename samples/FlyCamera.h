@@ -17,7 +17,13 @@ public:
 		float speed = 4.f;
 		float farPlane = 100.f;
 	};
-	FlyCamera(SDL_Window* window, const glm::vec3 position, const Options& options) : _window(window), _position(position), _yaw(options.yaw), _pitch(options.pitch), _speed(options.speed), _far(options.farPlane) {
+	FlyCamera(SDL_Window* window, const glm::vec3 position, const Options& options) :
+		_window(window),
+		_position(position),
+		_yaw(options.yaw),
+		_pitch(options.pitch),
+		_speed(options.speed),
+		_far(options.farPlane) {
 		SDL_SetWindowRelativeMouseMode(_window, _mouseLook);
 	}
 

@@ -18,7 +18,9 @@
 struct ImVec2;
 struct ImGuiContext;
 // harmless to forward declare even without tracy gpu
-namespace tracy { class VkCtx; }
+namespace tracy {
+	class VkCtx;
+}
 
 namespace mythril {
 	struct ImGuiPluginSpec;

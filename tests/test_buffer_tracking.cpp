@@ -15,16 +15,16 @@ namespace {
 
 	std::vector<StageAccess> everyRequest() {
 		constexpr BufferAccess kAccesses[] = {BufferAccess::ShaderRead, BufferAccess::ShaderWrite, BufferAccess::ShaderReadWrite, BufferAccess::IndexRead,
-		                                      BufferAccess::IndirectRead, BufferAccess::TransferRead, BufferAccess::TransferWrite, BufferAccess::AccelerationStructureRead,
-		                                      BufferAccess::AccelerationStructureBuildInput, BufferAccess::AccelerationStructureBuildRead, BufferAccess::AccelerationStructureBuildWrite,
-		                                      BufferAccess::AccelerationStructureScratch};
+			BufferAccess::IndirectRead, BufferAccess::TransferRead, BufferAccess::TransferWrite, BufferAccess::AccelerationStructureRead,
+			BufferAccess::AccelerationStructureBuildInput, BufferAccess::AccelerationStructureBuildRead, BufferAccess::AccelerationStructureBuildWrite,
+			BufferAccess::AccelerationStructureScratch};
 		constexpr PassDesc::Type kPassTypes[] = {PassDesc::Type::Graphics, PassDesc::Type::Compute, PassDesc::Type::Transfer, PassDesc::Type::RayTracing};
 		std::vector<StageAccess> out;
-		for (BufferAccess access : kAccesses)
-			for (PassDesc::Type type : kPassTypes) {
+		for (BufferAccess access: kAccesses)
+			for (PassDesc::Type type: kPassTypes) {
 				const StageAccess a = vkutil::GetBufferStageAccess(access, type);
 				bool seen = false;
-				for (const StageAccess& b : out)
+				for (const StageAccess& b: out)
 					seen |= b.stage == a.stage && b.access == a.access;
 				if (!seen)
 					out.push_back(a);
@@ -47,10 +47,10 @@ namespace {
 		vkutil::BufferAccessTracker tracker = {};
 		vkutil::TrackBufferAccess(tracker, prior);
 		std::vector<CompiledBufferBarrier> planned;
-		for (const StageAccess& use : uses)
+		for (const StageAccess& use: uses)
 			AddBufferBarrier(planned, {}, use);
 		Step pass{"pass", {}, uses};
-		for (const CompiledBufferBarrier& request : planned)
+		for (const CompiledBufferBarrier& request: planned)
 			if (const std::optional<vkutil::BufferBarrier> barrier = vkutil::TrackBufferAccess(tracker, request.dstMask))
 				pass.barriers.push_back(*barrier);
 		const Step steps[] = {{"earlier pass", {}, {prior}}, pass};
@@ -66,12 +66,12 @@ TEST_CASE("render graph buffer tracker orders every hazard for every request seq
 	const auto visit = [&](auto&& self, size_t depth) -> void {
 		if (!seq.empty()) {
 			++checked;
-			for (const std::string& failure : check(seq))
+			for (const std::string& failure: check(seq))
 				FAIL_CHECK("sequence of " << seq.size() << " starting with stage " << seq[0].stage << ": " << failure);
 		}
 		if (depth == 4)
 			return;
-		for (const StageAccess& a : requests) {
+		for (const StageAccess& a: requests) {
 			seq.push_back(a);
 			self(self, depth + 1);
 			seq.pop_back();
@@ -83,24 +83,24 @@ TEST_CASE("render graph buffer tracker orders every hazard for every request seq
 
 TEST_CASE("a buffer declared up to 3 times in one pass is ordered after every earlier access") {
 	constexpr BufferAccess kAccesses[] = {BufferAccess::ShaderRead, BufferAccess::ShaderWrite, BufferAccess::ShaderReadWrite, BufferAccess::IndexRead,
-	                                      BufferAccess::IndirectRead, BufferAccess::TransferRead, BufferAccess::TransferWrite, BufferAccess::AccelerationStructureRead,
-	                                      BufferAccess::AccelerationStructureBuildInput, BufferAccess::AccelerationStructureBuildRead, BufferAccess::AccelerationStructureBuildWrite,
-	                                      BufferAccess::AccelerationStructureScratch};
+		BufferAccess::IndirectRead, BufferAccess::TransferRead, BufferAccess::TransferWrite, BufferAccess::AccelerationStructureRead,
+		BufferAccess::AccelerationStructureBuildInput, BufferAccess::AccelerationStructureBuildRead, BufferAccess::AccelerationStructureBuildWrite,
+		BufferAccess::AccelerationStructureScratch};
 	constexpr PassDesc::Type kPassTypes[] = {PassDesc::Type::Graphics, PassDesc::Type::Compute, PassDesc::Type::Transfer, PassDesc::Type::RayTracing};
 	const std::vector<StageAccess> priors = everyRequest();
 	size_t checked = 0;
-	for (const StageAccess& prior : priors)
-		for (const PassDesc::Type type : kPassTypes) {
+	for (const StageAccess& prior: priors)
+		for (const PassDesc::Type type: kPassTypes) {
 			std::vector<StageAccess> uses;
 			const auto visit = [&](auto&& self) -> void {
 				if (!uses.empty()) {
 					++checked;
-					for (const std::string& failure : checkPass(prior, uses))
+					for (const std::string& failure: checkPass(prior, uses))
 						FAIL_CHECK("earlier stage " << prior.stage << ", " << uses.size() << " declarations, first stage " << uses[0].stage << ": " << failure);
 				}
 				if (uses.size() == 3)
 					return;
-				for (const BufferAccess access : kAccesses) {
+				for (const BufferAccess access: kAccesses) {
 					uses.push_back(vkutil::GetBufferStageAccess(access, type));
 					self(self);
 					uses.pop_back();
@@ -120,29 +120,29 @@ TEST_CASE("acceleration structure accesses match what the spec says a build and 
 		BufferAccess access;
 		StageAccess spec;
 	} kBuildUses[] = {
-	    {BufferAccess::AccelerationStructureBuildWrite, {kBuild, kReadWrite}},
-	    {BufferAccess::AccelerationStructureScratch, {kBuild, kReadWrite}},
-	    {BufferAccess::AccelerationStructureBuildInput, {kBuild, VK_ACCESS_2_SHADER_READ_BIT}},
-	    {BufferAccess::AccelerationStructureBuildRead, {kBuild, VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR}},
+		{BufferAccess::AccelerationStructureBuildWrite, {kBuild, kReadWrite}},
+		{BufferAccess::AccelerationStructureScratch, {kBuild, kReadWrite}},
+		{BufferAccess::AccelerationStructureBuildInput, {kBuild, VK_ACCESS_2_SHADER_READ_BIT}},
+		{BufferAccess::AccelerationStructureBuildRead, {kBuild, VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR}},
 	};
 	// spec, ray tracing and ray query: a shader reads the structure with an acceleration structure read in its own stage
 	const struct {
 		PassDesc::Type type;
 		VkPipelineStageFlags2 stages;
 	} kTracers[] = {
-	    {PassDesc::Type::Graphics, VK_PIPELINE_STAGE_2_PRE_RASTERIZATION_SHADERS_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT},
-	    {PassDesc::Type::Compute, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT},
-	    {PassDesc::Type::RayTracing, VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR},
+		{PassDesc::Type::Graphics, VK_PIPELINE_STAGE_2_PRE_RASTERIZATION_SHADERS_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT},
+		{PassDesc::Type::Compute, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT},
+		{PassDesc::Type::RayTracing, VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR},
 	};
 	size_t checked = 0;
-	for (const auto& use : kBuildUses) {
+	for (const auto& use: kBuildUses) {
 		const StageAccess got = vkutil::GetBufferStageAccess(use.access, PassDesc::Type::Transfer);
 		CHECK(Stages(got.stage) == Stages(use.spec.stage));
 		CHECK(Access(got.access) == Access(use.spec.access));
 		CHECK(isWrite(use.access) == ((use.spec.access & VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR) != 0));
 		++checked;
 	}
-	for (const auto& tracer : kTracers) {
+	for (const auto& tracer: kTracers) {
 		const StageAccess got = vkutil::GetBufferStageAccess(BufferAccess::AccelerationStructureRead, tracer.type);
 		CHECK(Stages(got.stage) == Stages(tracer.stages));
 		CHECK(Access(got.access) == Access(VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR));

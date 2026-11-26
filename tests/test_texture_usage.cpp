@@ -40,7 +40,7 @@ namespace {
 }
 
 TEST_CASE("ToVkImageUsage reproduces the flags createTexture gave every sample texture") {
-	for (const SampleTexture& t : kSampleTextures) {
+	for (const SampleTexture& t: kSampleTextures) {
 		const VkImageUsageFlags got = vkutil::ToVkImageUsage(t.usage, t.storage, t.format);
 		CHECK_MESSAGE(got == t.expected, t.where << ": got " << string_VkImageUsageFlags(got) << ", expected " << string_VkImageUsageFlags(t.expected));
 	}
@@ -51,7 +51,7 @@ TEST_CASE("memoryless sample textures only carry attachment usage") {
 	// VUID-VkImageCreateInfo-usage-00963, transient images may only add color, depth stencil or input attachment usage
 	constexpr VkImageUsageFlags allowed = kTransient | kColor | kDepth | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT;
 	size_t checked = 0;
-	for (const SampleTexture& t : kSampleTextures) {
+	for (const SampleTexture& t: kSampleTextures) {
 		if (t.storage != StorageType::Memoryless)
 			continue;
 		++checked;

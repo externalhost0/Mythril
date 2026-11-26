@@ -29,10 +29,10 @@ namespace mythril {
 	struct ClearColor {
 		float r, g, b, a;
 		ClearColor(float r, float g, float b, float a) :
-		    r(r),
-		    g(g),
-		    b(b),
-		    a(a) {}
+			r(r),
+			g(g),
+			b(b),
+			a(a) {}
 		VkClearColorValue getAsVkClearColorValue() const { return {{r, g, b, a}}; }
 	};
 
@@ -40,8 +40,8 @@ namespace mythril {
 		float depth;
 		uint32_t stencil;
 		ClearDepthStencil(float depth, uint32_t stencil) :
-		    depth(depth),
-		    stencil(stencil) {}
+			depth(depth),
+			stencil(stencil) {}
 		VkClearDepthStencilValue getAsVkClearDepthStencilValue() const { return {depth, stencil}; }
 	};
 
@@ -50,7 +50,7 @@ namespace mythril {
 		ClearDepthStencil clearDepthStencil;
 
 		// if the user sets no clear (have no intention of clearing) then do nothing ig
-		ClearValue() {}
+		ClearValue() {} // NOLINT(cppcoreguidelines-pro-type-member-init)
 		static ClearValue color(float r, float g, float b, float a) {
 			ClearValue v;
 			v.clearColor = {r, g, b, a};
@@ -78,7 +78,9 @@ namespace mythril {
 		constexpr bool operator==(const GraphTexture&) const = default;
 	private:
 		static constexpr uint32_t kInvalid = UINT32_MAX;
-		explicit constexpr GraphTexture(uint32_t index, uint32_t version = 0) : _index(index), _version(version) {}
+		explicit constexpr GraphTexture(uint32_t index, uint32_t version = 0) :
+			_index(index),
+			_version(version) {}
 		uint32_t _index = kInvalid;
 		uint32_t _version = 0;
 		friend class RenderGraph;
@@ -92,7 +94,9 @@ namespace mythril {
 		constexpr bool operator==(const GraphBuffer&) const = default;
 	private:
 		static constexpr uint32_t kInvalid = UINT32_MAX;
-		explicit constexpr GraphBuffer(uint32_t index, uint32_t version = 0) : _index(index), _version(version) {}
+		explicit constexpr GraphBuffer(uint32_t index, uint32_t version = 0) :
+			_index(index),
+			_version(version) {}
 		uint32_t _index = kInvalid;
 		uint32_t _version = 0;
 		friend class RenderGraph;
@@ -106,7 +110,9 @@ namespace mythril {
 		constexpr bool operator==(const GraphAccelerationStructure&) const = default;
 	private:
 		static constexpr uint32_t kInvalid = UINT32_MAX;
-		explicit constexpr GraphAccelerationStructure(uint32_t storageSlot, uint32_t version = 0) : _storageSlot(storageSlot), _version(version) {}
+		explicit constexpr GraphAccelerationStructure(uint32_t storageSlot, uint32_t version = 0) :
+			_storageSlot(storageSlot),
+			_version(version) {}
 		uint32_t _storageSlot = kInvalid;
 		uint32_t _version = 0;
 		friend class RenderGraph;
@@ -118,7 +124,8 @@ namespace mythril {
 		static constexpr GraphExtent swapchain() { return GraphExtent{0}; }
 		constexpr bool operator==(const GraphExtent&) const = default;
 	private:
-		explicit constexpr GraphExtent(uint32_t index) : _index(index) {}
+		explicit constexpr GraphExtent(uint32_t index) :
+			_index(index) {}
 		uint32_t _index = 0;
 		friend class RenderGraph;
 	};
@@ -150,7 +157,7 @@ namespace mythril {
 	struct TextureDesc {
 		TextureDesc() = delete;
 		TextureDesc(GraphTexture tex) :
-		    texture(tex) {}
+			texture(tex) {}
 		GraphTexture texture;
 		std::optional<uint32_t> baseLevel;
 		std::optional<uint32_t> numLevels;
@@ -278,7 +285,7 @@ namespace mythril {
 		};
 		// these first three members are sent straight over to PassCompiled
 		std::string name;
-		Type type;
+		Type type{};
 		const PassExecute* execute = nullptr;
 		std::vector<TransferOp> transferOps;
 		std::vector<AttachmentDesc> attachmentOperations;

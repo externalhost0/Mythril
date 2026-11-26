@@ -34,63 +34,62 @@ static shaders::Vertex MakeVertex(const glm::vec3 position, const glm::vec3 norm
 }
 
 const std::vector<shaders::Vertex> cubeVertices = {
-		// front face
-		MakeVertex({-1.f, -1.f, -1.f}, {0.f, 0.f, -1.f}, {0.0f, 0.0f}), // A 0
-		MakeVertex({ 1.f, -1.f, -1.f}, {0.f, 0.f, -1.f}, {1.0f, 0.0f}), // B 1
-		MakeVertex({ 1.f,  1.f, -1.f}, {0.f, 0.f, -1.f}, {1.0f, 1.0f}), // C 2
-		MakeVertex({-1.f,  1.f, -1.f}, {0.f, 0.f, -1.f}, {0.0f, 1.0f}), // D 3
+	// front face
+	MakeVertex({-1.f, -1.f, -1.f}, {0.f, 0.f, -1.f}, {0.0f, 0.0f}), // A 0
+	MakeVertex({1.f, -1.f, -1.f}, {0.f, 0.f, -1.f}, {1.0f, 0.0f}), // B 1
+	MakeVertex({1.f, 1.f, -1.f}, {0.f, 0.f, -1.f}, {1.0f, 1.0f}), // C 2
+	MakeVertex({-1.f, 1.f, -1.f}, {0.f, 0.f, -1.f}, {0.0f, 1.0f}), // D 3
 
-		// back face
-		MakeVertex({-1.f, -1.f, 1.f}, {0.f, 0.f, 1.f}, {0.0f, 0.0f}), // E 4
-		MakeVertex({ 1.f, -1.f, 1.f}, {0.f, 0.f, 1.f}, {1.0f, 0.0f}), // F 5
-		MakeVertex({ 1.f,  1.f, 1.f}, {0.f, 0.f, 1.f}, {1.0f, 1.0f}), // G 6
-		MakeVertex({-1.f,  1.f, 1.f}, {0.f, 0.f, 1.f}, {0.0f, 1.0f}), // H 7
+	// back face
+	MakeVertex({-1.f, -1.f, 1.f}, {0.f, 0.f, 1.f}, {0.0f, 0.0f}), // E 4
+	MakeVertex({1.f, -1.f, 1.f}, {0.f, 0.f, 1.f}, {1.0f, 0.0f}), // F 5
+	MakeVertex({1.f, 1.f, 1.f}, {0.f, 0.f, 1.f}, {1.0f, 1.0f}), // G 6
+	MakeVertex({-1.f, 1.f, 1.f}, {0.f, 0.f, 1.f}, {0.0f, 1.0f}), // H 7
 
-		// left face
-		MakeVertex({-1.f,  1.f, -1.f}, {-1.f, 0.f, 0.f}, {0.0f, 1.0f}), // D 8
-		MakeVertex({-1.f, -1.f, -1.f}, {-1.f, 0.f, 0.f}, {0.0f, 0.0f}), // A 9
-		MakeVertex({-1.f, -1.f,  1.f}, {-1.f, 0.f, 0.f}, {1.0f, 0.0f}), // E 10
-		MakeVertex({-1.f,  1.f,  1.f}, {-1.f, 0.f, 0.f}, {1.0f, 1.0f}), // H 11
+	// left face
+	MakeVertex({-1.f, 1.f, -1.f}, {-1.f, 0.f, 0.f}, {0.0f, 1.0f}), // D 8
+	MakeVertex({-1.f, -1.f, -1.f}, {-1.f, 0.f, 0.f}, {0.0f, 0.0f}), // A 9
+	MakeVertex({-1.f, -1.f, 1.f}, {-1.f, 0.f, 0.f}, {1.0f, 0.0f}), // E 10
+	MakeVertex({-1.f, 1.f, 1.f}, {-1.f, 0.f, 0.f}, {1.0f, 1.0f}), // H 11
 
-		// right face
-		MakeVertex({1.f, -1.f, -1.f}, {1.f, 0.f, 0.f}, {0.0f, 0.0f}), // B 12
-		MakeVertex({1.f,  1.f, -1.f}, {1.f, 0.f, 0.f}, {0.0f, 1.0f}), // C 13
-		MakeVertex({1.f,  1.f,  1.f}, {1.f, 0.f, 0.f}, {1.0f, 1.0f}), // G 14
-		MakeVertex({1.f, -1.f,  1.f}, {1.f, 0.f, 0.f}, {1.0f, 0.0f}), // F 15
+	// right face
+	MakeVertex({1.f, -1.f, -1.f}, {1.f, 0.f, 0.f}, {0.0f, 0.0f}), // B 12
+	MakeVertex({1.f, 1.f, -1.f}, {1.f, 0.f, 0.f}, {0.0f, 1.0f}), // C 13
+	MakeVertex({1.f, 1.f, 1.f}, {1.f, 0.f, 0.f}, {1.0f, 1.0f}), // G 14
+	MakeVertex({1.f, -1.f, 1.f}, {1.f, 0.f, 0.f}, {1.0f, 0.0f}), // F 15
 
-		// bottom face
-		MakeVertex({-1.f, -1.f, -1.f}, {0.f, -1.f, 0.f}, {0.0f, 1.0f}), // A 16
-		MakeVertex({ 1.f, -1.f, -1.f}, {0.f, -1.f, 0.f}, {1.0f, 1.0f}), // B 17
-		MakeVertex({ 1.f, -1.f,  1.f}, {0.f, -1.f, 0.f}, {1.0f, 0.0f}), // F 18
-		MakeVertex({-1.f, -1.f,  1.f}, {0.f, -1.f, 0.f}, {0.0f, 0.0f}), // E 19
+	// bottom face
+	MakeVertex({-1.f, -1.f, -1.f}, {0.f, -1.f, 0.f}, {0.0f, 1.0f}), // A 16
+	MakeVertex({1.f, -1.f, -1.f}, {0.f, -1.f, 0.f}, {1.0f, 1.0f}), // B 17
+	MakeVertex({1.f, -1.f, 1.f}, {0.f, -1.f, 0.f}, {1.0f, 0.0f}), // F 18
+	MakeVertex({-1.f, -1.f, 1.f}, {0.f, -1.f, 0.f}, {0.0f, 0.0f}), // E 19
 
-		// top face
-		MakeVertex({ 1.f, 1.f, -1.f}, {0.f, 1.f, 0.f}, {1.0f, 1.0f}), // C 20
-		MakeVertex({-1.f, 1.f, -1.f}, {0.f, 1.f, 0.f}, {0.0f, 1.0f}), // D 21
-		MakeVertex({-1.f, 1.f,  1.f}, {0.f, 1.f, 0.f}, {0.0f, 0.0f}), // H 22
-		MakeVertex({ 1.f, 1.f,  1.f}, {0.f, 1.f, 0.f}, {1.0f, 0.0f}), // G 23
+	// top face
+	MakeVertex({1.f, 1.f, -1.f}, {0.f, 1.f, 0.f}, {1.0f, 1.0f}), // C 20
+	MakeVertex({-1.f, 1.f, -1.f}, {0.f, 1.f, 0.f}, {0.0f, 1.0f}), // D 21
+	MakeVertex({-1.f, 1.f, 1.f}, {0.f, 1.f, 0.f}, {0.0f, 0.0f}), // H 22
+	MakeVertex({1.f, 1.f, 1.f}, {0.f, 1.f, 0.f}, {1.0f, 0.0f}), // G 23
 };
 
 
 const std::vector<uint32_t> cubeIndices = {
-		// front and back
-		0, 3, 2,
-		2, 1, 0,
-		4, 5, 6,
-		6, 7, 4,
-		// left and right
-		11, 8, 9,
-		9, 10, 11,
-		12, 13, 14,
-		14, 15, 12,
-		// bottom and top
-		16, 17, 18,
-		18, 19, 16,
-		20, 21, 22,
-		22, 23, 20
-};
+	// front and back
+	0, 3, 2,
+	2, 1, 0,
+	4, 5, 6,
+	6, 7, 4,
+	// left and right
+	11, 8, 9,
+	9, 10, 11,
+	12, 13, 14,
+	14, 15, 12,
+	// bottom and top
+	16, 17, 18,
+	18, 19, 16,
+	20, 21, 22,
+	22, 23, 20};
 
-static glm::mat4 calculateViewMatrix(const Camera &camera) {
+static glm::mat4 calculateViewMatrix(const Camera& camera) {
 	return glm::lookAt(camera.position, camera.position + glm::vec3(0, 0, -1), glm::vec3(0, 1, 0));
 }
 static glm::mat4 calculateProjectionMatrix(const Camera& camera) {
@@ -248,85 +247,60 @@ int main() {
 		Uint32 sdlExtensionCount = 0;
 		const char* const* sdlExtensions = SDL_Vulkan_GetInstanceExtensions(&sdlExtensionCount);
 		auto ctx = mythril::CTXBuilder{}
-		.set_vulkan_cfg({
-			.app_name = "Cool App Name",
-			.engine_name = "Cool Engine Name"
-		})
-		.set_window_surface({
-			.instanceExtensions = std::span(sdlExtensions, sdlExtensionCount),
-			.createFunc = [sdlWindow](VkInstance instance) {
+		               .set_vulkan_cfg({.app_name = "Cool App Name",
+						   .engine_name = "Cool Engine Name"})
+		               .set_window_surface({.instanceExtensions = std::span(sdlExtensions, sdlExtensionCount),
+						   .createFunc = [sdlWindow](VkInstance instance) {
 				VkSurfaceKHR surface;
 				SDL_Vulkan_CreateSurface(sdlWindow, instance, nullptr, &surface);
-				return surface;
-			},
-			.destroyFunc = [](VkInstance instance, VkSurfaceKHR surface) {
-				SDL_Vulkan_DestroySurface(instance, surface, nullptr);
-			}
-		})
-		.with_default_swapchain({
-			.width = initialWindowSize.width,
-			.height = initialWindowSize.height
-		})
-		.with_ImGui({
-			.windowInitFunction = [sdlWindow] { ImGui_ImplSDL3_InitForVulkan(sdlWindow); },
-			.windowDestroyFunction = [] { ImGui_ImplSDL3_Shutdown(); }
-		})
-		.build();
+				return surface; },
+						   .destroyFunc = [](VkInstance instance, VkSurfaceKHR surface) { SDL_Vulkan_DestroySurface(instance, surface, nullptr); }})
+		               .with_default_swapchain({.width = initialWindowSize.width,
+						   .height = initialWindowSize.height})
+		               .with_ImGui({.windowInitFunction = [sdlWindow] { ImGui_ImplSDL3_InitForVulkan(sdlWindow); },
+						   .windowDestroyFunction = [] { ImGui_ImplSDL3_Shutdown(); }})
+		               .build();
 
-		mythril::Shader standardShader = ctx->createShader({
-			.path = kDataDir / shaders::Marble::kSpirvFile,
-			.debugName = "Example Shader"
-		});
+		mythril::Shader standardShader = ctx->createShader({.path = kDataDir / shaders::Marble::kSpirvFile,
+			.debugName = "Example Shader"});
 
-		mythril::GraphicsPipeline mainPipeline = ctx->createGraphicsPipeline({
-			.vertexShader = {standardShader},
+		mythril::GraphicsPipeline mainPipeline = ctx->createGraphicsPipeline({.vertexShader = {standardShader},
 			.fragmentShader = {standardShader},
 			.topology = mythril::TopologyMode::TRIANGLE,
 			.polygon = mythril::PolygonMode::FILL,
 			.blend = mythril::BlendingMode::OFF,
 			.cull = mythril::CullMode::BACK,
 			.multisample = mythril::SampleCount::X1,
-			.debugName = "Geometry Pipeline"
-		});
+			.debugName = "Geometry Pipeline"});
 
-		mythril::Buffer cubeVertexBuffer = ctx->createBuffer({
-			.size = sizeof(shaders::Vertex) * cubeVertices.size(),
+		mythril::Buffer cubeVertexBuffer = ctx->createBuffer({.size = sizeof(shaders::Vertex) * cubeVertices.size(),
 			.usage = mythril::BufferUsageBits::BufferUsageBits_Storage,
 			.storage = mythril::StorageType::Device,
 			.initialData = cubeVertices,
-			.debugName = "Cube Vertex Buffer"
-		});
-		mythril::Buffer cubeIndexBuffer = ctx->createBuffer({
-			.size = sizeof(uint32_t) * cubeIndices.size(),
+			.debugName = "Cube Vertex Buffer"});
+		mythril::Buffer cubeIndexBuffer = ctx->createBuffer({.size = sizeof(uint32_t) * cubeIndices.size(),
 			.usage = mythril::BufferUsageBits::BufferUsageBits_Index,
 			.storage = mythril::StorageType::Device,
 			.initialData = cubeIndices,
-			.debugName = "Cube Index Buffer"
-		});
-		mythril::Buffer perFrameDataBuffer = ctx->createBuffer({
-			.size = sizeof(shaders::GlobalData),
+			.debugName = "Cube Index Buffer"});
+		mythril::Buffer perFrameDataBuffer = ctx->createBuffer({.size = sizeof(shaders::GlobalData),
 			.usage = mythril::BufferUsageBits::BufferUsageBits_Storage,
 			.storage = mythril::StorageType::Device,
-			.debugName = "PerFrameData Storage Buffer"
-		});
-		mythril::Buffer perMaterialDataBuffer = ctx->createBuffer({
-			.size = sizeof(shaders::MaterialData),
+			.debugName = "PerFrameData Storage Buffer"});
+		mythril::Buffer perMaterialDataBuffer = ctx->createBuffer({.size = sizeof(shaders::MaterialData),
 			.usage = mythril::BufferUsageBits::BufferUsageBits_Storage,
 			.storage = mythril::StorageType::Device,
-			.debugName = "PerMaterialData Storage Buffer"
-		});
+			.debugName = "PerMaterialData Storage Buffer"});
 		constexpr unsigned int kNumObjects = 50;
-		mythril::Buffer objectDataBuf = ctx->createBuffer({
-			.size = sizeof(shaders::ObjectData) * kNumObjects,
+		mythril::Buffer objectDataBuf = ctx->createBuffer({.size = sizeof(shaders::ObjectData) * kNumObjects,
 			.usage = mythril::BufferUsageBits::BufferUsageBits_Storage,
 			.storage = mythril::StorageType::Device,
-			.debugName = "Object Data SSBO"
-		});
+			.debugName = "Object Data SSBO"});
 
 		auto startTime = std::chrono::high_resolution_clock::now();
 		shaders::ObjectData objects[kNumObjects];
 		shaders::MaterialData matData{};
-		shaders::GlobalData frameData { .objects = ctx->gpuAddress(objectDataBuf) };
+		shaders::GlobalData frameData{.objects = ctx->gpuAddress(objectDataBuf)};
 
 		mythril::RenderGraph graph;
 		const mythril::GraphTexture rgColorTarget = graph.createTexture({.size = mythril::RelativeSize{}, .format = VK_FORMAT_R8G8B8A8_UNORM, .debugName = "Color Texture"});
@@ -385,24 +359,17 @@ int main() {
 					.vertexBufferAddress = ctx->gpuAddress(cubeVertexBuffer),
 					.perFrame = ctx->gpuAddress(perFrameDataBuffer),
 					.perMaterial = ctx->gpuAddress(perMaterialDataBuffer),
-				};
-			}, [](const GeometryPass& d, mythril::GraphicsCmd& cmd) {
+				}; }, [](const GeometryPass& d, mythril::GraphicsCmd& cmd) {
 				cmd.cmdBindGraphicsPipeline(d.pipeline);
 				cmd.cmdBindDepthState({mythril::CompareOp::LessEqual, true});
 				cmd.cmdPushConstants(d.push);
 				cmd.cmdBindIndexBuffer(d.indexBuffer);
-				cmd.cmdDrawIndexed(d.indexCount, kNumObjects);
-			});
+				cmd.cmdDrawIndexed(d.indexCount, kNumObjects); });
 
-			graph.addGraphicsPass("gui", [&](mythril::GraphicsPassBuilder& b, mythril::NoPassData&) {
-				color = b.attachment({
-					.texDesc = color,
-					.loadOp = mythril::LoadOp::LOAD,
-					.storeOp = mythril::StoreOp::STORE
-				}).texture;
-			}, [](const mythril::NoPassData&, mythril::GraphicsCmd& cmd) {
-				cmd.cmdDrawImGui();
-			});
+			graph.addGraphicsPass("gui", [&](mythril::GraphicsPassBuilder& b, mythril::NoPassData&) { color = b.attachment({.texDesc = color,
+																															   .loadOp = mythril::LoadOp::LOAD,
+																															   .storeOp = mythril::StoreOp::STORE})
+				                                                                                                  .texture; }, [](const mythril::NoPassData&, mythril::GraphicsCmd& cmd) { cmd.cmdDrawImGui(); });
 
 			graph.addTransferPass("presentation", [&](mythril::TransferBuilder& b) {
 				b.blit(color, graph.backBuffer());
@@ -411,7 +378,7 @@ int main() {
 
 		std::srand(std::time(nullptr));
 		bool quit = false;
-		while(!quit) {
+		while (!quit) {
 			SDL_Event e;
 			while (SDL_PollEvent(&e)) {
 				ImGui_ImplSDL3_ProcessEvent(&e);
@@ -427,10 +394,8 @@ int main() {
 			// or else your presentation will break
 			auto currentWindowSize = GetSDLWindowFramebufferSize(sdlWindow);
 			if (ctx->isSwapchainDirty()) {
-				ctx->recreateSwapchain({
-					.width = currentWindowSize.width,
-					.height = currentWindowSize.height
-				});
+				ctx->recreateSwapchain({.width = currentWindowSize.width,
+					.height = currentWindowSize.height});
 			}
 
 			ImGui_ImplVulkan_NewFrame();
@@ -444,7 +409,7 @@ int main() {
 			ImGui::Spacing();
 			ImGui::Separator();
 			ImGui::Spacing();
-			static float col[3] = {1.f, 0.f, 0.f };
+			static float col[3] = {1.f, 0.f, 0.f};
 			ImGui::ColorPicker3("Tint Color", col);
 			static float distort_amount = 0.6f;
 			ImGui::SliderFloat("Distort Amount", &distort_amount, 0.f, 1.f);
@@ -455,49 +420,43 @@ int main() {
 			ImGui::End();
 
 			std::srand(static_cast<unsigned>(std::time(nullptr)));
-			for (shaders::ObjectData& object : objects) {
+			for (shaders::ObjectData& object: objects) {
 				glm::vec3 pos = {
 					(std::rand() / static_cast<float>(RAND_MAX) - 0.5f) * 100.0f, // range [-50, 50]
 					(std::rand() / static_cast<float>(RAND_MAX) - 0.5f) * 100.0f,
-					(std::rand() / static_cast<float>(RAND_MAX) - 0.5f) * 100.0f
-				};
+					(std::rand() / static_cast<float>(RAND_MAX) - 0.5f) * 100.0f};
 				glm::vec3 color = {
 					std::rand() / static_cast<float>(RAND_MAX), // range [0, 1]
 					std::rand() / static_cast<float>(RAND_MAX),
-					std::rand() / static_cast<float>(RAND_MAX)
-				};
-				object = { pos, color };
+					std::rand() / static_cast<float>(RAND_MAX)};
+				object = {pos, color};
 			}
 			objects[0].position = glm::vec3(0.f);
 
 
-			matData = shaders::MaterialData {
-				.tint = { col[0], col[1], col[2] },
+			matData = shaders::MaterialData{
+				.tint = {col[0], col[1], col[2]},
 				.warpIterations = warp_iterations,
 				.glowAmount = glow,
-				.distortAmount = distort_amount
-			};
+				.distortAmount = distort_amount};
 
 			const Camera camera = {
 				.position = {0.f, 0.f, 5.f},
 				.aspectRatio = static_cast<float>(currentWindowSize.width) / static_cast<float>(currentWindowSize.height),
 				.fov = 80.f,
 				.nearPlane = 0.1f,
-				.farPlane = 100.f
-			};
+				.farPlane = 100.f};
 			const shaders::CameraData cameraData = {
 				.proj = calculateProjectionMatrix(camera),
 				.view = calculateViewMatrix(camera),
-				.position = camera.position
-			};
+				.position = camera.position};
 			auto currentTime = std::chrono::high_resolution_clock::now();
 			float time = std::chrono::duration<float>(currentTime - startTime).count();
 			frameData = shaders::GlobalData{
 				.objects = ctx->gpuAddress(objectDataBuf),
 				.camera = cameraData,
-				.renderResolution = { currentWindowSize.width, currentWindowSize.height },
-				.time = time
-			};
+				.renderResolution = {currentWindowSize.width, currentWindowSize.height},
+				.time = time};
 
 			graph.reset();
 			buildGraph();

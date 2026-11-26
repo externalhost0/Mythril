@@ -8,19 +8,21 @@
 #include <mythril/Specs.h>
 
 #ifdef DEBUG
-#define SAMPLE_ASSERT(COND) do { \
-    if (!static_cast<bool>(COND)) [[unlikely]] { \
-        std::fputs(std::format("[SAMPLE_ASSERT] | {}:{} -> {} -> Expression: " #COND "\n", __FILE__, __LINE__, __func__).c_str(), stderr); \
-        std::raise(SIGABRT); \
-    } \
-} while (0)
+#define SAMPLE_ASSERT(COND) \
+	do { \
+		if (!static_cast<bool>(COND)) [[unlikely]] { \
+			std::fputs(std::format("[SAMPLE_ASSERT] | {}:{} -> {} -> Expression: " #COND "\n", __FILE__, __LINE__, __func__).c_str(), stderr); \
+			std::raise(SIGABRT); \
+		} \
+	} while (0)
 
-#define SAMPLE_ASSERT_MSG(COND, FORMAT, ...) do { \
-    if (!static_cast<bool>(COND)) [[unlikely]] { \
-        std::fputs(std::format("[SAMPLE_ASSERT_MSG] | {}:{} -> {} -> MSG:\n" FORMAT "\n", __FILE__, __LINE__, __func__ __VA_OPT__(,) __VA_ARGS__).c_str(), stderr); \
-        std::raise(SIGABRT); \
-    } \
-} while (0)
+#define SAMPLE_ASSERT_MSG(COND, FORMAT, ...) \
+	do { \
+		if (!static_cast<bool>(COND)) [[unlikely]] { \
+			std::fputs(std::format("[SAMPLE_ASSERT_MSG] | {}:{} -> {} -> MSG:\n" FORMAT "\n", __FILE__, __LINE__, __func__ __VA_OPT__(, ) __VA_ARGS__).c_str(), stderr); \
+			std::raise(SIGABRT); \
+		} \
+	} while (0)
 #else
 #define SAMPLE_ASSERT(COND) ((void)0)
 #define SAMPLE_ASSERT_MSG(COND, FORMAT, ...) ((void)0)

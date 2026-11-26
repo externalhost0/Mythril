@@ -157,12 +157,12 @@ namespace mythril {
 	static void ForEachStage(const ComputePipelineSpec& spec, const auto& fn) { fn(spec.shader, kComputeEntryPoint, VK_SHADER_STAGE_COMPUTE_BIT); }
 	static void ForEachStage(const RayTracingPipelineSpec& spec, const auto& fn) {
 		for (const auto& [stages, bit]: {std::pair{&spec.rayGenShaders, VK_SHADER_STAGE_RAYGEN_BIT_KHR}, std::pair{&spec.missShaders, VK_SHADER_STAGE_MISS_BIT_KHR},
-		                                std::pair{&spec.closestHitShaders, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR}, std::pair{&spec.callableShader, VK_SHADER_STAGE_CALLABLE_BIT_KHR}})
+				 std::pair{&spec.closestHitShaders, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR}, std::pair{&spec.callableShader, VK_SHADER_STAGE_CALLABLE_BIT_KHR}})
 			for (const ShaderStage& stage: *stages)
 				fn(stage.handle, stage.entryPoint, bit);
 	}
 
-	template <typename Pipeline>
+	template<typename Pipeline>
 	std::string CTX::findBuildProblemImpl(const Pipeline& pipeline) const {
 		const auto& spec = pipeline._spec;
 		const auto stageProblem = [&](const AllocatedShader& shader, const char* entryPoint, const VkShaderStageFlagBits stage) -> std::string {
@@ -311,7 +311,9 @@ namespace mythril {
 		// forward walk from the push block to the image, pointer and atomic ops that use it
 		class PushAccessWalk {
 		public:
-			PushAccessWalk(const SpirvLayout& layout, const std::span<const Leaf> leaves) : _layout(layout), _bound(layout.bound) {
+			PushAccessWalk(const SpirvLayout& layout, const std::span<const Leaf> leaves) :
+				_layout(layout),
+				_bound(layout.bound) {
 				for (const Leaf& leaf: leaves)
 					_offsets.push_back(leaf.offset);
 				_access.assign(leaves.size(), Access::None);
@@ -530,8 +532,7 @@ namespace mythril {
 							if (_variableClass[base] == SpvStorageClassUniformConstant) {
 								add(w[2], tagOf(w[k]));
 								classifyIndex(base, tagOf(w[k]));
-							}
-							else
+							} else
 								effect(tagOf(w[k]), Access::Unknown);
 						}
 						return;

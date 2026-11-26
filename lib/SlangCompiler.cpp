@@ -36,20 +36,20 @@ export T getDescriptorFromHandle<T : IOpaqueDescriptor>(DescriptorHandle<T> hand
 		}
 
 		slang::TargetDesc targetDesc = {
-		    .format = SLANG_SPIRV,
-		    .profile = compiler._globalSlangSession->findProfile("spirv_1_6"),
+			.format = SLANG_SPIRV,
+			.profile = compiler._globalSlangSession->findProfile("spirv_1_6"),
 		};
 		const auto option = [](const slang::CompilerOptionName name, const int value) {
 			return slang::CompilerOptionEntry{.name = name, .value = {.kind = slang::CompilerOptionValueKind::Int, .intValue0 = value}};
 		};
 		std::array entries = {
-		    option(slang::CompilerOptionName::BindlessSpaceIndex, 0),
-		    option(slang::CompilerOptionName::VulkanUseEntryPointName, true),
-		    option(slang::CompilerOptionName::VulkanInvertY, true),
-		    option(slang::CompilerOptionName::Optimization, options.debug ? SLANG_OPTIMIZATION_LEVEL_DEFAULT : SLANG_OPTIMIZATION_LEVEL_MAXIMAL),
-		    option(slang::CompilerOptionName::DebugInformation, options.debug ? SLANG_DEBUG_INFO_LEVEL_MAXIMAL : SLANG_DEBUG_INFO_LEVEL_NONE),
-		    // forces scalar layout which is awesome, means we can have a header file that is shared by c++ and slang
-		    option(slang::CompilerOptionName::ForceCLayout, true),
+			option(slang::CompilerOptionName::BindlessSpaceIndex, 0),
+			option(slang::CompilerOptionName::VulkanUseEntryPointName, true),
+			option(slang::CompilerOptionName::VulkanInvertY, true),
+			option(slang::CompilerOptionName::Optimization, options.debug ? SLANG_OPTIMIZATION_LEVEL_DEFAULT : SLANG_OPTIMIZATION_LEVEL_MAXIMAL),
+			option(slang::CompilerOptionName::DebugInformation, options.debug ? SLANG_DEBUG_INFO_LEVEL_MAXIMAL : SLANG_DEBUG_INFO_LEVEL_NONE),
+			// forces scalar layout which is awesome, means we can have a header file that is shared by c++ and slang
+			option(slang::CompilerOptionName::ForceCLayout, true),
 		};
 
 		// path::c_str() is wchar_t on Windows, slang wants char
@@ -61,13 +61,13 @@ export T getDescriptorFromHandle<T : IOpaqueDescriptor>(DescriptorHandle<T> hand
 			searchPathPointers.push_back(path.c_str());
 
 		const slang::SessionDesc sessionDesc = {
-		    .targets = &targetDesc,
-		    .targetCount = 1,
-		    .defaultMatrixLayoutMode = options.matrixLayout,
-		    .searchPaths = searchPathPointers.data(),
-		    .searchPathCount = static_cast<SlangInt>(searchPathPointers.size()),
-		    .compilerOptionEntries = entries.data(),
-		    .compilerOptionEntryCount = static_cast<uint32_t>(entries.size()),
+			.targets = &targetDesc,
+			.targetCount = 1,
+			.defaultMatrixLayoutMode = options.matrixLayout,
+			.searchPaths = searchPathPointers.data(),
+			.searchPathCount = static_cast<SlangInt>(searchPathPointers.size()),
+			.compilerOptionEntries = entries.data(),
+			.compilerOptionEntryCount = static_cast<uint32_t>(entries.size()),
 		};
 		if (SLANG_FAILED(compiler._globalSlangSession->createSession(sessionDesc, compiler._slangSession.writeRef()))) {
 			diagnostics = "Slang failed to create session!";
@@ -102,10 +102,9 @@ export T getDescriptorFromHandle<T : IOpaqueDescriptor>(DescriptorHandle<T> hand
 			if (loaded == _bindlessModule.get() || !DeclaresBindlessOverride(loaded->getModuleReflection()))
 				continue;
 			return fmt::format(
-			        "Module '{}' defines '{}', but Mythril already provides it and a second definition would be silently ignored. Remove it from your shader.",
-			        loaded->getFilePath() ? loaded->getFilePath() : loaded->getName(),
-			        kBindlessFunctionName
-			);
+				"Module '{}' defines '{}', but Mythril already provides it and a second definition would be silently ignored. Remove it from your shader.",
+				loaded->getFilePath() ? loaded->getFilePath() : loaded->getName(),
+				kBindlessFunctionName);
 		}
 		return {};
 	}
@@ -125,12 +124,11 @@ export T getDescriptorFromHandle<T : IOpaqueDescriptor>(DescriptorHandle<T> hand
 		slang_module = this->_slangSession->loadModule(filepath.string().c_str(), diagnostics_blob.writeRef());
 		if (!slang_module) {
 			diagnostics = fmt::format(
-			        "--------------------------- FILE: -------------------------- \n'{}'\n -------------------------- SEARCH_PATHS: -------------------------- \n{} -------------------------- ERROR: -------------------------- \nSlang failed to load module, this might happen for a bunch of different reasons like filepath couldnt be found or the shader is "
-			        "invalid.\nDiagnostics Below:\n{}",
-			        filepath.string(),
-			        JoinActiveSearchPathsLog(this->_shaderSearchPaths),
-			        BlobText(diagnostics_blob)
-			);
+				"--------------------------- FILE: -------------------------- \n'{}'\n -------------------------- SEARCH_PATHS: -------------------------- \n{} -------------------------- ERROR: -------------------------- \nSlang failed to load module, this might happen for a bunch of different reasons like filepath couldnt be found or the shader is "
+				"invalid.\nDiagnostics Below:\n{}",
+				filepath.string(),
+				JoinActiveSearchPathsLog(this->_shaderSearchPaths),
+				BlobText(diagnostics_blob));
 			return nullptr;
 		}
 		std::string warnings = BlobText(diagnostics_blob);
@@ -153,8 +151,7 @@ export T getDescriptorFromHandle<T : IOpaqueDescriptor>(DescriptorHandle<T> hand
 
 		Slang::ComPtr<slang::IComponentType> composed_program;
 		const SlangResult module_result = this->_slangSession->createCompositeComponentType(
-		        reinterpret_cast<slang::IComponentType**>(componentTypes.data()), static_cast<int>(componentTypes.size()), composed_program.writeRef(), diagnostics_blob.writeRef()
-		);
+			reinterpret_cast<slang::IComponentType**>(componentTypes.data()), static_cast<int>(componentTypes.size()), composed_program.writeRef(), diagnostics_blob.writeRef());
 		if (SLANG_FAILED(module_result)) {
 			diagnostics = fmt::format("Composition failed! Diagnostics Below:\n{}", BlobText(diagnostics_blob));
 			return nullptr;
@@ -199,7 +196,7 @@ export T getDescriptorFromHandle<T : IOpaqueDescriptor>(DescriptorHandle<T> hand
 			slang::TypeReflection* type = variable->getType();
 			int64_t value = 0;
 			if (!variable->findModifier(slang::Modifier::Static) || !variable->findModifier(slang::Modifier::Const) || type->getKind() != slang::TypeReflection::Kind::Scalar ||
-			    !variable->hasDefaultValue() || SLANG_FAILED(variable->getDefaultValueInt(&value)))
+				!variable->hasDefaultValue() || SLANG_FAILED(variable->getDefaultValueInt(&value)))
 				continue;
 			const auto scalar = type->getScalarType();
 			if (scalar == slang::TypeReflection::ScalarType::Int32 || scalar == slang::TypeReflection::ScalarType::UInt32)

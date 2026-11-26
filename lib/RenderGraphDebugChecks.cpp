@@ -67,7 +67,8 @@ namespace mythril {
 				if (!isNew("repeated buffer " + desc.name + " " + std::string(name)))
 					continue;
 				const bool readWrite = count(BufferAccess::ShaderReadWrite) || (count(BufferAccess::ShaderRead) && count(BufferAccess::ShaderWrite));
-				const char* merged = readWrite ? "ShaderReadWrite" : count(BufferAccess::ShaderRead) ? "ShaderRead" : "ShaderWrite";
+				const char* merged = readWrite ? "ShaderReadWrite" : count(BufferAccess::ShaderRead) ? "ShaderRead"
+				                                                                                     : "ShaderWrite";
 				if (shader >= 2)
 					LOG_PASS(LogType::Suggestion, desc, "Declares buffer '{}' {} times with shader access. Declare it once as {}.", name, shader, merged);
 				else
@@ -80,7 +81,7 @@ namespace mythril {
 				if (attachment.loadOp == LoadOp::LOAD && VersionOf(texture) == 0 && isNew("undefined load " + desc.name + " " + std::string(nameOf(texture))))
 					LOG_PASS(LogType::Suggestion, desc, "Loads graph texture '{}' before any pass writes it this frame. Use LoadOp::CLEAR or LoadOp::DONT_CARE.", nameOf(texture));
 				if (attachment.storeOp == StoreOp::STORE && !attachment.resolveTexDesc.has_value() && !consumedTextureVersions.contains(versionKey(IdOf(texture), VersionOf(texture) + 1)) &&
-				    isNew("unread store " + desc.name + " " + std::string(nameOf(texture))))
+					isNew("unread store " + desc.name + " " + std::string(nameOf(texture))))
 					LOG_PASS(LogType::Suggestion, desc, "Stores graph texture '{}' but no pass reads what it writes. Use StoreOp::DONT_CARE, which also allows memoryless.", nameOf(texture));
 			}
 			for (const TransferOp& op: desc.transferOps) {

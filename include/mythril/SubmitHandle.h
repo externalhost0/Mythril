@@ -9,7 +9,7 @@
 namespace mythril {
 	struct SubmitHandle {
 		SubmitHandle() = default;
-		//explicit SubmitHandle(uint64_t handle) :
+		// explicit SubmitHandle(uint64_t handle) :
 		//    bufferIndex_(static_cast<uint32_t>(handle & 0xffffffff)),
 		//    submitId_(static_cast<uint32_t>(handle >> 32)) {
 		//	ASSERT_MSG(submitId_, "Submit handle is invalid!");

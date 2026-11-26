@@ -151,19 +151,19 @@ namespace mythril {
 			if (std::ranges::find(visiting, name) != visiting.end())
 				return;
 			ReflectedStruct type = {
-			    .name = name,
-			    .size = static_cast<uint32_t>(layout->getSize()),
-			    .stride = static_cast<uint32_t>(layout->getStride()),
-			    .alignment = static_cast<uint32_t>(layout->getAlignment()),
+				.name = name,
+				.size = static_cast<uint32_t>(layout->getSize()),
+				.stride = static_cast<uint32_t>(layout->getStride()),
+				.alignment = static_cast<uint32_t>(layout->getAlignment()),
 			};
 			visiting.push_back(name);
 			for (unsigned i = 0; i < layout->getFieldCount(); ++i) {
 				slang::VariableLayoutReflection* field = layout->getFieldByIndex(i);
 				type.fields.push_back({
-				    .name = field->getName(),
-				    .offset = static_cast<uint32_t>(field->getOffset()),
-				    .size = static_cast<uint32_t>(field->getTypeLayout()->getSize()),
-				    .type = classify(field->getTypeLayout(), field->getVariable()->getType()),
+					.name = field->getName(),
+					.offset = static_cast<uint32_t>(field->getOffset()),
+					.size = static_cast<uint32_t>(field->getTypeLayout()->getSize()),
+					.type = classify(field->getTypeLayout(), field->getVariable()->getType()),
 				});
 			}
 			visiting.pop_back();
@@ -266,7 +266,10 @@ namespace mythril {
 	namespace {
 		class SpirvComparison {
 		public:
-			SpirvComparison(const ReflectedTypes& types, const SpirvLayout& spirv, std::vector<std::string>& errors) : _types(types), _spirv(spirv), _errors(errors) {}
+			SpirvComparison(const ReflectedTypes& types, const SpirvLayout& spirv, std::vector<std::string>& errors) :
+				_types(types),
+				_spirv(spirv),
+				_errors(errors) {}
 
 			void compareStruct(const ReflectedStruct& type, const uint32_t id) {
 				if (!_compared.insert(id).second || HasUnsizedArray(type))

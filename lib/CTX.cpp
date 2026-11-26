@@ -148,21 +148,19 @@ namespace mythril {
 			// now take the pattern and create the first texture
 			// fallback texture, index 0
 			this->_dummyTexture = this->createTexture(
-			        {.dimension = {texWidth, texHeight},
-			         .format = VK_FORMAT_R8G8B8A8_UNORM,
-			         .usage = TextureUsageBits::TextureUsageBits_Sampled | TextureUsageBits::TextureUsageBits_Storage,
-			         .initialData = pixels,
-			         .debugName = "Internal_Dummy_Texture"}
-			);
+				{.dimension = {texWidth, texHeight},
+					.format = VK_FORMAT_R8G8B8A8_UNORM,
+					.usage = TextureUsageBits::TextureUsageBits_Sampled | TextureUsageBits::TextureUsageBits_Storage,
+					.initialData = pixels,
+					.debugName = "Internal_Dummy_Texture"});
 			// fallback sampler, index 0
 			this->_dummyLinearSampler = this->createSampler(
-			        {.magFilter = SamplerFilter::Linear,
-			         .minFilter = SamplerFilter::Linear,
-			         .wrapU = SamplerWrap::ClampEdge,
-			         .wrapV = SamplerWrap::ClampEdge,
-			         .wrapW = SamplerWrap::ClampEdge,
-			         .debugName = "Internal_Linear_Sampler"}
-			);
+				{.magFilter = SamplerFilter::Linear,
+					.minFilter = SamplerFilter::Linear,
+					.wrapU = SamplerWrap::ClampEdge,
+					.wrapV = SamplerWrap::ClampEdge,
+					.wrapW = SamplerWrap::ClampEdge,
+					.debugName = "Internal_Linear_Sampler"});
 			// initial descriptor pool creation
 			this->growBindlessDescriptorPoolImpl(this->_currentMaxSamplerCount, this->_currentMaxTextureCount);
 		}
@@ -290,11 +288,11 @@ namespace mythril {
 			return;
 		}
 		SwapchainSpec new_swapchain_spec = {
-				.width = lastSwapchainSpec.width,
-				.height = lastSwapchainSpec.height,
-				.format = lastSwapchainSpec.format,
-				.colorSpace = lastSwapchainSpec.colorSpace,
-				.presentMode = lastSwapchainSpec.presentMode,
+			.width = lastSwapchainSpec.width,
+			.height = lastSwapchainSpec.height,
+			.format = lastSwapchainSpec.format,
+			.colorSpace = lastSwapchainSpec.colorSpace,
+			.presentMode = lastSwapchainSpec.presentMode,
 		};
 		AssignIfValid(new_swapchain_spec.width, spec.width, static_cast<uint32_t>(0));
 		AssignIfValid(new_swapchain_spec.height, spec.height, static_cast<uint32_t>(0));
@@ -442,66 +440,66 @@ namespace mythril {
 		VkShaderStageFlags stage_flags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
 		if (isExtensionEnabled(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME)) {
 			stage_flags |= (VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR |
-						   VK_SHADER_STAGE_MISS_BIT_KHR | VK_SHADER_STAGE_INTERSECTION_BIT_KHR | VK_SHADER_STAGE_CALLABLE_BIT_KHR);
+							VK_SHADER_STAGE_MISS_BIT_KHR | VK_SHADER_STAGE_INTERSECTION_BIT_KHR | VK_SHADER_STAGE_CALLABLE_BIT_KHR);
 		}
 		const VkDescriptorSetLayoutBinding bindings[BindlessSpaceIndex::kNumOfBinds] = {
-		    // __DynamicResource<__DynamicResourceKind.Sampler>
-		    VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kSampler, VK_DESCRIPTOR_TYPE_SAMPLER, newMaxSamplerCount, stage_flags, nullptr),
-		    // __DynamicResource<__DynamicResourceKind.General>
-		    //				VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kCombinedImageSampler, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, newMaxTextureCount, stage_flags, nullptr),
-		    VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kSampledImage, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, newMaxTextureCount, stage_flags, nullptr),
-		    VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kStorageImage, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, newMaxTextureCount, stage_flags, nullptr),
-		    //				VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kUniformTexelBuffer, VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, newMaxTextureCount, stage_flags, nullptr),
-		    //				VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kStorageTexelBuffer, VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, newMaxTextureCount, stage_flags, nullptr),
-		    //				VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kUniformBuffer, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, newMaxTextureCount, stage_flags, nullptr),
-		    //				VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kStorageBuffer, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, newMaxTextureCount, stage_flags, nullptr),
+			// __DynamicResource<__DynamicResourceKind.Sampler>
+			VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kSampler, VK_DESCRIPTOR_TYPE_SAMPLER, newMaxSamplerCount, stage_flags, nullptr),
+			// __DynamicResource<__DynamicResourceKind.General>
+			//				VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kCombinedImageSampler, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, newMaxTextureCount, stage_flags, nullptr),
+			VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kSampledImage, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, newMaxTextureCount, stage_flags, nullptr),
+			VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kStorageImage, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, newMaxTextureCount, stage_flags, nullptr),
+			//				VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kUniformTexelBuffer, VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, newMaxTextureCount, stage_flags, nullptr),
+			//				VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kStorageTexelBuffer, VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, newMaxTextureCount, stage_flags, nullptr),
+			//				VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kUniformBuffer, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, newMaxTextureCount, stage_flags, nullptr),
+			//				VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kStorageBuffer, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, newMaxTextureCount, stage_flags, nullptr),
 		};
 		constexpr uint32_t dsbinding_flags = VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_UNUSED_WHILE_PENDING_BIT | VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT;
 		// assign each of our descriptors the same flags
 		VkDescriptorBindingFlags bindingFlags[BindlessSpaceIndex::kNumOfBinds];
-		for (VkDescriptorBindingFlags& bindingFlag : bindingFlags) {
+		for (VkDescriptorBindingFlags& bindingFlag: bindingFlags) {
 			bindingFlag = dsbinding_flags;
 		}
 		const VkDescriptorSetLayoutBindingFlagsCreateInfo dsl_bf_ci = {
-		    .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO,
-		    .bindingCount = BindlessSpaceIndex::kNumOfBinds,
-		    .pBindingFlags = bindingFlags,
+			.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO,
+			.bindingCount = BindlessSpaceIndex::kNumOfBinds,
+			.pBindingFlags = bindingFlags,
 		};
 		const VkDescriptorSetLayoutCreateInfo dsl_ci = {
-		    .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-		    .pNext = &dsl_bf_ci,
-		    .flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT,
-		    .bindingCount = BindlessSpaceIndex::kNumOfBinds,
-		    .pBindings = bindings,
+			.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+			.pNext = &dsl_bf_ci,
+			.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT,
+			.bindingCount = BindlessSpaceIndex::kNumOfBinds,
+			.pBindings = bindings,
 		};
 		VK_CHECK(vkCreateDescriptorSetLayout(_vkDevice, &dsl_ci, nullptr, &_vkBindlessDSL));
 		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT, reinterpret_cast<uint64_t>(_vkBindlessDSL), "Mythril's Bindless Descriptor SetLayout");
 
 		// always just have as max possible length
 		VkDescriptorPoolSize poolSizes[BindlessSpaceIndex::kNumOfBinds]{
-		    VkDescriptorPoolSize(VK_DESCRIPTOR_TYPE_SAMPLER, newMaxSamplerCount),
-		    //			VkDescriptorPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, newMaxTextureCount),
-		    VkDescriptorPoolSize(VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, newMaxTextureCount),
-		    VkDescriptorPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, newMaxTextureCount),
-		    //			VkDescriptorPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, newMaxTextureCount),
-		    //			VkDescriptorPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, newMaxTextureCount),
-		    //			VkDescriptorPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, newMaxTextureCount),
-		    //			VkDescriptorPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, newMaxTextureCount),
+			VkDescriptorPoolSize(VK_DESCRIPTOR_TYPE_SAMPLER, newMaxSamplerCount),
+			//			VkDescriptorPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, newMaxTextureCount),
+			VkDescriptorPoolSize(VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, newMaxTextureCount),
+			VkDescriptorPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, newMaxTextureCount),
+			//			VkDescriptorPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, newMaxTextureCount),
+			//			VkDescriptorPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, newMaxTextureCount),
+			//			VkDescriptorPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, newMaxTextureCount),
+			//			VkDescriptorPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, newMaxTextureCount),
 		};
 		const VkDescriptorPoolCreateInfo dp_ci = {
-		    .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-		    .flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT,
-		    .maxSets = 1,
-		    .poolSizeCount = BindlessSpaceIndex::kNumOfBinds,
-		    .pPoolSizes = poolSizes,
+			.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+			.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT,
+			.maxSets = 1,
+			.poolSizeCount = BindlessSpaceIndex::kNumOfBinds,
+			.pPoolSizes = poolSizes,
 		};
 		VK_CHECK(vkCreateDescriptorPool(_vkDevice, &dp_ci, nullptr, &_vkBindlessDPool));
 		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_DESCRIPTOR_POOL, reinterpret_cast<uint64_t>(_vkBindlessDPool), "Mythril's Bindless Descriptor Pool");
 		const VkDescriptorSetAllocateInfo ds_ai = {
-		    .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-		    .descriptorPool = _vkBindlessDPool,
-		    .descriptorSetCount = 1,
-		    .pSetLayouts = &_vkBindlessDSL,
+			.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+			.descriptorPool = _vkBindlessDPool,
+			.descriptorSetCount = 1,
+			.pSetLayouts = &_vkBindlessDSL,
 		};
 		VK_CHECK(vkAllocateDescriptorSets(_vkDevice, &ds_ai, &_vkBindlessDSet));
 		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_DESCRIPTOR_SET, reinterpret_cast<uint64_t>(_vkBindlessDSet), "Mythril's Bindless Descriptor Set");
@@ -522,11 +520,11 @@ namespace mythril {
 
 	static VkPipelineLayout BuildPipelineLayout(VkDevice device, const std::vector<VkDescriptorSetLayout>& layouts, const std::vector<VkPushConstantRange>& ranges) {
 		const VkPipelineLayoutCreateInfo pipeline_layout_info = {
-		    .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-		    .setLayoutCount = static_cast<uint32_t>(layouts.size()),
-		    .pSetLayouts = layouts.data(),
-		    .pushConstantRangeCount = static_cast<uint32_t>(ranges.size()),
-		    .pPushConstantRanges = ranges.data(),
+			.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+			.setLayoutCount = static_cast<uint32_t>(layouts.size()),
+			.pSetLayouts = layouts.data(),
+			.pushConstantRangeCount = static_cast<uint32_t>(ranges.size()),
+			.pPushConstantRanges = ranges.data(),
 		};
 		VkPipelineLayout plLayout = VK_NULL_HANDLE;
 		VK_CHECK(vkCreatePipelineLayout(device, &pipeline_layout_info, nullptr, &plLayout));
@@ -661,13 +659,13 @@ namespace mythril {
 		const std::unique_ptr<SpecializationInfoBundle> spec_constants_bundle = BuildSpecializationInfoBundle(spec.specConstants, sc_count, shader->_specializationInfo);
 
 		VkPipelineShaderStageCreateInfo shader_stage_ci = {
-		    .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-		    .pNext = nullptr,
-		    .flags = 0,
-		    .stage = VK_SHADER_STAGE_COMPUTE_BIT,
-		    .module = shader->_vkShaderModule,
-		    .pName = kComputeEntryPoint,
-		    .pSpecializationInfo = spec_constants_bundle ? &spec_constants_bundle->vkInfo : nullptr,
+			.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+			.pNext = nullptr,
+			.flags = 0,
+			.stage = VK_SHADER_STAGE_COMPUTE_BIT,
+			.module = shader->_vkShaderModule,
+			.pName = kComputeEntryPoint,
+			.pSpecializationInfo = spec_constants_bundle ? &spec_constants_bundle->vkInfo : nullptr,
 		};
 		VkComputePipelineCreateInfo pipeline_ci = {.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO, .pNext = nullptr, .flags = 0, .stage = shader_stage_ci, .layout = layout};
 
@@ -697,9 +695,9 @@ namespace mythril {
 		// a single hit group can have up to 3 shader stages: source lvkweight said so
 		const size_t kMaxRayTracingShaderStages =
 			spec.rayGenShaders.size() +
-				spec.missShaders.size() +
-					spec.callableShader.size() +
-						3 * spec.closestHitShaders.size();
+			spec.missShaders.size() +
+			spec.callableShader.size() +
+			3 * spec.closestHitShaders.size();
 
 		std::vector<VkPipelineShaderStageCreateInfo> createInfoShaderStages(kMaxRayTracingShaderStages);
 		// pSpecializationInfo points into these, so they must outlive vkCreateRayTracingPipelinesKHR
@@ -720,21 +718,20 @@ namespace mythril {
 				.stage = stageFlag,
 				.module = shader->_vkShaderModule,
 				.pName = shaderStage.entryPoint,
-				.pSpecializationInfo = bundle ? &bundle->vkInfo : nullptr
-			};
+				.pSpecializationInfo = bundle ? &bundle->vkInfo : nullptr};
 			return numShaderStages++;
 		};
 
 
 		const uint32_t kMaxShaderGroups =
 			spec.rayGenShaders.size() +
-				spec.missShaders.size() +
-					spec.callableShader.size() +
-						spec.closestHitShaders.size();
+			spec.missShaders.size() +
+			spec.callableShader.size() +
+			spec.closestHitShaders.size();
 		// we can safely index into it
 		std::vector<VkRayTracingShaderGroupCreateInfoKHR> shaderGroups(kMaxShaderGroups);
 
-		for (auto& raygenShader : spec.rayGenShaders) {
+		for (auto& raygenShader: spec.rayGenShaders) {
 			if (const auto shader = _shaderPool.get(raygenShader.handle)) {
 				shaderGroups[numShaderGroups++] = {
 					.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR,
@@ -742,11 +739,10 @@ namespace mythril {
 					.generalShader = addStage(VK_SHADER_STAGE_RAYGEN_BIT_KHR, raygenShader),
 					.closestHitShader = VK_SHADER_UNUSED_KHR,
 					.anyHitShader = VK_SHADER_UNUSED_KHR,
-					.intersectionShader = VK_SHADER_UNUSED_KHR
-				};
+					.intersectionShader = VK_SHADER_UNUSED_KHR};
 			}
 		}
-		for (auto& missShader : spec.missShaders) {
+		for (auto& missShader: spec.missShaders) {
 			if (const auto shader = _shaderPool.get(missShader.handle)) {
 				numMissGroups++;
 				shaderGroups[numShaderGroups++] = {
@@ -755,11 +751,10 @@ namespace mythril {
 					.generalShader = addStage(VK_SHADER_STAGE_MISS_BIT_KHR, missShader),
 					.closestHitShader = VK_SHADER_UNUSED_KHR,
 					.anyHitShader = VK_SHADER_UNUSED_KHR,
-					.intersectionShader = VK_SHADER_UNUSED_KHR
-				};
+					.intersectionShader = VK_SHADER_UNUSED_KHR};
 			}
 		}
-		for (auto& closestHitShader : spec.closestHitShaders) {
+		for (auto& closestHitShader: spec.closestHitShaders) {
 			if (const auto shader = _shaderPool.get(closestHitShader.handle)) {
 				numHitGroups++;
 				shaderGroups[numShaderGroups++] = {
@@ -768,11 +763,10 @@ namespace mythril {
 					.generalShader = VK_SHADER_UNUSED_KHR,
 					.closestHitShader = addStage(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, closestHitShader),
 					.anyHitShader = VK_SHADER_UNUSED_KHR,
-					.intersectionShader = VK_SHADER_UNUSED_KHR
-				};
+					.intersectionShader = VK_SHADER_UNUSED_KHR};
 			}
 		}
-		for (auto& callableShader : spec.callableShader) {
+		for (auto& callableShader: spec.callableShader) {
 			if (const auto shader = _shaderPool.get(callableShader.handle)) {
 				numCallableGroups++;
 				shaderGroups[numShaderGroups++] = {
@@ -781,8 +775,7 @@ namespace mythril {
 					.generalShader = addStage(VK_SHADER_STAGE_CALLABLE_BIT_KHR, callableShader),
 					.closestHitShader = VK_SHADER_UNUSED_KHR,
 					.anyHitShader = VK_SHADER_UNUSED_KHR,
-					.intersectionShader = VK_SHADER_UNUSED_KHR
-				};
+					.intersectionShader = VK_SHADER_UNUSED_KHR};
 			}
 		}
 
@@ -793,8 +786,7 @@ namespace mythril {
 		const VkPipelineDynamicStateCreateInfo ciDynamicState = {
 			.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
 			.dynamicStateCount = 1,
-			.pDynamicStates = &dynamicState
-		};
+			.pDynamicStates = &dynamicState};
 		const VkRayTracingPipelineCreateInfoKHR pipeline_ci = {
 			.sType = VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR,
 			.pNext = nullptr,
@@ -805,8 +797,7 @@ namespace mythril {
 			.pGroups = shaderGroups.data(),
 			.maxPipelineRayRecursionDepth = depth ? std::min(depth, maxDepth) : maxDepth,
 			.pDynamicState = spec.stackSize ? &ciDynamicState : nullptr,
-			.layout = layout
-		};
+			.layout = layout};
 		VkPipeline vk_pipeline = VK_NULL_HANDLE;
 		VK_CHECK(vkCreateRayTracingPipelinesKHR(_vkDevice, nullptr, nullptr, 1, &pipeline_ci, nullptr, &vk_pipeline));
 
@@ -848,8 +839,8 @@ namespace mythril {
 
 		// shader signature collection
 		std::vector<PipelineLayoutSignature> pipeline_layout_signatures = {};
-		for (const std::vector<ShaderStage>* stages : {&spec.rayGenShaders, &spec.missShaders, &spec.closestHitShaders, &spec.callableShader}) {
-			for (const ShaderStage& stage : *stages) {
+		for (const std::vector<ShaderStage>* stages: {&spec.rayGenShaders, &spec.missShaders, &spec.closestHitShaders, &spec.callableShader}) {
+			for (const ShaderStage& stage: *stages) {
 				if (!stage.valid())
 					continue;
 				AllocatedShader* shader = _shaderPool.get(stage.handle);
@@ -912,12 +903,10 @@ namespace mythril {
 		std::vector<uint8_t> table(raygenSize + missSize + hitSize + callableSize + baseAlignment, 0);
 		char buffer_name[128];
 		snprintf(buffer_name, sizeof(buffer_name), "SBT - %s", spec.debugName);
-		pipeline._sbtBuffer = this->createBuffer({
-			.size = table.size(),
+		pipeline._sbtBuffer = this->createBuffer({.size = table.size(),
 			.usage = BufferUsageBits_ShaderBindingTable,
 			.storage = StorageType::HostVisible,
-			.debugName = buffer_name
-		});
+			.debugName = buffer_name});
 		const VkDeviceAddress bufferAddress = gpuAddress(pipeline._sbtBuffer.handle());
 		const VkDeviceAddress raygenAddress = getAlignedAddress(bufferAddress, baseAlignment);
 		const VkDeviceSize baseOffset = raygenAddress - bufferAddress;
@@ -1039,33 +1028,32 @@ namespace mythril {
 			reduction_ci = {
 				.sType = VK_STRUCTURE_TYPE_SAMPLER_REDUCTION_MODE_CREATE_INFO,
 				.pNext = nullptr,
-				.reductionMode = toVulkan(spec.reduction)
-			};
+				.reductionMode = toVulkan(spec.reduction)};
 		}
 		VkSamplerCreateInfo ci = {
-		    .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
-		    .pNext = usesReduction ? &reduction_ci : nullptr,
-		    .flags = 0,
+			.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+			.pNext = usesReduction ? &reduction_ci : nullptr,
+			.flags = 0,
 
-		    .magFilter = toVulkan(spec.magFilter),
-		    .minFilter = toVulkan(spec.minFilter),
-		    .mipmapMode = toVulkan(spec.mipMap),
-		    .addressModeU = toVulkan(spec.wrapU),
-		    .addressModeV = toVulkan(spec.wrapV),
-		    .addressModeW = toVulkan(spec.wrapW),
+			.magFilter = toVulkan(spec.magFilter),
+			.minFilter = toVulkan(spec.minFilter),
+			.mipmapMode = toVulkan(spec.mipMap),
+			.addressModeU = toVulkan(spec.wrapU),
+			.addressModeV = toVulkan(spec.wrapV),
+			.addressModeW = toVulkan(spec.wrapW),
 
-		    .mipLodBias = 0.f,
-		    .anisotropyEnable = spec.anisotropic ? VK_TRUE : VK_FALSE,
-		    .maxAnisotropy = static_cast<float>(spec.maxAnisotropic),
+			.mipLodBias = 0.f,
+			.anisotropyEnable = spec.anisotropic ? VK_TRUE : VK_FALSE,
+			.maxAnisotropy = static_cast<float>(spec.maxAnisotropic),
 
-		    .compareEnable = spec.depthCompareEnabled ? VK_TRUE : VK_FALSE,
-		    .compareOp = spec.depthCompareEnabled ? toVulkan(spec.depthCompareOp) : VK_COMPARE_OP_ALWAYS,
+			.compareEnable = spec.depthCompareEnabled ? VK_TRUE : VK_FALSE,
+			.compareOp = spec.depthCompareEnabled ? toVulkan(spec.depthCompareOp) : VK_COMPARE_OP_ALWAYS,
 
-		    .minLod = static_cast<float>(spec.mipLodMin),
-		    .maxLod = (spec.mipMap == SamplerMipMap::Disabled) ? static_cast<float>(spec.mipLodMin) : static_cast<float>(spec.mipLodMax),
+			.minLod = static_cast<float>(spec.mipLodMin),
+			.maxLod = (spec.mipMap == SamplerMipMap::Disabled) ? static_cast<float>(spec.mipLodMin) : static_cast<float>(spec.mipLodMax),
 
-		    .borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK,
-		    .unnormalizedCoordinates = VK_FALSE,
+			.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK,
+			.unnormalizedCoordinates = VK_FALSE,
 		};
 		auto a = this->getPhysicalDeviceProperties10();
 
@@ -1104,12 +1092,12 @@ namespace mythril {
 		}
 
 		const VkQueryPoolCreateInfo info = {
-		    .sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
-		    .pNext = nullptr,
-		    .flags = 0,
-		    .queryType = VK_QUERY_TYPE_TIMESTAMP,
-		    .queryCount = spec.count,
-		    .pipelineStatistics = 0,
+			.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
+			.pNext = nullptr,
+			.flags = 0,
+			.queryType = VK_QUERY_TYPE_TIMESTAMP,
+			.queryCount = spec.count,
+			.pipelineStatistics = 0,
 		};
 		AllocatedQueryPool obj = {};
 		VK_CHECK(vkCreateQueryPool(_vkDevice, &info, nullptr, &obj._vkQueryPool));
@@ -1130,7 +1118,7 @@ namespace mythril {
 		const VkResult result = vkGetQueryPoolResults(_vkDevice, pool._vkQueryPool, first, count, outTicks.size_bytes(), outTicks.data(), sizeof(uint64_t), VK_QUERY_RESULT_64_BIT);
 		if (result == VK_NOT_READY)
 			return false;
-		for (uint64_t& ticks : outTicks)
+		for (uint64_t& ticks: outTicks)
 			ticks &= pool._validBitsMask;
 		return true;
 	}
@@ -1167,22 +1155,22 @@ namespace mythril {
 
 		const QueueFamilies families = queueFamiliesInUse();
 		const VkBufferCreateInfo buffer_ci = {
-		    .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-		    .pNext = nullptr,
-		    .flags = 0,
-		    .size = bufferSize,
-		    .usage = usageFlags,
-		    .sharingMode = families.count > 1 ? VK_SHARING_MODE_CONCURRENT : VK_SHARING_MODE_EXCLUSIVE,
-		    .queueFamilyIndexCount = families.count > 1 ? families.count : 0,
-		    .pQueueFamilyIndices = families.count > 1 ? families.indices.data() : nullptr,
+			.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+			.pNext = nullptr,
+			.flags = 0,
+			.size = bufferSize,
+			.usage = usageFlags,
+			.sharingMode = families.count > 1 ? VK_SHARING_MODE_CONCURRENT : VK_SHARING_MODE_EXCLUSIVE,
+			.queueFamilyIndexCount = families.count > 1 ? families.count : 0,
+			.pQueueFamilyIndices = families.count > 1 ? families.indices.data() : nullptr,
 		};
 		VmaAllocationCreateInfo vmaAllocInfo = {};
 
 		if (memFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
 			vmaAllocInfo = {
-			    .flags = VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT,
-			    .requiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
-			    .preferredFlags = VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT,
+				.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT,
+				.requiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+				.preferredFlags = VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT,
 			};
 		}
 		vmaAllocInfo.usage = VMA_MEMORY_USAGE_AUTO;
@@ -1200,8 +1188,8 @@ namespace mythril {
 		// shader access
 		if (usageFlags & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) {
 			const VkBufferDeviceAddressInfo buffer_device_ai = {
-			    .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
-			    .buffer = obj._vkBuffer,
+				.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
+				.buffer = obj._vkBuffer,
 			};
 			obj._vkDeviceAddress = vkGetBufferDeviceAddress(_vkDevice, &buffer_device_ai);
 			ASSERT_MSG(obj._vkDeviceAddress, "Buffer device address is zero after creation!");
@@ -1276,19 +1264,18 @@ namespace mythril {
 
 		const VkExtent3D extent3D = {newDimensions.width, newDimensions.height, newDimensions.depth};
 		AllocatedTexture newImage = this->createTextureImpl(
-		        image->_vkUsageFlags,
-		        image->_vkMemoryPropertyFlags,
-		        extent3D,
-		        image->_vkFormat,
-		        image->_vkImageType,
-		        image->_vkImageViewType,
-		        image->_numLevels,
-		        image->_numLayers,
-		        image->getVkSampleCountBits(),
-		        image->_vkComponentMappings,
-		        createFlags,
-		        image->_concurrent
-		);
+			image->_vkUsageFlags,
+			image->_vkMemoryPropertyFlags,
+			extent3D,
+			image->_vkFormat,
+			image->_vkImageType,
+			image->_vkImageViewType,
+			image->_numLevels,
+			image->_numLayers,
+			image->getVkSampleCountBits(),
+			image->_vkComponentMappings,
+			createFlags,
+			image->_concurrent);
 		vmaSetAllocationName(_vmaAllocator, newImage._vmaAllocation, newImage._debugName);
 		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_IMAGE, reinterpret_cast<uint64_t>(newImage._vkImage), image->getDebugName().data());
 #ifdef MYTH_ENABLED_IMGUI
@@ -1446,13 +1433,13 @@ namespace mythril {
 	}
 	void CTX::createTextureViewObjectsImpl(AllocatedTexture& view, const VkImageSubresourceRange& range) {
 		VkImageViewCreateInfo image_view_ci = {
-		    .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-		    .pNext = nullptr,
-		    .image = view._vkImage,
-		    .viewType = view._vkImageViewType,
-		    .format = view._vkFormat,
-		    .components = view._vkComponentMappings,
-		    .subresourceRange = range,
+			.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+			.pNext = nullptr,
+			.image = view._vkImage,
+			.viewType = view._vkImageViewType,
+			.format = view._vkFormat,
+			.components = view._vkComponentMappings,
+			.subresourceRange = range,
 		};
 		VK_CHECK(vkCreateImageView(_vkDevice, &image_view_ci, nullptr, &view._vkImageView));
 		if (view._vkUsageFlags & VK_IMAGE_USAGE_STORAGE_BIT && !vkutil::IsComponentMappingAnIdentity(view._vkComponentMappings)) {
@@ -1462,19 +1449,18 @@ namespace mythril {
 		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_IMAGE_VIEW, reinterpret_cast<uint64_t>(view._vkImageView), view.getDebugName().data());
 	}
 	AllocatedTexture CTX::createTextureImpl(
-	        VkImageUsageFlags usageFlags,
-	        VkMemoryPropertyFlags memFlags,
-	        VkExtent3D extent3D,
-	        VkFormat format,
-	        VkImageType imageType,
-	        VkImageViewType imageViewType,
-	        uint32_t numLevels,
-	        uint32_t numLayers,
-	        VkSampleCountFlagBits sampleCountFlagBits,
-	        VkComponentMapping componentMapping,
-	        VkImageCreateFlags createFlags,
-	        const bool requestConcurrent
-	) {
+		VkImageUsageFlags usageFlags,
+		VkMemoryPropertyFlags memFlags,
+		VkExtent3D extent3D,
+		VkFormat format,
+		VkImageType imageType,
+		VkImageViewType imageViewType,
+		uint32_t numLevels,
+		uint32_t numLayers,
+		VkSampleCountFlagBits sampleCountFlagBits,
+		VkComponentMapping componentMapping,
+		VkImageCreateFlags createFlags,
+		const bool requestConcurrent) {
 		ASSERT_MSG(numLevels > 0, "The texture must contain at least one mip-level!");
 		ASSERT_MSG(numLayers > 0, "The texture must contain at least one layer!");
 		ASSERT_MSG(extent3D.width > 0, "The texture must have a width greater than 0!");
@@ -1485,22 +1471,22 @@ namespace mythril {
 		const QueueFamilies families = queueFamiliesInUse();
 		const bool concurrent = families.count > 1 && (requestConcurrent || !NeedsOwnershipTransfer(usageFlags));
 		VkImageCreateInfo image_ci = {
-		    .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-		    .pNext = nullptr,
+			.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+			.pNext = nullptr,
 
-		    .flags = createFlags,
-		    .imageType = imageType,
-		    .format = format,
-		    .extent = extent3D,
-		    .mipLevels = numLevels,
-		    .arrayLayers = numLayers,
-		    .samples = sampleCountFlagBits,
-		    .tiling = VK_IMAGE_TILING_OPTIMAL,
-		    .usage = usageFlags,
-		    .sharingMode = concurrent ? VK_SHARING_MODE_CONCURRENT : VK_SHARING_MODE_EXCLUSIVE,
-		    .queueFamilyIndexCount = concurrent ? families.count : 0,
-		    .pQueueFamilyIndices = concurrent ? families.indices.data() : nullptr,
-		    .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+			.flags = createFlags,
+			.imageType = imageType,
+			.format = format,
+			.extent = extent3D,
+			.mipLevels = numLevels,
+			.arrayLayers = numLayers,
+			.samples = sampleCountFlagBits,
+			.tiling = VK_IMAGE_TILING_OPTIMAL,
+			.usage = usageFlags,
+			.sharingMode = concurrent ? VK_SHARING_MODE_CONCURRENT : VK_SHARING_MODE_EXCLUSIVE,
+			.queueFamilyIndexCount = concurrent ? families.count : 0,
+			.pQueueFamilyIndices = concurrent ? families.indices.data() : nullptr,
+			.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
 		};
 
 		VmaAllocationCreateInfo allocation_ci = {};
@@ -1529,18 +1515,16 @@ namespace mythril {
 		obj._vkFormatProperties = format_props2.formatProperties;
 
 		const VkPhysicalDeviceImageFormatInfo2 info = {
-		    .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_FORMAT_INFO_2, .format = obj.getFormat(), .type = obj.getType(), .usage = obj._vkUsageFlags, .flags = createFlags
-		};
+			.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_FORMAT_INFO_2, .format = obj.getFormat(), .type = obj.getType(), .usage = obj._vkUsageFlags, .flags = createFlags};
 		VkImageFormatProperties2 props = {
-		    .sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2,
+			.sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2,
 		};
 		VK_CHECK(vkGetPhysicalDeviceImageFormatProperties2(_vkPhysicalDevice, &info, &props));
 		ASSERT_MSG(
-		        props.imageFormatProperties.maxMipLevels >= obj._numLevels,
-		        "Requested image exceeds maxMipLevels, requested '{}', cannot be greater than '{}'",
-		        obj._numLevels,
-		        props.imageFormatProperties.maxMipLevels
-		);
+			props.imageFormatProperties.maxMipLevels >= obj._numLevels,
+			"Requested image exceeds maxMipLevels, requested '{}', cannot be greater than '{}'",
+			obj._numLevels,
+			props.imageFormatProperties.maxMipLevels);
 
 
 		// if memory is manually managed on host
@@ -1550,13 +1534,13 @@ namespace mythril {
 		// create image views
 		const VkImageAspectFlags aspectMask = vkutil::AspectMaskFromFormat(obj._vkFormat);
 		VkImageViewCreateInfo image_view_ci = {
-		    .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-		    .flags = 0,
-		    .image = obj._vkImage,
-		    .viewType = obj._vkImageViewType,
-		    .format = format,
-		    .components = componentMapping,
-		    .subresourceRange = {.aspectMask = aspectMask, .baseMipLevel = 0, .levelCount = numLevels, .baseArrayLayer = 0, .layerCount = numLayers},
+			.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+			.flags = 0,
+			.image = obj._vkImage,
+			.viewType = obj._vkImageViewType,
+			.format = format,
+			.components = componentMapping,
+			.subresourceRange = {.aspectMask = aspectMask, .baseMipLevel = 0, .levelCount = numLevels, .baseArrayLayer = 0, .layerCount = numLayers},
 		};
 		VK_CHECK(vkCreateImageView(_vkDevice, &image_view_ci, nullptr, &obj._vkImageView));
 		if (obj._vkUsageFlags & VK_IMAGE_USAGE_STORAGE_BIT) {
@@ -1593,7 +1577,7 @@ namespace mythril {
 		obj._spec = spec;
 		snprintf(obj._shared.debugName, sizeof(obj._shared.debugName), "%s", spec.debugName);
 		RayTracingPipelineHandle handle = _rayTracingPipelinePool.create(std::move(obj));
-		return { this, handle };
+		return {this, handle};
 	}
 
 	// ReSharper disable once CppNotAllPathsReturnValue
@@ -1622,17 +1606,13 @@ namespace mythril {
 					VkAccelerationStructureGeometryTrianglesDataKHR{
 						.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR,
 						.vertexFormat = desc.geometry.vertexFormat,
-						.vertexData = { .deviceAddress = gpuAddress(desc.geometry.vertexBuffer) },
+						.vertexData = {.deviceAddress = gpuAddress(desc.geometry.vertexBuffer)},
 						.vertexStride = desc.geometry.vertexStride,
 						.maxVertex = desc.geometry.numVertices,
 						.indexType = desc.geometry.indexType,
-						.indexData = { .deviceAddress = gpuAddress(desc.geometry.indexBuffer) },
-						.transformData = { .deviceAddress = desc.geometry.transformBuffer.has_value() ? gpuAddress(desc.geometry.transformBuffer.value()).value : 0 }
-					}
-				}
-			},
-			.flags = desc.geometryFlags
-		};
+						.indexData = {.deviceAddress = gpuAddress(desc.geometry.indexBuffer)},
+						.transformData = {.deviceAddress = desc.geometry.transformBuffer.has_value() ? gpuAddress(desc.geometry.transformBuffer.value()).value : 0}}}},
+			.flags = desc.geometryFlags};
 		const VkAccelerationStructureBuildGeometryInfoKHR buildGeometryInfo = {
 			.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR,
 			.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR,
@@ -1642,8 +1622,7 @@ namespace mythril {
 		};
 		outBuildSizesInfo = {
 			.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR,
-			.pNext = nullptr
-		};
+			.pNext = nullptr};
 		vkGetAccelerationStructureBuildSizesKHR(_vkDevice, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildGeometryInfo, &desc.maxPrimitiveCount, &outBuildSizesInfo);
 		const uint32_t alignment = _accelerationStructureProperties.minAccelerationStructureScratchOffsetAlignment;
 		outBuildSizesInfo.accelerationStructureSize += alignment;
@@ -1662,10 +1641,7 @@ namespace mythril {
 					.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR,
 					.arrayOfPointers = VK_FALSE,
 					.data = {
-						.deviceAddress = _bufferPool.get(desc.instancesBuffer)->_vkDeviceAddress
-					}
-				}
-			},
+						.deviceAddress = _bufferPool.get(desc.instancesBuffer)->_vkDeviceAddress}}},
 			.flags = desc.geometryFlags,
 		};
 		const VkAccelerationStructureBuildGeometryInfoKHR buildGeometryInfo = {
@@ -1678,14 +1654,12 @@ namespace mythril {
 
 		outBuildSizesInfo = {
 			.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR,
-			.pNext = nullptr
-		};
+			.pNext = nullptr};
 		vkGetAccelerationStructureBuildSizesKHR(_vkDevice, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildGeometryInfo, &desc.maxPrimitiveCount, &outBuildSizesInfo);
 		const uint32_t alignment = _accelerationStructureProperties.minAccelerationStructureScratchOffsetAlignment;
 		outBuildSizesInfo.accelerationStructureSize += alignment;
 		outBuildSizesInfo.updateScratchSize += alignment;
 		outBuildSizesInfo.buildScratchSize += alignment;
-
 	}
 
 
@@ -1699,16 +1673,14 @@ namespace mythril {
 			.dstAccelerationStructure = structure._vkAccelerationStructure,
 			.geometryCount = 1,
 			.pGeometries = &structure._geometry,
-			.scratchData = { .deviceAddress =
-				getAlignedAddress(gpuAddress(structure._scratchBuffer.handle()), _accelerationStructureProperties.minAccelerationStructureScratchOffsetAlignment) }
-		};
+			.scratchData = {.deviceAddress =
+								getAlignedAddress(gpuAddress(structure._scratchBuffer.handle()), _accelerationStructureProperties.minAccelerationStructureScratchOffsetAlignment)}};
 		const AccelerationStructureSpec::BuildRange& range = structure._spec.buildRange;
 		const VkAccelerationStructureBuildRangeInfoKHR rangeInfo = {
 			.primitiveCount = range.primitiveCount,
 			.primitiveOffset = range.primitiveOffset,
 			.firstVertex = range.firstVertex,
-			.transformOffset = range.transformOffset
-		};
+			.transformOffset = range.transformOffset};
 		const VkAccelerationStructureBuildRangeInfoKHR* rangeInfos = &rangeInfo;
 		vkCmdBuildAccelerationStructuresKHR(cmd, 1, &buildGeometryInfo, &rangeInfos);
 	}
@@ -1732,20 +1704,21 @@ namespace mythril {
 			case AccelerationStructureSpec::Type::BLAS:
 				ASSERT_MSG(spec.geometryType == AccelerationStructureSpec::GeometryType::Triangle, "BLAS spec geometryType must be Triangle!");
 				getBLASBuildInfo({
-					.geometryType = GeometryTypeToVk(spec.geometryType),
-					.geometry = AccelerationStructureGeometry{
-						.vertexBuffer = spec.vertexBuffer,
-						.vertexStride = spec.vertexStride,
-						.vertexFormat = spec.vertexFormat,
-						.numVertices = spec.numVertices,
-						.indexBuffer = spec.indexBuffer,
-						.indexType = spec.indexType,
-						.transformBuffer = spec.transformBuffer,
-					},
-					.geometryFlags = spec.geometryFlags,
-					.maxPrimitiveCount = spec.buildRange.primitiveCount,
-					.buildFlags = spec.buildFlags,
-				}, sizes, obj._geometry);
+									 .geometryType = GeometryTypeToVk(spec.geometryType),
+									 .geometry = AccelerationStructureGeometry{
+										 .vertexBuffer = spec.vertexBuffer,
+										 .vertexStride = spec.vertexStride,
+										 .vertexFormat = spec.vertexFormat,
+										 .numVertices = spec.numVertices,
+										 .indexBuffer = spec.indexBuffer,
+										 .indexType = spec.indexType,
+										 .transformBuffer = spec.transformBuffer,
+									 },
+									 .geometryFlags = spec.geometryFlags,
+									 .maxPrimitiveCount = spec.buildRange.primitiveCount,
+									 .buildFlags = spec.buildFlags,
+								 },
+					sizes, obj._geometry);
 				break;
 			default:
 				UNREACHABLE("Invalid acceleration structure type choosen!");
@@ -1776,7 +1749,7 @@ namespace mythril {
 
 		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR, reinterpret_cast<uint64_t>(obj._vkAccelerationStructure), obj.getDebugName().data());
 		const AccelerationStructureHandle handle = _accelerationStructurePool.create(std::move(obj));
-		return { this, handle };
+		return {this, handle};
 	}
 
 	// functions that wrap around existing functions for AllocatedObjects
@@ -1818,10 +1791,10 @@ namespace mythril {
 		if (value == 0 || value > _currentFrameNumber)
 			return;
 		const VkSemaphoreWaitInfo waitInfo = {
-		    .sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
-		    .semaphoreCount = 1,
-		    .pSemaphores = &_timelineSemaphore,
-		    .pValues = &value,
+			.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
+			.semaphoreCount = 1,
+			.pSemaphores = &_timelineSemaphore,
+			.pValues = &value,
 		};
 		VK_CHECK(vkWaitSemaphores(_vkDevice, &waitInfo, UINT64_MAX));
 	}
@@ -1860,12 +1833,11 @@ namespace mythril {
 		// why is this here
 		if (image->_vkImageType == VK_IMAGE_TYPE_3D) {
 			_staging->imageData3D(
-			        *image, VkOffset3D{range.offset.x, range.offset.y, range.offset.z}, VkExtent3D{range.dimensions.width, range.dimensions.height, range.dimensions.depth}, image->_vkFormat, data.bytes
-			);
+				*image, VkOffset3D{range.offset.x, range.offset.y, range.offset.z}, VkExtent3D{range.dimensions.width, range.dimensions.height, range.dimensions.depth}, image->_vkFormat, data.bytes);
 		} else {
 			const VkRect2D image_region = {
-			    .offset = {.x = range.offset.x, .y = range.offset.y},
-			    .extent = {.width = range.dimensions.width, .height = range.dimensions.height},
+				.offset = {.x = range.offset.x, .y = range.offset.y},
+				.extent = {.width = range.dimensions.width, .height = range.dimensions.height},
 			};
 			_staging->imageData2D(*image, image_region, range.mipLevel, range.numMipLevels, range.layer, range.numLayers, image->_vkFormat, data.bytes);
 		}
@@ -1887,19 +1859,18 @@ namespace mythril {
 			return;
 		}
 		_staging->getImageData(
-		        *image,
-		        VkOffset3D{range.offset.x, range.offset.y, range.offset.z},
-		        VkExtent3D{range.dimensions.width, range.dimensions.height, range.dimensions.depth},
-		        VkImageSubresourceRange{
-		            .aspectMask = vkutil::AspectMaskFromFormat(image->_vkFormat),
-		            .baseMipLevel = range.mipLevel,
-		            .levelCount = range.numMipLevels,
-		            .baseArrayLayer = range.layer,
-		            .layerCount = range.numLayers,
-		        },
-		        image->_vkFormat,
-		        data
-		);
+			*image,
+			VkOffset3D{range.offset.x, range.offset.y, range.offset.z},
+			VkExtent3D{range.dimensions.width, range.dimensions.height, range.dimensions.depth},
+			VkImageSubresourceRange{
+				.aspectMask = vkutil::AspectMaskFromFormat(image->_vkFormat),
+				.baseMipLevel = range.mipLevel,
+				.levelCount = range.numMipLevels,
+				.baseArrayLayer = range.layer,
+				.layerCount = range.numLayers,
+			},
+			image->_vkFormat,
+			data);
 	}
 
 	CommandBuffer* CTX::acquireCommand(const bool presents) {
@@ -1909,10 +1880,10 @@ namespace mythril {
 		if (_currentFrameNumber >= kNUM_FRAMES_IN_FLIGHT) {
 			const uint64_t waitValue = _currentFrameNumber + 1 - kNUM_FRAMES_IN_FLIGHT;
 			const VkSemaphoreWaitInfo waitInfo = {
-			    .sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
-			    .semaphoreCount = 1,
-			    .pSemaphores = &_timelineSemaphore,
-			    .pValues = &waitValue,
+				.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
+				.semaphoreCount = 1,
+				.pSemaphores = &_timelineSemaphore,
+				.pValues = &waitValue,
 			};
 			VK_CHECK(vkWaitSemaphores(_vkDevice, &waitInfo, UINT64_MAX));
 		}
@@ -2027,7 +1998,7 @@ namespace mythril {
 
 
 	// come back here for reference
-	//VkAccelerationStructureBuildSizesInfoKHR CTX::getBLASBuildInfo(const BottomLevelBuildDesc& desc) {
+	// VkAccelerationStructureBuildSizesInfoKHR CTX::getBLASBuildInfo(const BottomLevelBuildDesc& desc) {
 	//	if (!this->isExtensionEnabled(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME))
 	//		LOG_SYSTEM(LogType::Warning, "VK_KHR_ACCELERATION_STRUCTURE is not an enabled extension, why are you calling 'getBLASBuildInfo()' then.");
 	//
@@ -2093,7 +2064,7 @@ namespace mythril {
 			writeTextureDescriptorsImpl(index, 1);
 			_texturePool.release(index);
 		}));
-		for (const auto& viewHandle : image->_additionalViews | std::views::values) {
+		for (const auto& viewHandle: image->_additionalViews | std::views::values) {
 			destroy(viewHandle);
 		}
 		image->_additionalViews.clear();

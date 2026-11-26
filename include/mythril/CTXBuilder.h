@@ -22,8 +22,7 @@ namespace mythril {
 	};
 	using CtxPtr = std::unique_ptr<CTX, CtxDeleter>;
 
-	struct Version
-	{
+	struct Version {
 		uint8_t major = 0;
 		uint8_t minor = 0;
 		uint8_t patch = 0;
@@ -36,8 +35,7 @@ namespace mythril {
 	};
 	// there are other options we could place here, however CTXBuilder fields should be one time not reloadable
 	// so swapchain options shouldnt be here as they can be reloaded during runtime easily
-	struct VulkanCfg
-	{
+	struct VulkanCfg {
 		const char* app_name = "Untitled App";
 		const char* engine_name = "Untitled Engine";
 		Version app_version = {0, 0, 1};
@@ -56,7 +54,7 @@ namespace mythril {
 		// instance extension names
 		std::vector<const char*> instanceExtensionNames = {};
 		// device extension names
-		std::vector<const char*> deviceExtensionNames   = {};
+		std::vector<const char*> deviceExtensionNames = {};
 		// made just for int64 feature supported
 		VkPhysicalDeviceFeatures additionalDeviceFeatures = {};
 		// device extension feautures, will not be handled if unsupported!
@@ -68,12 +66,13 @@ namespace mythril {
 		const char* engine_name = "Untitled Engine";
 		bool enableValidation = true;
 		std::span<const char*> instanceExtensions = {};
-		std::span<const char*> deviceExtensions   = {};
+		std::span<const char*> deviceExtensions = {};
 	};
 
-	enum class WindowMode { Windowed, Fullscreen, Headless };
-	struct WindowSpec
-	{
+	enum class WindowMode { Windowed,
+		Fullscreen,
+		Headless };
+	struct WindowSpec {
 		std::string title = "Untitled Window";
 		WindowMode mode = WindowMode::Windowed;
 		uint16_t width = 1280;

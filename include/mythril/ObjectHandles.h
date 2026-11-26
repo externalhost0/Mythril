@@ -26,8 +26,8 @@ namespace mythril {
 
 	private:
 		InternalObjectHandle(uint32_t index, uint32_t gen) :
-		    _index(index),
-		    _generation(gen) {};
+			_index(index),
+			_generation(gen) {};
 
 		template<typename HandleType, typename ActualObject>
 		friend class HandlePool;
@@ -35,7 +35,6 @@ namespace mythril {
 		uint32_t _index = 0;
 		uint32_t _generation = 0;
 	};
-
 
 
 	using BufferHandle = InternalObjectHandle<struct BufferTag>;
@@ -58,7 +57,7 @@ namespace mythril {
 
 		struct PoolEntry {
 			explicit PoolEntry(ActualObject&& obj) :
-			    _obj(std::move(obj)) {}
+				_obj(std::move(obj)) {}
 
 			ActualObject _obj = {};
 			uint32_t _gen = 1;

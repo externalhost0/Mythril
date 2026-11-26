@@ -11,7 +11,7 @@ using namespace sync_spec;
 
 namespace {
 	uint64_t SupportedStages(const VkAccessFlags2 access) {
-		for (const st::Entry& e : st::kAccessSupportedStages)
+		for (const st::Entry& e: st::kAccessSupportedStages)
 			if (e.bit == access)
 				return e.mask;
 		return 0;
@@ -19,7 +19,8 @@ namespace {
 
 	constexpr vkutil::BufferSyncFeatures kFeatureSets[] = {{false, false}, {true, false}, {true, true}};
 
-	std::string featureNames(vkutil::BufferSyncFeatures f) { return f.rayTracingPipeline ? "AS+RT" : f.accelerationStructure ? "AS" : "none"; }
+	std::string featureNames(vkutil::BufferSyncFeatures f) { return f.rayTracingPipeline ? "AS+RT" : f.accelerationStructure ? "AS"
+	                                                                                                                         : "none"; }
 
 	// oracle, derived from the spec's buffer usage descriptions, not from the vkutil table
 	std::vector<StageAccess> possibleUses(VkBufferUsageFlags usage, vkutil::BufferSyncFeatures f) {
@@ -47,7 +48,7 @@ namespace {
 		if (as && (usage & VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR))
 			uses.push_back({VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, VK_ACCESS_2_SHADER_READ_BIT});
 		if (as && (usage & VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR)) {
-			for (VkPipelineStageFlags2 stage : {VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_COPY_BIT_KHR}) {
+			for (VkPipelineStageFlags2 stage: {VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_COPY_BIT_KHR}) {
 				uses.push_back({stage, VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR});
 				uses.push_back({stage, VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR});
 			}
@@ -91,14 +92,14 @@ namespace {
 static size_t checkEveryBuffer(BarrierFn fn, const StageAccess write, bool includeHostVisible) {
 	size_t checked = 0;
 	for (uint32_t bits = 0; bits < (1u << kUsageBitCount); ++bits) {
-		for (StorageType storage : kStorageTypes) {
+		for (StorageType storage: kStorageTypes) {
 			const VkBufferUsageFlags usage = vkutil::ToVkBufferUsage(static_cast<BufferUsageBits>(bits), storage);
 			if (!(usage & VK_BUFFER_USAGE_TRANSFER_DST_BIT) || (storage == StorageType::HostVisible && !includeHostVisible))
 				continue;
-			for (vkutil::BufferSyncFeatures f : kFeatureSets) {
+			for (vkutil::BufferSyncFeatures f: kFeatureSets) {
 				++checked;
 				std::string all;
-				for (const std::string& failure : check(fn, write, usage, f))
+				for (const std::string& failure: check(fn, write, usage, f))
 					all += "\n  " + failure;
 				if (!all.empty())
 					FAIL_CHECK("usage " << usageNames(usage) << " features=" << featureNames(f) << all);
@@ -124,7 +125,7 @@ TEST_CASE("staging upload barriers are valid, cover every access, and are tight 
 TEST_CASE("every usage bit createBuffer can emit is handled by the barrier table") {
 	VkBufferUsageFlags emitted = 0;
 	for (uint32_t bits = 0; bits < (1u << kUsageBitCount); ++bits)
-		for (StorageType storage : kStorageTypes)
+		for (StorageType storage: kStorageTypes)
 			emitted |= vkutil::ToVkBufferUsage(static_cast<BufferUsageBits>(bits), storage);
 	CHECK_MESSAGE((emitted & ~vkutil::kHandledBufferUsage) == 0, "unhandled usage " << usageNames(emitted & ~vkutil::kHandledBufferUsage));
 }

@@ -79,7 +79,7 @@ namespace mythril {
 	};
 
 	struct SpirvPushBlock {
-		uint32_t type;
+		uint32_t type{};
 		PushBlockLayout layout;
 	};
 	std::vector<SpirvPushBlock> DescribeSpirvPushBlocks(const SpirvLayout& layout);

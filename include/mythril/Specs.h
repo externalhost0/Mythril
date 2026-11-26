@@ -116,13 +116,13 @@ namespace mythril {
 			return {.r = static_cast<VkComponentSwizzle>(r), .g = static_cast<VkComponentSwizzle>(g), .b = static_cast<VkComponentSwizzle>(b), .a = static_cast<VkComponentSwizzle>(a)};
 		}
 	};
-	static_assert(Swizzle::Swizzle_Default == (uint32_t) VK_COMPONENT_SWIZZLE_IDENTITY);
-	static_assert(Swizzle::Swizzle_0 == (uint32_t) VK_COMPONENT_SWIZZLE_ZERO);
-	static_assert(Swizzle::Swizzle_1 == (uint32_t) VK_COMPONENT_SWIZZLE_ONE);
-	static_assert(Swizzle::Swizzle_R == (uint32_t) VK_COMPONENT_SWIZZLE_R);
-	static_assert(Swizzle::Swizzle_G == (uint32_t) VK_COMPONENT_SWIZZLE_G);
-	static_assert(Swizzle::Swizzle_B == (uint32_t) VK_COMPONENT_SWIZZLE_B);
-	static_assert(Swizzle::Swizzle_A == (uint32_t) VK_COMPONENT_SWIZZLE_A);
+	static_assert(Swizzle::Swizzle_Default == (uint32_t)VK_COMPONENT_SWIZZLE_IDENTITY);
+	static_assert(Swizzle::Swizzle_0 == (uint32_t)VK_COMPONENT_SWIZZLE_ZERO);
+	static_assert(Swizzle::Swizzle_1 == (uint32_t)VK_COMPONENT_SWIZZLE_ONE);
+	static_assert(Swizzle::Swizzle_R == (uint32_t)VK_COMPONENT_SWIZZLE_R);
+	static_assert(Swizzle::Swizzle_G == (uint32_t)VK_COMPONENT_SWIZZLE_G);
+	static_assert(Swizzle::Swizzle_B == (uint32_t)VK_COMPONENT_SWIZZLE_B);
+	static_assert(Swizzle::Swizzle_A == (uint32_t)VK_COMPONENT_SWIZZLE_A);
 
 
 	// Specs should be low level but still a thin wrapper around the info creation processes need
@@ -158,9 +158,11 @@ namespace mythril {
 		HostBytes() = default;
 		HostBytes(std::nullptr_t) {}
 		template<std::ranges::contiguous_range Range> requires std::is_trivially_copyable_v<std::ranges::range_value_t<Range>>
-		HostBytes(const Range& range) : bytes(std::as_bytes(std::span(range))) {}
+		HostBytes(const Range& range) :
+			bytes(std::as_bytes(std::span(range))) {}
 		template<typename T> requires (std::is_trivially_copyable_v<T> && !std::ranges::range<T> && !std::is_pointer_v<T>)
-		HostBytes(const T& value) : bytes(std::as_bytes(std::span(&value, 1))) {}
+		HostBytes(const T& value) :
+			bytes(std::as_bytes(std::span(&value, 1))) {}
 	};
 	struct BufferSpec {
 		size_t size = 0;

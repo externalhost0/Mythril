@@ -11,8 +11,8 @@
 
 namespace mythril {
 	ImmediateCommands::ImmediateCommands(VkDevice device, uint32_t queueFamilyIndex, VkQueue vk_queue) :
-	    _vkDevice(device),
-	    _queueFamilyIndex(queueFamilyIndex) {
+		_vkDevice(device),
+		_queueFamilyIndex(queueFamilyIndex) {
 		// just use the family index to get our queue vulkan object
 		if (!vk_queue)
 			vkGetDeviceQueue(device, queueFamilyIndex, 0, &_vkQueue);
@@ -21,19 +21,19 @@ namespace mythril {
 
 		// create command pool
 		const VkCommandPoolCreateInfo command_pool_ci = {
-		    .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
-		    .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT | VK_COMMAND_POOL_CREATE_TRANSIENT_BIT,
-		    .queueFamilyIndex = queueFamilyIndex,
+			.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+			.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT | VK_COMMAND_POOL_CREATE_TRANSIENT_BIT,
+			.queueFamilyIndex = queueFamilyIndex,
 		};
 		VK_CHECK(vkCreateCommandPool(device, &command_pool_ci, nullptr, &_vkCommandPool));
 		_timeline = vkutil::CreateTimelineSemaphore(device, 0);
 
 		// create command buffers
 		const VkCommandBufferAllocateInfo command_buffer_ai = {
-		    .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-		    .commandPool = _vkCommandPool,
-		    .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-		    .commandBufferCount = 1,
+			.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+			.commandPool = _vkCommandPool,
+			.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+			.commandBufferCount = 1,
 		};
 
 		for (uint32_t i = 0; i != kMaxCommandBuffers; i++) {
@@ -91,8 +91,8 @@ namespace mythril {
 		current->_cmdBuf = current->_cmdBufAllocated;
 		current->_isEncoding = true;
 		const VkCommandBufferBeginInfo bi = {
-		    .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-		    .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+			.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+			.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
 		};
 		VK_CHECK(vkBeginCommandBuffer(current->_cmdBuf, &bi));
 		_nextSubmitHandle = current->_handle;
@@ -189,25 +189,25 @@ namespace mythril {
 			waitSemaphores[numWaitSemaphores++] = _lastSubmitSemaphore;
 		}
 		std::array<VkSemaphoreSubmitInfo, 2 + std::tuple_size_v<decltype(_signals)>> signalSemaphores = {
-		    VkSemaphoreSubmitInfo{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO, .semaphore = wrapper._semaphore, .stageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT},
-		    VkSemaphoreSubmitInfo{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO, .semaphore = _timeline, .value = _timelineValue + 1, .stageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT},
+			VkSemaphoreSubmitInfo{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO, .semaphore = wrapper._semaphore, .stageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT},
+			VkSemaphoreSubmitInfo{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO, .semaphore = _timeline, .value = _timelineValue + 1, .stageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT},
 		};
 		uint32_t numSignalSemaphores = 2;
 		for (uint32_t i = 0; i < _numSignals; ++i)
 			signalSemaphores[numSignalSemaphores++] = _signals[i];
 
 		const VkCommandBufferSubmitInfo command_buffer_si = {
-		    .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
-		    .commandBuffer = wrapper._cmdBuf,
+			.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
+			.commandBuffer = wrapper._cmdBuf,
 		};
 		const VkSubmitInfo2 si = {
-		    .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
-		    .waitSemaphoreInfoCount = numWaitSemaphores,
-		    .pWaitSemaphoreInfos = waitSemaphores.data(),
-		    .commandBufferInfoCount = 1u,
-		    .pCommandBufferInfos = &command_buffer_si,
-		    .signalSemaphoreInfoCount = numSignalSemaphores,
-		    .pSignalSemaphoreInfos = signalSemaphores.data(),
+			.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
+			.waitSemaphoreInfoCount = numWaitSemaphores,
+			.pWaitSemaphoreInfos = waitSemaphores.data(),
+			.commandBufferInfoCount = 1u,
+			.pCommandBufferInfos = &command_buffer_si,
+			.signalSemaphoreInfoCount = numSignalSemaphores,
+			.pSignalSemaphoreInfos = signalSemaphores.data(),
 		};
 		VK_CHECK(vkQueueSubmit2(_vkQueue, 1u, &si, wrapper._fence));
 

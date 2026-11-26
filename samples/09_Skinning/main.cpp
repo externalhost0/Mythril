@@ -42,8 +42,8 @@ struct Node {
 };
 
 struct Channel {
-	size_t node;
-	fastgltf::AnimationPath path;
+	size_t node{};
+	fastgltf::AnimationPath path{};
 	std::vector<float> times;
 	std::vector<glm::vec4> values;
 };
@@ -80,29 +80,29 @@ static SkinnedModel loadSkinnedModel(const std::filesystem::path& filepath) {
 		Node& dst = model.nodes[i];
 		dst.name = src.name;
 		dst.children.assign(src.children.begin(), src.children.end());
-		for (size_t child : src.children)
+		for (size_t child: src.children)
 			model.nodes[child].parent = static_cast<int>(i);
 		std::visit(fastgltf::visitor{
-			[&](const fastgltf::TRS& trs) {
-				dst.translation = {trs.translation[0], trs.translation[1], trs.translation[2]};
-				dst.rotation = glm::quat(trs.rotation[3], trs.rotation[0], trs.rotation[1], trs.rotation[2]);
-				dst.scale = {trs.scale[0], trs.scale[1], trs.scale[2]};
-			},
-			[&](const fastgltf::math::fmat4x4& m) {
-				glm::mat4 mat;
-				std::memcpy(&mat, m.data(), sizeof(mat));
-				dst.matrix = mat;
-			}
-		}, src.transform);
+					   [&](const fastgltf::TRS& trs) {
+						   dst.translation = {trs.translation[0], trs.translation[1], trs.translation[2]};
+						   dst.rotation = glm::quat(trs.rotation[3], trs.rotation[0], trs.rotation[1], trs.rotation[2]);
+						   dst.scale = {trs.scale[0], trs.scale[1], trs.scale[2]};
+					   },
+					   [&](const fastgltf::math::fmat4x4& m) {
+						   glm::mat4 mat;
+						   std::memcpy(&mat, m.data(), sizeof(mat));
+						   dst.matrix = mat;
+					   }},
+			src.transform);
 		if (src.meshIndex.has_value())
 			model.meshNode = i;
 	}
 	const auto visit = [&](auto& self, size_t node) -> void {
 		model.parentFirstOrder.push_back(node);
-		for (size_t child : model.nodes[node].children)
+		for (size_t child: model.nodes[node].children)
 			self(self, child);
 	};
-	for (size_t root : gltf.scenes[gltf.defaultScene.value_or(0)].nodeIndices)
+	for (size_t root: gltf.scenes[gltf.defaultScene.value_or(0)].nodeIndices)
 		visit(visit, root);
 
 	const fastgltf::Skin& skin = gltf.skins[0];
@@ -129,7 +129,7 @@ static SkinnedModel loadSkinnedModel(const std::filesystem::path& filepath) {
 
 	if (!gltf.animations.empty()) {
 		const fastgltf::Animation& animation = gltf.animations[0];
-		for (const fastgltf::AnimationChannel& srcChannel : animation.channels) {
+		for (const fastgltf::AnimationChannel& srcChannel: animation.channels) {
 			if (!srcChannel.nodeIndex.has_value() || srcChannel.path == fastgltf::AnimationPath::Weights)
 				continue;
 			const fastgltf::AnimationSampler& sampler = animation.samplers[srcChannel.samplerIndex];
@@ -172,7 +172,7 @@ struct Pose {
 static Pose evaluatePose(const SkinnedModel& model, float time, std::span<const glm::quat> rotationOffsets) {
 	Pose pose;
 	std::vector<Node> locals = model.nodes;
-	for (const Channel& channel : model.channels) {
+	for (const Channel& channel: model.channels) {
 		const glm::vec4 v = sampleChannel(channel, time);
 		Node& node = locals[channel.node];
 		switch (channel.path) {
@@ -186,7 +186,7 @@ static Pose evaluatePose(const SkinnedModel& model, float time, std::span<const 
 		locals[model.joints[slot]].rotation *= rotationOffsets[slot];
 
 	pose.globals.resize(model.nodes.size());
-	for (size_t n : model.parentFirstOrder) {
+	for (size_t n: model.parentFirstOrder) {
 		const Node& node = locals[n];
 		const glm::mat4 local = node.matrix.value_or(
 			glm::translate(glm::mat4(1.f), node.translation) * glm::mat4_cast(node.rotation) * glm::scale(glm::mat4(1.f), node.scale));
@@ -203,8 +203,7 @@ static Pose evaluatePose(const SkinnedModel& model, float time, std::span<const 
 		const glm::quat dual = 0.5f * glm::quat(0.f, glm::vec3(m[3])) * real;
 		pose.jointDualQuats[slot] = {
 			.real = {real.x, real.y, real.z, real.w},
-			.dual = {dual.x, dual.y, dual.z, dual.w}
-		};
+			.dual = {dual.x, dual.y, dual.z, dual.w}};
 	}
 	return pose;
 }
@@ -259,30 +258,19 @@ int main() {
 		Uint32 sdlExtensionCount = 0;
 		const char* const* sdlExtensions = SDL_Vulkan_GetInstanceExtensions(&sdlExtensionCount);
 		auto ctx = mythril::CTXBuilder{}
-		.set_vulkan_cfg({
-			.app_name = "Cool App Name",
-			.engine_name = "Cool Engine Name"
-		})
-		.set_window_surface({
-			.instanceExtensions = std::span(sdlExtensions, sdlExtensionCount),
-			.createFunc = [sdlWindow](VkInstance instance) {
+		               .set_vulkan_cfg({.app_name = "Cool App Name",
+						   .engine_name = "Cool Engine Name"})
+		               .set_window_surface({.instanceExtensions = std::span(sdlExtensions, sdlExtensionCount),
+						   .createFunc = [sdlWindow](VkInstance instance) {
 				VkSurfaceKHR surface;
 				SDL_Vulkan_CreateSurface(sdlWindow, instance, nullptr, &surface);
-				return surface;
-			},
-			.destroyFunc = [](VkInstance instance, VkSurfaceKHR surface) {
-				SDL_Vulkan_DestroySurface(instance, surface, nullptr);
-			}
-		})
-		.with_default_swapchain({
-			.width = initialWindowSize.width,
-			.height = initialWindowSize.height
-		})
-		.with_ImGui({
-			.windowInitFunction = [sdlWindow] { ImGui_ImplSDL3_InitForVulkan(sdlWindow); },
-			.windowDestroyFunction = [] { ImGui_ImplSDL3_Shutdown(); }
-		})
-		.build();
+				return surface; },
+						   .destroyFunc = [](VkInstance instance, VkSurfaceKHR surface) { SDL_Vulkan_DestroySurface(instance, surface, nullptr); }})
+		               .with_default_swapchain({.width = initialWindowSize.width,
+						   .height = initialWindowSize.height})
+		               .with_ImGui({.windowInitFunction = [sdlWindow] { ImGui_ImplSDL3_InitForVulkan(sdlWindow); },
+						   .windowDestroyFunction = [] { ImGui_ImplSDL3_Shutdown(); }})
+		               .build();
 
 		const SkinnedModel model = loadSkinnedModel(kDataDir / "RiggedFigure.glb");
 		const size_t jointCount = model.joints.size();
@@ -290,53 +278,39 @@ int main() {
 		for (size_t slot = 0; slot < jointCount; slot++)
 			nodeToSlot[model.joints[slot]] = static_cast<int>(slot);
 
-		mythril::Shader skinningShader = ctx->createShader({
-			.path = kDataDir / shaders::Skinning::kSpirvFile,
-			.debugName = "Skinning Shader"
-		});
-		mythril::GraphicsPipeline skinningPipeline = ctx->createGraphicsPipeline({
-			.vertexShader = {skinningShader},
+		mythril::Shader skinningShader = ctx->createShader({.path = kDataDir / shaders::Skinning::kSpirvFile,
+			.debugName = "Skinning Shader"});
+		mythril::GraphicsPipeline skinningPipeline = ctx->createGraphicsPipeline({.vertexShader = {skinningShader},
 			.fragmentShader = {skinningShader},
 			.topology = mythril::TopologyMode::TRIANGLE,
 			.polygon = mythril::PolygonMode::FILL,
 			.blend = mythril::BlendingMode::OFF,
 			.cull = mythril::CullMode::BACK,
 			.multisample = mythril::SampleCount::X1,
-			.debugName = "Skinning Pipeline"
-		});
+			.debugName = "Skinning Pipeline"});
 
-		mythril::Buffer vertexBuffer = ctx->createBuffer({
-			.size = sizeof(mythril::GPU::SkinnedVertex) * model.vertices.size(),
+		mythril::Buffer vertexBuffer = ctx->createBuffer({.size = sizeof(mythril::GPU::SkinnedVertex) * model.vertices.size(),
 			.usage = mythril::BufferUsageBits::BufferUsageBits_Storage,
 			.storage = mythril::StorageType::Device,
 			.initialData = model.vertices,
-			.debugName = "Skinned Vertex Buffer"
-		});
-		mythril::Buffer indexBuffer = ctx->createBuffer({
-			.size = sizeof(uint32_t) * model.indices.size(),
+			.debugName = "Skinned Vertex Buffer"});
+		mythril::Buffer indexBuffer = ctx->createBuffer({.size = sizeof(uint32_t) * model.indices.size(),
 			.usage = mythril::BufferUsageBits::BufferUsageBits_Index,
 			.storage = mythril::StorageType::Device,
 			.initialData = model.indices,
-			.debugName = "Skinned Index Buffer"
-		});
-		mythril::Buffer jointMatrixBuffer = ctx->createBuffer({
-			.size = sizeof(glm::mat4) * jointCount,
+			.debugName = "Skinned Index Buffer"});
+		mythril::Buffer jointMatrixBuffer = ctx->createBuffer({.size = sizeof(glm::mat4) * jointCount,
 			.usage = mythril::BufferUsageBits::BufferUsageBits_Storage,
 			.storage = mythril::StorageType::Device,
-			.debugName = "Joint Matrix Palette"
-		});
-		mythril::Buffer jointDualQuatBuffer = ctx->createBuffer({
-			.size = sizeof(mythril::GPU::DualQuat) * jointCount,
+			.debugName = "Joint Matrix Palette"});
+		mythril::Buffer jointDualQuatBuffer = ctx->createBuffer({.size = sizeof(mythril::GPU::DualQuat) * jointCount,
 			.usage = mythril::BufferUsageBits::BufferUsageBits_Storage,
 			.storage = mythril::StorageType::Device,
-			.debugName = "Joint Dual Quaternion Palette"
-		});
-		mythril::Buffer frameDataBuffer = ctx->createBuffer({
-			.size = sizeof(mythril::GPU::FrameData),
+			.debugName = "Joint Dual Quaternion Palette"});
+		mythril::Buffer frameDataBuffer = ctx->createBuffer({.size = sizeof(mythril::GPU::FrameData),
 			.usage = mythril::BufferUsageBits::BufferUsageBits_Storage,
 			.storage = mythril::StorageType::Device,
-			.debugName = "Frame Data Buffer"
-		});
+			.debugName = "Frame Data Buffer"});
 
 		int skinningMode = mythril::GPU::kSkinLinear;
 		int viewMode = mythril::GPU::kViewLit;
@@ -405,8 +379,7 @@ int main() {
 				d.jointDualQuats = ctx->gpuAddress(jointDualQuatBuffer);
 				d.skinningMode = static_cast<uint32_t>(skinningMode);
 				d.viewMode = static_cast<uint32_t>(viewMode);
-				d.selectedJoint = static_cast<uint32_t>(selectedSlot);
-			}, [](const SkinPass& d, mythril::GraphicsCmd& cmd) {
+				d.selectedJoint = static_cast<uint32_t>(selectedSlot); }, [](const SkinPass& d, mythril::GraphicsCmd& cmd) {
 				cmd.cmdBindGraphicsPipeline(d.pipeline);
 				cmd.cmdBindDepthState({mythril::CompareOp::LessEqual, true});
 				const mythril::GPU::SkinPushConstant push = {
@@ -421,18 +394,12 @@ int main() {
 				};
 				cmd.cmdPushConstantsEXT(push);
 				cmd.cmdBindIndexBuffer(d.indexBuffer);
-				cmd.cmdDrawIndexed(d.indexCount);
-			});
+				cmd.cmdDrawIndexed(d.indexCount); });
 
-			graph.addGraphicsPass("gui", [&](mythril::GraphicsPassBuilder& b, mythril::NoPassData&) {
-				color = b.attachment({
-					.texDesc = color,
-					.loadOp = mythril::LoadOp::LOAD,
-					.storeOp = mythril::StoreOp::STORE
-				}).texture;
-			}, [](const mythril::NoPassData&, mythril::GraphicsCmd& cmd) {
-				cmd.cmdDrawImGui();
-			});
+			graph.addGraphicsPass("gui", [&](mythril::GraphicsPassBuilder& b, mythril::NoPassData&) { color = b.attachment({.texDesc = color,
+																															   .loadOp = mythril::LoadOp::LOAD,
+																															   .storeOp = mythril::StoreOp::STORE})
+				                                                                                                  .texture; }, [](const mythril::NoPassData&, mythril::GraphicsCmd& cmd) { cmd.cmdDrawImGui(); });
 
 			graph.addTransferPass("presentation", [&](mythril::TransferBuilder& b) {
 				b.blit(color, graph.backBuffer());
@@ -440,7 +407,7 @@ int main() {
 		};
 
 		glm::vec3 boundsMin(FLT_MAX), boundsMax(-FLT_MAX);
-		for (const mythril::GPU::SkinnedVertex& v : model.vertices) {
+		for (const mythril::GPU::SkinnedVertex& v: model.vertices) {
 			const auto p = glm::vec3(pose.globals[model.meshNode] * glm::vec4(v.position, 1.f));
 			boundsMin = glm::min(boundsMin, p);
 			boundsMax = glm::max(boundsMax, p);
@@ -492,10 +459,8 @@ int main() {
 
 			const auto currentWindowSize = GetSDLWindowFramebufferSize(sdlWindow);
 			if (ctx->isSwapchainDirty()) {
-				ctx->recreateSwapchain({
-					.width = currentWindowSize.width,
-					.height = currentWindowSize.height
-				});
+				ctx->recreateSwapchain({.width = currentWindowSize.width,
+					.height = currentWindowSize.height});
 			}
 
 			if (playing && model.duration > 0.f)
@@ -504,8 +469,7 @@ int main() {
 			const glm::vec3 orbitDir = {
 				std::cos(glm::radians(orbitPitch)) * std::sin(glm::radians(orbitYaw)),
 				std::sin(glm::radians(orbitPitch)),
-				std::cos(glm::radians(orbitPitch)) * std::cos(glm::radians(orbitYaw))
-			};
+				std::cos(glm::radians(orbitPitch)) * std::cos(glm::radians(orbitYaw))};
 			const glm::vec3 cameraPosition = orbitTarget + orbitDir * orbitDistance;
 			const float aspect = static_cast<float>(currentWindowSize.width) / static_cast<float>(currentWindowSize.height);
 			const glm::mat4 view = glm::lookAt(cameraPosition, orbitTarget, glm::vec3(0, 1, 0));
@@ -575,10 +539,9 @@ int main() {
 				pose = evaluatePose(model, animationTime, rotationOffsets);
 			}
 
-			frameData = mythril::GPU::FrameData {
+			frameData = mythril::GPU::FrameData{
 				.viewProj = viewProj,
-				.lightDir = glm::normalize(orbitDir + glm::vec3(0.f, 1.f, 0.f))
-			};
+				.lightDir = glm::normalize(orbitDir + glm::vec3(0.f, 1.f, 0.f))};
 
 			if (showSkeleton)
 				drawSkeletonOverlay(model, pose, nodeToSlot, viewProj, selectedSlot);

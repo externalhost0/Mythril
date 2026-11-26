@@ -8,12 +8,12 @@
 
 NAMESPACE_BEGIN()
 
-static const uint kSkinLinear   = 0;
+static const uint kSkinLinear = 0;
 static const uint kSkinDualQuat = 1;
-static const uint kSkinNone     = 2;
+static const uint kSkinNone = 2;
 
-static const uint kViewLit       = 0;
-static const uint kViewWeights   = 1;
+static const uint kViewLit = 0;
+static const uint kViewWeights = 1;
 static const uint kViewInfluence = 2;
 
 struct SkinnedVertex {
