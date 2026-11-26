@@ -25,7 +25,7 @@ struct QuadVertex {
     float2 pos;
     float2 uv;
 }
-struct PushConstant {
+struct ParticlePushConstant {
     Ptr<QuadVertex> vba;
     Ptr<ParticleData> particles;
     Ptr<FrameData> frame;
@@ -34,7 +34,7 @@ struct PushConstant {
 }
 
 [[vk::push_constant]]
-PushConstant push;
+ParticlePushConstant push;
 
 [shader("vertex")]
 v2f vs_main(VSInput input) {

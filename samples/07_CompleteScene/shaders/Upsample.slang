@@ -1,6 +1,6 @@
 import GPUStructs;
 
-struct PushConstants {
+struct UpsamplePushConstants {
     DescriptorHandle<Texture2D> inTexture;
     DescriptorHandle<RWTexture2D> outTexture;
     DescriptorHandle<SamplerState> sampler;
@@ -10,7 +10,7 @@ struct PushConstants {
 }
 
 [vk::push_constant]
-PushConstants push;
+UpsamplePushConstants push;
 
 [shader("compute")]
 [numthreads(8, 8, 1)]

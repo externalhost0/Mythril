@@ -1,4 +1,3 @@
-# Generated from CLion Inspection settings
 ---
 Checks: '-*,
 bugprone-argument-comment,
@@ -106,7 +105,7 @@ modernize-use-uncaught-exceptions,
 mpi-buffer-deref,
 mpi-type-mismatch,
 openmp-use-default-none,
-performance-faster-string-find,
+performance-prefer-single-char-overloads,
 performance-for-range-copy,
 performance-implicit-conversion-in-loop,
 performance-inefficient-algorithm,

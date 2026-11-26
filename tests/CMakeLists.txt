@@ -39,9 +39,24 @@ add_executable(mythril_tests
         test_buffer_tracking.cpp
         test_graph_textures.cpp
         test_graph_schedule.cpp
+        test_push_layout.cpp
         test_texture_usage.cpp
 )
 target_include_directories(mythril_tests PRIVATE "${_gen_dir}" "${mythril_SOURCE_DIR}/lib")
-target_link_libraries(mythril_tests PRIVATE mythril fmt::fmt doctest::doctest)
+target_link_libraries(mythril_tests PRIVATE mythril mythril-slang doctest::doctest)
+target_compile_definitions(mythril_tests PRIVATE MYTH_PUSH_LAYOUT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/push_layout")
+mythril_reflect_shaders(mythril_tests SOURCES push_layout/valid.slang push_layout/spec.slang push_layout/accel.slang)
 
 add_test(NAME mythril_tests COMMAND mythril_tests)
+
+add_executable(mythril_gpu_tests
+        gpu/main.cpp
+        gpu/test_push_roundtrip.cpp
+        gpu/test_shader_reload.cpp
+)
+target_link_libraries(mythril_gpu_tests PRIVATE mythril doctest::doctest)
+set(_gpu_spirv_dir "${CMAKE_CURRENT_BINARY_DIR}/gpu_spirv")
+target_compile_definitions(mythril_gpu_tests PRIVATE MYTH_TEST_SPIRV_DIR="${_gpu_spirv_dir}")
+mythril_reflect_shaders(mythril_gpu_tests SPIRV_DIR "${_gpu_spirv_dir}" SOURCES gpu/roundtrip.slang gpu/reload.slang UNTYPED_SOURCES gpu/reload_edit.slang gpu/reload_entry.slang gpu/reload_layout.slang gpu/reload_pointee.slang gpu/reload_reorder.slang gpu/reload_spec.slang gpu/reload_spec_wide.slang)
+add_test(NAME mythril_gpu_tests COMMAND mythril_gpu_tests)
+set_tests_properties(mythril_gpu_tests PROPERTIES LABELS gpu SKIP_RETURN_CODE 77)

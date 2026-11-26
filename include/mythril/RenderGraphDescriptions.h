@@ -69,6 +69,7 @@ namespace mythril {
 	class RenderGraph;
 	struct GraphTextureAccess;
 	struct GraphBufferAccess;
+	struct GraphAccelerationStructureAccess;
 	// one version of a texture as one RenderGraph knows it, a pass that writes it returns the next version
 	class GraphTexture {
 	public:
@@ -96,6 +97,20 @@ namespace mythril {
 		uint32_t _version = 0;
 		friend class RenderGraph;
 		friend struct GraphBufferAccess;
+	};
+	// one version of an acceleration structure imported into a RenderGraph, a build or refit returns the next version
+	class GraphAccelerationStructure {
+	public:
+		constexpr GraphAccelerationStructure() = default;
+		constexpr bool valid() const { return _storageSlot != kInvalid; }
+		constexpr bool operator==(const GraphAccelerationStructure&) const = default;
+	private:
+		static constexpr uint32_t kInvalid = UINT32_MAX;
+		explicit constexpr GraphAccelerationStructure(uint32_t storageSlot, uint32_t version = 0) : _storageSlot(storageSlot), _version(version) {}
+		uint32_t _storageSlot = kInvalid;
+		uint32_t _version = 0;
+		friend class RenderGraph;
+		friend struct GraphAccelerationStructureAccess;
 	};
 
 	class GraphExtent {
@@ -171,6 +186,15 @@ namespace mythril {
 		IndirectRead,
 		TransferRead,
 		TransferWrite,
+		AccelerationStructureRead,
+		AccelerationStructureBuildInput,
+		AccelerationStructureBuildRead,
+		AccelerationStructureBuildWrite,
+		AccelerationStructureScratch,
+	};
+	// builds and refits are TransferBuilder ops, so a pass only declares reads
+	enum class AccelerationStructureAccess : uint8_t {
+		Read,
 	};
 	// not actually passed directly to dependency calls right now
 	struct TextureDependencyDesc {
@@ -217,7 +241,13 @@ namespace mythril {
 		TextureDesc dst;
 		std::span<const std::byte> bytes;
 	};
-	using TransferOp = std::variant<CopyOp, BlitOp, UpdateOp, UploadOp, BufferCopyOp, ReadbackOp, GenerateMipsOp, ImageUploadOp>;
+	struct AccelerationStructureBuildOp {
+		AccelerationStructureHandle structure;
+		bool refit = false;
+		// the BLAS storage versions a TLAS build reads
+		std::vector<GraphBuffer> instanced;
+	};
+	using TransferOp = std::variant<CopyOp, BlitOp, UpdateOp, UploadOp, BufferCopyOp, ReadbackOp, GenerateMipsOp, ImageUploadOp, AccelerationStructureBuildOp>;
 
 	// sync with work outside the graph (OpenXR, video, CUDA, another process), pass it on import every frame
 	struct ExternalAccess {

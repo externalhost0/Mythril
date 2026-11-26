@@ -9,11 +9,11 @@
     {
       "name": "base",
       "hidden": true,
+      "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": {
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "CPM_SOURCE_CACHE": "${sourceDir}/.cache/cpm",
-        "MYTH_ENABLE_IMGUI_STANDARD": "ON"
+        "CPM_SOURCE_CACHE": "${sourceDir}/.cache/cpm"
       }
     },
     {
@@ -23,6 +23,7 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "MYTH_BUILD_SAMPLES": "ON",
+        "MYTH_ENABLE_IMGUI_STANDARD": "ON",
         "MYTH_ENABLE_TRACY": "ON"
       }
     },

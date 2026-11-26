@@ -6,68 +6,46 @@
 #include <slang/slang-com-ptr.h>
 #include <slang/slang.h>
 
-#include "mythril/CTXBuilder.h"
-#include "mythril/Shader.h"
-
-#include <deque>
 #include <filesystem>
-#include <span>
+#include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace mythril {
 
-	struct CompileResult {
-		const uint32_t* getSpirvCode() const { return reinterpret_cast<const uint32_t*>(_spirvBlob->getBufferPointer()); };
-		size_t getSpirvSize() const { return _spirvBlob->getBufferSize(); };
-		slang::ProgramLayout* getSlangProgramLayout() { return _programLayout; }
-
-		explicit operator bool() const { return success; }
-
-	private:
-		Slang::ComPtr<slang::IBlob> _spirvBlob = nullptr;
-		slang::ProgramLayout* _programLayout = nullptr;
-
-		// needs to be stored to keep the lifetime of _programLayout
-		Slang::ComPtr<slang::IComponentType> _linkedProgram = nullptr;
-		bool success = false;
-
-		friend class SlangCompiler;
-	};
-
-	std::vector<PushResourceField> CollectPushResources(slang::ProgramLayout* layout);
-
 	class SlangCompiler {
 	public:
-		SlangCompiler() = default;
-		~SlangCompiler() = default;
+		struct Options {
+			std::vector<std::filesystem::path> searchPaths;
+			SlangMatrixLayoutMode matrixLayout = SLANG_MATRIX_LAYOUT_ROW_MAJOR;
+			// full debug info and default optimization, otherwise maximal optimization
+			bool debug = false;
+		};
+		static std::optional<SlangCompiler> Create(Options options, std::string& diagnostics);
 
-		void create();
-		void destroy();
-
-		void addSearchPath(const std::filesystem::path& searchPath);
-		void clearSearchPaths();
-		void addCompilerOptions(std::span<const slang::CompilerOptionEntry> options);
-		void setMatrixLayoutMode(SlangCfg::MatrixMode mode);
-
-		CompileResult compileSlangFromDisk(const std::filesystem::path& filepath);
-
-		bool sessionExists() const { return _sessionExists; }
+		Slang::ComPtr<slang::IComponentType> linkFromDisk(const std::filesystem::path& filepath, std::string& diagnostics);
+		std::vector<std::filesystem::path> loadedDependencyFiles() const;
+		struct Constant {
+			std::string name;
+			bool isSigned;
+			int64_t value;
+			std::filesystem::path file;
+		};
+		struct Declarations {
+			std::vector<std::pair<std::string, std::filesystem::path>> structs;
+			// module scope static const integers
+			std::vector<Constant> constants;
+		};
+		Declarations loadedDeclarations() const;
 
 	private:
-		CompileResult compileSlangImpl(Slang::ComPtr<slang::IModule>& slang_module, Slang::ComPtr<slang::IBlob>& diagnostics_blob) const;
-		void createSessionImpl();
-		void validateNoBindlessOverride() const;
+		SlangCompiler() = default;
+		std::string findBindlessOverride() const;
 
-		Slang::ComPtr<slang::ISession> _slangSession = nullptr;
-		Slang::ComPtr<slang::IGlobalSession> _globalSlangSession = nullptr;
-		Slang::ComPtr<slang::IModule> _bindlessModule = nullptr;
-		bool _sessionExists = false;
-
-		std::vector<std::filesystem::path> _shaderSearchPaths = {};
-		SlangCfg::MatrixMode _matrixLayoutMode = SlangCfg::MatrixMode::ColMajor;
-		std::vector<slang::CompilerOptionEntry> _userOptions = {};
-		// owns the option strings, deque keeps them in place as it grows
-		std::deque<std::string> _userOptionStrings = {};
+		Slang::ComPtr<slang::IGlobalSession> _globalSlangSession;
+		Slang::ComPtr<slang::ISession> _slangSession;
+		Slang::ComPtr<slang::IModule> _bindlessModule;
+		std::vector<std::filesystem::path> _shaderSearchPaths;
 	};
 } // namespace mythril

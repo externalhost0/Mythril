@@ -1,13 +1,13 @@
 import GPUStructs;
 
-struct PushConstants
+struct LuminancePushConstants
 {
     DescriptorHandle<Texture2D> inTex;
     DescriptorHandle<RWTexture2D> outTex;
     DescriptorHandle<SamplerState> sampler;
 }
 [vk::push_constant]
-PushConstants push;
+LuminancePushConstants push;
 
 [shader("compute")]
 [numthreads(1, 1, 1)]

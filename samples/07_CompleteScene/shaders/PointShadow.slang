@@ -10,16 +10,17 @@ struct v2f {
     float3 WorldPos : POSITION;
 };
 
-struct PushConstant {
+struct PointShadowPushConstant {
     Ptr<float4x4> matrices;
     Ptr<Vertex> vba;
     float4x4 model;
     uint nLight;
     float3 lightPos;
     float farPlane;
+    uint pad;
 }
 [[vk::push_constant]]
-PushConstant push;
+PointShadowPushConstant push;
 
 [shader("vertex")]
 v2f vs_main(VSInput input) {

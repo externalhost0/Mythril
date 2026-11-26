@@ -15,13 +15,13 @@ struct v2f {
     float4 LightSpacePos;
 };
 
-struct PushConstant {
+struct RedDebugPushConstant {
     float4x4 model;
     Ptr<Vertex> vba;
     Ptr<FrameData> frame;
 }
 [[vk::push_constant]]
-PushConstant push;
+RedDebugPushConstant push;
 
 [shader("vertex")]
 v2f vs_main(VSInput input) {

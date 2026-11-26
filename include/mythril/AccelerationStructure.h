@@ -13,6 +13,7 @@
 namespace mythril {
 	class CTX;
 	class CommandBuffer;
+	class RenderGraph;
 
 	struct AccelerationStructureGeometry {
 		BufferHandle vertexBuffer;
@@ -88,10 +89,13 @@ namespace mythril {
 			Buffer _scratchBuffer;
 			VkDeviceAddress _vkDeviceAddress;
 			bool _isTLAS = false;
+			AccelerationStructureSpec _spec;
+			VkAccelerationStructureGeometryKHR _geometry{};
 
 			char _debugName[kMaxDebugNameLength] = {0};
 			friend class ::mythril::CTX;
 			friend class ::mythril::CommandBuffer;
+			friend class ::mythril::RenderGraph;
 		};
 	}
 }

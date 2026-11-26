@@ -143,6 +143,15 @@ TEST_CASE("async picks its queue from the pass kind and falls back to main") {
 	CHECK(QueueOf(PassDesc::Type::Transfer, true, {}) == QueueAffinity::Graphics);
 }
 
+TEST_CASE("an async transfer pass that builds a structure runs on async compute") {
+	constexpr AsyncQueues kAll{.compute = true, .transfer = true};
+	PassDesc copy{.name = "copy", .type = PassDesc::Type::Transfer, .transferOps = {BufferCopyOp{}}};
+	PassDesc build{.name = "build", .type = PassDesc::Type::Transfer, .transferOps = {BufferCopyOp{}, AccelerationStructureBuildOp{}}};
+	CHECK(QueueOf(QueueNeedOf(copy, {}).type, true, kAll) == QueueAffinity::AsyncTransfer);
+	CHECK(QueueOf(QueueNeedOf(build, {}).type, true, kAll) == QueueAffinity::AsyncCompute);
+	CHECK(QueueOf(QueueNeedOf(build, {}).type, true, {.transfer = true}) == QueueAffinity::Graphics);
+}
+
 namespace {
 	std::vector<uint32_t> BatchesOf(const std::vector<QueueAffinity>& queues, const std::vector<std::vector<uint32_t>>& preds) {
 		std::vector<uint32_t> batches;

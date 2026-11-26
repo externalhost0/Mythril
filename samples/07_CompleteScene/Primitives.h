@@ -4,11 +4,11 @@
 
 #pragma once
 
-#include "HostStructs.h"
+#include "Standard.shadergen.h"
 #include <vector>
 
 namespace Primitives {
-	const std::vector<GPU::GeneralVertex> kCubeVertices = {
+	const std::vector<shaders::Vertex> kCubeVertices = {
 		// front face
 		{{-1.f, -1.f, -1.f}}, // A 0
 		{{1.f,  -1.f, -1.f}}, // B 1

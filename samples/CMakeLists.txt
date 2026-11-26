@@ -16,10 +16,13 @@ CPMAddPackage(
 )
 
 # ==================== Sample Creation Macro ====================
+# a plain path lets the build track the .spv files, multi-config generators need the per-config directory
+get_property(_multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
+# SHADERS, UNTYPED_SHADERS and MODULES are relative to the sample folder
 macro(ADD_SAMPLE sample_name)
     set(options)
     set(oneValueArgs)
-    set(multiValueArgs LIBS)
+    set(multiValueArgs LIBS SHADERS UNTYPED_SHADERS MODULES)
     cmake_parse_arguments(SAMPLE "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
     set(sample_file "${sample_name}/main.cpp")
@@ -27,10 +30,7 @@ macro(ADD_SAMPLE sample_name)
 
     target_link_libraries(${sample_name} PRIVATE mythril SDL3::SDL3 ${SAMPLE_LIBS})
 
-    target_compile_definitions(${sample_name} PRIVATE
-        MYTH_SAMPLE_NAME="${sample_name}"
-        MYTH_SAMPLES_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
-    )
+    target_compile_definitions(${sample_name} PRIVATE MYTH_SAMPLE_NAME="${sample_name}")
     target_include_directories(${sample_name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
     foreach(feature IN LISTS SAMPLE_${sample_name}_REQUIRES)
@@ -40,7 +40,7 @@ macro(ADD_SAMPLE sample_name)
     endforeach()
 
     file(GLOB_RECURSE _sample_assets CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/${sample_name}/*")
-    list(FILTER _sample_assets EXCLUDE REGEX "\\.(cpp|cxx|cc|c)$")
+    list(FILTER _sample_assets EXCLUDE REGEX "\\.(cpp|cxx|cc|c|slang)$")
     set(_assets_stamp "${CMAKE_CURRENT_BINARY_DIR}/${sample_name}_assets.stamp")
     add_custom_command(OUTPUT "${_assets_stamp}"
             COMMAND ${CMAKE_COMMAND}
@@ -55,6 +55,27 @@ macro(ADD_SAMPLE sample_name)
     target_sources(${sample_name} PRIVATE "${_assets_stamp}")
 
     set_target_properties(${sample_name} PROPERTIES FOLDER "Samples")
+
+    if(SAMPLE_SHADERS OR SAMPLE_UNTYPED_SHADERS)
+        # the samples root holds shader_types.h, and each shader folder holds what its shaders import
+        set(_search_paths "${CMAKE_CURRENT_SOURCE_DIR}")
+        foreach(_kind SHADERS UNTYPED_SHADERS MODULES)
+            set(_sample_${_kind})
+            foreach(_file IN LISTS SAMPLE_${_kind})
+                list(APPEND _sample_${_kind} "${sample_name}/${_file}")
+                get_filename_component(_dir "${CMAKE_CURRENT_SOURCE_DIR}/${sample_name}/${_file}" DIRECTORY)
+                list(APPEND _search_paths "${_dir}")
+            endforeach()
+        endforeach()
+        list(REMOVE_DUPLICATES _search_paths)
+        if(_multi_config)
+            set(_spirv_dir "$<TARGET_FILE_DIR:${sample_name}>/${sample_name}_data")
+        else()
+            set(_spirv_dir "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${sample_name}_data")
+        endif()
+        mythril_reflect_shaders(${sample_name} SOURCES ${_sample_SHADERS} UNTYPED_SOURCES ${_sample_UNTYPED_SHADERS} MODULES ${_sample_MODULES} SEARCH_PATHS ${_search_paths}
+                MATRIX_LAYOUT COLUMN TYPES_HEADER shader_types.h TYPES_NAMESPACE mythril::GPU SPIRV_DIR "${_spirv_dir}")
+    endif()
 endmacro()
 
 # ==================== Sample Dependencies ====================
@@ -107,16 +128,18 @@ endif()
 # ==================== Sample Definitions ====================
 # Only build samples whose required features the parent CMakeLists kept enabled.
 set(_sample_args_01_ClearWindow                "")
-set(_sample_args_02_Cube                       "LIBS;glm")
-set(_sample_args_03_CubeMSAA                   "LIBS;glm")
-set(_sample_args_04_PostProcessingCube         "LIBS;glm")
-set(_sample_args_05_ImGui                      "LIBS;imgui_sdl3_backend")
-set(_sample_args_06_ComplexShader              "LIBS;glm;imgui_sdl3_backend")
-set(_sample_args_07_CompleteScene              "LIBS;glm;fastgltf;stb_image;imguizmo;imgui_sdl3_backend")
-set(_sample_args_08_RayTracing                 "LIBS;glm;fastgltf;imgui_sdl3_backend")
-set(_sample_args_09_Skinning                   "LIBS;glm;fastgltf;imguizmo;imgui_sdl3_backend")
-set(_sample_args_10_EverythingAsFastAsPossible "LIBS;glm;imgui_sdl3_backend")
-
+set(_sample_args_02_Cube                       LIBS glm SHADERS BasicRed.slang)
+set(_sample_args_03_CubeMSAA                   LIBS glm SHADERS BasicRed.slang)
+set(_sample_args_04_PostProcessingCube         LIBS glm SHADERS BasicRed.slang FullscreenPost.slang)
+set(_sample_args_05_ImGui                      LIBS imgui_sdl3_backend)
+set(_sample_args_06_ComplexShader              LIBS glm imgui_sdl3_backend SHADERS Marble.slang)
+set(_sample_args_07_CompleteScene              LIBS glm fastgltf stb_image imguizmo imgui_sdl3_backend
+        SHADERS shaders/DepthOnly.slang shaders/RedDebug.slang shaders/FullscreenComposite.slang shaders/PointShadow.slang shaders/Standard.slang shaders/Sky.slang
+        shaders/Particles.slang shaders/Downsample.slang shaders/ConversionLuminance.slang shaders/Upsample.slang shaders/Adaptation.slang
+        MODULES shaders/GPUStructs.slang)
+set(_sample_args_08_RayTracing                 LIBS glm fastgltf imgui_sdl3_backend
+        SHADERS raytrace.slang Wind.slang Leaves.slang InstanceBounds.slang BoundsLines.slang MODULES Scene.slang)
+set(_sample_args_09_Skinning                   LIBS glm fastgltf imguizmo imgui_sdl3_backend UNTYPED_SHADERS Skinning.slang)
 
 foreach(sample IN LISTS MYTH_SAMPLES_TO_BUILD)
     ADD_SAMPLE(${sample} ${_sample_args_${sample}})

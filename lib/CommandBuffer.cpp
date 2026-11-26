@@ -16,6 +16,8 @@
 
 #include <vulkan/vk_enum_string_helper.h>
 
+#include <algorithm>
+
 #include "GPUProfiler.h"
 #include "mythril/CPUProfiler.h"
 #ifdef MYTH_ENABLED_IMGUI
@@ -413,6 +415,20 @@ namespace mythril {
 #endif
 		vkCmdPushConstants(_wrapper->_cmdBuf, _currentPipelineInfo->core._vkPipelineLayout, static_cast<VkShaderStageFlagBits>(stages), offset, size, data);
 	}
+
+#ifdef DEBUG
+	void CommandBuffer::checkPushLayout(const uint64_t layoutHash, const char* layout) const {
+		if (!_currentPipelineInfo)
+			return;
+		const std::vector<PushBlockLayout>& blocks = _currentPipelineInfo->core.signature.pushBlocks;
+		if (std::ranges::find(blocks, layoutHash, &PushBlockLayout::hash) != blocks.end())
+			return;
+		std::string shaderLayouts;
+		for (const PushBlockLayout& block: blocks)
+			fmt::format_to(std::back_inserter(shaderLayouts), "\n  {}", block.description);
+		ASSERT_MSG(false, "Pushes a struct laid out as\n  {}\non pipeline '{}', whose shaders push{}\nThe struct belongs to another pipeline, or the shader changed after its header was generated.", layout, _currentPipelineInfo->debugName, shaderLayouts.empty() ? " nothing" : shaderLayouts);
+	}
+#endif
 
 	VkCommandBuffer PassCmd::vk() {
 		// a raw bind would make the typed bind skip as a rebind

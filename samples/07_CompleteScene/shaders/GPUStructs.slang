@@ -190,4 +190,5 @@ struct GeometryPushConstants
     DescriptorHandle<SamplerComparisonState> shadowSamplerComparison;
     DescriptorHandle<TextureCube<float>> pointLightCubemaps[4];
     float pointLightFarPlane;
+    float pad;
 };

@@ -5,6 +5,7 @@
 #pragma once
 
 #include <csignal>
+#include <cstdlib>
 #include <fmt/printf.h>
 #include <source_location>
 
@@ -66,6 +67,11 @@
 #define ASSERT(ERROR) ((void)sizeof(!(ERROR)))
 #define UNREACHABLE(FORMAT, ...) ASSUME_(false)
 #endif
+
+#define FATAL(FORMAT, ...) do { \
+    fmt::print(stderr, "[FATAL] | {}:{} -> {} -> MSG:\n" FORMAT "\n", __FILE__, __LINE__, __func__ __VA_OPT__(,) __VA_ARGS__); \
+    std::abort(); \
+} while(0)
 
 
 #define MYTHRIL_INVALID_U8  ((uint8_t)0xFFu)

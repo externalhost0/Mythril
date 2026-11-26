@@ -3,9 +3,12 @@
 //
 
 #pragma once
+
 #include "mythril/RenderGraphBuilder.h"
 #include "HelperMacros.h"
 
+#include <array>
+#include <bit>
 #include <cstdint>
 #include <optional>
 #include <volk.h>
@@ -235,13 +238,22 @@ namespace mythril::vkutil {
 				return {.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = VK_ACCESS_2_TRANSFER_READ_BIT};
 			case BufferAccess::TransferWrite:
 				return {.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = VK_ACCESS_2_TRANSFER_WRITE_BIT};
+			case BufferAccess::AccelerationStructureRead:
+				return {.stage = shaderStages, .access = VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR};
+			case BufferAccess::AccelerationStructureBuildInput:
+				return {.stage = VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, .access = VK_ACCESS_2_SHADER_READ_BIT};
+			case BufferAccess::AccelerationStructureBuildRead:
+				return {.stage = VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, .access = VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR};
+			case BufferAccess::AccelerationStructureBuildWrite:
+			case BufferAccess::AccelerationStructureScratch:
+				return {.stage = VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, .access = VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR | VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR};
 		}
-		ASSERT_MSG(false, "Unsupported BufferAccess value.");
+		UNREACHABLE("Unsupported BufferAccess value.");
 	}
 
 	struct BufferAccessTracker {
 		StageAccess write;
-		StageAccess visible;
+		std::array<VkPipelineStageFlags2, 64> visible{};
 		VkPipelineStageFlags2 readStages;
 	};
 	constexpr std::optional<BufferBarrier> TrackBufferAccess(BufferAccessTracker& tracker, StageAccess access) {
@@ -254,10 +266,13 @@ namespace mythril::vkutil {
 			return BufferBarrier{.src = src, .dst = access};
 		}
 		tracker.readStages |= access.stage;
-		const bool covered = (access.stage & ~tracker.visible.stage) == 0 && (access.access & ~tracker.visible.access) == 0;
+		bool covered = true;
+		for (VkAccessFlags2 bits = access.access; bits != 0; bits &= bits - 1)
+			covered &= (access.stage & ~tracker.visible[std::countr_zero(bits)]) == 0;
 		if (tracker.write.stage == 0 || covered)
 			return std::nullopt;
-		tracker.visible = {.stage = tracker.visible.stage | access.stage, .access = tracker.visible.access | access.access};
+		for (VkAccessFlags2 bits = access.access; bits != 0; bits &= bits - 1)
+			tracker.visible[std::countr_zero(bits)] |= access.stage;
 		return BufferBarrier{.src = tracker.write, .dst = access};
 	}
 

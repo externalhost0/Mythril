@@ -10,12 +10,12 @@ struct v2f {
     float4 ClipPos : SV_Position;
 };
 
-struct PushConstant {
+struct DepthOnlyPushConstant {
     float4x4 mvp;
     Ptr<Vertex> vba;
 }
 [[vk::push_constant]]
-PushConstant push;
+DepthOnlyPushConstant push;
 
 [shader("vertex")]
 v2f vs_main(VSInput input) {

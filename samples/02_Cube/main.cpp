@@ -15,12 +15,9 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
 
-#include "GPUStructs.h"
+#include "BasicRed.shadergen.h"
 #include "../SDL3Usage.h"
 
-struct Vertex {
-	glm::vec3 position;
-};
 struct Camera {
 	glm::vec3 position;
 	float aspectRatio;
@@ -29,7 +26,7 @@ struct Camera {
 	float farPlane;
 };
 
-const std::vector<Vertex> cubeVertices = {
+const std::vector<shaders::Vertex> cubeVertices = {
 		// front face
 		{{-1.f, -1.f, -1.f}}, // A 0
 		{{ 1.f, -1.f, -1.f}}, // B 1
@@ -93,11 +90,6 @@ glm::mat4 calculateProjectionMatrix(const Camera& camera) {
 }
 int main() {
 	static const std::filesystem::path kDataDir = std::filesystem::path(MYTH_SAMPLE_NAME).concat("_data/");
-	static const std::vector<std::string> slang_searchpaths = {
-		// for shader_types.h to be included in a shader file
-		MYTH_SAMPLES_DIR,
-		kDataDir.string()
-	};
 	SDL_Window* sdlWindow = BuildSDLWindow(false);
 	auto initialWindowSize = GetSDLWindowFramebufferSize(sdlWindow);
 	{
@@ -119,9 +111,6 @@ int main() {
 				SDL_Vulkan_DestroySurface(instance, surface, nullptr);
 			}
 		})
-		.set_slang_cfg({
-			.searchpaths = slang_searchpaths
-		})
 		.with_default_swapchain({
 			.width = initialWindowSize.width,
 			.height = initialWindowSize.height
@@ -129,7 +118,7 @@ int main() {
 		.build();
 
 		mythril::Shader standardShader = ctx->createShader({
-			.source = kDataDir / "BasicRed.slang",
+			.path = kDataDir / shaders::BasicRed::kSpirvFile,
 			.debugName = "Red Object Shader"
 		});
 		mythril::GraphicsPipeline mainPipeline = ctx->createGraphicsPipeline({
@@ -144,7 +133,7 @@ int main() {
 		});
 
 		mythril::Buffer cubeVertexBuffer = ctx->createBuffer({
-			.size = sizeof(Vertex) * cubeVertices.size(),
+			.size = sizeof(shaders::Vertex) * cubeVertices.size(),
 			.usage = mythril::BufferUsageBits::BufferUsageBits_Storage,
 			.storage = mythril::StorageType::Device,
 			.initialData = cubeVertices,
@@ -179,7 +168,7 @@ int main() {
 			mythril::BufferHandle indexBuffer;
 			uint32_t indexCount = 0;
 			glm::mat4 mvp{};
-			VkDeviceAddress vertices = 0;
+			mythril::DeviceAddress vertices;
 		};
 		const auto buildGraph = [&] {
 			mythril::GraphTexture color = rgColorTarget;
@@ -220,7 +209,7 @@ int main() {
 				d.vertices = ctx->gpuAddress(cubeVertexBuffer);
 			}, [](const MainPass& d, mythril::GraphicsCmd& cmd) {
 				cmd.cmdBindGraphicsPipeline(d.pipeline);
-				const mythril::GPU::PushConstant push = {
+				const shaders::PushConstant push = {
 						.mvp = d.mvp,
 						.vertexBufferAddress = d.vertices
 				};

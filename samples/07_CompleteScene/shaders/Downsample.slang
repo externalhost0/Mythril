@@ -1,6 +1,6 @@
 import GPUStructs;
 
-struct PushConstants {
+struct DownsamplePushConstants {
     DescriptorHandle<Texture2D> srcTexture;
     DescriptorHandle<RWTexture2D> outTexture;
     DescriptorHandle<SamplerState> sampler;
@@ -9,7 +9,7 @@ struct PushConstants {
 }
 
 [vk::push_constant]
-PushConstants push;
+DownsamplePushConstants push;
 
 float3 PowVec3(float3 v, float p) {
     return float3(pow(v.x, p), pow(v.y, p), pow(v.z, p));

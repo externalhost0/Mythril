@@ -280,3 +280,22 @@ TEST_CASE("only an attachment-only confined texture is inferred memoryless") {
 	CHECK(InferRealization(kSize, attachmentOnly, false).storage == StorageType::Device);
 	CHECK(InferRealization(kSize, sampled, true).storage == StorageType::Device);
 }
+
+#ifdef DEBUG
+TEST_CASE("a texture or buffer declared twice is checked against all of its declarations") {
+	TextureDesc mip0(GraphTextureAccess::make(0, 0));
+	mip0.numLevels = 1;
+	TextureDesc mip1(GraphTextureAccess::make(0, 1));
+	mip1.baseLevel = 1;
+	const std::vector<TextureDependencyDesc> split = {{mip0, TextureAccess::Sampled}, {mip1, TextureAccess::StorageWrite}};
+	constexpr uint8_t kSampledAndStored = kReadUse | kStorageUse | kWriteUse;
+	CHECK(FindTextureUseMismatch(split, mip1.texture, kSampledAndStored) == UseMismatch::None);
+	CHECK(FindTextureUseMismatch(std::span(split).first(1), mip0.texture, kSampledAndStored) == UseMismatch::StorageAsSampled);
+	CHECK(FindTextureUseMismatch(std::span(split).last(1), mip1.texture, kSampledAndStored) == UseMismatch::WriteDeclaredRead);
+
+	const std::vector<BufferDependencyDesc> both = {{{}, {}, BufferAccess::ShaderRead}, {{}, {}, BufferAccess::ShaderWrite}};
+	CHECK(FindBufferUseMismatch(both, {}, kReadUse | kWriteUse) == UseMismatch::None);
+	CHECK(FindBufferUseMismatch(std::span(both).first(1), {}, kWriteUse) == UseMismatch::ReadDeclaredWritten);
+	CHECK(FindBufferUseMismatch(std::span(both).last(1), {}, kReadUse) == UseMismatch::WriteDeclaredRead);
+}
+#endif

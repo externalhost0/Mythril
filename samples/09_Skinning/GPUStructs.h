@@ -4,7 +4,7 @@
 
 #pragma once
 
-#include "shader_types.h"
+#include "SharedTypes.h"
 
 NAMESPACE_BEGIN()
 

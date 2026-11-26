@@ -15,10 +15,6 @@
 
 #include "SwapchainSpec.h"
 
-namespace slang {
-	struct CompilerOptionEntry;
-}
-
 namespace mythril {
 	class CTX;
 	struct CtxDeleter {
@@ -67,17 +63,6 @@ namespace mythril {
 		void* deviceExtensionFeatureChain = {};
 	};
 
-	struct SlangCfg
-	{
-		enum class MatrixMode {
-			RowMajor,
-			ColMajor
-		};
-		MatrixMode matrixLayoutMode = MatrixMode::ColMajor;
-		std::vector<std::string> searchpaths = {};
-		std::span<const slang::CompilerOptionEntry> compilerOptions = {};
-	};
-
 	struct VulkanInfoSpec {
 		const char* app_name = "Untitled App";
 		const char* engine_name = "Untitled Engine";
@@ -121,10 +106,6 @@ namespace mythril {
 			this->_vulkanCfg = cfg;
 			return *this;
 		}
-		CTXBuilder& set_slang_cfg(const SlangCfg& cfg) {
-			this->_slangCfg = cfg;
-			return *this;
-		}
 		CTXBuilder& set_window_surface(const SurfaceSpec& spec) {
 			if (!spec.createFunc)
 				throw std::runtime_error("SurfaceSpec: createFunc is required");
@@ -162,7 +143,6 @@ namespace mythril {
 		// cfgs are used to resolve data
 		// specs are passed straight into the object
 		VulkanCfg _vulkanCfg{};
-		SlangCfg _slangCfg{};
 		SwapchainSpec _swapchainSpec{};
 		SurfaceSpec _surfaceSpec{};
 #ifdef MYTH_ENABLED_IMGUI

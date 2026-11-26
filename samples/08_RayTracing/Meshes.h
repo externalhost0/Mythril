@@ -8,9 +8,9 @@
 #include <glm/gtc/constants.hpp>
 #include <glm/gtc/quaternion.hpp>
 
-struct Vertex {
-	glm::vec3 position;
-};
+#include "Scene.shadergen.h"
+
+using Vertex = shaders::Vertex;
 struct Mesh {
 	std::vector<Vertex> vertices;
 	std::vector<uint32_t> indices;
@@ -155,4 +155,53 @@ inline Mesh buildTreeMesh(const TreeSpec& spec = {}) {
 	detail::TreeBuilder builder{.spec = spec, .mesh = mesh, .rng = std::mt19937(spec.seed)};
 	builder.growBranch(glm::vec3(0.f), glm::vec3(0, 1, 0), spec.trunkLength, spec.trunkRadius, 0);
 	return mesh;
+}
+
+// a 2x2x2 cube at the origin standing on a square floor
+inline Mesh buildGroundMesh(const float floorHalfExtent, const float floorHeight) {
+	Mesh mesh = {
+		.vertices = {
+			// front
+			{{-1.f, -1.f, -1.f}}, {{ 1.f, -1.f, -1.f}}, {{ 1.f,  1.f, -1.f}}, {{-1.f,  1.f, -1.f}},
+			// back
+			{{-1.f, -1.f,  1.f}}, {{ 1.f, -1.f,  1.f}}, {{ 1.f,  1.f,  1.f}}, {{-1.f,  1.f,  1.f}},
+			// left
+			{{-1.f,  1.f, -1.f}}, {{-1.f, -1.f, -1.f}}, {{-1.f, -1.f,  1.f}}, {{-1.f,  1.f,  1.f}},
+			// right
+			{{ 1.f, -1.f, -1.f}}, {{ 1.f,  1.f, -1.f}}, {{ 1.f,  1.f,  1.f}}, {{ 1.f, -1.f,  1.f}},
+			// bottom
+			{{-1.f, -1.f, -1.f}}, {{ 1.f, -1.f, -1.f}}, {{ 1.f, -1.f,  1.f}}, {{-1.f, -1.f,  1.f}},
+			// top
+			{{ 1.f,  1.f, -1.f}}, {{-1.f,  1.f, -1.f}}, {{-1.f,  1.f,  1.f}}, {{ 1.f,  1.f,  1.f}},
+		},
+		.indices = {
+			0, 3, 2, 2, 1, 0,
+			4, 5, 6, 6, 7, 4,
+			11, 8, 9, 9, 10, 11,
+			12, 13, 14, 14, 15, 12,
+			16, 17, 18, 18, 19, 16,
+			20, 21, 22, 22, 23, 20,
+		},
+	};
+	const auto base = static_cast<uint32_t>(mesh.vertices.size());
+	const float e = floorHalfExtent;
+	// same winding as the cube's top face so the floor faces +y
+	mesh.vertices.insert(mesh.vertices.end(), {
+		{{ e, floorHeight, -e}},
+		{{-e, floorHeight, -e}},
+		{{-e, floorHeight,  e}},
+		{{ e, floorHeight,  e}},
+	});
+	mesh.indices.insert(mesh.indices.end(), {
+		base + 0, base + 1, base + 2,
+		base + 2, base + 3, base + 0
+	});
+	return mesh;
+}
+
+inline Mesh buildLeafMesh() {
+	return {
+		.vertices = {{{0.f, 0.f, -1.f}}, {{0.45f, 0.f, 0.f}}, {{0.f, 0.f, 1.f}}, {{-0.45f, 0.f, 0.f}}, {{0.f, 0.12f, 0.f}}},
+		.indices = {0, 4, 1, 1, 4, 2, 2, 4, 3, 3, 4, 0},
+	};
 }

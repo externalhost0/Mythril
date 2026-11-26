@@ -6,7 +6,8 @@
 
 #include "Constants.h"
 
-#include <optional>
+#include <cstdint>
+#include <span>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -17,36 +18,6 @@ namespace mythril {
 	class CTX;
 	class CommandBuffer;
 
-	enum class FieldKind {
-		// special cases, can have their own kinds
-		OpaqueHandle,
-		Scalar,
-		Pointer,
-		// ordinary cases
-		Vector,
-		Matrix,
-		Array,
-		Struct,
-
-		Unknown
-	};
-	enum class OpaqueKind {
-		// sampled images
-		Texture1D,
-		Texture2D,
-		Texture3D,
-		TextureCube,
-
-		// samplers
-		Sampler,
-
-		// storage images
-		RWTexture1D,
-		RWTexture2D,
-		RWTexture3D,
-
-		Unknown
-	};
 	enum class ScalarKind {
 		None,
 		Int,
@@ -56,58 +27,66 @@ namespace mythril {
 		Bool
 	};
 
-	struct FieldInfo {
-		// always valid
-		std::string varName;
-		std::string typeName;
-		uint32_t size;
-		uint32_t offset;
-		FieldKind kind;
-
-		// only valid when FieldKind::Scalar
-		ScalarKind scalarKind;
-		// valid for FieldKind::OpaqueHandle
-		OpaqueKind opaqueKind;
-
-		// valid for vectors
-		uint32_t componentCount = 0;
-		// valid for matrices
-		uint32_t rowCount = 0;
-		uint32_t columnCount = 0;
-
-		// valid for structs
-		std::vector<FieldInfo> fields;
-	};
-	struct IParameterInfo {
-		std::string varName;
-		std::string typeName;
-		VkShaderStageFlags usedStages;
-		std::vector<FieldInfo> fields;
-	};
-
 	// a specialization constant can only ever be a Scalar
 	struct SpecializationConstant {
 		std::string varName;
-		std::string typeName;
 		ScalarKind scalarKind;
 		uint32_t id;
+		// bytes a pipeline must give, a bool takes a VkBool32
+		uint32_t size;
 	};
 
-	struct PushResourceField {
-		enum class Kind : uint8_t { SampledTexture, StorageTexture, Pointer };
+	// a field of a push block or of what a pointer in it points to, Slang's array and matrix wrapper structs are folded away
+	struct PushField {
+		enum class Kind : uint8_t { Scalar, Vector, Matrix, Array, Struct, Pointer, SampledTexture, StorageTexture, Sampler, AccelerationStructure, Unknown };
 		// what the shader does through the field, Unknown when the SPIR-V walk lost the trace
 		enum class Access : uint8_t { None = 0, Read = 1, Write = 2, ReadWrite = 3, Unknown = 4 };
+		std::string name;
+		// struct name without Slang's layout suffix
+		std::string typeName;
+		// from the start of the push block, or of the pointee for a field behind a pointer
+		uint32_t offset = 0;
+		uint32_t size = 0;
+		Kind kind = Kind::Unknown;
+		ScalarKind scalar = ScalarKind::None;
+		uint8_t bits = 0;
+		uint8_t rows = 0;
+		uint8_t columns = 0;
+		bool rowMajor = false;
+		// array element count, 0 when unsized, and element or pointee stride
+		uint32_t count = 0;
+		uint32_t stride = 0;
+		// what the shader does through a pointer or handle of the push block, Unknown in release builds and behind pointers
+		Access access = Access::Unknown;
+		// index into PushBlockLayout::pointees, a struct that points to itself points back to its own entry
+		uint32_t pointee = UINT32_MAX;
+		// struct members, or the one element of an array laid out at the array's offset
+		std::vector<PushField> fields;
+	};
+	// a pointer or handle leaf of the push block, one per array element
+	struct PushResourceField {
 		std::string varName;
 		uint32_t offset;
-		Kind kind;
-		Access access = Access::None;
+		PushField::Kind kind;
+		PushField::Access access = PushField::Access::None;
+	};
+	struct PushBlockLayout {
+		std::string variable;
+		PushField root;
+		std::vector<PushField> pointees;
+		uint64_t hash;
+		std::string description;
 	};
 	struct PipelineLayoutSignature {
-		// this will always be the index of slang's __slang_resource_heap
-		// however it is not gauranteed to be 0 and thus should be resolved
-		std::optional<uint32_t> bindlessSetIndex;
+		// the shader reads Slang's __slang_resource_heap, which the shader rules keep at set 0
+		bool usesBindless = false;
 		std::vector<VkPushConstantRange> pushes;
 		std::vector<PushResourceField> pushResources;
+		std::vector<PushBlockLayout> pushBlocks;
+	};
+	struct ShaderEntryPoint {
+		std::string name;
+		VkShaderStageFlagBits stage;
 	};
 	struct SpecializationInfo {
 		std::vector<SpecializationConstant> specializationConstants;
@@ -117,26 +96,8 @@ namespace mythril {
 	namespace detail {
 	class AllocatedShader {
 	public:
-		struct DescriptorBindingInfo : IParameterInfo {
-			uint32_t setIndex;
-			uint32_t bindingIndex;
-
-			// for arrays (ie bindless), will usually be 1
-			uint32_t descriptorCount;
-			VkDescriptorType descriptorType;
-		};
-		// these in a vector should be ordered according to their set index anyway
-		struct DescriptorSetInfo {
-			uint32_t setIndex;
-			std::vector<DescriptorBindingInfo> bindingInfos;
-		};
-		struct PushConstantInfo : IParameterInfo {
-			uint32_t offset;
-			uint32_t size;
-		};
-
-		const std::vector<DescriptorSetInfo>& viewDescriptorSets() const { return _descriptorSets; };
-		const std::vector<PushConstantInfo>& viewPushConstants() const { return _pushConstants; }
+		// replaced on hot reload
+		std::span<const PushBlockLayout> viewPushBlocks() const { return _pipelineSignature.pushBlocks; }
 		const PipelineLayoutSignature& getPipelineLayoutSignature() const { return _pipelineSignature; }
 		std::string_view getDebugName() const { return _debugName; }
 
@@ -145,11 +106,9 @@ namespace mythril {
 		VkShaderModule _vkShaderModule;
 		PipelineLayoutSignature _pipelineSignature;
 		SpecializationInfo _specializationInfo; // holds both info and a map when varName is used to resolve ID
-
-		// these two vectors can be quired by user, not used by Mythril at all
-		std::vector<DescriptorSetInfo> _descriptorSets;
-		std::vector<PushConstantInfo> _pushConstants;
-
+#ifdef DEBUG
+		std::vector<ShaderEntryPoint> _entryPoints;
+#endif
 
 		char _debugName[kMaxDebugNameLength] = {0};
 

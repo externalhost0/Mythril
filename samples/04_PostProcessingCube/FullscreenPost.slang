@@ -1,4 +1,9 @@
-#include "GPUStructs.h"
+struct FullscreenPushConstant {
+    DescriptorHandle<Texture2D> colorTexture;
+    DescriptorHandle<SamplerState> linearSampler;
+    float time;
+    float pad;
+};
 
 struct v2f {
     float4 ClipPos : SV_Position;

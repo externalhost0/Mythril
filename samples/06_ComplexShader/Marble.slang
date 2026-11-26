@@ -1,5 +1,41 @@
+struct Vertex {
+    float3 position;
+    float uv_x;
+    float3 normal;
+    float uv_y;
+    float4 tangent;
+};
 
-#include "GPUStructs.h"
+struct CameraData {
+    float4x4 proj;
+    float4x4 view;
+    float3 position;
+};
+
+struct ObjectData {
+    float3 position;
+    float3 color;
+};
+struct GlobalData {
+    Ptr<ObjectData> objects;
+    CameraData camera;
+    float2 renderResolution;
+    float time;
+};
+struct MaterialData {
+    float3 tint;
+    float warpIterations;
+    float glowAmount;
+    float distortAmount;
+    uint unint1; // padding ig
+};
+
+struct GeometryPushConstant {
+    float4x4 model;
+    Ptr<Vertex> vertexBufferAddress;
+    Ptr<GlobalData> perFrame;
+    Ptr<MaterialData> perMaterial;
+};
 
 struct VSInput {
     uint VertexID : SV_VertexID;

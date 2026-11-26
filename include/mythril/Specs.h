@@ -200,7 +200,8 @@ namespace mythril {
 		const char* debugName = "Unnamed Texture View";
 	};
 	struct ShaderSpec {
-		std::filesystem::path source;
+		// a .spv written by mythril_reflect_shaders, join your data dir with the header's kSpirvFile
+		std::filesystem::path path;
 		const char* debugName = "Unnamed Shader";
 	};
 

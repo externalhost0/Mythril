@@ -1,0 +1,53 @@
+BasedOnStyle: LLVM
+Language: Cpp
+Standard: c++20
+UseTab: AlignWithSpaces
+TabWidth: 4
+IndentWidth: 4
+ContinuationIndentWidth: 4
+ConstructorInitializerIndentWidth: 4
+ColumnLimit: 0
+NamespaceIndentation: All
+AccessModifierOffset: -4
+IndentCaseLabels: true
+BreakBeforeBraces: Attach
+PointerAlignment: Left
+ReferenceAlignment: Left
+DerivePointerAlignment: false
+SortIncludes: Never
+IncludeBlocks: Preserve
+IndentPPDirectives: None
+AlignEscapedNewlines: DontAlign
+AlignAfterOpenBracket: false
+AlignOperands: Align
+AlignTrailingComments: false
+AlignConsecutiveAssignments: None
+AllowShortFunctionsOnASingleLine: All
+AllowShortIfStatementsOnASingleLine: AllIfsAndElse
+AllowShortLoopsOnASingleLine: true
+AllowShortBlocksOnASingleLine: Always
+AllowShortLambdasOnASingleLine: All
+AllowShortEnumsOnASingleLine: true
+AllowShortCaseLabelsOnASingleLine: true
+BreakConstructorInitializers: AfterColon
+PackConstructorInitializers: Never
+BreakTemplateDeclarations: No
+SpaceAfterTemplateKeyword: false
+RequiresClausePosition: SingleLine
+SpaceBeforeParens: Custom
+KeepEmptyLines:
+  AtStartOfBlock: true
+  AtStartOfFile: true
+MaxEmptyLinesToKeep: 2
+FixNamespaceComments: false
+ShortNamespaceLines: 0
+EmptyLineBeforeAccessModifier: Leave
+EmptyLineAfterAccessModifier: Leave
+Cpp11BracedListStyle: true
+ReflowComments: IndentOnly
+InsertNewlineAtEOF: true
+SpaceBeforeParensOptions:
+  AfterControlStatements: true
+  AfterRequiresInClause: true
+  AfterRequiresInExpression: true
+SpaceBeforeRangeBasedForLoopColon: false

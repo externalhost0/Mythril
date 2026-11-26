@@ -14,12 +14,10 @@
 
 #include "SDL3/SDL.h"
 
-#include "GPUStructs.h"
+#include "BasicRed.shadergen.h"
+#include "FullscreenPost.shadergen.h"
 #include "../SDL3Usage.h"
 
-struct Vertex {
-	glm::vec3 position;
-};
 struct Camera {
 	glm::vec3 position;
 	float aspectRatio;
@@ -28,7 +26,7 @@ struct Camera {
 	float farPlane;
 };
 
-const std::vector<Vertex> cubeVertices = {
+const std::vector<shaders::Vertex> cubeVertices = {
 		// front face
 		{{-1.f, -1.f, -1.f}}, // A 0
 		{{1.f,  -1.f, -1.f}}, // B 1
@@ -94,10 +92,6 @@ glm::mat4 calculateProjectionMatrix(const Camera& camera) {
 
 int main() {
 	static const std::filesystem::path kDataDir = std::filesystem::path(MYTH_SAMPLE_NAME).concat("_data/");
-	static const std::vector<std::string> slang_searchpaths = {
-		MYTH_SAMPLES_DIR,
-		kDataDir.string()
-	};
 	SDL_Window* sdlWindow = BuildSDLWindow(false);
 	auto initialWindowSize = GetSDLWindowFramebufferSize(sdlWindow);
 	{
@@ -123,13 +117,10 @@ int main() {
 			.width = initialWindowSize.width,
 			.height = initialWindowSize.height
 		})
-		.set_slang_cfg({
-			.searchpaths = slang_searchpaths
-		})
 		.build();
 
 		mythril::Shader standardShader = ctx->createShader({
-			.source = kDataDir / "BasicRed.slang",
+			.path = kDataDir / shaders::BasicRed::kSpirvFile,
 			.debugName = "Red Object Shader"
 		});
 		mythril::GraphicsPipeline mainPipeline = ctx->createGraphicsPipeline({
@@ -140,7 +131,7 @@ int main() {
 			.debugName = "Main Pipeline"
 		});
 		mythril::Shader postProcessingShader = ctx->createShader({
-			.source = kDataDir / "FullscreenPost.slang",
+			.path = kDataDir / shaders::FullscreenPost::kSpirvFile,
 			.debugName = "Fullscreen Shader"
 		});
 		mythril::GraphicsPipeline postPipeline = ctx->createGraphicsPipeline({
@@ -150,7 +141,7 @@ int main() {
 		});
 
 		mythril::Buffer cubeVertexBuffer = ctx->createBuffer({
-			.size = sizeof(Vertex) * cubeVertices.size(),
+			.size = sizeof(shaders::Vertex) * cubeVertices.size(),
 			.usage = mythril::BufferUsageBits::BufferUsageBits_Storage,
 			.storage = mythril::StorageType::Device,
 			.initialData = cubeVertices,
@@ -198,7 +189,7 @@ int main() {
 			mythril::BufferHandle indexBuffer;
 			uint32_t indexCount = 0;
 			glm::mat4 mvp{};
-			VkDeviceAddress vertices = 0;
+			mythril::DeviceAddress vertices;
 		};
 		struct PostPass {
 			mythril::GraphicsPipelineHandle pipeline;
@@ -245,7 +236,7 @@ int main() {
 				d.vertices = ctx->gpuAddress(cubeVertexBuffer);
 			}, [](const MainPass& d, mythril::GraphicsCmd& cmd) {
 				cmd.cmdBindGraphicsPipeline(d.pipeline);
-				const mythril::GPU::GeometryPushConstant push = {
+				const shaders::GeometryPushConstant push = {
 						.mvp = d.mvp,
 						.vertexBufferAddress = d.vertices
 				};
@@ -266,9 +257,8 @@ int main() {
 				d.time = std::chrono::duration<float>(currentTime - startTime).count();
 			}, [](const PostPass& d, mythril::GraphicsCmd& cmd) {
 				cmd.cmdBindGraphicsPipeline(d.pipeline);
-				mythril::GPU::FullscreenPushConstant push {
-					.colorTexture = cmd.texture(d.color).index(),
-					.linearSampler = 0,
+				const shaders::FullscreenPushConstant push {
+					.colorTexture = cmd.texture(d.color),
 					.time = d.time
 				};
 				cmd.cmdPushConstants(push);

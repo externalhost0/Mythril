@@ -13,12 +13,9 @@
 #include "glm/ext/matrix_clip_space.hpp"
 
 #include "SDL3/SDL.h"
-#include "GPUStructs.h"
+#include "BasicRed.shadergen.h"
 #include "../SDL3Usage.h"
 
-struct Vertex {
-	glm::vec3 position;
-};
 struct Camera {
 	glm::vec3 position;
 	float aspectRatio;
@@ -26,7 +23,7 @@ struct Camera {
 	float nearPlane;
 	float farPlane;
 };
-const std::vector<Vertex> cubeVertices = {
+const std::vector<shaders::Vertex> cubeVertices = {
 		// front face
 		{{-1.f, -1.f, -1.f}}, // A 0
 		{{1.f,  -1.f, -1.f}}, // B 1
@@ -92,10 +89,6 @@ glm::mat4 calculateProjectionMatrix(const Camera& camera) {
 
 int main() {
 	static const std::filesystem::path kDataDir = std::filesystem::path(MYTH_SAMPLE_NAME).concat("_data/");
-	static const std::vector<std::string> slang_searchpaths = {
-		MYTH_SAMPLES_DIR,
-		kDataDir.string()
-	};
 	SDL_Window* sdlWindow = BuildSDLWindow(false);
 	auto windowSize = GetSDLWindowFramebufferSize(sdlWindow);
 	{
@@ -121,13 +114,10 @@ int main() {
 			.width = windowSize.width,
 			.height = windowSize.height
 		})
-		.set_slang_cfg({
-			.searchpaths = slang_searchpaths
-		})
 		.build();
 
 		mythril::Shader standardShader = ctx->createShader({
-			.source = kDataDir / "BasicRed.slang",
+			.path = kDataDir / shaders::BasicRed::kSpirvFile,
 			.debugName = "Example Shader"
 		});
 		mythril::GraphicsPipeline mainPipeline = ctx->createGraphicsPipeline({
@@ -142,7 +132,7 @@ int main() {
 		});
 
 		mythril::Buffer cubeVertexBuffer = ctx->createBuffer({
-			.size = sizeof(Vertex) * cubeVertices.size(),
+			.size = sizeof(shaders::Vertex) * cubeVertices.size(),
 			.usage = mythril::BufferUsageBits::BufferUsageBits_Storage,
 			.storage = mythril::StorageType::Device,
 			.initialData = cubeVertices,
@@ -185,7 +175,7 @@ int main() {
 			mythril::BufferHandle indexBuffer;
 			uint32_t indexCount = 0;
 			glm::mat4 mvp{};
-			VkDeviceAddress vertices = 0;
+			mythril::DeviceAddress vertices;
 		};
 		const auto buildGraph = [&] {
 			mythril::GraphTexture resolved;
@@ -227,7 +217,7 @@ int main() {
 				d.vertices = ctx->gpuAddress(cubeVertexBuffer);
 			}, [](const MainPass& d, mythril::GraphicsCmd& cmd) {
 				cmd.cmdBindGraphicsPipeline(d.pipeline);
-				const mythril::GPU::PushConstant push = {
+				const shaders::PushConstant push = {
 						.mvp = d.mvp,
 						.vertexBufferAddress = d.vertices
 				};

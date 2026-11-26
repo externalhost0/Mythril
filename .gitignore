@@ -47,3 +47,4 @@ traces/
 # right now we have a bunch of skills and scripts used for verification 
 # and they arent meant to be distributed yet
 .claude/
+.audit/

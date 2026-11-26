@@ -48,6 +48,7 @@ namespace mythril {
     struct PassMember;
     struct TextureShape;
     struct GraphResource;
+    struct PassUses;
     struct GraphBufferResource;
     struct PushResourceField;
     struct OwnershipTransfer;
@@ -134,10 +135,14 @@ namespace mythril {
         // a write returns the version this pass produces, a read returns the version it names
         GraphTexture dependency(const TextureDesc& texDesc, TextureAccess access);
         GraphBuffer dependency(GraphBuffer buffer, BufferAccess access);
+        GraphAccelerationStructure dependency(GraphAccelerationStructure structure, AccelerationStructureAccess access);
         // asserts the access is a read, a write needs a mutable array to take the new versions
         void readDependencies(std::span<const GraphTexture> textures, TextureAccess access);
         AttachmentOutput attachment(const AttachmentDesc& desc);
     private:
+        GraphBuffer declare(GraphBuffer buffer, BufferAccess access);
+        // a read the pass already declared with the same access is not declared again
+        GraphBuffer declareOnce(GraphBuffer buffer, BufferAccess access);
         RenderGraph& _rGraph;
         PassDesc _passSource;
         friend class RenderGraph;
@@ -169,6 +174,9 @@ namespace mythril {
         }
         GraphBuffer dependency(const GraphBuffer buffer, const BufferAccess access) {
             return base.dependency(buffer, access);
+        }
+        GraphAccelerationStructure dependency(const GraphAccelerationStructure structure, const AccelerationStructureAccess access = AccelerationStructureAccess::Read) {
+            return base.dependency(structure, access);
         }
     	void multiview(uint32_t layerCount, uint32_t viewMask) {
             this->base._passSource.layerCount = layerCount;
@@ -203,6 +211,9 @@ namespace mythril {
         }
         GraphBuffer dependency(const GraphBuffer buffer, const BufferAccess access) {
             return base.dependency(buffer, access);
+        }
+        GraphAccelerationStructure dependency(const GraphAccelerationStructure structure, const AccelerationStructureAccess access = AccelerationStructureAccess::Read) {
+            return base.dependency(structure, access);
         }
     	// dispatches in this pass are unordered unless requested, use when one dispatch reads what a previous one wrote (ie: mip chain)
     	// has a performance overhead so only use if the commands in your pass need to be dependent on previous
@@ -242,6 +253,9 @@ namespace mythril {
 		}
 		GraphBuffer dependency(const GraphBuffer buffer, const BufferAccess access) {
 			return base.dependency(buffer, access);
+		}
+		GraphAccelerationStructure dependency(const GraphAccelerationStructure structure, const AccelerationStructureAccess access = AccelerationStructureAccess::Read) {
+			return base.dependency(structure, access);
 		}
 		void executeCmdsInOrder() {
 			this->base._passSource.executeInOrder = true;
@@ -292,12 +306,17 @@ namespace mythril {
         GraphBuffer upload(GraphBuffer buffer, const Range& range, size_t dstOffset = 0) { return upload(buffer, std::span<const std::byte>(std::as_bytes(std::span(range))), dstOffset); }
         template<typename T> requires (std::is_trivially_copyable_v<T> && !std::ranges::range<T>)
         GraphBuffer upload(GraphBuffer buffer, const T& value, size_t dstOffset = 0) { return upload(buffer, std::span<const std::byte>(std::as_bytes(std::span(&value, 1))), dstOffset); }
-        // runs on the transfer queue, then async compute, then main, a blit needs main and asserts
+        // inputs are every buffer the structure was created from, a TLAS also names the BLASes its instances point to
+        GraphAccelerationStructure build(GraphAccelerationStructure structure, std::span<const GraphBuffer> inputs, std::span<const GraphAccelerationStructure> instanced = {});
+        // like build, keeps the topology and needs VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_KHR
+        GraphAccelerationStructure refit(GraphAccelerationStructure structure, std::span<const GraphBuffer> inputs, std::span<const GraphAccelerationStructure> instanced = {});
+        // runs on the transfer queue, then async compute, then main, a blit needs main and asserts, a build skips the transfer queue
         void async() {
             this->base._passSource.async = true;
         }
     private:
         TransferBuilder(RenderGraph& rGraph, const char* pName) : base(rGraph, pName, PassDesc::Type::Transfer) {}
+        GraphAccelerationStructure declareBuild(GraphAccelerationStructure structure, std::span<const GraphBuffer> inputs, std::span<const GraphAccelerationStructure> instanced, bool refit);
         BasePassBuilder base;
         friend class RenderGraph;
     };
@@ -376,6 +395,8 @@ namespace mythril {
         // non-owning like importTexture, every buffer a pass touches goes through here
         [[nodiscard]] GraphBuffer importBuffer(const Buffer& buffer);
         [[nodiscard]] GraphBuffer importBuffer(const Buffer& buffer, const ExternalAccess& external);
+        // non-owning like importBuffer, its storage and scratch buffers become graph buffers
+        [[nodiscard]] GraphAccelerationStructure importAccelerationStructure(const AccelerationStructure& structure);
 
         void setOptions(const Options& options) { _options = options; }
         const Options& getOptions() const { return _options; }
@@ -416,6 +437,9 @@ namespace mythril {
         GraphBuffer readVersion(const PassDesc& pass, GraphBuffer buffer) const;
         GraphBuffer writeVersion(const PassDesc& pass, GraphBuffer buffer);
         BufferHandle handleOf(GraphBuffer buffer) const;
+        GraphBuffer storageOf(GraphAccelerationStructure structure) const;
+        const std::vector<uint32_t>& producersOf(uint32_t id) const;
+        std::optional<uint32_t> producerOf(GraphBuffer buffer) const;
         std::string_view nameOf(GraphTexture texture) const;
         uint32_t mipCountOf(GraphTexture texture) const;
         void addPassDesc(PassDesc&& desc);
@@ -424,6 +448,7 @@ namespace mythril {
         void observeDispatch(const CompiledPass& pass, const PassMember& member) const;
         void reportObservedUses(const CompiledPass& pass, const PassMember& member) const;
         void reportDepthBlockedMerges(size_t passIdx, bool drewFixedFormats) const;
+        void reportDeclarations(const std::vector<uint32_t>& culled_order, const std::vector<PassUses>& passUses, std::unordered_set<std::string>& findings) const;
 #endif
         void addTransferDesc(PassDesc&& desc);
 

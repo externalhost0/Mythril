@@ -4,92 +4,28 @@
 
 #pragma once
 
-// this serves as an example of how cpu types should be correlatted with gpu types from Slang
-// you of course dont have to make an abstraction like this but because most of our samples are simple it is very helpful
-
-#ifdef __cplusplus // when this header is processed in cpp
-#include <concepts>
+// the C++ types that the generated shader headers use for Slang's vector and matrix types
 #include <glm/glm.hpp>
 
-#define NAMESPACE_BEGIN() namespace mythril::GPU {
-#define NAMESPACE_END() }
+namespace mythril::GPU {
+	using float2x2 = glm::mat2;
+	using float2x3 = glm::mat3x2;
+	using float3x2 = glm::mat2x3;
+	using float3x3 = glm::mat3;
+	using float3x4 = glm::mat4x3;
+	using float4x3 = glm::mat3x4;
+	using float4x4 = glm::mat4;
 
-NAMESPACE_BEGIN()
+	using float2 = glm::vec2;
+	using float3 = glm::vec3;
+	using float4 = glm::vec4;
 
-using float2x2 = glm::mat2;
-using float2x3 = glm::mat2x3;
-using float3x2 = glm::mat3x2;
-using float3x3 = glm::mat3;
-using float3x4 = glm::mat3x4;
-using float4x3 = glm::mat4x3;
-using float4x4 = glm::mat4;
+	using int2 = glm::ivec2;
+	using int3 = glm::ivec3;
+	using int4 = glm::ivec4;
 
-using float2 = glm::vec2;
-using float3 = glm::vec3;
-using float4 = glm::vec4;
-
-using int2 = glm::ivec2;
-using int3 = glm::ivec3;
-using int4 = glm::ivec4;
-
-using uint  = unsigned int;
-using uint2 = glm::uvec2;
-using uint3 = glm::uvec3;
-using uint4 = glm::uvec4;
-
-
-template<typename T>
-struct Ptr {
-	uint64_t addr;
-	Ptr(uint64_t addr) : addr(addr) {}
-};
-
-template<typename T>
-struct DescriptorHandle {
-	uint64_t index; // uint2 in slang
-	DescriptorHandle(uint32_t index) : index(index) {}
-	template<std::integral U> requires (sizeof(U) == 8)
-	DescriptorHandle(U) { static_assert(sizeof(U) == 0, "DescriptorHandle takes a bindless index (.index())"); }
-};
-
-template<typename T>
-struct StructuredBuffer {
-	T* buf;
-};
-
-template<typename T>
-struct ConstantBuffer {
-	T* buf;
-};
-
-struct Texture2D {
-
-};
-template<typename T>
-struct RWTexture2D {
-
-};
-struct SamplerState {
-
-};
-struct RaytracingAccelerationStructure {
-
-};
-
-template<>
-struct DescriptorHandle<RaytracingAccelerationStructure> {
-	uint64_t address;
-	DescriptorHandle(uint64_t address) : address(address) {}
-	DescriptorHandle(uint32_t) = delete;
-};
-
-NAMESPACE_END()
-
-#elif __SLANG__ // when this header is processed in slang
-
-#define NAMESPACE_BEGIN()
-#define NAMESPACE_END()
-
-#else // when this header is processed in an unknown languages
-#error "Unknown Language Environment!"
-#endif
+	using uint = unsigned int;
+	using uint2 = glm::uvec2;
+	using uint3 = glm::uvec3;
+	using uint4 = glm::uvec4;
+} // namespace mythril::GPU

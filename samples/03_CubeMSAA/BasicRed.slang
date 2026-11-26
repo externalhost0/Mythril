@@ -1,4 +1,10 @@
-#include "GPUStructs.h"
+struct Vertex {
+    float3 position;
+};
+struct PushConstant {
+    float4x4 mvp;
+    Ptr<Vertex> vertexBufferAddress;
+};
 
 struct VSInput {
     uint VertexID : SV_VertexID;

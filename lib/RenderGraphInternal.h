@@ -7,6 +7,7 @@
 #include "mythril/RenderGraphBuilder.h"
 #include "mythril/RenderGraphDescriptions.h"
 #include "mythril/SwapchainSpec.h"
+#include "HelperMacros.h"
 #include "SubresourceMap.h"
 #include "vkutil.h"
 
@@ -36,6 +37,11 @@ namespace mythril {
         static constexpr uint32_t index(GraphBuffer buffer) { return buffer._index; }
         static constexpr uint32_t version(GraphBuffer buffer) { return buffer._version; }
         static constexpr GraphBuffer make(const uint32_t index, const uint32_t version = 0) { return GraphBuffer{index, version}; }
+    };
+    struct GraphAccelerationStructureAccess {
+        static constexpr uint32_t index(GraphAccelerationStructure structure) { return structure._storageSlot; }
+        static constexpr uint32_t version(GraphAccelerationStructure structure) { return structure._version; }
+        static constexpr GraphAccelerationStructure make(const uint32_t index, const uint32_t version = 0) { return GraphAccelerationStructure{index, version}; }
     };
     // ImGui::Image(GraphTexture) stores the graph id behind this tag, cmdDrawImGui swaps in the descriptor
     constexpr uint64_t kImGuiGraphTextureTag = 1ull << 63;
@@ -137,10 +143,24 @@ namespace mythril {
         std::variant<DeclaredTexture, ImportedTexture, SwapchainTexture> source;
         std::optional<ExternalAccess> external;
     };
+    inline uint32_t IdOf(const GraphTexture texture) { return GraphTextureAccess::index(texture); }
+    inline uint32_t VersionOf(const GraphTexture texture) { return GraphTextureAccess::version(texture); }
+    inline const GraphResource& ResourceOf(const std::vector<GraphResource>& textures, const GraphTexture texture) {
+        ASSERT_MSG(texture.valid() && IdOf(texture) < textures.size(), "GraphTexture does not belong to this RenderGraph.");
+        return textures[IdOf(texture)];
+    }
+    struct GraphStructureSlot {
+        AccelerationStructureHandle handle;
+        uint32_t scratch = UINT32_MAX;
+        bool topLevel = false;
+        bool allowsRefit = false;
+        std::vector<BufferHandle> inputs;
+    };
     struct GraphBufferResource {
         BufferHandle handle;
         std::string debugName;
         std::optional<ExternalAccess> external;
+        std::optional<GraphStructureSlot> structure;
     };
     struct ExternalUse {
         static constexpr uint32_t kUnused = UINT32_MAX;
@@ -226,6 +246,16 @@ namespace mythril {
         BufferHandle handle;
         StageAccess dstMask{};
     };
+    // barriers in one vkCmdPipelineBarrier2 do not chain, so a buffer gets one barrier per pass that covers every use
+    inline void AddBufferBarrier(std::vector<CompiledBufferBarrier>& barriers, const BufferHandle handle, const StageAccess dstMask) {
+        const auto it = std::ranges::find(barriers, handle, &CompiledBufferBarrier::handle);
+        if (it == barriers.end()) {
+            barriers.push_back({handle, dstMask});
+            return;
+        }
+        it->dstMask.stage |= dstMask.stage;
+        it->dstMask.access |= dstMask.access;
+    }
 
     struct PassMember {
         std::string name;
@@ -318,8 +348,71 @@ namespace mythril {
         return access == TextureAccess::StorageWrite || access == TextureAccess::StorageReadWrite || access == TextureAccess::TransferWrite;
     }
     inline bool isWrite(const BufferAccess access) {
-        return access == BufferAccess::ShaderReadWrite || access == BufferAccess::ShaderWrite || access == BufferAccess::TransferWrite;
+        return access == BufferAccess::ShaderReadWrite || access == BufferAccess::ShaderWrite || access == BufferAccess::TransferWrite || access == BufferAccess::AccelerationStructureBuildWrite ||
+            access == BufferAccess::AccelerationStructureScratch;
     }
+    inline constexpr const char* kDepthOnOneBlocker = "a depth attachment on only one of them";
+    inline bool IsStructureAccess(const BufferAccess access) {
+        return access == BufferAccess::AccelerationStructureRead || access == BufferAccess::AccelerationStructureBuildInput || access == BufferAccess::AccelerationStructureBuildRead ||
+            access == BufferAccess::AccelerationStructureBuildWrite || access == BufferAccess::AccelerationStructureScratch;
+    }
+#ifdef DEBUG
+    void CheckBuildHazards(const PassDesc& pass, const std::vector<GraphBufferResource>& buffers);
+#endif
+    // the least capable queue type a pass can run on, and what keeps it on the graphics queue
+    struct QueueNeed {
+        PassDesc::Type type;
+        const char* graphicsReason = nullptr;
+    };
+    QueueNeed QueueNeedOf(const PassDesc& pass, const std::vector<GraphResource>& textures);
+#ifdef DEBUG
+    constexpr uint8_t kReadUse = 1;
+    constexpr uint8_t kWriteUse = 2;
+    constexpr uint8_t kStorageUse = 4;
+    constexpr uint8_t kUnknownUse = 8;
+    constexpr uint8_t kMayWrite = kWriteUse | kUnknownUse;
+    enum class UseMismatch : uint8_t { None, StorageAsSampled, ReadDeclaredWritten, WriteDeclaredRead, WiderAccess };
+    inline UseMismatch FindTextureUseMismatch(const std::span<const TextureDependencyDesc> declared, const GraphTexture texture, const uint8_t use) {
+        bool sampled = false, storage = false, storageWrite = false, write = false, read = false, pureRead = false;
+        for (const TextureDependencyDesc& dependency: declared) {
+            if (GraphTextureAccess::index(dependency.texDesc.texture) != GraphTextureAccess::index(texture))
+                continue;
+            const TextureAccess access = dependency.access;
+            sampled |= access == TextureAccess::Sampled;
+            storage |= access == TextureAccess::StorageRead || access == TextureAccess::StorageWrite || access == TextureAccess::StorageReadWrite;
+            storageWrite |= access == TextureAccess::StorageWrite;
+            write |= isWrite(access);
+            pureRead |= !isWrite(access);
+            read |= !isWrite(access) || access == TextureAccess::StorageReadWrite;
+        }
+        if (sampled && !storage && (use & kStorageUse))
+            return UseMismatch::StorageAsSampled;
+        if (!write && (use & kWriteUse))
+            return UseMismatch::ReadDeclaredWritten;
+        if (storageWrite && !read && (use & kReadUse))
+            return UseMismatch::WriteDeclaredRead;
+        if (write && !pureRead && (use & kReadUse) && !(use & kMayWrite))
+            return UseMismatch::WiderAccess;
+        return UseMismatch::None;
+    }
+    inline UseMismatch FindBufferUseMismatch(const std::span<const BufferDependencyDesc> declared, const BufferHandle buffer, const uint8_t use) {
+        bool shaderRead = false, shaderWrite = false, shaderReadWrite = false;
+        for (const BufferDependencyDesc& dependency: declared) {
+            if (dependency.handle != buffer)
+                continue;
+            shaderRead |= dependency.access == BufferAccess::ShaderRead;
+            shaderWrite |= dependency.access == BufferAccess::ShaderWrite;
+            shaderReadWrite |= dependency.access == BufferAccess::ShaderReadWrite;
+        }
+        if (shaderRead && !shaderWrite && !shaderReadWrite && (use & kWriteUse))
+            return UseMismatch::ReadDeclaredWritten;
+        if (shaderWrite && !shaderRead && !shaderReadWrite && (use & kReadUse))
+            return UseMismatch::WriteDeclaredRead;
+        if ((shaderWrite || shaderReadWrite) && !shaderRead && (use & kReadUse) && !(use & kMayWrite))
+            return UseMismatch::WiderAccess;
+        return UseMismatch::None;
+    }
+#endif
     inline PassUses UsesOf(const PassDesc& desc) {
         PassUses uses;
         const auto texture = [&](const GraphTexture tex, const bool write) { uses.textures.push_back({GraphTextureAccess::index(tex), GraphTextureAccess::version(tex), write}); };

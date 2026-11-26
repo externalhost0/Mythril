@@ -28,6 +28,7 @@
 #include <optional>
 
 #include "GPUStructs.h"
+#include "Skinning.shadergen.h"
 #include "../SDL3Usage.h"
 
 struct Node {
@@ -249,12 +250,9 @@ static void drawSkeletonOverlay(const SkinnedModel& model, const Pose& pose, con
 	}
 }
 
+// do not delete: this sample keeps the old hand-written api on purpose (GPUStructs.h, UNTYPED_SOURCES, cmdPushConstantsEXT, raw device addresses), so use the old features here as long as they compile
 int main() {
 	static const std::filesystem::path kDataDir = std::filesystem::path(MYTH_SAMPLE_NAME).concat("_data/");
-	static const std::vector<std::string> slang_searchpaths = {
-		MYTH_SAMPLES_DIR,
-		kDataDir.string()
-	};
 	SDL_Window* sdlWindow = BuildSDLWindow(true);
 	const auto initialWindowSize = GetSDLWindowFramebufferSize(sdlWindow);
 	{
@@ -276,9 +274,6 @@ int main() {
 				SDL_Vulkan_DestroySurface(instance, surface, nullptr);
 			}
 		})
-		.set_slang_cfg({
-			.searchpaths = slang_searchpaths
-		})
 		.with_default_swapchain({
 			.width = initialWindowSize.width,
 			.height = initialWindowSize.height
@@ -296,7 +291,7 @@ int main() {
 			nodeToSlot[model.joints[slot]] = static_cast<int>(slot);
 
 		mythril::Shader skinningShader = ctx->createShader({
-			.source = kDataDir / "Skinning.slang",
+			.path = kDataDir / shaders::Skinning::kSpirvFile,
 			.debugName = "Skinning Shader"
 		});
 		mythril::GraphicsPipeline skinningPipeline = ctx->createGraphicsPipeline({
@@ -424,7 +419,7 @@ int main() {
 					.viewMode = d.viewMode,
 					.selectedJoint = d.selectedJoint
 				};
-				cmd.cmdPushConstants(push);
+				cmd.cmdPushConstantsEXT(push);
 				cmd.cmdBindIndexBuffer(d.indexBuffer);
 				cmd.cmdDrawIndexed(d.indexCount);
 			});

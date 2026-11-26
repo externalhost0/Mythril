@@ -39,18 +39,8 @@ namespace mythril {
 	RenderGraph::RenderGraph(RenderGraph&&) noexcept = default;
 	RenderGraph& RenderGraph::operator=(RenderGraph&&) noexcept = default;
 
-	static uint32_t IdOf(const GraphTexture texture) {
-		return GraphTextureAccess::index(texture);
-	}
-	static uint32_t VersionOf(const GraphTexture texture) {
-		return GraphTextureAccess::version(texture);
-	}
 	static GraphTexture BaseOf(const GraphTexture texture) {
 		return GraphTextureAccess::make(IdOf(texture));
-	}
-	static const GraphResource& ResourceOf(const std::vector<GraphResource>& textures, const GraphTexture texture) {
-		ASSERT_MSG(texture.valid() && IdOf(texture) < textures.size(), "GraphTexture does not belong to this RenderGraph.");
-		return textures[IdOf(texture)];
 	}
 	static bool IsBackBuffer(const std::vector<GraphResource>& textures, const GraphTexture texture) {
 		return std::holds_alternative<SwapchainTexture>(ResourceOf(textures, texture).source);
@@ -107,6 +97,18 @@ namespace mythril {
 		return GraphBuffer{static_cast<uint32_t>(_buffers.size() - 1)};
 	}
 
+	const std::vector<uint32_t>& RenderGraph::producersOf(const uint32_t id) const {
+		static const std::vector<uint32_t> kNoProducers;
+		return id < _bufferProducers.size() ? _bufferProducers[id] : kNoProducers;
+	}
+	std::optional<uint32_t> RenderGraph::producerOf(const GraphBuffer buffer) const {
+		const std::vector<uint32_t>& producers = producersOf(GraphBufferAccess::index(buffer));
+		const uint32_t version = GraphBufferAccess::version(buffer);
+		if (version == 0 || version > producers.size())
+			return std::nullopt;
+		return producers[version - 1];
+	}
+
 	BufferHandle RenderGraph::handleOf(const GraphBuffer buffer) const {
 		ASSERT_MSG(buffer.valid() && GraphBufferAccess::index(buffer) < _buffers.size(), "GraphBuffer does not belong to this RenderGraph.");
 		return _buffers[GraphBufferAccess::index(buffer)].handle;
@@ -159,8 +161,7 @@ namespace mythril {
 	GraphBuffer RenderGraph::readVersion(const PassDesc& pass, const GraphBuffer buffer) const {
 		handleOf(buffer);
 		const uint32_t id = GraphBufferAccess::index(buffer);
-		static const std::vector<uint32_t> kNoProducers;
-		CheckReadVersion(id < _bufferProducers.size() ? _bufferProducers[id] : kNoProducers, GraphBufferAccess::version(buffer), pass, _buffers[id].debugName);
+		CheckReadVersion(producersOf(id), GraphBufferAccess::version(buffer), pass, _buffers[id].debugName);
 		return buffer;
 	}
 	GraphBuffer RenderGraph::writeVersion(const PassDesc& pass, const GraphBuffer buffer) {
@@ -176,9 +177,13 @@ namespace mythril {
 		_passSource.textureDependencyOperations.emplace_back(texDesc, access);
 		return isWrite(access) ? _rGraph.writeVersion(_passSource, texDesc.texture) : _rGraph.readVersion(_passSource, texDesc.texture);
 	}
-	GraphBuffer BasePassBuilder::dependency(const GraphBuffer buffer, const BufferAccess access) {
+	GraphBuffer BasePassBuilder::declare(const GraphBuffer buffer, const BufferAccess access) {
 		_passSource.bufferDependencyOperations.push_back({buffer, _rGraph.handleOf(buffer), access});
 		return isWrite(access) ? _rGraph.writeVersion(_passSource, buffer) : _rGraph.readVersion(_passSource, buffer);
+	}
+	GraphBuffer BasePassBuilder::dependency(const GraphBuffer buffer, const BufferAccess access) {
+		ASSERT_PASS(!IsStructureAccess(access), _passSource, "declares buffer '{}' with an acceleration structure access. Import the structure with importAccelerationStructure and declare that.", _rGraph._buffers[GraphBufferAccess::index(buffer)].debugName);
+		return declare(buffer, access);
 	}
 	void BasePassBuilder::readDependencies(const std::span<const GraphTexture> textures, const TextureAccess access) {
 		ASSERT_PASS(!isWrite(access), _passSource, "writes through a const texture array, which cannot take the new versions. Pass a mutable array.");
@@ -325,6 +330,9 @@ namespace mythril {
 	}
 	void RenderGraph::addTransferDesc(PassDesc&& desc) {
 		ASSERT_PASS(!desc.transferOps.empty(), desc, "transfer pass has no operations!");
+#ifdef DEBUG
+		CheckBuildHazards(desc, _buffers);
+#endif
 		addPassDesc(std::move(desc));
 	}
 
@@ -466,6 +474,10 @@ namespace mythril {
 				RecordImageUpload(cmd, pass, *imageUpload);
 			} else if (const auto* mips = std::get_if<GenerateMipsOp>(&op)) {
 				RecordGenerateMips(cmd._wrapper->_cmdBuf, pass, cmd._ctx->view(ResolveHandle(_textures, *cmd._ctx, mips->texture)));
+			} else if (const auto* build = std::get_if<AccelerationStructureBuildOp>(&op)) {
+				const AllocatedAccelerationStructure* structure = cmd._ctx->_accelerationStructurePool.get(build->structure);
+				ASSERT_PASS(structure, pass, "builds an acceleration structure that was destroyed.");
+				cmd._ctx->recordAccelerationStructureBuild(cmd._wrapper->_cmdBuf, *structure, build->refit);
 			}
 		}
 	}
@@ -572,7 +584,7 @@ namespace mythril {
 			case TextureAccess::TransferWrite:
 				return VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
 		}
-		ASSERT_MSG(false, "Unsupported TextureAccess value.");
+		UNREACHABLE("Unsupported TextureAccess value.");
 	}
 	static vkutil::StageAccess GetTextureStageAccess(TextureAccess access, PassDesc::Type passType) {
 		const VkPipelineStageFlags2 shaderStages = vkutil::GetPassShaderStages(passType);
@@ -590,7 +602,7 @@ namespace mythril {
 			case TextureAccess::TransferWrite:
 				return {.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = VK_ACCESS_2_TRANSFER_WRITE_BIT};
 		}
-		ASSERT_MSG(false, "Unsupported TextureAccess value.");
+		UNREACHABLE("Unsupported TextureAccess value.");
 	}
 	void RenderGraph::planResourceAccess(const CTX& rCtx, const TextureDesc& texDesc, VkImageLayout desiredLayout, const StageAccess& dstMask, CompiledPass& outPass, const PassDesc& pass, const bool keepsContents) const {
 		const SubresourceRange range = ResolveSubresourceRange(texDesc, shapeOf(rCtx, texDesc.texture), pass);
@@ -615,9 +627,8 @@ namespace mythril {
 				planResourceAccess(rCtx, attachment_desc.resolveTexDesc.value(), layout, resolveMask, outPass, passDesc, false);
 			}
 		}
-		for (const BufferDependencyDesc& dependency_desc: passDesc.bufferDependencyOperations) {
-			outPass.bufferBarriers.push_back({.handle = dependency_desc.handle, .dstMask = vkutil::GetBufferStageAccess(dependency_desc.access, passDesc.type)});
-		}
+		for (const BufferDependencyDesc& dependency_desc: passDesc.bufferDependencyOperations)
+			AddBufferBarrier(outPass.bufferBarriers, dependency_desc.handle, vkutil::GetBufferStageAccess(dependency_desc.access, passDesc.type));
 	}
 
 	static std::optional<VkMemoryBarrier2> BuildInOrderBarrier(const CompiledPass& pass) {
@@ -889,7 +900,6 @@ namespace mythril {
 		PassResourceUse use;
 	};
 
-	static constexpr const char* kDepthOnOneBlocker = "a depth attachment on only one of them";
 	// the setting that keeps next out of group's rendering scope, nullptr when it can merge
 	static const char* MergeBlocker(const CompilingPass& groupRecord, const CompilingPass& nextRecord) {
 		const CompiledPass& group = groupRecord.pass;
@@ -947,15 +957,8 @@ namespace mythril {
 				group.imageBarriers.push_back(request);
 			}
 		}
-		for (const CompiledBufferBarrier& request: next.bufferBarriers) {
-			const auto it = std::ranges::find_if(group.bufferBarriers, [&](const CompiledBufferBarrier& existing) { return existing.handle == request.handle; });
-			if (it != group.bufferBarriers.end()) {
-				it->dstMask.stage |= request.dstMask.stage;
-				it->dstMask.access |= request.dstMask.access;
-			} else {
-				group.bufferBarriers.push_back(request);
-			}
-		}
+		for (const CompiledBufferBarrier& request: next.bufferBarriers)
+			AddBufferBarrier(group.bufferBarriers, request.handle, request.dstMask);
 		const auto continueAttachment = [](AttachmentInfo& into, const AttachmentInfo& from) {
 			into.storeOp = from.storeOp;
 			into.resolveTarget = from.resolveTarget;
@@ -1034,21 +1037,23 @@ namespace mythril {
 		return std::ranges::any_of(pass.imageBarriers, &CompiledImageBarrier::isSwapchain);
 	}
 
-#ifdef DEBUG
-	// what keeps a pass on the graphics queue, nullptr when it can run on any queue
-	static const char* GraphicsOnlyUse(const PassDesc& pass, const std::vector<GraphResource>& textures) {
-		if (pass.type == PassDesc::Type::Graphics)
-			return "a graphics pass";
-		if (std::ranges::any_of(pass.transferOps, [](const TransferOp& op) { return std::holds_alternative<BlitOp>(op); }))
-			return "a blit";
-		if (std::ranges::any_of(pass.transferOps, [](const TransferOp& op) { return std::holds_alternative<GenerateMipsOp>(op); }))
-			return "mip generation";
-		const auto isBackBuffer = [&](const GraphTexture texture) { return std::holds_alternative<SwapchainTexture>(ResourceOf(textures, texture).source); };
-		if (std::ranges::any_of(pass.textureDependencyOperations, [&](const TextureDependencyDesc& dependency) { return isBackBuffer(dependency.texDesc.texture); }))
-			return "the back buffer";
-		return nullptr;
+	template<typename Op>
+	static bool HasOp(const PassDesc& pass) {
+		return std::ranges::any_of(pass.transferOps, [](const TransferOp& op) { return std::holds_alternative<Op>(op); });
 	}
-#endif
+	QueueNeed QueueNeedOf(const PassDesc& pass, const std::vector<GraphResource>& textures) {
+		// a build records on a compute capable queue, the transfer queue cannot run it
+		const PassDesc::Type type = pass.type == PassDesc::Type::Transfer && HasOp<AccelerationStructureBuildOp>(pass) ? PassDesc::Type::Compute : pass.type;
+		if (pass.type == PassDesc::Type::Graphics)
+			return {type, "a graphics pass"};
+		if (HasOp<BlitOp>(pass))
+			return {type, "a blit"};
+		if (HasOp<GenerateMipsOp>(pass))
+			return {type, "mip generation"};
+		if (std::ranges::any_of(pass.textureDependencyOperations, [&](const TextureDependencyDesc& dependency) { return IsBackBuffer(textures, dependency.texDesc.texture); }))
+			return {type, "the back buffer"};
+		return {type};
+	}
 
 	void RenderGraph::compile(CTX& rCtx) {
 		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_RENDERGRAPH);
@@ -1071,58 +1076,7 @@ namespace mythril {
 #ifdef DEBUG
 		std::unordered_set<std::string> findings;
 		const auto isNew = [&](std::string key) { return findings.insert(key).second && !_findings.contains(key); };
-		{
-			constexpr Options kDefaults{};
-			const auto option = [&](const char* name, const bool value, const bool fallback) {
-				if (value != fallback && isNew(std::string("option ") + name))
-					LOG_SYSTEM_NOSOURCE(LogType::Warning, "RenderGraph option '{}' is {}, its default is {}. Options are for bisecting and A/B only.", name, value, fallback);
-			};
-			option("cull", _options.cull, kDefaults.cull);
-			option("merge", _options.merge, kDefaults.merge);
-			option("async", _options.async, kDefaults.async);
-			option("fullBarriers", _options.fullBarriers, kDefaults.fullBarriers);
-			option("declaredOrder", _options.declaredOrder, kDefaults.declaredOrder);
-		}
-		std::vector<bool> kept(_passDescriptions.size(), false);
-		for (const uint32_t pass_idx: culled_order)
-			kept[pass_idx] = true;
-		std::unordered_set<uint64_t> consumedTextureVersions;
-		const auto versionKey = [](const uint32_t id, const uint32_t version) { return (static_cast<uint64_t>(id) << 32) | version; };
-		for (const uint32_t pass_idx: culled_order) {
-			for (const ResourceUse& use: passUses[pass_idx].textures)
-				consumedTextureVersions.insert(versionKey(use.id, use.version));
-		}
-		const auto isDeclared = [&](const GraphTexture texture) { return std::holds_alternative<DeclaredTexture>(ResourceOf(_textures, texture).source); };
-		for (uint32_t pass_idx = 0; pass_idx < _passDescriptions.size(); ++pass_idx) {
-			const PassDesc& desc = _passDescriptions[pass_idx];
-			if (!kept[pass_idx]) {
-				if (isNew("culled " + desc.name))
-					LOG_PASS(LogType::Suggestion, desc, "Was culled, no pass that reaches the back buffer, an import, a buffer or a side effect reads what it writes. Remove it, or mark it sideEffect() if it has effects the graph cannot see.");
-				continue;
-			}
-			const bool declaresNothing = desc.attachmentOperations.empty() && desc.textureDependencyOperations.empty() && desc.bufferDependencyOperations.empty();
-			if (desc.sideEffect && declaresNothing && isNew("unordered side effect " + desc.name))
-				LOG_PASS(LogType::Warning, desc, "Is a side effect that declares no accesses, so nothing orders it against other passes. Declare the resources it touches.");
-			for (const TextureDependencyDesc& dependency: desc.textureDependencyOperations) {
-				const GraphTexture texture = dependency.texDesc.texture;
-				if (!isWrite(dependency.access) && VersionOf(texture) == 0 && isDeclared(texture) && isNew("undefined read " + desc.name + " " + std::string(nameOf(texture))))
-					LOG_PASS(LogType::Warning, desc, "Reads graph texture '{}' before any pass writes it this frame, its contents are undefined. Read the version a writer returns.", nameOf(texture));
-			}
-			for (const AttachmentDesc& attachment: desc.attachmentOperations) {
-				const GraphTexture texture = attachment.texDesc.texture;
-				if (!isDeclared(texture))
-					continue;
-				if (attachment.loadOp == LoadOp::LOAD && VersionOf(texture) == 0 && isNew("undefined load " + desc.name + " " + std::string(nameOf(texture))))
-					LOG_PASS(LogType::Suggestion, desc, "Loads graph texture '{}' before any pass writes it this frame. Use LoadOp::CLEAR or LoadOp::DONT_CARE.", nameOf(texture));
-				if (attachment.storeOp == StoreOp::STORE && !attachment.resolveTexDesc.has_value() && !consumedTextureVersions.contains(versionKey(IdOf(texture), VersionOf(texture) + 1)) &&
-				    isNew("unread store " + desc.name + " " + std::string(nameOf(texture))))
-					LOG_PASS(LogType::Suggestion, desc, "Stores graph texture '{}' but no pass reads what it writes. Use StoreOp::DONT_CARE, which also allows memoryless.", nameOf(texture));
-			}
-			for (const TransferOp& op: desc.transferOps) {
-				if (const auto* upload = std::get_if<UploadOp>(&op); upload && upload->bytes.size() <= 65536 && isNew("small upload " + desc.name))
-					LOG_PASS(LogType::Suggestion, desc, "Uploads {} bytes (<= 64KB), use TransferBuilder::update instead for a faster operation!", upload->bytes.size());
-			}
-		}
+		reportDeclarations(culled_order, passUses, findings);
 #endif
 
 		const auto usable = [&](const std::unique_ptr<ImmediateCommands>& imm) { return imm && _options.async; };
@@ -1131,18 +1085,14 @@ namespace mythril {
 		const bool logRouting = !this->_hasReportedCompile && _options.async;
 #endif
 		const auto queueOf = [&](const PassDesc& pass) {
-#ifdef DEBUG
-			if (pass.async) {
-				const char* graphicsOnly = GraphicsOnlyUse(pass, _textures);
-				ASSERT_PASS(graphicsOnly == nullptr, pass, "is async() but uses {}, which needs the graphics queue. Remove async() or move that work to another pass.", graphicsOnly);
-			}
-#endif
-			const QueueAffinity queue = QueueOf(pass.type, pass.async, available);
+			const QueueNeed need = QueueNeedOf(pass, _textures);
+			ASSERT_PASS(!pass.async || !need.graphicsReason, pass, "is async() but uses {}, which needs the graphics queue. Remove async() or move that work to another pass.", need.graphicsReason);
+			const QueueAffinity queue = QueueOf(need.type, pass.async, available);
 #ifdef DEBUG
 			if (pass.async && logRouting) {
 				if (queue == QueueAffinity::Graphics)
-					LOG_PASS(LogType::Warning, pass, "Demoted to graphics: No async {}family available.", pass.type == PassDesc::Type::Transfer ? "" : "compute ");
-				else if (pass.type == PassDesc::Type::Transfer && queue == QueueAffinity::AsyncCompute)
+					LOG_PASS(LogType::Warning, pass, "Demoted to graphics: No async {}family available.", need.type == PassDesc::Type::Transfer ? "" : "compute ");
+				else if (need.type == PassDesc::Type::Transfer && queue == QueueAffinity::AsyncCompute)
 					LOG_PASS(LogType::Info, pass, "Routed to async compute: No dedicated transfer family.");
 			}
 #endif
@@ -1331,7 +1281,7 @@ namespace mythril {
 		for (uint32_t pass_idx = 0; pass_idx < _passDescriptions.size(); ++pass_idx) {
 			const PassDesc& desc = _passDescriptions[pass_idx];
 			if (descToCompiled[pass_idx] == kUnscheduled)
-				this->_scheduleView.push_back({.name = desc.name, .type = desc.type, .queue = QueueOf(desc.type, desc.async, available), .culled = true});
+				this->_scheduleView.push_back({.name = desc.name, .type = desc.type, .queue = QueueOf(QueueNeedOf(desc, _textures).type, desc.async, available), .culled = true});
 		}
 		if (planOwnership(rCtx)) {
 			realizeDeclared(rCtx, culled_order, confined);
@@ -1782,156 +1732,6 @@ namespace mythril {
 			vkCmdPipelineBarrier2(cmd._wrapper->_cmdBuf, &dependencyInfo);
 		}
 	}
-
-#ifdef DEBUG
-	static constexpr uint8_t kReadUse = 1;
-	static constexpr uint8_t kWriteUse = 2;
-	static constexpr uint8_t kStorageUse = 4;
-	// a storage handle whose access the SPIR-V walk could not follow, it may write
-	static constexpr uint8_t kUnknownUse = 8;
-	static constexpr uint8_t kMayWrite = kWriteUse | kUnknownUse;
-	static uint8_t UseOf(const PushResourceField& field) {
-		const uint8_t storage = field.kind == PushResourceField::Kind::StorageTexture ? kStorageUse : 0;
-		switch (field.access) {
-			case PushResourceField::Access::None:
-				return storage;
-			case PushResourceField::Access::Unknown:
-				return field.kind == PushResourceField::Kind::SampledTexture ? kReadUse : storage | kUnknownUse;
-			default:
-				return storage | static_cast<uint8_t>(field.access);
-		}
-	}
-	void RenderGraph::checkPushResources(const CTX& rCtx, const CompiledPass& pass, const PassMember& member, const std::string_view pipeline, const std::span<const PushResourceField> fields, const void* data, const uint32_t size, const uint32_t offset) const {
-		const auto isNew = [&](std::string key) { return _shownRecordFindings.insert(std::move(key)).second; };
-		ObservedDispatches& dispatches = _observedDispatches;
-		if (dispatches.dispatchedSincePush) {
-			dispatches.next.clear();
-			dispatches.dispatchedSincePush = false;
-		}
-		for (const PushResourceField& field: fields) {
-			if (field.offset < offset || field.offset + sizeof(uint64_t) > offset + size)
-				continue;
-			uint64_t value = 0;
-			std::memcpy(&value, static_cast<const std::byte*>(data) + (field.offset - offset), sizeof(value));
-			if (field.kind == PushResourceField::Kind::Pointer) {
-				dispatches.untracked = true;
-				for (const GraphBufferResource& buffer: _buffers) {
-					const AllocatedBuffer& allocated = rCtx.view(buffer.handle);
-					if (value < allocated._vkDeviceAddress || value >= allocated._vkDeviceAddress + allocated._bufferSize)
-						continue;
-					if (const auto it = std::ranges::find(_observedBufferUses, buffer.handle, &std::pair<BufferHandle, uint8_t>::first); it != _observedBufferUses.end())
-						it->second |= UseOf(field);
-					else
-						_observedBufferUses.emplace_back(buffer.handle, UseOf(field));
-					if (std::ranges::find(member.bufferDependencies, buffer.handle, &BufferDependencyDesc::handle) == member.bufferDependencies.end() && isNew("undeclared buffer " + member.name + " " + buffer.debugName))
-						LOG_PASS(LogType::Warning, pass, "'{}' passes a pointer into buffer '{}' as '{}' of pipeline '{}' without declaring it, so nothing orders it. Declare the buffer.", member.name, buffer.debugName, field.varName, pipeline);
-					break;
-				}
-				continue;
-			}
-			const auto index = static_cast<uint32_t>(value);
-			uint32_t id = 0;
-			for (; id < _textures.size(); ++id) {
-				TextureHandle handle;
-				if (const auto* declared = std::get_if<DeclaredTexture>(&_textures[id].source))
-					handle = declared->texture;
-				else if (const auto* imported = std::get_if<ImportedTexture>(&_textures[id].source))
-					handle = imported->handle;
-				if (!handle.valid() || handle.index() != index)
-					continue;
-				const GraphTexture texture = GraphTextureAccess::make(id);
-				const uint8_t use = UseOf(field);
-				_observedUses[id] |= use;
-				dispatches.next[id] |= use;
-				if (!std::ranges::binary_search(member.sortedDeclaredTextures, id, {}, IdOf) && isNew("undeclared texture " + member.name + " " + std::string(nameOf(texture))))
-					LOG_PASS(LogType::Warning, pass, "'{}' passes graph texture '{}' as '{}' of pipeline '{}' without declaring it, so nothing orders or transitions it. Declare the texture.", member.name, nameOf(texture), field.varName, pipeline);
-				break;
-			}
-			if (id == _textures.size())
-				dispatches.untracked = true;
-		}
-	}
-	void RenderGraph::observeDispatch(const CompiledPass& pass, const PassMember& member) const {
-		const auto isNew = [&](std::string key) { return _shownRecordFindings.insert(std::move(key)).second; };
-		ObservedDispatches& dispatches = _observedDispatches;
-		for (const auto& [id, use]: dispatches.next) {
-			const auto it = dispatches.earlier.find(id);
-			const uint8_t now = use & (kReadUse | kMayWrite);
-			const uint8_t before = it == dispatches.earlier.end() ? 0 : it->second & (kReadUse | kMayWrite);
-			if (!now || !before || ((now | before) & kMayWrite) == 0)
-				continue;
-			dispatches.dependent = true;
-			const std::string_view name = nameOf(GraphTextureAccess::make(id));
-			if (!pass.inOrderBarrier && isNew("unordered dispatch " + member.name))
-				LOG_PASS(LogType::Warning, pass, "'{}' dispatches use '{}' after an earlier dispatch in the pass used it, and one of them may write it, but nothing orders the dispatches. Call executeCmdsInOrder().", member.name, name);
-		}
-		for (const auto& [id, use]: dispatches.next)
-			dispatches.earlier[id] |= use;
-		++dispatches.count;
-		dispatches.dispatchedSincePush = true;
-	}
-	void RenderGraph::reportDepthBlockedMerges(const size_t passIdx, const bool drewFixedFormats) const {
-		for (const uint32_t g: _depthBlockedMerges) {
-			const CompiledPass& group = _compiledPasses[g];
-			const CompiledPass& next = _compiledPasses[g + 1];
-			const CompiledPass& depthless = group.depthAttachment.has_value() ? next : group;
-			// a pipeline with fixed formats cannot draw in a scope with a depth attachment, so the merge is out of reach
-			if (&depthless != &_compiledPasses[passIdx] || drewFixedFormats)
-				continue;
-			const std::string key = "merge blocked " + group.name + " " + next.name;
-			if (_shownRecordFindings.insert(key).second)
-				LOG_PASS(LogType::Suggestion, next, "Runs right after '{}' and shares an attachment with it, but cannot share its rendering scope because of {}. Give '{}' the same depth attachment with LoadOp::LOAD to merge them.", group.name, kDepthOnOneBlocker, depthless.name);
-		}
-	}
-	void RenderGraph::reportObservedUses(const CompiledPass& pass, const PassMember& member) const {
-		const auto isNew = [&](std::string key) { return _shownRecordFindings.insert(std::move(key)).second; };
-		for (const TextureDependencyDesc& dependency: member.textureDependencies) {
-			const auto it = _observedUses.find(IdOf(dependency.texDesc.texture));
-			if (it == _observedUses.end())
-				continue;
-			const std::string_view name = nameOf(dependency.texDesc.texture);
-			const std::string key = member.name + " " + std::string(name);
-			const uint8_t use = it->second;
-			if (dependency.access == TextureAccess::Sampled && (use & kStorageUse)) {
-				if (isNew("storage as sampled " + key))
-					LOG_PASS(LogType::Warning, pass, "'{}' declares '{}' Sampled, but its pipelines use it through a storage handle. Its barriers and layout only cover a sampled read, so a write races. Declare StorageRead, StorageWrite or StorageReadWrite.", member.name, name);
-			} else if (!isWrite(dependency.access) && (use & kWriteUse)) {
-				if (isNew("read declared written " + key))
-					LOG_PASS(LogType::Warning, pass, "'{}' declares '{}' as a read, but its shaders write it, so nothing orders the write. Declare StorageWrite or StorageReadWrite.", member.name, name);
-			} else if (dependency.access == TextureAccess::StorageWrite && (use & kReadUse)) {
-				if (isNew("write declared read " + key))
-					LOG_PASS(LogType::Warning, pass, "'{}' declares '{}' StorageWrite, but its shaders also read it, so nothing orders the read after the previous write. Declare StorageReadWrite.", member.name, name);
-			} else if (isWrite(dependency.access) && (use & kReadUse) && !(use & kMayWrite)) {
-				if (isNew("wider access " + key))
-					LOG_PASS(LogType::Suggestion, pass, "'{}' declares '{}' as a write, but its shaders only read it. Declare {}.", member.name, name, use & kStorageUse ? "StorageRead" : "Sampled or StorageRead");
-			}
-		}
-		for (const BufferDependencyDesc& dependency: member.bufferDependencies) {
-			const auto it = std::ranges::find(_observedBufferUses, dependency.handle, &std::pair<BufferHandle, uint8_t>::first);
-			if (it == _observedBufferUses.end())
-				continue;
-			const std::string_view name = std::ranges::find(_buffers, dependency.handle, &GraphBufferResource::handle)->debugName;
-			const std::string key = member.name + " " + std::string(name);
-			const uint8_t use = it->second;
-			if (dependency.access == BufferAccess::ShaderRead && (use & kWriteUse)) {
-				if (isNew("read declared written " + key))
-					LOG_PASS(LogType::Warning, pass, "'{}' declares buffer '{}' ShaderRead, but its shaders write it through a pointer, so nothing orders the write. Declare ShaderWrite or ShaderReadWrite.", member.name, name);
-			} else if (dependency.access == BufferAccess::ShaderWrite && (use & kReadUse)) {
-				if (isNew("write declared read " + key))
-					LOG_PASS(LogType::Warning, pass, "'{}' declares buffer '{}' ShaderWrite, but its shaders also read it, so nothing orders the read after the previous write. Declare ShaderReadWrite.", member.name, name);
-			} else if (isWrite(dependency.access) && dependency.access != BufferAccess::TransferWrite && (use & kReadUse) && !(use & kMayWrite)) {
-				if (isNew("wider access " + key))
-					LOG_PASS(LogType::Suggestion, pass, "'{}' declares buffer '{}' as a write, but its shaders only read it. Declare ShaderRead.", member.name, name);
-			}
-		}
-		const ObservedDispatches& dispatches = _observedDispatches;
-		if (pass.inOrderBarrier && dispatches.count > 0 && !dispatches.dependent && !dispatches.untracked && isNew("needless in order " + member.name))
-			LOG_PASS(LogType::Suggestion, pass, "'{}' calls executeCmdsInOrder(), but no dispatch uses a texture that an earlier dispatch may have written, or writes one an earlier dispatch used. Remove executeCmdsInOrder() to skip the barrier between dispatches.", member.name);
-		_observedUses.clear();
-		_observedBufferUses.clear();
-		_observedDispatches = {};
-	}
-#endif
 
 	void RenderGraph::reset() {
 		_passDescriptions.clear();

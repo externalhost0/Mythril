@@ -16,10 +16,9 @@
 
 #include <SDL3/SDL.h>
 
-// for shader structs
 #include <SDL3/SDL_vulkan.h>
 
-#include "GPUStructs.h"
+#include "Marble.shadergen.h"
 #include "../SDL3Usage.h"
 
 struct Camera {
@@ -30,42 +29,46 @@ struct Camera {
 	float farPlane;
 };
 
-const std::vector<mythril::GPU::Vertex> cubeVertices = {
+static shaders::Vertex MakeVertex(const glm::vec3 position, const glm::vec3 normal, const glm::vec2 uv) {
+	return {.position = position, .uv_x = uv.x, .normal = normal, .uv_y = uv.y};
+}
+
+const std::vector<shaders::Vertex> cubeVertices = {
 		// front face
-		{{-1.f, -1.f, -1.f}, {0.f, 0.f, -1.f}, {0.0f, 0.0f}}, // A 0
-		{{ 1.f, -1.f, -1.f}, {0.f, 0.f, -1.f}, {1.0f, 0.0f}}, // B 1
-		{{ 1.f,  1.f, -1.f}, {0.f, 0.f, -1.f}, {1.0f, 1.0f}}, // C 2
-		{{-1.f,  1.f, -1.f}, {0.f, 0.f, -1.f}, {0.0f, 1.0f}}, // D 3
+		MakeVertex({-1.f, -1.f, -1.f}, {0.f, 0.f, -1.f}, {0.0f, 0.0f}), // A 0
+		MakeVertex({ 1.f, -1.f, -1.f}, {0.f, 0.f, -1.f}, {1.0f, 0.0f}), // B 1
+		MakeVertex({ 1.f,  1.f, -1.f}, {0.f, 0.f, -1.f}, {1.0f, 1.0f}), // C 2
+		MakeVertex({-1.f,  1.f, -1.f}, {0.f, 0.f, -1.f}, {0.0f, 1.0f}), // D 3
 
 		// back face
-		{{-1.f, -1.f, 1.f}, {0.f, 0.f, 1.f}, {0.0f, 0.0f}}, // E 4
-		{{ 1.f, -1.f, 1.f}, {0.f, 0.f, 1.f}, {1.0f, 0.0f}}, // F 5
-		{{ 1.f,  1.f, 1.f}, {0.f, 0.f, 1.f}, {1.0f, 1.0f}}, // G 6
-		{{-1.f,  1.f, 1.f}, {0.f, 0.f, 1.f}, {0.0f, 1.0f}}, // H 7
+		MakeVertex({-1.f, -1.f, 1.f}, {0.f, 0.f, 1.f}, {0.0f, 0.0f}), // E 4
+		MakeVertex({ 1.f, -1.f, 1.f}, {0.f, 0.f, 1.f}, {1.0f, 0.0f}), // F 5
+		MakeVertex({ 1.f,  1.f, 1.f}, {0.f, 0.f, 1.f}, {1.0f, 1.0f}), // G 6
+		MakeVertex({-1.f,  1.f, 1.f}, {0.f, 0.f, 1.f}, {0.0f, 1.0f}), // H 7
 
 		// left face
-		{{-1.f,  1.f, -1.f}, {-1.f, 0.f, 0.f}, {0.0f, 1.0f}}, // D 8
-		{{-1.f, -1.f, -1.f}, {-1.f, 0.f, 0.f}, {0.0f, 0.0f}}, // A 9
-		{{-1.f, -1.f,  1.f}, {-1.f, 0.f, 0.f}, {1.0f, 0.0f}}, // E 10
-		{{-1.f,  1.f,  1.f}, {-1.f, 0.f, 0.f}, {1.0f, 1.0f}}, // H 11
+		MakeVertex({-1.f,  1.f, -1.f}, {-1.f, 0.f, 0.f}, {0.0f, 1.0f}), // D 8
+		MakeVertex({-1.f, -1.f, -1.f}, {-1.f, 0.f, 0.f}, {0.0f, 0.0f}), // A 9
+		MakeVertex({-1.f, -1.f,  1.f}, {-1.f, 0.f, 0.f}, {1.0f, 0.0f}), // E 10
+		MakeVertex({-1.f,  1.f,  1.f}, {-1.f, 0.f, 0.f}, {1.0f, 1.0f}), // H 11
 
 		// right face
-		{{1.f, -1.f, -1.f}, {1.f, 0.f, 0.f}, {0.0f, 0.0f}}, // B 12
-		{{1.f,  1.f, -1.f}, {1.f, 0.f, 0.f}, {0.0f, 1.0f}}, // C 13
-		{{1.f,  1.f,  1.f}, {1.f, 0.f, 0.f}, {1.0f, 1.0f}}, // G 14
-		{{1.f, -1.f,  1.f}, {1.f, 0.f, 0.f}, {1.0f, 0.0f}}, // F 15
+		MakeVertex({1.f, -1.f, -1.f}, {1.f, 0.f, 0.f}, {0.0f, 0.0f}), // B 12
+		MakeVertex({1.f,  1.f, -1.f}, {1.f, 0.f, 0.f}, {0.0f, 1.0f}), // C 13
+		MakeVertex({1.f,  1.f,  1.f}, {1.f, 0.f, 0.f}, {1.0f, 1.0f}), // G 14
+		MakeVertex({1.f, -1.f,  1.f}, {1.f, 0.f, 0.f}, {1.0f, 0.0f}), // F 15
 
 		// bottom face
-		{{-1.f, -1.f, -1.f}, {0.f, -1.f, 0.f}, {0.0f, 1.0f}}, // A 16
-		{{ 1.f, -1.f, -1.f}, {0.f, -1.f, 0.f}, {1.0f, 1.0f}}, // B 17
-		{{ 1.f, -1.f,  1.f}, {0.f, -1.f, 0.f}, {1.0f, 0.0f}}, // F 18
-		{{-1.f, -1.f,  1.f}, {0.f, -1.f, 0.f}, {0.0f, 0.0f}}, // E 19
+		MakeVertex({-1.f, -1.f, -1.f}, {0.f, -1.f, 0.f}, {0.0f, 1.0f}), // A 16
+		MakeVertex({ 1.f, -1.f, -1.f}, {0.f, -1.f, 0.f}, {1.0f, 1.0f}), // B 17
+		MakeVertex({ 1.f, -1.f,  1.f}, {0.f, -1.f, 0.f}, {1.0f, 0.0f}), // F 18
+		MakeVertex({-1.f, -1.f,  1.f}, {0.f, -1.f, 0.f}, {0.0f, 0.0f}), // E 19
 
 		// top face
-		{{ 1.f, 1.f, -1.f}, {0.f, 1.f, 0.f}, {1.0f, 1.0f}}, // C 20
-		{{-1.f, 1.f, -1.f}, {0.f, 1.f, 0.f}, {0.0f, 1.0f}}, // D 21
-		{{-1.f, 1.f,  1.f}, {0.f, 1.f, 0.f}, {0.0f, 0.0f}}, // H 22
-		{{ 1.f, 1.f,  1.f}, {0.f, 1.f, 0.f}, {1.0f, 0.0f}}, // G 23
+		MakeVertex({ 1.f, 1.f, -1.f}, {0.f, 1.f, 0.f}, {1.0f, 1.0f}), // C 20
+		MakeVertex({-1.f, 1.f, -1.f}, {0.f, 1.f, 0.f}, {0.0f, 1.0f}), // D 21
+		MakeVertex({-1.f, 1.f,  1.f}, {0.f, 1.f, 0.f}, {0.0f, 0.0f}), // H 22
+		MakeVertex({ 1.f, 1.f,  1.f}, {0.f, 1.f, 0.f}, {1.0f, 0.0f}), // G 23
 };
 
 
@@ -96,118 +99,55 @@ static glm::mat4 calculateProjectionMatrix(const Camera& camera) {
 
 
 namespace mythril {
-	static const char* GetFieldKindString(FieldKind kind) {
-		switch (kind) {
-			case FieldKind::OpaqueHandle:
-				return "OpaqueHandle";
-			case FieldKind::Pointer:
-				return "Pointer";
-			case FieldKind::Scalar:
-				return "Scalar";
-			case FieldKind::Vector:
-				return "Vector";
-			case FieldKind::Matrix:
-				return "Matrix";
-			case FieldKind::Array:
-				return "Array";
-			case FieldKind::Struct:
-				return "Struct";
-			case FieldKind::Unknown:
-				return "Unknown";
-		}
-		SAMPLE_ASSERT(false);
-	}
-
 	static const char* GetScalarKindString(ScalarKind kind) {
 		switch (kind) {
-			case ScalarKind::None:
-				return "None";
 			case ScalarKind::Int:
-				return "Int";
+				return "int";
 			case ScalarKind::UInt:
-				return "UInt";
+				return "uint";
 			case ScalarKind::Float:
-				return "Float";
 			case ScalarKind::Double:
-				return "Double";
+				return "float";
 			case ScalarKind::Bool:
-				return "Bool";
+				return "bool";
 			default:
-				return "Unknown";
+				return "?";
 		}
 	}
 
-	static const char* GetOpaqueKindString(OpaqueKind kind) {
-		switch (kind) {
-			case OpaqueKind::Sampler:
-				return "Sampler";
-			case OpaqueKind::Texture1D:
-				return "Texture1D";
-			case OpaqueKind::Texture2D:
-				return "Texture2D";
-			case OpaqueKind::Texture3D:
-				return "Texture3D";
-			case OpaqueKind::TextureCube:
-				return "TextureCube";
-			case OpaqueKind::RWTexture1D:
-				return "RWTexture1D";
-			case OpaqueKind::RWTexture2D:
-				return "RWTexture2D";
-			case OpaqueKind::RWTexture3D:
-				return "RWTexture3D";
+	static const char* GetAccessString(PushField::Access access) {
+		switch (access) {
+			case PushField::Access::None:
+				return "unused";
+			case PushField::Access::Read:
+				return "read";
+			case PushField::Access::Write:
+				return "write";
+			case PushField::Access::ReadWrite:
+				return "read write";
 			default:
-				return "Unknown";
+				return "unknown";
 		}
 	}
 
-	static const char* VkDescriptorTypeToString(VkDescriptorType type) {
-		switch (type) {
-			case VK_DESCRIPTOR_TYPE_SAMPLER:
-				return "VK_DESCRIPTOR_TYPE_SAMPLER";
-			case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
-				return "VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER";
-			case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
-				return "VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE";
-			case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
-				return "VK_DESCRIPTOR_TYPE_STORAGE_IMAGE";
-			case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
-				return "VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER";
-			case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
-				return "VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER";
-			case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
-				return "VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER";
-			case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
-				return "VK_DESCRIPTOR_TYPE_STORAGE_BUFFER";
-			case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
-				return "VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC";
-			case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
-				return "VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC";
-			case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
-				return "VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT";
-			case VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK:
-				return "VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK";
-			case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR:
-				return "VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR";
-			case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV:
-				return "VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV";
-			case VK_DESCRIPTOR_TYPE_SAMPLE_WEIGHT_IMAGE_QCOM:
-				return "VK_DESCRIPTOR_TYPE_SAMPLE_WEIGHT_IMAGE_QCOM";
-			case VK_DESCRIPTOR_TYPE_BLOCK_MATCH_IMAGE_QCOM:
-				return "VK_DESCRIPTOR_TYPE_BLOCK_MATCH_IMAGE_QCOM";
-			case VK_DESCRIPTOR_TYPE_TENSOR_ARM:
-				return "VK_DESCRIPTOR_TYPE_TENSOR_ARM";
-			case VK_DESCRIPTOR_TYPE_MUTABLE_EXT:
-				return "VK_DESCRIPTOR_TYPE_MUTABLE_EXT";
-			case VK_DESCRIPTOR_TYPE_PARTITIONED_ACCELERATION_STRUCTURE_NV:
-				return "VK_DESCRIPTOR_TYPE_PARTITIONED_ACCELERATION_STRUCTURE_NV";
-			case VK_DESCRIPTOR_TYPE_MAX_ENUM:
-				return "VK_DESCRIPTOR_TYPE_MAX_ENUM";
+	static std::string PushTypeString(const PushBlockLayout& block, const PushField& field) {
+		const std::string scalar = std::format("{}{}", GetScalarKindString(field.scalar), field.bits);
+		switch (field.kind) {
+			case PushField::Kind::Scalar: return scalar;
+			case PushField::Kind::Vector: return std::format("{}x{}", scalar, field.columns);
+			case PushField::Kind::Matrix: return std::format("{} {}x{} {}", scalar, field.rows, field.columns, field.rowMajor ? "row-major" : "column-major");
+			case PushField::Kind::Array: return std::format("{} [{}] stride {}", PushTypeString(block, field.fields.front()), field.count, field.stride);
+			case PushField::Kind::Struct: return field.typeName;
+			case PushField::Kind::Pointer: return std::format("{}* stride {}", PushTypeString(block, block.pointees[field.pointee]), field.stride);
+			case PushField::Kind::SampledTexture: return "sampled texture";
+			case PushField::Kind::StorageTexture: return "storage texture";
+			case PushField::Kind::Sampler: return "sampler";
+			case PushField::Kind::AccelerationStructure: return "acceleration structure";
+			default: return "?";
 		}
-		return "Unknown";
 	}
 
-
-	std::string VkShaderStageToString(VkShaderStageFlags stageFlags) {
+	static std::string VkShaderStageToString(VkShaderStageFlags stageFlags) {
 		std::string result;
 
 		if (stageFlags & VK_SHADER_STAGE_VERTEX_BIT)
@@ -258,59 +198,26 @@ namespace mythril {
 	}
 }
 
-void DrawFieldInfoRecursive(const std::vector<mythril::FieldInfo>& fields) {
-	for (const auto& field : fields) {
-		ImGui::PushID(&field);
-
-		bool isStruct = (field.kind == mythril::FieldKind::Struct);
-		ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_SpanAvailWidth |
-								   (isStruct ? 0 : (ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen));
-
-		std::string label = std::format("{} ({})", field.varName, field.typeName);
-		bool open = ImGui::TreeNodeEx(label.c_str(), flags);
-
-		if (!isStruct) {
-			ImGui::SameLine();
-			ImGui::TextDisabled("size=%u | offset=%u | kind=%s",
-								field.size, field.offset,
-								GetFieldKindString(field.kind));
-
-			switch (field.kind) {
-				case mythril::FieldKind::Scalar:
-					ImGui::SameLine();
-					ImGui::TextDisabled("| scalar=%s", GetScalarKindString(field.scalarKind));
-					break;
-				case mythril::FieldKind::OpaqueHandle:
-					ImGui::SameLine();
-					ImGui::TextDisabled("| opaque=%s", GetOpaqueKindString(field.opaqueKind));
-					break;
-				case mythril::FieldKind::Vector:
-					ImGui::SameLine();
-					ImGui::TextDisabled("| components=%u", field.componentCount);
-					break;
-				case mythril::FieldKind::Matrix:
-					ImGui::SameLine();
-					ImGui::TextDisabled("| %ux%u", field.rowCount, field.columnCount);
-					break;
-				default: break;
-			}
-		}
-		else {
-			if (open) {
-				ImGui::TextDisabled("size=%u bytes | offset=%u | kind=%s",
-									field.size, field.offset, GetFieldKindString(field.kind));
-
-				if (!field.fields.empty()) {
-					ImGui::SeparatorText("Members");
-					DrawFieldInfoRecursive(field.fields);
-				}
-			}
-		}
-		if (isStruct && open)
-			ImGui::TreePop();
-
-		ImGui::PopID();
+// a pointer opens to what it points to, ImGui only draws a node once it is open so a pointer to its own struct is fine
+void DrawPushField(const mythril::PushBlockLayout& block, const mythril::PushField& field) {
+	using Kind = mythril::PushField::Kind;
+	ImGui::PushID(&field);
+	const mythril::PushField* pointee = field.kind == Kind::Pointer ? &block.pointees[field.pointee] : nullptr;
+	const bool hasChildren = (field.kind == Kind::Struct || field.kind == Kind::Array) || (pointee && (pointee->kind == Kind::Struct || pointee->kind == Kind::Array));
+	const ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_SpanAvailWidth | (hasChildren ? 0 : ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen);
+	const bool open = ImGui::TreeNodeEx(field.name.empty() ? "[i]" : field.name.c_str(), flags);
+	ImGui::SameLine();
+	ImGui::TextDisabled("@%u  %u B  %s", field.offset, field.size, mythril::PushTypeString(block, field).c_str());
+	if (field.kind != Kind::Scalar && field.kind != Kind::Vector && field.kind != Kind::Matrix && field.kind != Kind::Array && field.kind != Kind::Struct) {
+		ImGui::SameLine();
+		ImGui::TextDisabled("| %s", mythril::GetAccessString(field.access));
 	}
+	if (hasChildren && open) {
+		for (const mythril::PushField& child: pointee ? pointee->fields : field.fields)
+			DrawPushField(block, child);
+		ImGui::TreePop();
+	}
+	ImGui::PopID();
 }
 void DrawShaderInfo(const mythril::detail::AllocatedShader& shader) {
 	char title_buf[128];
@@ -319,62 +226,14 @@ void DrawShaderInfo(const mythril::detail::AllocatedShader& shader) {
 	if (ImGui::Begin(title_buf)) {
 		ImGui::PushID(&shader);
 
-		// binding parameters
-		const auto& descriptor_set_infos = shader.viewDescriptorSets();
-		if (ImGui::CollapsingHeader("Bound Sets", ImGuiTreeNodeFlags_DefaultOpen)) {
-			ImGui::Text("Total Sets: %zu", descriptor_set_infos.size());
-			ImGui::Separator();
-
-			for (const mythril::detail::AllocatedShader::DescriptorSetInfo& setInfo : descriptor_set_infos) {
-				char set_buf[64];
-				snprintf(set_buf, sizeof(set_buf), "Set %u", setInfo.setIndex);
-				if (ImGui::TreeNode(set_buf)) {
-					for (const mythril::detail::AllocatedShader::DescriptorBindingInfo& bindingInfo : setInfo.bindingInfos) {
-						ImGui::Text("Variable Name: %s", bindingInfo.varName.c_str());
-						ImGui::Text("Type Name: %s", bindingInfo.typeName.c_str());
-						ImGui::Text("Set Index: %u", bindingInfo.setIndex);
-						ImGui::Text("Binding Index: %u", bindingInfo.bindingIndex);
-						ImGui::Text("Descriptor Count: %u", bindingInfo.descriptorCount);
-						ImGui::Text("Descriptor Type: %s", mythril::VkDescriptorTypeToString(bindingInfo.descriptorType));
-						ImGui::Text("Used Stages: %s", mythril::VkShaderStageToString(bindingInfo.usedStages).c_str());
-
-						// fields
-						if (!bindingInfo.fields.empty()) {
-							ImGui::Separator();
-							DrawFieldInfoRecursive(bindingInfo.fields);
-						}
-						ImGui::TreePop();
-
-					}
-				}
-			}
-		}
-
-		// push constants
-		const auto& pushConstants = shader.viewPushConstants();
+		const std::span<const mythril::PushBlockLayout> blocks = shader.viewPushBlocks();
 		if (ImGui::CollapsingHeader("Push Constants", ImGuiTreeNodeFlags_DefaultOpen)) {
-			ImGui::Text("Total Push Constants: %zu", pushConstants.size());
+			ImGui::Text("Push blocks: %zu", blocks.size());
+			for (const VkPushConstantRange& range: shader.getPipelineLayoutSignature().pushes)
+				ImGui::Text("Range: offset %u, %u bytes, %s", range.offset, range.size, mythril::VkShaderStageToString(range.stageFlags).c_str());
 			ImGui::Separator();
-
-			for (size_t i = 0; i < pushConstants.size(); i++) {
-				const mythril::detail::AllocatedShader::PushConstantInfo& push = pushConstants[i];
-				char push_buf[128];
-				snprintf(push_buf, sizeof(push_buf), "Push Constant %zu : \"%s\"", i, push.varName.c_str());
-				if (ImGui::TreeNode(push_buf)) {
-					ImGui::Text("Variable Name: %s", push.varName.c_str());
-					ImGui::Text("Type Name: %s", push.typeName.c_str());
-					ImGui::Text("Offset: %u", push.offset);
-					ImGui::Text("Size: %u bytes", push.size);
-					ImGui::Text("Used Stages: %s", mythril::VkShaderStageToString(push.usedStages).c_str());
-
-					// fields
-					if (!push.fields.empty()) {
-						ImGui::Separator();
-						DrawFieldInfoRecursive(push.fields);
-					}
-					ImGui::TreePop();
-				}
-			}
+			for (const mythril::PushBlockLayout& block: blocks)
+				DrawPushField(block, block.root);
 		}
 		ImGui::PopID();
 	}
@@ -383,10 +242,6 @@ void DrawShaderInfo(const mythril::detail::AllocatedShader& shader) {
 
 int main() {
 	static const std::filesystem::path kDataDir = std::filesystem::path(MYTH_SAMPLE_NAME).concat("_data/");
-	static const std::vector<std::string> slang_searchpaths = {
-		MYTH_SAMPLES_DIR,
-		kDataDir.string()
-	};
 	SDL_Window* sdlWindow = BuildSDLWindow(false);
 	auto initialWindowSize = GetSDLWindowFramebufferSize(sdlWindow);
 	{
@@ -408,9 +263,6 @@ int main() {
 				SDL_Vulkan_DestroySurface(instance, surface, nullptr);
 			}
 		})
-		.set_slang_cfg({
-			.searchpaths = slang_searchpaths
-		})
 		.with_default_swapchain({
 			.width = initialWindowSize.width,
 			.height = initialWindowSize.height
@@ -422,7 +274,7 @@ int main() {
 		.build();
 
 		mythril::Shader standardShader = ctx->createShader({
-			.source = kDataDir / "Marble.slang",
+			.path = kDataDir / shaders::Marble::kSpirvFile,
 			.debugName = "Example Shader"
 		});
 
@@ -438,7 +290,7 @@ int main() {
 		});
 
 		mythril::Buffer cubeVertexBuffer = ctx->createBuffer({
-			.size = sizeof(mythril::GPU::Vertex) * cubeVertices.size(),
+			.size = sizeof(shaders::Vertex) * cubeVertices.size(),
 			.usage = mythril::BufferUsageBits::BufferUsageBits_Storage,
 			.storage = mythril::StorageType::Device,
 			.initialData = cubeVertices,
@@ -452,29 +304,29 @@ int main() {
 			.debugName = "Cube Index Buffer"
 		});
 		mythril::Buffer perFrameDataBuffer = ctx->createBuffer({
-			.size = sizeof(mythril::GPU::GlobalData),
+			.size = sizeof(shaders::GlobalData),
 			.usage = mythril::BufferUsageBits::BufferUsageBits_Storage,
 			.storage = mythril::StorageType::Device,
 			.debugName = "PerFrameData Storage Buffer"
 		});
 		mythril::Buffer perMaterialDataBuffer = ctx->createBuffer({
-			.size = sizeof(mythril::GPU::MaterialData),
+			.size = sizeof(shaders::MaterialData),
 			.usage = mythril::BufferUsageBits::BufferUsageBits_Storage,
 			.storage = mythril::StorageType::Device,
 			.debugName = "PerMaterialData Storage Buffer"
 		});
 		constexpr unsigned int kNumObjects = 50;
 		mythril::Buffer objectDataBuf = ctx->createBuffer({
-			.size = sizeof(mythril::GPU::ObjectData) * kNumObjects,
+			.size = sizeof(shaders::ObjectData) * kNumObjects,
 			.usage = mythril::BufferUsageBits::BufferUsageBits_Storage,
 			.storage = mythril::StorageType::Device,
 			.debugName = "Object Data SSBO"
 		});
 
 		auto startTime = std::chrono::high_resolution_clock::now();
-		mythril::GPU::ObjectData objects[kNumObjects];
-		mythril::GPU::MaterialData matData{};
-		mythril::GPU::GlobalData frameData { .objects = ctx->gpuAddress(objectDataBuf) };
+		shaders::ObjectData objects[kNumObjects];
+		shaders::MaterialData matData{};
+		shaders::GlobalData frameData { .objects = ctx->gpuAddress(objectDataBuf) };
 
 		mythril::RenderGraph graph;
 		const mythril::GraphTexture rgColorTarget = graph.createTexture({.size = mythril::RelativeSize{}, .format = VK_FORMAT_R8G8B8A8_UNORM, .debugName = "Color Texture"});
@@ -489,10 +341,7 @@ int main() {
 			mythril::GraphicsPipelineHandle pipeline;
 			mythril::BufferHandle indexBuffer;
 			uint32_t indexCount = 0;
-			glm::mat4 model{};
-			VkDeviceAddress vertices = 0;
-			VkDeviceAddress perFrame = 0;
-			VkDeviceAddress perMaterial = 0;
+			shaders::GeometryPushConstant push{};
 		};
 		const auto buildGraph = [&] {
 			mythril::GraphBuffer objectData = rgObjectData;
@@ -531,20 +380,16 @@ int main() {
 				d.pipeline = mainPipeline.handle();
 				d.indexBuffer = cubeIndexBuffer.handle();
 				d.indexCount = static_cast<uint32_t>(cubeIndices.size());
-				d.model = modelmatrix;
-				d.vertices = ctx->gpuAddress(cubeVertexBuffer);
-				d.perFrame = ctx->gpuAddress(perFrameDataBuffer);
-				d.perMaterial = ctx->gpuAddress(perMaterialDataBuffer);
+				d.push = {
+					.model = modelmatrix,
+					.vertexBufferAddress = ctx->gpuAddress(cubeVertexBuffer),
+					.perFrame = ctx->gpuAddress(perFrameDataBuffer),
+					.perMaterial = ctx->gpuAddress(perMaterialDataBuffer),
+				};
 			}, [](const GeometryPass& d, mythril::GraphicsCmd& cmd) {
 				cmd.cmdBindGraphicsPipeline(d.pipeline);
 				cmd.cmdBindDepthState({mythril::CompareOp::LessEqual, true});
-				const mythril::GPU::GeometryPushConstant push {
-					.model = d.model,
-					.vertexBufferAddress = d.vertices,
-					.perFrame = d.perFrame,
-					.perMaterial = d.perMaterial
-				};
-				cmd.cmdPushConstants(push);
+				cmd.cmdPushConstants(d.push);
 				cmd.cmdBindIndexBuffer(d.indexBuffer);
 				cmd.cmdDrawIndexed(d.indexCount, kNumObjects);
 			});
@@ -610,7 +455,7 @@ int main() {
 			ImGui::End();
 
 			std::srand(static_cast<unsigned>(std::time(nullptr)));
-			for (mythril::GPU::ObjectData& object : objects) {
+			for (shaders::ObjectData& object : objects) {
 				glm::vec3 pos = {
 					(std::rand() / static_cast<float>(RAND_MAX) - 0.5f) * 100.0f, // range [-50, 50]
 					(std::rand() / static_cast<float>(RAND_MAX) - 0.5f) * 100.0f,
@@ -626,7 +471,7 @@ int main() {
 			objects[0].position = glm::vec3(0.f);
 
 
-			matData = mythril::GPU::MaterialData {
+			matData = shaders::MaterialData {
 				.tint = { col[0], col[1], col[2] },
 				.warpIterations = warp_iterations,
 				.glowAmount = glow,
@@ -640,14 +485,14 @@ int main() {
 				.nearPlane = 0.1f,
 				.farPlane = 100.f
 			};
-			const mythril::GPU::CameraData cameraData = {
+			const shaders::CameraData cameraData = {
 				.proj = calculateProjectionMatrix(camera),
 				.view = calculateViewMatrix(camera),
 				.position = camera.position
 			};
 			auto currentTime = std::chrono::high_resolution_clock::now();
 			float time = std::chrono::duration<float>(currentTime - startTime).count();
-			frameData = mythril::GPU::GlobalData {
+			frameData = shaders::GlobalData{
 				.objects = ctx->gpuAddress(objectDataBuf),
 				.camera = cameraData,
 				.renderResolution = { currentWindowSize.width, currentWindowSize.height },

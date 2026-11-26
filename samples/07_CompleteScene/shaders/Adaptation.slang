@@ -1,6 +1,6 @@
 import GPUStructs;
 
-struct PushConstants {
+struct AdaptationPushConstants {
     DescriptorHandle<RWTexture2D> currentSceneLumTex;
     DescriptorHandle<RWTexture2D> prevAdaptedLumTex;
     DescriptorHandle<RWTexture2D> adaptedOutTex;
@@ -9,7 +9,7 @@ struct PushConstants {
 }
 
 [vk::push_constant]
-PushConstants push;
+AdaptationPushConstants push;
 
 [shader("compute")]
 [numthreads(1, 1)]

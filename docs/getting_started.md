@@ -198,21 +198,56 @@ mythril::Sampler aniso = ctx->createSampler({
 
 ## Shaders
 
-Shaders are written in [Slang](https://shader-slang.com/) and compiled to SPIR-V at runtime. Create one with `CTX::createShader()`.
+Shaders are written in [Slang](https://shader-slang.com/) and compiled to SPIR-V at build time by `mythril_reflect_shaders` in CMake. For each shader it writes `<shader>.slang.spv` into `SPIRV_DIR`, and a header `<shader>.shadergen.h` with the push constant structs and the file name in `kSpirvFile`. Create a shader from that file with `CTX::createShader()`.
+
+A struct declared in an imported module goes in `<module>.shadergen.h`, and each shader header that uses it includes that header. Add each such module to `MODULES`, so CMake knows about its header. If a module is missing from `MODULES`, the build fails with an error that names it.
+
+```cmake
+mythril_reflect_shaders(my_app SOURCES shaders/PBR.slang SPIRV_DIR "$<TARGET_FILE_DIR:my_app>/shaders"
+        TYPES_HEADER shader_types.h TYPES_NAMESPACE my_app::gpu MATRIX_LAYOUT COLUMN)
+```
+
+The generated structs use C++ types for Slang's vectors and matrices (`float4`, `float4x4` and so on). These options tell the tool which types to use:
+
+| Option | Value |
+|---|---|
+| `TYPES_HEADER` | The header that the generated headers include for those types. `mythril/ShaderTypes.h` (DEFAULT) has plain structs with no math. |
+| `TYPES_NAMESPACE` | The namespace that holds the types, `mythril::shader` (DEFAULT). |
+| `MATRIX_LAYOUT` | `ROW` (DEFAULT) or `COLUMN`, the matrix layout of the Slang session. Set `COLUMN` for glm, so a `glm::mat4` goes into a `float4x4` field unchanged. |
+| `NAMESPACE` | The namespace of the generated code, `shaders` (DEFAULT). |
+
+To use glm, write a header with aliases such as `using float4x4 = glm::mat4;` in your namespace, as `samples/shader_types.h` does. The pass example [below](#passes) needs these options, because it puts a `glm::mat4` in `.mvp`.
+
+A pointer field (`T*` in Slang) is a `mythril::DevicePtr<T>` in C++. `CTX::gpuAddress()` returns a `mythril::DeviceAddress`, which converts to any `DevicePtr<T>` and to `AccelerationStructureSlot`, so you can write `.vertices = ctx->gpuAddress(vertexBuffer)` without the pointee type.
+
+The header also holds values from the shader, in namespace `shaders::<shader>`. Use them so the C++ and Slang code cannot disagree:
+- `kSpirvFile`: the `.spv` file name.
+- `kThreadGroupSize`: the `[numthreads]` of a compute shader, as `uint32_t[3]`.
+- Each module scope `static const int` or `static const uint`, with its Slang name. A value that Slang computes from other constants is written as the result.
 
 ```cpp
+cmd.cmdDispatchThreadGroup({(count + shaders::Cull::kThreadGroupSize[0] - 1) / shaders::Cull::kThreadGroupSize[0], 1, 1});
+```
+
+```cpp
+#include "PBR.shadergen.h"
+
 mythril::Shader defaultShader = ctx->createShader({
-    .filePath  = kShaderDir / "PBR.slang",
+    .path      = kShaderDir / shaders::PBR::kSpirvFile,
     .debugName = "PBR Shader",
 });
 ```
 
 A single `.slang` file can contain both vertex and fragment entry points, there is no requirement to split them into separate files or separate `Shader` objects.
-You can also inspect the information of a shader at runtime thanks to our reflection system during its compilation, do so with `CTX::inspectShader`, you can see it being used in sample_06.
+You can also inspect the information of a shader at runtime thanks to our reflection system, do so with `CTX::inspectShader`, you can see it being used in sample_06.
+
+You can incorporate `CTX::reloadShaderEXT` if you want hot reloading functionality, however it's very experimental.
 
 **Good to Knows**:
 - Keep the `Shader` alive for as long as any pipeline that uses it exists. Destroying the shader while a pipeline still references it is undefined behavior. *(subject to change in the future)*
-- Slang include search paths and compiler options are configured via `CTXBuilder::set_slang_cfg()` before calling `CTXBuilder::build()`, use these if your shader or its imports can't be found.
+- `createShader` stops the program if the `.spv` file is missing or cannot be read, so ship the `SPIRV_DIR` files with your executable.
+- When `SPIRV_DIR` is a plain path, the build writes a deleted `.spv` file again. CMake cannot track files in a path that has a target generator expression, such as `$<TARGET_FILE_DIR:my_app>`. With that kind of path, change a `.slang` file to write the `.spv` files again.
+- `reloadShaderEXT` exists only in debug builds.
 
 ---
 
@@ -287,6 +322,7 @@ mythril::GraphicsPipeline pipeline = ctx->createGraphicsPipeline({
 ```
 
 **Good to Knows**:
+- An entry's `size` must match the constant in the shader (a `bool` takes a `VkBool32`). In debug builds, binding a pipeline with a wrong size, or with a name its shader does not have, asserts. An id the shader does not have is ignored.
 - Multiple pipelines can share a single `Shader`, as there is no need to duplicate shader objects per pipeline.
 
 ### Acceleration Structures
@@ -307,7 +343,31 @@ mythril::AccelerationStructure tlas = ctx->createAccelerationStructure({
 ```
 **Good to Knows**:
 - They are quite experimental so if you run into an issue please let me know lol
-- Acceleration structures are not bindless descriptors. Pass `ctx->gpuAddress(tlas.handle())` in a `DescriptorHandle<RaytracingAccelerationStructure>` push constant field, the same way buffer pointers are passed, and keep the `AccelerationStructure` alive past the frames in flight.
+- Acceleration structures are not bindless descriptors. A `DescriptorHandle<RaytracingAccelerationStructure>` push constant field is an `AccelerationStructureSlot` in the generated struct. Set it to `ctx->gpuAddress(tlas)`, the same way buffer pointers are passed, and keep the `AccelerationStructure` alive past the frames in flight.
+
+To build or refit an acceleration structure every frame, give it to the graph with `graph.importAccelerationStructure(structure)`, once, next to your other imports. This returns a `GraphAccelerationStructure`, and the storage and scratch buffers of the structure become graph buffers. Then build it in a transfer pass:
+
+```cpp
+const mythril::GraphAccelerationStructure rgBlas = graph.importAccelerationStructure(blas);
+const mythril::GraphAccelerationStructure rgTlas = graph.importAccelerationStructure(tlas);
+
+// each frame
+mythril::GraphAccelerationStructure blasBuilt = rgBlas;
+mythril::GraphAccelerationStructure tlasBuilt = rgTlas;
+graph.addTransferPass("build acceleration structures", [&](mythril::TransferBuilder& b) {
+    blasBuilt = b.refit(blasBuilt, std::array{rgVertices, rgIndices});
+    tlasBuilt = b.build(tlasBuilt, std::array{rgInstances}, std::array{blasBuilt});
+});
+graph.addRayTracingPass<TracePass>("trace", [&](mythril::RayTracingPassBuilder& b, TracePass& d) {
+    b.dependency(tlasBuilt);
+    // ...
+}, /* execute */);
+```
+
+- `build(structure, inputs, instanced)` and `refit(...)` return the next version of the structure, like any other write. `inputs` are all the buffers the structure was created from. For a TLAS, `instanced` names each BLAS that its instances point to, and a pass that reads the TLAS also reads those BLASes.
+- `refit` keeps the topology and only moves the geometry. The structure needs `VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_KHR` in its `buildFlags`.
+- A pass that traces rays reads the structure with `b.dependency(structure)`.
+- A pass that builds or refits never runs on the transfer queue, because the transfer queue cannot build acceleration structures. With `async()` it runs on async compute, and otherwise on the main queue.
 
 # RenderGraph
 
@@ -356,13 +416,15 @@ Every pass is two callbacks and an optional `Data` struct:
 - **setup** runs immediately inside `add*Pass`. It declares what the pass reads and writes through the builder, and fills `Data` with anything execute needs.
 - **execute** runs later when the graph records. It must not capture anything and takes `(const Data&, XxxCmd&)`, everything it needs goes through `Data`.
 
+The example draws with sample_02's `BasicRed.slang`, so `shaders::PushConstant` and `shaders::Vertex` come from the generated `BasicRed.shadergen.h`. sample_02 uses the glm options from [Shaders](#shaders).
+
 ```cpp
 struct MainPass {
     mythril::GraphicsPipelineHandle pipeline;
     mythril::BufferHandle indexBuffer;
     uint32_t indexCount = 0;
     glm::mat4 mvp{};
-    VkDeviceAddress vertices = 0;
+    mythril::DeviceAddress vertices;
 };
 
 mythril::GraphTexture color = rgColor;
@@ -383,7 +445,11 @@ graph.addGraphicsPass<MainPass>("main", [&](mythril::GraphicsPassBuilder& b, Mai
     d.vertices = ctx->gpuAddress(vertexBuffer);
 }, [](const MainPass& d, mythril::GraphicsCmd& cmd) {
     cmd.cmdBindGraphicsPipeline(d.pipeline);
-    cmd.cmdPushConstants(GPU::PushConstant{ .mvp = d.mvp, .vertexBufferAddress = d.vertices });
+    const shaders::PushConstant push = {
+        .mvp = d.mvp,
+        .vertexBufferAddress = d.vertices
+    };
+    cmd.cmdPushConstants(push);
     cmd.cmdBindIndexBuffer(d.indexBuffer);
     cmd.cmdDrawIndexed(d.indexCount);
 });

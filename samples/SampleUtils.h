@@ -5,6 +5,8 @@
 #include <cstdio>
 #include <format>
 
+#include <mythril/Specs.h>
+
 #ifdef DEBUG
 #define SAMPLE_ASSERT(COND) do { \
     if (!static_cast<bool>(COND)) [[unlikely]] { \
@@ -25,6 +27,10 @@
 #endif
 
 namespace sample {
+	// the thread groups that cover every thread, groupSize is a generated kThreadGroupSize
+	constexpr mythril::Dimensions GroupsFor(const mythril::Dimensions threads, const uint32_t (&groupSize)[3]) {
+		return {(threads.width + groupSize[0] - 1) / groupSize[0], (threads.height + groupSize[1] - 1) / groupSize[1], (threads.depth + groupSize[2] - 1) / groupSize[2]};
+	}
 	constexpr uint32_t CalcNumMipLevels(uint32_t width, uint32_t height) {
 		uint32_t levels = 1;
 		while ((width | height) >> levels)

@@ -1,7 +1,23 @@
-#include "GPUStructs.h"
+import Scene;
+
+struct PerFrame {
+    float4x4 viewInverse;
+    float4x4 projInverse;
+};
+struct ShadowPushConstant {
+    Ptr<PerFrame> frame;
+    float4 lightDir;
+    Ptr<Geometry> geometries;
+    DescriptorHandle<RWTexture2D<float4>> outTexture;
+    DescriptorHandle<RaytracingAccelerationStructure> tlas;
+    uint32_t enableShadows;
+    uint32_t debugMode;
+    DescriptorHandle<RWTexture2D<float>> boundsHitDistance;
+};
 
 struct RayPayload {
   float3 color;
+  float t;
 };
 struct ShadowPayload {
   bool isShadowed;
@@ -10,10 +26,8 @@ struct ShadowPayload {
 [[vk::push_constant]]
 ShadowPushConstant push;
 
-uint3 getTriangleIndices() {
-    // instance custom index holds the first primitive of the blas, since PrimitiveIndex() restarts at 0 per geometry
-    uint index = 3 * (InstanceID() + PrimitiveIndex());
-    return uint3(push.indices[index + 0], push.indices[index + 1], push.indices[index + 2]);
+Geometry getGeometry() {
+    return push.geometries[InstanceID()];
 }
 
 RaytracingAccelerationStructure getTLAS() {
@@ -31,6 +45,7 @@ static const uint kDebugPrimitiveId = 3;
 static const uint kDebugBarycentrics = 4;
 static const uint kDebugShadowRays = 5;
 static const uint kDebugRayDirection = 6;
+static const uint kDebugBounds = 7;
 
 float3 hashColor(uint id) {
     id = (id ^ 61u) ^ (id >> 16);
@@ -70,15 +85,20 @@ void raygenMain() {
 
     RayPayload payload;
     payload.color = float3(0.0);
+    payload.t = 1e30;
     TraceRay(getTLAS(), RAY_FLAG_NONE, 0xff, 0, 0, kMissPrimary, ray, payload);
 
+    if (push.debugMode == kDebugBounds) {
+        payload.color *= 0.6;
+        push.boundsHitDistance[pixel] = payload.t;
+    }
     push.outTexture[pixel] = float4(payload.color, 1);
 }
 
 // primary ray
 [shader("miss")]
 void missMain(inout RayPayload payload) {
-    if (push.debugMode != kDebugLit) {
+    if (push.debugMode != kDebugLit && push.debugMode != kDebugBounds) {
         payload.color = float3(0.05);
         return;
     }
@@ -108,10 +128,13 @@ float traceShadow(float3 origin, float3 direction) {
 
 [shader("closesthit")]
 void closestHitMain(inout RayPayload payload, in BuiltInTriangleIntersectionAttributes attribs) {
-    uint3 tri = getTriangleIndices();
-    float3 p0 = mul(ObjectToWorld3x4(), float4(push.vertices[tri.x].position, 1.0));
-    float3 p1 = mul(ObjectToWorld3x4(), float4(push.vertices[tri.y].position, 1.0));
-    float3 p2 = mul(ObjectToWorld3x4(), float4(push.vertices[tri.z].position, 1.0));
+    payload.t = RayTCurrent();
+    Geometry geometry = getGeometry();
+    uint index = 3 * PrimitiveIndex();
+    uint3 tri = uint3(geometry.indices[index + 0], geometry.indices[index + 1], geometry.indices[index + 2]);
+    float3 p0 = mul(ObjectToWorld3x4(), float4(geometry.vertices[tri.x].position, 1.0));
+    float3 p1 = mul(ObjectToWorld3x4(), float4(geometry.vertices[tri.y].position, 1.0));
+    float3 p2 = mul(ObjectToWorld3x4(), float4(geometry.vertices[tri.z].position, 1.0));
 
     float3 normal = normalize(cross(p1 - p0, p2 - p0));
     if (dot(normal, WorldRayDirection()) > 0.0)
@@ -129,7 +152,7 @@ void closestHitMain(inout RayPayload payload, in BuiltInTriangleIntersectionAttr
         payload.color = heatRamp(exp(-RayTCurrent() * 0.15));
         return;
     case kDebugPrimitiveId:
-        payload.color = hashColor(InstanceID() + PrimitiveIndex());
+        payload.color = hashColor(InstanceIndex() * 7919u + PrimitiveIndex());
         return;
     case kDebugBarycentrics:
         payload.color = float3(1.0 - attribs.barycentrics.x - attribs.barycentrics.y, attribs.barycentrics.x, attribs.barycentrics.y);
@@ -148,7 +171,7 @@ void closestHitMain(inout RayPayload payload, in BuiltInTriangleIntersectionAttr
         return;
     }
 
-    const float3 albedo = float3(0.8);
+    const float3 albedo = geometry.albedo.rgb;
     const float ambient = 0.15;
     payload.color = albedo * (ambient + (1.0 - ambient) * NdotL * visibility);
 }

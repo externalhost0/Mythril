@@ -32,7 +32,7 @@ namespace mythril {
 	class ImmediateCommands;
 	class StagingDevice;
 	class Swapchain;
-	class SlangCompiler;
+	class SpirvLayout;
 
 	static constexpr uint32_t kMaxUserExtensions = 32;
 	static constexpr VkFormat kDefaultSwapchainFormat = VK_FORMAT_B8G8R8A8_UNORM;
@@ -115,11 +115,11 @@ namespace mythril {
 		AccelerationStructure createAccelerationStructure(const AccelerationStructureSpec& spec);
 
 		// for family
-		VkDeviceAddress gpuAddress(const Buffer& buf, size_t offset = 0) const { return gpuAddress(buf.handle(), offset); }
-		VkDeviceAddress gpuAddress(const AccelerationStructure& as) const { return gpuAddress(as.handle()); }
+		DeviceAddress gpuAddress(const Buffer& buf, size_t offset = 0) const { return gpuAddress(buf.handle(), offset); }
+		DeviceAddress gpuAddress(const AccelerationStructure& as) const { return gpuAddress(as.handle()); }
 		// for friends
-		VkDeviceAddress gpuAddress(BufferHandle handle, size_t offset = 0) const;
-		VkDeviceAddress gpuAddress(AccelerationStructureHandle handle) const;
+		DeviceAddress gpuAddress(BufferHandle handle, size_t offset = 0) const;
+		DeviceAddress gpuAddress(AccelerationStructureHandle handle) const;
 
 		// for buffers
 		void uploadEXT(BufferHandle handle, const void* data, size_t size, size_t offset = 0);
@@ -168,10 +168,11 @@ namespace mythril {
 
 		void waitIdle() const;
 
-		// literally just for our node editor for now, experimental
-		void switchShader(GraphicsPipeline& graphicsPipeline, Shader& newShader, ShaderStages stage);
-
 		const detail::AllocatedShader& inspectShader(ShaderHandle handle) const;
+#ifdef DEBUG
+		// main thread, between frames: swaps the shader's SPIR-V for the .spv at path and rebuilds its pipelines, false keeps the old code
+		bool reloadShaderEXT(const Shader& shader, const std::filesystem::path& path);
+#endif
 
 		// for ray tracing ease of use, not clean as of now;
 		// we want to reduce the user having to make calls like these since we do so behind the scenes in CTX later anyways
@@ -215,14 +216,19 @@ namespace mythril {
 		void resolveComputePipelineImpl(detail::AllocatedComputePipeline& pipeline);
 		void resolveRayTracingPipelineImpl(detail::AllocatedRayTracingPipeline& pipeline);
 		void buildShaderBindingTableImpl(detail::AllocatedRayTracingPipeline& pipeline);
-		void invalidateBindlessPipelineImpl(detail::SharedPipelineInfo& shared);
+		void invalidatePipelineImpl(detail::SharedPipelineInfo& shared);
+		void forEachPipelinePoolImpl(const auto& fn) {
+			fn(_graphicsPipelinePool);
+			fn(_computePipelinePool);
+			fn(_rayTracingPipelinePool);
+		}
+#ifdef DEBUG
+		template <typename Pipeline>
+		std::string findBuildProblemImpl(const Pipeline& pipeline) const;
+#endif
+		detail::AllocatedShader buildShaderImpl(const SpirvLayout& layout, const char* debugName) const;
 
 		VkPipeline buildComputePipelineImpl(VkPipelineLayout layout, ComputePipelineSpec spec);
-		static void CheckSpecializationConstants(const detail::AllocatedShader& shader,
-		                                         unsigned int expectedSpecConstantscount,
-		                                         const char* shaderStageName,
-		                                         const char* pipelineDebugName,
-		                                         bool hasMultipleStages);
 		VkPipeline buildRayTracingPipelineImpl(VkPipelineLayout layout, RayTracingPipelineSpec& spec);
 
 
@@ -257,8 +263,7 @@ namespace mythril {
 		        bool requestConcurrent = false
 		);
 
-		detail::AllocatedAccelerationStructure createTLASImpl(const AccelerationStructureSpec& spec);
-		detail::AllocatedAccelerationStructure createBLASImpl(const AccelerationStructureSpec& spec);
+		void recordAccelerationStructureBuild(VkCommandBuffer cmd, const detail::AllocatedAccelerationStructure& structure, bool update) const;
 
 
 		void checkAndUpdateBindlessDescriptorSetImpl();
@@ -365,7 +370,6 @@ namespace mythril {
 #ifdef MYTH_ENABLED_TRACY_GPU
 		TracyGPUPlugin _tracyPlugin;
 #endif
-		std::unique_ptr<SlangCompiler> _slangCompiler;
 		std::function<void(VkInstance, VkSurfaceKHR)> _surfaceDestroyFunc;
 
 		friend class RenderGraph;

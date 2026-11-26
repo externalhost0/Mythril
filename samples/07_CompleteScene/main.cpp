@@ -10,6 +10,7 @@
 
 #include "SDL3/SDL_events.h"
 
+#include <deque>
 #include <vector>
 #include <filesystem>
 
@@ -35,10 +36,22 @@
 #include <SDL3/SDL_vulkan.h>
 
 #include "Helpers.h"
-#include "HostStructs.h"
 #include "Primitives.h"
 
+#include "DepthOnly.shadergen.h"
+#include "RedDebug.shadergen.h"
+#include "FullscreenComposite.shadergen.h"
+#include "PointShadow.shadergen.h"
+#include "Standard.shadergen.h"
+#include "Sky.shadergen.h"
+#include "Particles.shadergen.h"
+#include "Downsample.shadergen.h"
+#include "ConversionLuminance.shadergen.h"
+#include "Upsample.shadergen.h"
+#include "Adaptation.shadergen.h"
+
 #include "../SDL3Usage.h"
+#include "../FlyCamera.h"
 #include "../SampleUtils.h"
 
 #include <chrono>
@@ -117,27 +130,10 @@ static float GetCPUUsage() {
 	return usage;
 }
 
-struct Camera {
-	glm::vec3 position;
-	glm::vec3 forwardVector;
-	glm::vec3 upVector;
-	float aspectRatio;
-	float fov;
-	float nearPlane;
-	float farPlane;
-};
-static glm::mat4 calculateViewMatrix(const Camera& camera) {
-	return glm::lookAt(camera.position, camera.position + camera.forwardVector, camera.upVector);
-}
-static glm::mat4 calculateProjectionMatrix(const Camera& camera, bool isReverseDepth = false) {
-	return glm::perspective(glm::radians(camera.fov), camera.aspectRatio,
-		isReverseDepth ? camera.farPlane : camera.nearPlane,
-		isReverseDepth ? camera.nearPlane : camera.farPlane);
-}
 
 struct MeshCompiled {
 	mythril::BufferHandle vertexBufHandle;
-	VkDeviceAddress vertexAddress{};
+	mythril::DeviceAddress vertexAddress;
 	uint32_t vertexCount{};
 	mythril::BufferHandle indexBufHandle;
 	uint32_t indexCount{};
@@ -181,7 +177,7 @@ struct TextureData {
 	uint32_t channels;
 };
 struct PrimitiveData {
-	std::vector<GPU::GeneralVertex> vertexData;
+	std::vector<shaders::Vertex> vertexData;
 	std::vector<uint32_t> indexData;
 	int materialIndex;
 };
@@ -289,7 +285,7 @@ static AssetData loadGLTFAsset(const std::filesystem::path& filepath) {
 		std::vector<PrimitiveData> primitives = {};
 
 		for (const fastgltf::Primitive& primitive : mesh.primitives) {
-			std::vector<GPU::GeneralVertex> vertices;
+			std::vector<shaders::Vertex> vertices;
 			std::vector<uint32_t> indices;
 
 			// initial vertex used by both
@@ -310,7 +306,7 @@ static AssetData loadGLTFAsset(const std::filesystem::path& filepath) {
 				// initialize vertex values
 				// load position
 				fastgltf::iterateAccessorWithIndex<glm::vec3>(gltf, posAccessor, [&vertices, initial_vertex](const glm::vec3 v, const size_t index) {
-					GPU::GeneralVertex vertex;
+					shaders::Vertex vertex;
 					vertex.position = v;
 					vertex.uv_x = 0;
 					vertex.normal = glm::vec3{ 1, 0, 0 };
@@ -463,7 +459,7 @@ static AssetCompiled compileGLTFAsset(mythril::CTX& ctx, AssetData& data) {
 			mesh_compiled.materialIndex = primitive_data.materialIndex;
 
 			const mythril::BufferHandle mesh_vertex_buffer = ctx.createBuffer({
-				.size = sizeof(GPU::GeneralVertex) * primitive_data.vertexData.size(),
+				.size = sizeof(shaders::Vertex) * primitive_data.vertexData.size(),
 				.usage = mythril::BufferUsageBits::BufferUsageBits_Storage,
 				.storage = mythril::StorageType::Device,
 				.initialData = primitive_data.vertexData,
@@ -664,7 +660,7 @@ void DrawGpuTimeline(GpuTimeline& timeline) {
 	ImGui::End();
 }
 
-void DrawLightingUI(GPU::LightingData& lightingData) {
+void DrawLightingUI(shaders::LightingData& lightingData) {
 	if (ImGui::Begin("Lighting")) {
 		if (ImGui::CollapsingHeader("Environment Light", ImGuiTreeNodeFlags_DefaultOpen)) {
 			ImGui::ColorEdit3("Env Color",  &lightingData.environmentLight.color.x);
@@ -672,9 +668,9 @@ void DrawLightingUI(GPU::LightingData& lightingData) {
 		}
 
 		if (ImGui::CollapsingHeader("Directional Light", ImGuiTreeNodeFlags_DefaultOpen)) {
-			ImGui::ColorEdit3("Dir Color",  &lightingData.directionalLights.color.x);
-			ImGui::SliderFloat("Dir Intensity", &lightingData.directionalLights.intensity, 0.0f, 10.0f);
-			ImGui::DragFloat3("Dir Direction", &lightingData.directionalLights.direction.x, 0.1f);
+			ImGui::ColorEdit3("Dir Color",  &lightingData.directionalLight.color.x);
+			ImGui::SliderFloat("Dir Intensity", &lightingData.directionalLight.intensity, 0.0f, 10.0f);
+			ImGui::DragFloat3("Dir Direction", &lightingData.directionalLight.direction.x, 0.1f);
 		}
 
 		if (ImGui::CollapsingHeader("Point Lights", ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -696,13 +692,7 @@ void DrawLightingUI(GPU::LightingData& lightingData) {
 
 
 
-struct ParticleData {
-	glm::vec3 position;
-	float size;
-	glm::vec3 velocity;
-	glm::vec3 color;
-};
-static std::vector<ParticleData> GenerateParticles(
+static std::vector<shaders::ParticleData> GenerateParticles(
 	size_t count,
 	glm::vec3 minPos,
 	glm::vec3 maxPos,
@@ -728,12 +718,12 @@ static std::vector<ParticleData> GenerateParticles(
 	std::uniform_real_distribution<float> valDist(-brightnessVariation, brightnessVariation);
 
 	std::uniform_real_distribution<float> velDist(-0.05f, 0.05f);
-	std::vector<ParticleData> particles;
+	std::vector<shaders::ParticleData> particles;
 	particles.reserve(count);
 
 	for (size_t i = 0; i < count; ++i)
 	{
-		ParticleData p{};
+		shaders::ParticleData p{};
 		p.position = glm::vec3(posX(rng),posY(rng),posZ(rng));
 		p.size = sizeDist(rng);
 
@@ -750,7 +740,7 @@ static std::vector<ParticleData> GenerateParticles(
 
 	return particles;
 }
-static void UpdateParticles(std::vector<ParticleData>& particles, float deltaTime, float speed) {
+static void UpdateParticles(std::vector<shaders::ParticleData>& particles, float deltaTime, float speed) {
 	const float dtSpeed = deltaTime * speed;
 	for (auto& p : particles) {
 		p.position += p.velocity * dtSpeed;
@@ -762,7 +752,7 @@ static void UpdateParticles(std::vector<ParticleData>& particles, float deltaTim
 }
 static constexpr uint8_t kNumPointLights = 4;
 static void UpdatePointLightShadowMatrices(
-    const GPU::LightingData& lightingData,
+    const shaders::LightingData& lightingData,
     float modelScale,
     float nearPlane,
     float farPlane,
@@ -789,11 +779,6 @@ static void UpdatePointLightShadowMatrices(
 int main() {
 	static constexpr VkFormat kOffscreenFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
 	static const std::filesystem::path kDataDir = std::filesystem::path(MYTH_SAMPLE_NAME).concat("_data/");
-	static const std::vector<std::string> slang_searchpaths = {
-		"../../include/",
-		"../include/",
-		(kDataDir / "shaders/").string()
-	};
 	SDL_Window* sdlWindow = BuildSDLWindow(true);
 	const auto initialWindowSize = GetSDLWindowFramebufferSize(sdlWindow);
 	{
@@ -818,9 +803,6 @@ int main() {
 			.destroyFunc = [](VkInstance instance, VkSurfaceKHR surface) {
 				SDL_Vulkan_DestroySurface(instance, surface, nullptr);
 			}
-		})
-		.set_slang_cfg({
-			.searchpaths = slang_searchpaths
 		})
 		.with_default_swapchain({
 			.width = initialWindowSize.width,
@@ -855,10 +837,12 @@ int main() {
 			.debugName = "Repeating Linear Mipmap Sampler"
 		});
 
-		mythril::Shader shadowShader = ctx->createShader({
-			.source = kDataDir / "shaders/DepthOnly.slang",
-			.debugName = "Shadow Shader"
-		});
+		// every shader is created here, so hot reload reloads each one from the file it came from
+		std::deque<std::pair<mythril::Shader, const char*>> loadedShaders;
+		const auto loadShader = [&](const char* file, const char* debugName) -> const mythril::Shader& {
+			return loadedShaders.emplace_back(ctx->createShader({.path = kDataDir / file, .debugName = debugName}), file).first;
+		};
+		const mythril::Shader& shadowShader = loadShader(shaders::DepthOnly::kSpirvFile, "Shadow Shader");
 
 		mythril::GraphicsPipeline shadowPipeline = ctx->createGraphicsPipeline({
 			.vertexShader = {shadowShader},
@@ -875,10 +859,7 @@ int main() {
 			.debugName = "Depth Prepass Pipeline"
 		});
 
-		mythril::Shader redDebugShader = ctx->createShader({
-			.source = kDataDir / "shaders/RedDebug.slang",
-			.debugName = "Red Shader"
-		});
+		const mythril::Shader& redDebugShader = loadShader(shaders::RedDebug::kSpirvFile, "Red Shader");
 		mythril::GraphicsPipeline redDebugPipeline = ctx->createGraphicsPipeline({
 			.vertexShader = {redDebugShader},
 			.fragmentShader = {redDebugShader},
@@ -886,7 +867,7 @@ int main() {
 		});
 
 		mythril::Buffer frameDataHandle = ctx->createBuffer({
-			.size = sizeof(GPU::FrameData),
+			.size = sizeof(shaders::FrameData),
 			.usage = mythril::BufferUsageBits::BufferUsageBits_Storage,
 			.storage = mythril::StorageType::Device,
 			.debugName = "frameData Buffer"
@@ -901,10 +882,7 @@ int main() {
 		});
 
 
-		mythril::Shader fullscreenCompositeShader = ctx->createShader({
-			.source = kDataDir / "shaders/FullscreenComposite.slang",
-			.debugName = "Fullscreen Composite Shader"
-		});
+		const mythril::Shader& fullscreenCompositeShader = loadShader(shaders::FullscreenComposite::kSpirvFile, "Fullscreen Composite Shader");
 		mythril::GraphicsPipeline fullscreenCompositePipeline = ctx->createGraphicsPipeline({
 			.vertexShader = {fullscreenCompositeShader},
 			.fragmentShader = {fullscreenCompositeShader},
@@ -946,7 +924,7 @@ int main() {
 		{
 			const std::vector<MeshData>& sponzaOpaqueOnlyData = sponzaData.getOpaqueMeshData();
 			// we are going to make two buffers, one with vertex and another for index that we index into at different points
-			std::vector<GPU::GeneralVertex> allVertexData;
+			std::vector<shaders::Vertex> allVertexData;
 			std::vector<uint32_t> allIndexData;
 			int32_t vertexCursor = 0;
 			uint32_t indexCursor  = 0;
@@ -976,7 +954,7 @@ int main() {
 			opaqueDrawCount = indirect_mesh_data.size();
 			// once we have contigous data we can put them in a buffer like we normally do
 			opaqueSponzaVertexBuf = ctx->createBuffer({
-				.size = allVertexData.size() * sizeof(GPU::GeneralVertex),
+				.size = allVertexData.size() * sizeof(shaders::Vertex),
 				.usage = mythril::BufferUsageBits::BufferUsageBits_Storage,
 				.storage = mythril::StorageType::Device,
 				.initialData = allVertexData,
@@ -1042,10 +1020,10 @@ int main() {
 			graph.importTexture(adaptedLuminanceTextures[1]),
 		};
 
-		GPU::LightingData lightingData = {};
-		lightingData.directionalLights.color     = {1.0f, 1.0f, 0.97f};
-		lightingData.directionalLights.intensity = 8.0f;
-		GPU::FrameData frameData{};
+		shaders::LightingData lightingData = {};
+		lightingData.directionalLight.color     = {1.0f, 1.0f, 0.97f};
+		lightingData.directionalLight.intensity = 8.0f;
+		shaders::FrameData frameData{};
 
 		float shadowNear = 1.f, shadowFar = 450.f;
 		float depthBiasConstant = 1.25f, depthBiasSlope = 1.75f;
@@ -1077,10 +1055,7 @@ int main() {
 			});
 			rgPointLightShadowTex[i] = graph.importTexture(pointLightShadowTex[i]);
 		}
-		mythril::Shader pointshadowShader = ctx->createShader({
-			.source = kDataDir / "shaders/PointShadow.slang",
-			.debugName = "Point Shadow Map Shader"
-		});
+		const mythril::Shader& pointshadowShader = loadShader(shaders::PointShadow::kSpirvFile, "Point Shadow Map Shader");
 		mythril::GraphicsPipeline pointShadowGraphicsPipeline = ctx->createGraphicsPipeline({
 			.vertexShader = pointshadowShader,
 			.fragmentShader = pointshadowShader,
@@ -1117,7 +1092,7 @@ int main() {
 		});
 
 
-		GPU::LightingData lastFramelightingData{};
+		shaders::LightingData lastFramelightingData{};
 
 		mythril::Sampler shadowSampler = ctx->createSampler({
 			.wrapU = mythril::SamplerWrap::ClampBorder,
@@ -1127,10 +1102,7 @@ int main() {
 			.debugName = "Shadow Sampler Comparison"
 		});
 
-		mythril::Shader standardShader = ctx->createShader({
-			.source = kDataDir / "shaders/Standard.slang",
-			.debugName = "Standard Shader"
-		});
+		const mythril::Shader& standardShader = loadShader(shaders::Standard::kSpirvFile, "Standard Shader");
 		mythril::GraphicsPipeline opaquePipeline = ctx->createGraphicsPipeline({
 			.vertexShader = {standardShader},
 			.fragmentShader = {standardShader},
@@ -1148,10 +1120,7 @@ int main() {
 			.multisample = mythril::SampleCount::X4,
 			.debugName = "Transparent Graphics Pipeline"
 		});
-		mythril::Shader skyShader = ctx->createShader({
-			.source = kDataDir / "shaders/Sky.slang",
-			.debugName = "Sky Shader"
-		});
+		const mythril::Shader& skyShader = loadShader(shaders::Sky::kSpirvFile, "Sky Shader");
 		mythril::GraphicsPipeline skyPipeline = ctx->createGraphicsPipeline({
 			.vertexShader   = {skyShader},
 			.fragmentShader = {skyShader},
@@ -1161,10 +1130,7 @@ int main() {
 			.debugName      = "Sky Graphics Pipeline"
 		});
 
-		mythril::Shader particleShader = ctx->createShader({
-			.source = kDataDir / "shaders/Particles.slang",
-			.debugName = "Ambient Particle Shader"
-		});
+		const mythril::Shader& particleShader = loadShader(shaders::Particles::kSpirvFile, "Ambient Particle Shader");
 		mythril::GraphicsPipeline particle_pipeline = ctx->createGraphicsPipeline({
 			.vertexShader = particleShader,
 			.fragmentShader = particleShader,
@@ -1187,7 +1153,7 @@ int main() {
 		);
 
 		mythril::Buffer particles_buffer = ctx->createBuffer({
-			.size = particles.size() * sizeof(ParticleData),
+			.size = particles.size() * sizeof(shaders::ParticleData),
 			.usage = mythril::BufferUsageBits::BufferUsageBits_Storage,
 			.storage = mythril::StorageType::Device,
 			.initialData = particles,
@@ -1224,20 +1190,14 @@ int main() {
 				.debugName = namebuf
 			});
 		}
-		mythril::Shader downsampleComputeShader = ctx->createShader({
-			.source = kDataDir / "shaders/Downsample.slang",
-			.debugName = "Downsample Compute Shader"
-		});
+		const mythril::Shader& downsampleComputeShader = loadShader(shaders::Downsample::kSpirvFile, "Downsample Compute Shader");
 		mythril::ComputePipeline downsampleComputePipeline = ctx->createComputePipeline({
 			.shader = downsampleComputeShader.handle(),
 			.debugName = "Downsample Compute Pipeline"
 		});
 
 
-		mythril::Shader luminanceConversionShader = ctx->createShader({
-			.source = kDataDir /  "shaders/ConversionLuminance.slang",
-			.debugName = "Luminance Conversion Compute Shader"
-		});
+		const mythril::Shader& luminanceConversionShader = loadShader(shaders::ConversionLuminance::kSpirvFile, "Luminance Conversion Compute Shader");
 		mythril::ComputePipeline conversionLuminancePipeline = ctx->createComputePipeline({
 			.shader = luminanceConversionShader.handle(),
 			.debugName = "Luminance Conversion Pipeline"
@@ -1249,10 +1209,7 @@ int main() {
 			.debugName = "Luminance Current Texture"
 		});
 
-		mythril::Shader upsampleComputeShader = ctx->createShader({
-			.source = kDataDir / "shaders/Upsample.slang",
-			.debugName = "Upsample Compute Shader"
-		});
+		const mythril::Shader& upsampleComputeShader = loadShader(shaders::Upsample::kSpirvFile, "Upsample Compute Shader");
 		mythril::ComputePipeline upsampleComputePipeline = ctx->createComputePipeline({
 			.shader = upsampleComputeShader.handle(),
 			.debugName = "Upsample Compute Pipeline"
@@ -1260,10 +1217,7 @@ int main() {
 		float filter_radius = 1.f;
 		float blend = 1.f;
 
-		mythril::Shader adaptationShader = ctx->createShader({
-			.source = kDataDir / "shaders/Adaptation.slang",
-			.debugName = "Adaptation Compute Shader"
-		});
+		const mythril::Shader& adaptationShader = loadShader(shaders::Adaptation::kSpirvFile, "Adaptation Compute Shader");
 		mythril::ComputePipeline adaptationComputePipeline = ctx->createComputePipeline({
 			.shader = adaptationShader.handle(),
 			.debugName = "Adaptation Compute Pipeline"
@@ -1314,24 +1268,24 @@ int main() {
 			bool transparent = false;
 			mythril::GraphTexture shadowMap;
 			mythril::GraphTexture pointShadowMaps[kNumPointLights];
-			GPU::GeometryPushConstants push{};
+			shaders::GeometryPushConstants push{};
 
 			static void draw(const SponzaDraw& d, mythril::GraphicsCmd& cmd) {
 				cmd.cmdBindGraphicsPipeline(d.pipeline);
 				// opaque depth comes from depth_prepass, so only shade the surface that won
 				cmd.cmdBindDepthState(d.transparent ? mythril::DepthState{mythril::CompareOp::Greater, true} : mythril::DepthState{mythril::CompareOp::GreaterEqual, false});
-				GPU::GeometryPushConstants push = d.push;
-				push.shadowTexture = cmd.texture(d.shadowMap).index();
+				shaders::GeometryPushConstants push = d.push;
+				push.shadowTexture = cmd.texture(d.shadowMap);
 				for (int i = 0; i < kNumPointLights; i++)
-					push.pointLightShadowTextures[i] = cmd.texture(d.pointShadowMaps[i]).index();
+					push.pointLightCubemaps[i] = cmd.texture(d.pointShadowMaps[i]);
 				// what we call a mesh is really a primitive for fastgltf
 				for (const MeshCompiled& mesh : d.asset->meshes) {
 					const MaterialData& material = d.asset->materials[mesh.materialIndex];
 					if (material.isTransparent != d.transparent) continue;
 					push.vba = mesh.vertexAddress;
-					push.baseColorTexture = d.asset->textureHandles[material.baseColorTextureIndex].index();
-					push.normalTexture = d.asset->textureHandles[material.normalTextureIndex].index();
-					push.roughnessMetallicTexture = d.asset->textureHandles[material.roughnessMetallicTextureIndex].index();
+					push.baseColorTexture = d.asset->textureHandles[material.baseColorTextureIndex];
+					push.normalTexture = d.asset->textureHandles[material.normalTextureIndex];
+					push.roughnessMetallicTexture = d.asset->textureHandles[material.roughnessMetallicTextureIndex];
 					cmd.cmdPushConstants(push);
 					cmd.cmdBindIndexBuffer(mesh.indexBufHandle);
 					cmd.cmdDrawIndexed(mesh.indexCount);
@@ -1350,8 +1304,8 @@ int main() {
 				.mvp = projViewFromCamera * scaledModel,
 				.frame = ctx->gpuAddress(frameDataHandle),
 				.tintColor = {1, 1, 1, 1},
-				.samplerState = repeatSampler.index(),
-				.shadowSampler = shadowSampler.index(),
+				.linearSampler = repeatSampler,
+				.shadowSamplerComparison = shadowSampler,
 				.pointLightFarPlane = pointlight_farplane
 			};
 		};
@@ -1363,19 +1317,11 @@ int main() {
 			mythril::Buffer* indirectBuffer = nullptr;
 			uint32_t drawCount = 0;
 		};
-		struct PointShadowPush {
-			VkDeviceAddress shadowMVPs;
-			VkDeviceAddress vba;
-			glm::mat4 model;
-			uint32_t nLight;
-			glm::vec3 lightPos;
-			float farPlane;
-		};
 		struct BloomChain {
 			mythril::ComputePipelineHandle pipeline;
 			mythril::GraphTexture source;
 			mythril::GraphTexture mips[kNumColorMips];
-			uint64_t sampler = 0;
+			mythril::SamplerSlot sampler;
 			float filterRadius = 0.f;
 		};
 
@@ -1398,10 +1344,7 @@ int main() {
 
 			struct DepthPrepassData {
 				DepthOnlyDraw draw;
-				struct {
-					glm::mat4 mvp;
-					VkDeviceAddress vba;
-				} push;
+				shaders::DepthOnlyPushConstant push;
 			};
 			graph.addGraphicsPass<DepthPrepassData>("depth_prepass", [&](mythril::GraphicsPassBuilder& b, DepthPrepassData& d) {
 				msaaDepth = b.attachment({
@@ -1427,7 +1370,7 @@ int main() {
 			});
 
 			{
-				const glm::vec3 lightDir = glm::normalize(lightingData.directionalLights.direction);
+				const glm::vec3 lightDir = glm::normalize(lightingData.directionalLight.direction);
 				const glm::vec3 lightPos = scene_center - lightDir * distance_from_center;
 				if (shadowFar < shadowNear) {
 					shadowFar = shadowNear;
@@ -1440,10 +1383,7 @@ int main() {
 			}
 			struct ShadowMapData {
 				DepthOnlyDraw draw;
-				struct {
-					glm::mat4 mvp;
-					VkDeviceAddress vba;
-				} push;
+				shaders::DepthOnlyPushConstant push;
 			};
 			graph.addGraphicsPass<ShadowMapData>("shadow_map", [&](mythril::GraphicsPassBuilder& b, ShadowMapData& d) {
 				shadowMap = b.attachment({
@@ -1482,7 +1422,7 @@ int main() {
 			});
 			struct PointShadow {
 				DepthOnlyDraw draw;
-				PointShadowPush push;
+				shaders::PointShadowPushConstant push;
 			};
 			for (int i = 0; i < kNumPointLights; i++) {
 				if (lightingData.pointLights[i].position == lastFramelightingData.pointLights[i].position)
@@ -1501,7 +1441,7 @@ int main() {
 					b.dependency(rgOpaqueSponzaIndirect, mythril::BufferAccess::IndirectRead);
 					d.draw = {.pipeline = pointShadowGraphicsPipeline.handle(), .indexBuffer = opaqueSponzaIndexBuf.handle(), .indirectBuffer = &opaqueSponzaIndirectBuf, .drawCount = opaqueDrawCount};
 					d.push = {
-						.shadowMVPs = ctx->gpuAddress(pointLightShadowMatrixBuf),
+						.matrices = ctx->gpuAddress(pointLightShadowMatrixBuf),
 						.vba = ctx->gpuAddress(opaqueSponzaVertexBuf),
 						.model = scaledModel,
 						.nLight = static_cast<uint32_t>(i),
@@ -1518,11 +1458,7 @@ int main() {
 			}
 			struct Sky {
 				mythril::GraphicsPipelineHandle pipeline;
-				struct {
-					VkDeviceAddress frame;
-					glm::vec3 sunDirection;
-					float _pad;
-				} push;
+				shaders::SkyPushConstants push;
 			};
 			graph.addGraphicsPass<Sky>("sky", [&](mythril::GraphicsPassBuilder& b, Sky& d) {
 				msaaColor = b.attachment({
@@ -1574,13 +1510,7 @@ int main() {
 				mythril::GraphicsPipelineHandle pipeline;
 				mythril::BufferHandle indexBuffer;
 				uint32_t instanceCount = 0;
-				struct {
-					VkDeviceAddress vba;
-					VkDeviceAddress bufferAddr;
-					VkDeviceAddress frame;
-					float brightness;
-					float speed;
-				} push;
+				shaders::ParticlePushConstant push;
 			};
 			graph.addGraphicsPass<Particles>("Ambient Particles", [&](mythril::GraphicsPassBuilder& b, Particles& d) {
 				const mythril::AttachmentOutput color = b.attachment({
@@ -1608,7 +1538,7 @@ int main() {
 				d.instanceCount = static_cast<uint32_t>(particles.size());
 				d.push = {
 					.vba = ctx->gpuAddress(particle_vertex_buffer),
-					.bufferAddr = ctx->gpuAddress(particles_buffer),
+					.particles = ctx->gpuAddress(particles_buffer),
 					.frame = ctx->gpuAddress(frameDataHandle),
 					.brightness = particle_emission,
 					.speed = particle_speed
@@ -1629,7 +1559,7 @@ int main() {
 				b.executeCmdsInOrder();
 				d.pipeline = pipeline.handle();
 				std::ranges::copy(bloomMips, d.mips);
-				d.sampler = clampSampler.index();
+				d.sampler = clampSampler;
 				d.filterRadius = filter_radius;
 			};
 			graph.addComputePass<BloomChain>("Downsampling", [&](mythril::ComputePassBuilder& b, BloomChain& d) {
@@ -1640,25 +1570,14 @@ int main() {
 				cmd.cmdBindComputePipeline(d.pipeline);
 				for (int i = 0; i < kNumColorMips; i++) {
 					const mythril::ResolvedTexture out = cmd.texture(d.mips[i]);
-					struct PushConstants {
-						uint64_t inTex;
-						uint64_t outTex;
-						uint64_t sampler;
-						uint32_t mipLevel;
-					} push {
-						.inTex = cmd.texture(i == 0 ? d.source : d.mips[i-1]).index(),
-						.outTex = out.index(),
+					const shaders::DownsamplePushConstants push {
+						.srcTexture = cmd.texture(i == 0 ? d.source : d.mips[i-1]),
+						.outTexture = out,
 						.sampler = d.sampler,
 						.mipLevel = static_cast<uint32_t>(i)
 					};
 					cmd.cmdPushConstants(push);
-					static constexpr uint32_t threadNum = 8;
-					const mythril::Dimensions texDims = out.dimensions;
-					const mythril::Dimensions roundedDims = {
-						(texDims.width + threadNum - 1) / threadNum,
-						(texDims.height + threadNum - 1) / threadNum,
-						1};
-					cmd.cmdDispatchThreadGroup(roundedDims);
+					cmd.cmdDispatchThreadGroup(sample::GroupsFor({out.dimensions.width, out.dimensions.height}, shaders::Downsample::kThreadGroupSize));
 				}
 			});
 			struct LuminanceConvert {
@@ -1673,14 +1592,9 @@ int main() {
 			}, [](const LuminanceConvert& d, mythril::ComputeCmd& cmd) {
 				cmd.cmdBindComputePipeline(d.pipeline);
 				const mythril::ResolvedTexture lowResColor = cmd.texture(d.lowResColor);
-				const struct PushConstant {
-					uint64_t lowResColorTex;
-					uint64_t curLumOutTex;
-					uint64_t sampler;
-				} push {
-					.lowResColorTex = lowResColor.index(),
-					.curLumOutTex = cmd.texture(d.currentLuminance).index(),
-					.sampler = 0
+				const shaders::LuminancePushConstants push {
+					.inTex = lowResColor,
+					.outTex = cmd.texture(d.currentLuminance),
 				};
 				cmd.cmdPushConstants(push);
 				const mythril::Dimensions texDims = lowResColor.dimensions;
@@ -1697,26 +1611,15 @@ int main() {
 				for (int i = kNumColorMips-1; i > 0; i--) {
 					const mythril::ResolvedTexture out = cmd.texture(d.mips[i-1]);
 					const mythril::Dimensions outdims = out.dimensions;
-					struct PushConstants {
-						uint64_t inTex;
-						uint64_t outTex;
-						uint64_t sampler;
-						glm::ivec2 outSize;
-						float filterRadius;
-					} push {
-						.inTex = cmd.texture(d.mips[i]).index(),
-						.outTex = out.index(),
+					const shaders::UpsamplePushConstants push {
+						.inTexture = cmd.texture(d.mips[i]),
+						.outTexture = out,
 						.sampler = d.sampler,
 						.outSize = {outdims.width, outdims.height},
 						.filterRadius = d.filterRadius,
 					};
 					cmd.cmdPushConstants(push);
-					static constexpr uint32_t threadNum = 8;
-					const mythril::Dimensions roundedDims = {
-						(outdims.width + threadNum - 1) / threadNum,
-						(outdims.height + threadNum - 1) / threadNum,
-						1};
-					cmd.cmdDispatchThreadGroup(roundedDims);
+					cmd.cmdDispatchThreadGroup(sample::GroupsFor({outdims.width, outdims.height}, shaders::Upsample::kThreadGroupSize));
 				}
 			});
 			struct Adaptation {
@@ -1737,52 +1640,21 @@ int main() {
 				d = {adaptationComputePipeline.handle(), currentLuminance, adaptedLuminance[lumFlip], adaptedLuminance[!lumFlip], adaptationSpeed * dt};
 			}, [](const Adaptation& d, mythril::ComputeCmd& cmd) {
 				cmd.cmdBindComputePipeline(d.pipeline);
-				struct PushConstant {
-					uint64_t currentSceneLumTex;
-					uint64_t prevAdaptedLumTex;
-					uint64_t nextAdaptedLumTex;
-					float adaptionSpeed;
-				} push {
-					.currentSceneLumTex = cmd.texture(d.currentLuminance).index(),
-					.prevAdaptedLumTex = cmd.texture(d.prevAdapted).index(),
-					.nextAdaptedLumTex = cmd.texture(d.nextAdapted).index(),
+				const shaders::AdaptationPushConstants push {
+					.currentSceneLumTex = cmd.texture(d.currentLuminance),
+					.prevAdaptedLumTex = cmd.texture(d.prevAdapted),
+					.adaptedOutTex = cmd.texture(d.nextAdapted),
 					.adaptionSpeed = d.adaptionSpeed
 				};
 				cmd.cmdPushConstants(push);
 				cmd.cmdDispatchThreadGroup({1, 1});
 			});
-			struct CompositePush {
-				uint64_t colorTex; // 32 bytes
-				uint64_t avgLuminanceTex;
-				uint64_t bloomTex;
-				uint64_t sampler;
-				float exposure; // 48 bytes
-				float bloomStrength;
-				int toneMapMode;
-				// reinhard
-				float maxWhite;
-				// uchimira
-				float P; // max display brightness
-				float a; // contrast
-				float m; // linear section start
-				float l; // linear section length
-				float c; // black tightness
-				float b; // pedestal
-				// Khronos PBR
-				float startCompression; // highlight compression start
-				float desaturation;
-				// AgX
-				glm::vec3 slope;
-				glm::vec3 offset;
-				glm::vec3 power;
-				float saturation;
-			};
 			struct Composite {
 				mythril::GraphicsPipelineHandle pipeline;
 				mythril::GraphTexture color;
 				mythril::GraphTexture avgLuminance;
 				mythril::GraphTexture bloom;
-				CompositePush push;
+				shaders::FullscreenPushConstant push;
 			};
 			graph.addGraphicsPass<Composite>("composite", [&](mythril::GraphicsPassBuilder& builder, Composite& d) {
 				finalColor = builder.attachment({
@@ -1799,7 +1671,6 @@ int main() {
 				d.avgLuminance = adaptedLuminance[lumFlip];
 				d.bloom = bloomMips[0];
 				d.push = {
-					.sampler = 0,
 					.exposure = exposure_final,
 					.bloomStrength = bloom_strength,
 					.toneMapMode = static_cast<int>(tone_mapping_mode),
@@ -1819,10 +1690,10 @@ int main() {
 				};
 			}, [](const Composite& d, mythril::GraphicsCmd& cmd) {
 				cmd.cmdBindGraphicsPipeline(d.pipeline);
-				CompositePush push = d.push;
-				push.colorTex = cmd.texture(d.color).index();
-				push.avgLuminanceTex = cmd.texture(d.avgLuminance).index();
-				push.bloomTex = cmd.texture(d.bloom).index();
+				shaders::FullscreenPushConstant push = d.push;
+				push.colorTexture = cmd.texture(d.color);
+				push.avgLumTexture = cmd.texture(d.avgLuminance);
+				push.bloomTexture = cmd.texture(d.bloom);
 				cmd.cmdPushConstants(push);
 				cmd.cmdDraw(3);
 			});
@@ -1830,7 +1701,7 @@ int main() {
 				const AssetCompiled* arrow = nullptr;
 				mythril::GraphicsPipelineHandle pipeline;
 				glm::mat4 model;
-				VkDeviceAddress frame;
+				mythril::DeviceAddress frame;
 			};
 			graph.addGraphicsPass<ShadowPosDebug>("shadow_pos_debug", [&](mythril::GraphicsPassBuilder& b, ShadowPosDebug& d) {
 				finalColor = b.attachment({
@@ -1853,11 +1724,7 @@ int main() {
 				cmd.cmdBindGraphicsPipeline(d.pipeline);
 				cmd.cmdBindDepthState({mythril::CompareOp::Less, true});
 				for (const auto& mesh : d.arrow->meshes) {
-					struct PushConstant {
-						glm::mat4 model;
-						VkDeviceAddress vba;
-						VkDeviceAddress frame;
-					} push {
+					const shaders::RedDebugPushConstant push {
 						.model = d.model,
 						.vba = mesh.vertexAddress,
 						.frame = d.frame
@@ -1883,12 +1750,7 @@ int main() {
 				b.blit(finalColor, graph.backBuffer());
 			});
 		};
-		static bool focused = false;
-		SDL_SetWindowRelativeMouseMode(sdlWindow, focused);
-		constexpr float kMouseSensitivity = 0.3f;
-		constexpr float kBaseCameraSpeed = 8.f;
-		constexpr float kShiftCameraSpeed = kBaseCameraSpeed * 3.f;
-		glm::vec3 camera_position = {0.f, 5.f, 0.f};
+		FlyCamera camera(sdlWindow, {0.f, 5.f, 0.f}, {.yaw = 0.f, .pitch = 0.f, .speed = 8.f, .farPlane = 200.f});
 
 		lightingData.environmentLight.color     = {0.25f, 0.30f, 0.35f};
 		lightingData.environmentLight.intensity = 0.2f;
@@ -1911,13 +1773,13 @@ int main() {
 			// const float nightBlend = glm::smoothstep(0.0f, 0.12f, -sunDir.y);
 
 			if (sunUp > 0.001f) {
-				lightingData.directionalLights.color     = glm::mix(noonColor, horizonColor, horizonT);
-				lightingData.directionalLights.intensity = sunUp * 10.f;
-				lightingData.directionalLights.direction = sunDir;
+				lightingData.directionalLight.color     = glm::mix(noonColor, horizonColor, horizonT);
+				lightingData.directionalLight.intensity = sunUp * 10.f;
+				lightingData.directionalLight.direction = sunDir;
 			} else {
-				lightingData.directionalLights.color     = moonColor;
-				lightingData.directionalLights.intensity = moonUp * 0.35f;
-				lightingData.directionalLights.direction = -sunDir;
+				lightingData.directionalLight.color     = moonColor;
+				lightingData.directionalLight.intensity = moonUp * 0.35f;
+				lightingData.directionalLight.direction = -sunDir;
 			}
 
 			constexpr glm::vec3 nightEnv = {0.02f, 0.03f, 0.09f};
@@ -1943,62 +1805,30 @@ int main() {
 				});
 			}
 
-			static float yaw = 0, pitch = 0;
-
 			SDL_Event e;
 			while (SDL_PollEvent(&e)) {
 				ImGui_ImplSDL3_ProcessEvent(&e);
+				camera.handleEvent(e);
 
 				if (e.type == SDL_EVENT_QUIT) quit = true;
 				if (e.type == SDL_EVENT_KEY_DOWN) {
 					if (e.key.key == SDLK_Q) quit = true;
-					if (e.key.key == SDLK_C) SDL_SetWindowRelativeMouseMode(sdlWindow, focused = !focused);
-				}
-				if (e.type == SDL_EVENT_MOUSE_MOTION) {
-					if (focused) {
-						float dx = e.motion.xrel;
-						float dy = e.motion.yrel;
-						yaw   += dx * kMouseSensitivity;
-						pitch -= dy * kMouseSensitivity;
-						pitch = glm::clamp(pitch, -89.0f, 89.0f);
+#ifdef DEBUG
+					if (e.key.key == SDLK_R) {
+						for (const auto& [shader, file]: loadedShaders)
+							ctx->reloadShaderEXT(shader, kDataDir / file);
 					}
+#endif
 				}
 			}
-			glm::vec3 front;
-			front.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
-			front.y = sin(glm::radians(pitch));
-			front.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
-			front = glm::normalize(front);
-			glm::vec3 right = glm::normalize(glm::cross(front, glm::vec3(0,1,0)));
-			glm::vec3 up = {0, 1, 0};
-
-			const bool* state = SDL_GetKeyboardState(nullptr);
-
-			// for movement
-			float camera_speed = kBaseCameraSpeed;
-			if (state[SDL_SCANCODE_LSHIFT]) camera_speed = kShiftCameraSpeed;
-
-			if (state[SDL_SCANCODE_W]) camera_position += front * camera_speed * deltaTime;
-			if (state[SDL_SCANCODE_S]) camera_position -= front * camera_speed * deltaTime;
-			if (state[SDL_SCANCODE_A]) camera_position -= right * camera_speed * deltaTime;
-			if (state[SDL_SCANCODE_D]) camera_position += right * camera_speed * deltaTime;
-			if (state[SDL_SCANCODE_SPACE]) camera_position += up * camera_speed * deltaTime;
-			if (state[SDL_SCANCODE_LCTRL]) camera_position -= up * camera_speed * deltaTime;
+			camera.update(deltaTime);
 
 			auto windowFramebufferSize = GetSDLWindowFramebufferSize(sdlWindow);
 			int windowWidth, windowHeight;
 			SDL_GetWindowSize(sdlWindow, &windowWidth, &windowHeight);
-			const Camera camera = {
-				.position = camera_position,
-				.forwardVector = front,
-				.upVector = up,
-				.aspectRatio = static_cast<float>(windowWidth) / static_cast<float>(windowHeight),
-				.fov = 80.f,
-				.nearPlane = 0.1f,
-				.farPlane = 200.f
-			};
-			const glm::mat4 reversedCameraProj = calculateProjectionMatrix(camera, true);
-			const glm::mat4 cameraView = calculateViewMatrix(camera);
+			const float aspectRatio = static_cast<float>(windowWidth) / static_cast<float>(windowHeight);
+			const glm::mat4 reversedCameraProj = camera.projection(aspectRatio, true);
+			const glm::mat4 cameraView = camera.view();
 
 			auto UVToViewRay = [&](const glm::vec2& uv, const glm::mat4& invProj) -> glm::vec3 {
 				glm::vec4 ndc;
@@ -2016,17 +1846,17 @@ int main() {
 			glm::vec2 ray00 = { view00.x / view00.z, view00.y / view00.z };
 			glm::vec2 ray11 = { view11.x / view11.z, view11.y / view11.z };
 			projViewFromCamera = reversedCameraProj * cameraView;
-			const GPU::CameraData cameraData = {
+			const shaders::CameraData cameraData = {
 				.projView = projViewFromCamera,
 				.invProj = invProj,
 				.forward = glm::normalize(-glm::vec3(cameraView[0][2], cameraView[1][2], cameraView[2][2])),
 				.up = glm::normalize(glm::vec3(cameraView[0][1], cameraView[1][1], cameraView[2][1])),
 				.right = glm::normalize(glm::vec3(cameraView[0][0], cameraView[1][0], cameraView[2][0])),
-				.position = camera.position,
-				.uvToViewA = ray11 - ray00,
-				.uvToViewB = ray00,
-				.farPlane = camera.farPlane,
-				.nearPlane = camera.nearPlane
+				.position = camera.position(),
+				.g_f2UVToViewA = ray11 - ray00,
+				.g_f2UVToViewB = ray00,
+				.farPlane = camera.farPlane(),
+				.nearPlane = camera.nearPlane()
 			};
 
 			ImGui_ImplVulkan_NewFrame();
@@ -2045,7 +1875,7 @@ int main() {
 			//		ImGui::DragFloat("Scene Radius (Determines Sun Position)", &sceneRadius);
 			ImGui::End();
 
-			ImGuiWindowFlags window_flags = focused ? ImGuiWindowFlags_NoMouseInputs : ImGuiWindowFlags_None;
+			ImGuiWindowFlags window_flags = camera.mouseLook() ? ImGuiWindowFlags_NoMouseInputs : ImGuiWindowFlags_None;
 			ImGui::Begin("Previews", nullptr, window_flags);
 			ImGui::Image(rgShadowMap, {200, 200});
 			ImGui::Text("Average Luminance");
@@ -2175,7 +2005,7 @@ int main() {
 			ImGuizmo::SetRect(0, 0, static_cast<float>(windowWidth), static_cast<float>(windowHeight));
 			ImGuizmo::Manipulate(
 					glm::value_ptr(cameraView),
-					glm::value_ptr(calculateProjectionMatrix(camera, false)),
+					glm::value_ptr(camera.projection(aspectRatio)),
 					ImGuizmo::OPERATION::ROTATE,
 					ImGuizmo::MODE::WORLD,
 					glm::value_ptr(transformMatrix),
@@ -2195,9 +2025,9 @@ int main() {
 				dayTime = fmod(dayTime + deltaTime * daySpeed, 1.f);
 				applyDayNightCycle(dayTime);
 			} else {
-				lightingData.directionalLights.direction = sun_quaternion * glm::vec3(0, 0, -1);
+				lightingData.directionalLight.direction = sun_quaternion * glm::vec3(0, 0, -1);
 			}
-			frameData = GPU::FrameData {
+			frameData = shaders::FrameData {
 				.camera = cameraData,
 				.lighting = lightingData,
 				.time = elapsedTime,

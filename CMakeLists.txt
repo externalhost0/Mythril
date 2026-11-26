@@ -100,21 +100,6 @@ message(STATUS "Using Slang from Vulkan SDK: ${SLANG_LIBRARY}")
 
 # ==================== Private CPM Dependencies ====================
 CPMAddPackage(
-        NAME SPIRV-Reflect
-        GITHUB_REPOSITORY "KhronosGroup/SPIRV-Reflect"
-        GIT_TAG vulkan-sdk-1.4.335.0
-        OPTIONS
-        "SPIRV_REFLECT_STATIC_LIB ON"
-        "SPIRV_REFLECT_EXECUTABLE OFF"
-)
-add_library(SPIRV-Reflect-objects OBJECT
-        ${SPIRV-Reflect_SOURCE_DIR}/spirv_reflect.c
-)
-target_include_directories(SPIRV-Reflect-objects PUBLIC
-        ${SPIRV-Reflect_SOURCE_DIR}
-)
-
-CPMAddPackage(
         NAME volk
         GITHUB_REPOSITORY "zeux/volk"
         GIT_TAG vulkan-sdk-1.4.328
@@ -208,8 +193,9 @@ set(MYTHRIL_SOURCES
         lib/VulkanObjects.cpp
         lib/PipelineBuilder.cpp
         lib/RenderGraphBuilder.cpp
+        lib/RenderGraphDebugChecks.cpp
+        lib/RenderGraphStructures.cpp
         lib/Shader.cpp
-        lib/SlangCompiler.cpp
         lib/Objects.cpp
 )
 
@@ -220,9 +206,17 @@ if(MYTH_ENABLE_TRACY_GPU)
     list(APPEND MYTHRIL_SOURCES lib/plugins/TracyGPUPlugin.cpp)
 endif()
 
+# SPIR-V parsing shared by mythril and mythril-reflect, so the tool does not wait on the whole library
+add_library(mythril-spirv STATIC lib/SpirvLayout.cpp)
+target_include_directories(mythril-spirv PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/lib>
+)
+target_compile_definitions(mythril-spirv PUBLIC VK_NO_PROTOTYPES VK_ENABLE_BETA_EXTENSIONS)
+target_link_libraries(mythril-spirv PUBLIC Vulkan::Headers volk::volk PRIVATE fmt::fmt)
+
 add_library(mythril STATIC
         ${MYTHRIL_SOURCES}
-        $<TARGET_OBJECTS:SPIRV-Reflect-objects>
 )
 # cause we are lazy
 add_library(mythril::mythril ALIAS mythril)
@@ -240,12 +234,6 @@ if(MYTH_ENABLE_TRACY)
     )
 endif()
 
-# build only include necessary
-target_include_directories(mythril PRIVATE
-        $<BUILD_INTERFACE:$<TARGET_PROPERTY:SPIRV-Reflect-objects,INTERFACE_INCLUDE_DIRECTORIES>>
-        $<BUILD_INTERFACE:${SLANG_INCLUDE_DIR}>
-)
-
 target_compile_definitions(mythril PUBLIC
         VK_NO_PROTOTYPES
         VK_ENABLE_BETA_EXTENSIONS
@@ -256,9 +244,9 @@ target_link_libraries(mythril
         Vulkan::Vulkan
         volk::volk
         PRIVATE
+        mythril-spirv
         fmt::fmt
         GPUOpen::VulkanMemoryAllocator
-        "$<BUILD_INTERFACE:${SLANG_LIBRARY}>"
 )
 
 # platform-specific linking
@@ -304,6 +292,20 @@ if(MYTH_ENABLE_TRACY)
         endif()
     endif()
 endif()
+
+add_library(mythril-slang STATIC EXCLUDE_FROM_ALL
+        lib/SlangCompiler.cpp
+        lib/PushLayout.cpp
+)
+target_include_directories(mythril-slang PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/lib
+        ${SLANG_INCLUDE_DIR}
+)
+target_link_libraries(mythril-slang PUBLIC mythril-spirv fmt::fmt "${SLANG_LIBRARY}")
+
+add_executable(mythril-reflect EXCLUDE_FROM_ALL tools/mythril-reflect/main.cpp)
+target_link_libraries(mythril-reflect PRIVATE mythril-slang)
+include(cmake/MythrilReflect.cmake)
 
 # ==================== Samples ====================
 if(MYTH_BUILD_SAMPLES)
