@@ -10,6 +10,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  VULKAN_SDK_VERSION: 1.4.335.0
   CPM_SOURCE_CACHE: ${{ github.workspace }}/.cpm-cache
 
 jobs:
@@ -34,10 +35,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: Read pinned Vulkan SDK version
-        shell: bash
-        run: echo "VULKAN_SDK_VERSION=$(tr -d '[:space:]' < VULKAN_SDK_VERSION)" >> "$GITHUB_ENV"
 
       - name: Install Linux packages
         if: runner.os == 'Linux'
@@ -84,6 +81,14 @@ jobs:
         run: |
           $sdk = "C:\VulkanSDK\$env:VULKAN_SDK_VERSION"
           "VULKAN_SDK=$sdk" >> $env:GITHUB_ENV
+
+      - name: List SDK spirv headers (temporary)
+        shell: bash
+        run: |
+          echo "VULKAN_SDK=$VULKAN_SDK"
+          ls "$VULKAN_SDK"
+          ls "$VULKAN_SDK"/[Ii]nclude
+          find "$VULKAN_SDK" -iname 'spirv.h' -o -iname 'spirv.hpp'
 
       - name: Set up MSVC
         if: runner.os == 'Windows'

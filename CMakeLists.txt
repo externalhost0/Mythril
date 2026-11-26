@@ -77,9 +77,6 @@ elseif(APPLE)
     set(VULKAN_SDK_DIR "/usr/local")
 endif()
 
-# single source of truth for the pinned Vulkan SDK, also read by .github/workflows/build.yml
-file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/VULKAN_SDK_VERSION" MYTH_VULKAN_SDK_VERSION LIMIT_COUNT 1)
-
 find_package(Vulkan REQUIRED)
 if(NOT Vulkan_FOUND)
     message(FATAL_ERROR "Vulkan SDK not installed. See README for setup.")
@@ -114,13 +111,6 @@ CPMAddPackage(
         NAME VulkanMemoryAllocator
         GITHUB_REPOSITORY "GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator"
         GIT_TAG v3.3.0
-)
-
-CPMAddPackage(
-        NAME SPIRV-Headers
-        GITHUB_REPOSITORY "KhronosGroup/SPIRV-Headers"
-        GIT_TAG vulkan-sdk-${MYTH_VULKAN_SDK_VERSION}
-        DOWNLOAD_ONLY YES
 )
 
 CPMAddPackage(
@@ -223,7 +213,6 @@ add_library(mythril-spirv STATIC lib/SpirvLayout.cpp)
 target_include_directories(mythril-spirv PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/lib>
-        $<BUILD_INTERFACE:${SPIRV-Headers_SOURCE_DIR}/include>
 )
 target_compile_definitions(mythril-spirv PUBLIC VK_NO_PROTOTYPES VK_ENABLE_BETA_EXTENSIONS)
 target_link_libraries(mythril-spirv PUBLIC Vulkan::Headers volk::volk PRIVATE fmt::fmt)
