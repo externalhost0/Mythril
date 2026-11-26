@@ -16,136 +16,138 @@
 #include "SwapchainSpec.h"
 
 namespace mythril {
-	class CTX;
-	struct CtxDeleter {
-		void operator()(const CTX* ctx) const noexcept;
-	};
-	using CtxPtr = std::unique_ptr<CTX, CtxDeleter>;
+    class CTX;
+    struct CtxDeleter {
+        void operator()(const CTX* ctx) const noexcept;
+    };
+    using CtxPtr = std::unique_ptr<CTX, CtxDeleter>;
 
-	struct Version {
-		uint8_t major = 0;
-		uint8_t minor = 0;
-		uint8_t patch = 0;
-		bool isPreRelease() const {
-			return major < 1;
-		}
-		uint32_t getVKVersion() const {
-			return VK_MAKE_VERSION(major, minor, patch);
-		}
-	};
-	// there are other options we could place here, however CTXBuilder fields should be one time not reloadable
-	// so swapchain options shouldnt be here as they can be reloaded during runtime easily
-	struct VulkanCfg {
-		const char* app_name = "Untitled App";
-		const char* engine_name = "Untitled Engine";
-		Version app_version = {0, 0, 1};
-		Version engine_version = {0, 0, 1};
+    struct Version {
+        uint8_t major = 0;
+        uint8_t minor = 0;
+        uint8_t patch = 0;
+        bool isPreRelease() const {
+            return major < 1;
+        }
+        uint32_t getVKVersion() const {
+            return VK_MAKE_VERSION(major, minor, patch);
+        }
+    };
+    // there are other options we could place here, however CTXBuilder fields should be one time not reloadable
+    // so swapchain options shouldnt be here as they can be reloaded during runtime easily
+    struct VulkanCfg {
+        const char* app_name = "Untitled App";
+        const char* engine_name = "Untitled Engine";
+        Version app_version = { 0, 0, 1 };
+        Version engine_version = { 0, 0, 1 };
 
 #ifdef DEBUG
-		bool enableValidation = true;
+        bool enableValidation = true;
 #else
-		bool enableValidation = false;
+        bool enableValidation = false;
 #endif
-		// case-insensitive substring of the device name, falls back to default selection if nothing matches
-		const char* preferredDeviceName = nullptr;
-		bool preferDiscrete = true;
-		// implement this later
-		// bool enableHeadless = false;
-		// instance extension names
-		std::vector<const char*> instanceExtensionNames = {};
-		// device extension names
-		std::vector<const char*> deviceExtensionNames = {};
-		// made just for int64 feature supported
-		VkPhysicalDeviceFeatures additionalDeviceFeatures = {};
-		// device extension feautures, will not be handled if unsupported!
-		void* deviceExtensionFeatureChain = {};
-	};
+        // case-insensitive substring of the device name, falls back to default selection if nothing matches
+        const char* preferredDeviceName = nullptr;
+        bool preferDiscrete = true;
+        // loader entry point from the windowing library (e.g. SDL_Vulkan_GetVkGetInstanceProcAddr) so both share one loader, null makes volk load its own
+        PFN_vkGetInstanceProcAddr getInstanceProcAddr = nullptr;
+        // implement this later
+        // bool enableHeadless = false;
+        // instance extension names
+        std::vector<const char*> instanceExtensionNames = {};
+        // device extension names
+        std::vector<const char*> deviceExtensionNames = {};
+        // made just for int64 feature supported
+        VkPhysicalDeviceFeatures additionalDeviceFeatures = {};
+        // device extension feautures, will not be handled if unsupported!
+        void* deviceExtensionFeatureChain = {};
+    };
 
-	struct VulkanInfoSpec {
-		const char* app_name = "Untitled App";
-		const char* engine_name = "Untitled Engine";
-		bool enableValidation = true;
-		std::span<const char*> instanceExtensions = {};
-		std::span<const char*> deviceExtensions = {};
-	};
+    struct VulkanInfoSpec {
+        const char* app_name = "Untitled App";
+        const char* engine_name = "Untitled Engine";
+        bool enableValidation = true;
+        std::span<const char*> instanceExtensions = {};
+        std::span<const char*> deviceExtensions = {};
+    };
 
-	enum class WindowMode { Windowed,
-		Fullscreen,
-		Headless };
-	struct WindowSpec {
-		std::string title = "Untitled Window";
-		WindowMode mode = WindowMode::Windowed;
-		uint16_t width = 1280;
-		uint16_t height = 720;
-		bool resizeable = false;
-	};
+    enum class WindowMode { Windowed,
+        Fullscreen,
+        Headless };
+    struct WindowSpec {
+        std::string title = "Untitled Window";
+        WindowMode mode = WindowMode::Windowed;
+        uint16_t width = 1280;
+        uint16_t height = 720;
+        bool resizeable = false;
+    };
 
 
-	struct SurfaceSpec {
-		std::span<const char* const> instanceExtensions = {};
-		std::function<VkSurfaceKHR(VkInstance)> createFunc;
-		std::function<void(VkInstance, VkSurfaceKHR)> destroyFunc;
-	};
+    struct SurfaceSpec {
+        std::span<const char* const> instanceExtensions = {};
+        std::function<VkSurfaceKHR(VkInstance)> createFunc;
+        std::function<void(VkInstance, VkSurfaceKHR)> destroyFunc;
+    };
 
 #ifdef MYTH_ENABLED_IMGUI
-	struct ImGuiPluginSpec {
-		VkFormat format = VK_FORMAT_R8G8B8A8_UNORM;
-		std::function<void()> windowInitFunction;
-		std::function<void()> windowDestroyFunction;
-	};
+    struct ImGuiPluginSpec {
+        VkFormat format = VK_FORMAT_R8G8B8A8_UNORM;
+        std::function<void()> windowInitFunction;
+        std::function<void()> windowDestroyFunction;
+    };
 #endif
 
-	// factory for CTX
-	class CTXBuilder final {
-	public:
-		CTXBuilder() = default;
-		~CTXBuilder() = default;
+    // factory for CTX
+    class CTXBuilder final {
+    public:
+        CTXBuilder() = default;
+        ~CTXBuilder() = default;
 
-		CTXBuilder& set_vulkan_cfg(const VulkanCfg& cfg) {
-			this->_vulkanCfg = cfg;
-			return *this;
-		}
-		CTXBuilder& set_window_surface(const SurfaceSpec& spec) {
-			if (!spec.createFunc)
-				throw std::runtime_error("SurfaceSpec: createFunc is required");
-			if (!spec.destroyFunc)
-				throw std::runtime_error("SurfaceSpec: destroyFunc is required");
+        CTXBuilder& set_vulkan_cfg(const VulkanCfg& cfg) {
+            this->_vulkanCfg = cfg;
+            return *this;
+        }
+        CTXBuilder& set_window_surface(const SurfaceSpec& spec) {
+            if (!spec.createFunc)
+                throw std::runtime_error("SurfaceSpec: createFunc is required");
+            if (!spec.destroyFunc)
+                throw std::runtime_error("SurfaceSpec: destroyFunc is required");
 
-			this->_surfaceSpec = spec;
-			return *this;
-		}
-		// can resolve width & height from window
-		CTXBuilder& with_default_swapchain(const SwapchainSpec& spec = {}) {
-			_swapchainSpec = spec;
-			_requestedSwapchain = true;
-			return *this;
-		}
+            this->_surfaceSpec = spec;
+            return *this;
+        }
+        // can resolve width & height from window
+        CTXBuilder& with_default_swapchain(const SwapchainSpec& spec = {}) {
+            _swapchainSpec = spec;
+            _requestedSwapchain = true;
+            return *this;
+        }
 
 #ifdef MYTH_ENABLED_IMGUI
-		CTXBuilder& with_ImGui(const ImGuiPluginSpec& spec) {
-			if (!spec.windowInitFunction)
-				throw std::runtime_error("ImGuiPluginSpec: windowInitFunction is required");
-			if (!spec.windowDestroyFunction)
-				throw std::runtime_error("ImGuiPluginSpec: windowDestroyFunction is required");
+        CTXBuilder& with_ImGui(const ImGuiPluginSpec& spec) {
+            if (!spec.windowInitFunction)
+                throw std::runtime_error("ImGuiPluginSpec: windowInitFunction is required");
+            if (!spec.windowDestroyFunction)
+                throw std::runtime_error("ImGuiPluginSpec: windowDestroyFunction is required");
 
-			this->_usingImGui = true;
-			this->_imguiSpec = spec;
-			return *this;
-		}
+            this->_usingImGui = true;
+            this->_imguiSpec = spec;
+            return *this;
+        }
 #endif
 
-		[[nodiscard]] CtxPtr build();
-	private:
-		bool _usingImGui = false;
-		bool _requestedSwapchain = false;
-		// all specs & cfgs use default values
-		// cfgs are used to resolve data
-		// specs are passed straight into the object
-		VulkanCfg _vulkanCfg{};
-		SwapchainSpec _swapchainSpec{};
-		SurfaceSpec _surfaceSpec{};
+        [[nodiscard]] CtxPtr build();
+    private:
+        bool _usingImGui = false;
+        bool _requestedSwapchain = false;
+        // all specs & cfgs use default values
+        // cfgs are used to resolve data
+        // specs are passed straight into the object
+        VulkanCfg _vulkanCfg{};
+        SwapchainSpec _swapchainSpec{};
+        SurfaceSpec _surfaceSpec{};
 #ifdef MYTH_ENABLED_IMGUI
-		ImGuiPluginSpec _imguiSpec{};
+        ImGuiPluginSpec _imguiSpec{};
 #endif
-	};
+    };
 }

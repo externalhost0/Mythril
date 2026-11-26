@@ -22,879 +22,887 @@
 #include "mythril/CPUProfiler.h"
 
 namespace mythril {
-	struct VulkanInstanceInputs {
-		Version appVersion;
-		Version engineVersion;
-		const char* appName = nullptr;
-		const char* engineName = nullptr;
-	};
-	struct VulkanInstanceOutputs {
-		VkInstance vkInstance = VK_NULL_HANDLE;
-		VkDebugUtilsMessengerEXT vkDebugMessenger = VK_NULL_HANDLE;
-	};
+    struct VulkanInstanceInputs {
+        Version appVersion;
+        Version engineVersion;
+        const char* appName = nullptr;
+        const char* engineName = nullptr;
+    };
+    struct VulkanInstanceOutputs {
+        VkInstance vkInstance = VK_NULL_HANDLE;
+        VkDebugUtilsMessengerEXT vkDebugMessenger = VK_NULL_HANDLE;
+    };
 
-	static std::vector<const char*> MergeExtensions(std::span<const char* const> a, std::span<const char* const> b) {
-		std::vector<const char*> merged;
-		merged.reserve(a.size() + b.size());
-		for (const auto list: { a, b }) {
-			for (const char* name: list) {
-				const bool seen = std::ranges::any_of(merged, [name](const char* m) { return std::strcmp(m, name) == 0; });
-				if (!seen) merged.push_back(name);
-			}
-		}
-		return merged;
-	}
-	static bool IsInstanceExtensionAvailable(std::span<const VkExtensionProperties> available, const char* name) {
-		return std::ranges::any_of(available, [name](const VkExtensionProperties& p) {
-			return std::strcmp(p.extensionName, name) == 0;
-		});
-	}
-	static std::vector<VkExtensionProperties> EnumerateInstanceExtensions(const char* layer) {
-		uint32_t count = 0;
-		VkResult result = vkEnumerateInstanceExtensionProperties(layer, &count, nullptr);
-		ASSERT_MSG(result == VK_SUCCESS, "Failed to enumerate instance extensions.");
-		std::vector<VkExtensionProperties> extensions(count);
-		result = vkEnumerateInstanceExtensionProperties(layer, &count, extensions.data());
-		ASSERT_MSG(result == VK_SUCCESS, "Failed to enumerate instance extensions.");
-		return extensions;
-	}
-	static bool IsInstanceLayerAvailable(const char* name) {
-		uint32_t count = 0;
-		vkEnumerateInstanceLayerProperties(&count, nullptr);
-		std::vector<VkLayerProperties> layers(count);
-		vkEnumerateInstanceLayerProperties(&count, layers.data());
-		return std::ranges::any_of(layers, [name](const VkLayerProperties& p) {
-			return std::strcmp(p.layerName, name) == 0;
-		});
-	}
-	static VKAPI_ATTR VkBool32 VKAPI_CALL DebugCallback(
-		VkDebugUtilsMessageSeverityFlagBitsEXT severity,
-		VkDebugUtilsMessageTypeFlagsEXT messageType,
-		const VkDebugUtilsMessengerCallbackDataEXT* data,
-		void*) {
-		const LogType level = (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) ? LogType::Error : LogType::Warning;
-		const char* kind = (messageType & VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT)    ? "Validation"
-		                   : (messageType & VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT) ? "Performance"
-		                                                                                     : "General";
+    static std::vector<const char*> MergeExtensions(std::span<const char* const> a, std::span<const char* const> b) {
+        std::vector<const char*> merged;
+        merged.reserve(a.size() + b.size());
+        for (const auto list: { a, b }) {
+            for (const char* name: list) {
+                const bool seen = std::ranges::any_of(merged, [name](const char* m) {
+                    return std::strcmp(m, name) == 0;
+                });
+                if (!seen) merged.push_back(name);
+            }
+        }
+        return merged;
+    }
+    static bool IsInstanceExtensionAvailable(std::span<const VkExtensionProperties> available, const char* name) {
+        return std::ranges::any_of(available, [name](const VkExtensionProperties& p) {
+            return std::strcmp(p.extensionName, name) == 0;
+        });
+    }
+    static std::vector<VkExtensionProperties> EnumerateInstanceExtensions(const char* layer) {
+        uint32_t count = 0;
+        VkResult result = vkEnumerateInstanceExtensionProperties(layer, &count, nullptr);
+        ASSERT_MSG(result == VK_SUCCESS, "Failed to enumerate instance extensions.");
+        std::vector<VkExtensionProperties> extensions(count);
+        result = vkEnumerateInstanceExtensionProperties(layer, &count, extensions.data());
+        ASSERT_MSG(result == VK_SUCCESS, "Failed to enumerate instance extensions.");
+        return extensions;
+    }
+    static bool IsInstanceLayerAvailable(const char* name) {
+        uint32_t count = 0;
+        vkEnumerateInstanceLayerProperties(&count, nullptr);
+        std::vector<VkLayerProperties> layers(count);
+        vkEnumerateInstanceLayerProperties(&count, layers.data());
+        return std::ranges::any_of(layers, [name](const VkLayerProperties& p) {
+            return std::strcmp(p.layerName, name) == 0;
+        });
+    }
+    static VKAPI_ATTR VkBool32 VKAPI_CALL DebugCallback(
+        VkDebugUtilsMessageSeverityFlagBitsEXT severity,
+        VkDebugUtilsMessageTypeFlagsEXT messageType,
+        const VkDebugUtilsMessengerCallbackDataEXT* data,
+        void*) {
+        const LogType level = (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) ? LogType::Error : LogType::Warning;
+        const char* kind = (messageType & VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT)    ? "Validation"
+                           : (messageType & VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT) ? "Performance"
+                                                                                             : "General";
 
-		LOG_SYSTEM_NOSOURCE(level, "[{}] {}\n{}", kind, data->pMessageIdName ? data->pMessageIdName : "", data->pMessage);
-		return VK_FALSE;
-	}
+        LOG_SYSTEM_NOSOURCE(level, "[{}] {}\n{}", kind, data->pMessageIdName ? data->pMessageIdName : "", data->pMessage);
+        return VK_FALSE;
+    }
 
-	static VulkanInstanceOutputs CreateVulkanInstance(VulkanInstanceInputs inputs, bool enableValidation, std::span<const char*> instance_extensions) {
-		// VERY IMPORTANT, this is the REQUIRED min version that mythril supports
-		static constexpr uint32_t kMinimumInstanceVersion = VK_MAKE_API_VERSION(0, 1, 4, 335);
-		static constexpr const char* kValidationLayer = "VK_LAYER_KHRONOS_validation";
+    static VulkanInstanceOutputs CreateVulkanInstance(VulkanInstanceInputs inputs, bool enableValidation, std::span<const char*> instance_extensions) {
+        // VERY IMPORTANT, this is the REQUIRED min version that mythril supports
+        static constexpr uint32_t kMinimumInstanceVersion = VK_MAKE_API_VERSION(0, 1, 4, 335);
+        static constexpr const char* kValidationLayer = "VK_LAYER_KHRONOS_validation";
 
-		uint32_t instanceVersion = 0;
-		vkEnumerateInstanceVersion(&instanceVersion);
-		ASSERT_MSG(instanceVersion >= kMinimumInstanceVersion, "Vulkan loader {}.{}.{} is older then Mythril's required 1.4.335",
-			VK_API_VERSION_MAJOR(instanceVersion),
-			VK_API_VERSION_MINOR(instanceVersion),
-			VK_API_VERSION_PATCH(instanceVersion));
-		const bool useValidation = enableValidation && IsInstanceLayerAvailable(kValidationLayer);
-		if (enableValidation && !useValidation) {
-			LOG_SYSTEM_NOSOURCE(LogType::Warning, "Instance validation requested but {} is not installed, validation will not be enabled.", kValidationLayer);
-		}
+        uint32_t instanceVersion = 0;
+        vkEnumerateInstanceVersion(&instanceVersion);
+        ASSERT_MSG(instanceVersion >= kMinimumInstanceVersion, "Vulkan loader {}.{}.{} is older then Mythril's required 1.4.335",
+            VK_API_VERSION_MAJOR(instanceVersion),
+            VK_API_VERSION_MINOR(instanceVersion),
+            VK_API_VERSION_PATCH(instanceVersion));
+        const bool useValidation = enableValidation && IsInstanceLayerAvailable(kValidationLayer);
+        if (enableValidation && !useValidation) {
+            LOG_SYSTEM_NOSOURCE(LogType::Warning, "Instance validation requested but {} is not installed, validation will not be enabled.", kValidationLayer);
+        }
 
-		std::vector<VkExtensionProperties> available = EnumerateInstanceExtensions(nullptr);
-		if (useValidation) {
-			const auto layerExtensions = EnumerateInstanceExtensions(kValidationLayer);
-			available.insert(available.end(), layerExtensions.begin(), layerExtensions.end());
-		}
+        std::vector<VkExtensionProperties> available = EnumerateInstanceExtensions(nullptr);
+        if (useValidation) {
+            const auto layerExtensions = EnumerateInstanceExtensions(kValidationLayer);
+            available.insert(available.end(), layerExtensions.begin(), layerExtensions.end());
+        }
 
-		std::vector<const char*> extensions;
-		auto enable = [&extensions](const char* requestedExtensionName) {
-			if (std::ranges::none_of(extensions, [requestedExtensionName](const char* e) {
-					return std::strcmp(e, requestedExtensionName) == 0;
-				})) extensions.push_back(requestedExtensionName);
-		};
+        std::vector<const char*> extensions;
+        auto enable = [&extensions](const char* requestedExtensionName) {
+            if (std::ranges::none_of(extensions, [requestedExtensionName](const char* e) {
+                    return std::strcmp(e, requestedExtensionName) == 0;
+                })) extensions.push_back(requestedExtensionName);
+        };
 
-		std::string missing_extensions;
-		for (const char* ext: instance_extensions) {
-			if (IsInstanceExtensionAvailable(available, ext)) {
-				enable(ext);
-			} else {
-				missing_extensions += "\n\t" + std::string(ext);
-			}
-		}
-		if (!missing_extensions.empty()) {
-			LOG_SYSTEM_NOSOURCE(LogType::FatalError, "System fails to support Vulkan Instance Extensions: {}", missing_extensions.c_str());
-			assert(false);
-		}
+        std::string missing_extensions;
+        for (const char* ext: instance_extensions) {
+            if (IsInstanceExtensionAvailable(available, ext)) {
+                enable(ext);
+            } else {
+                missing_extensions += "\n\t" + std::string(ext);
+            }
+        }
+        if (!missing_extensions.empty()) {
+            LOG_SYSTEM_NOSOURCE(LogType::FatalError, "System fails to support Vulkan Instance Extensions: {}", missing_extensions.c_str());
+            assert(false);
+        }
 
-		auto enableIfAvailable = [&available, enable](const char* requestedExtensionName) {
-			if (!IsInstanceExtensionAvailable(available, requestedExtensionName)) return false;
-			enable(requestedExtensionName);
-			return true;
-		};
+        auto enableIfAvailable = [&available, enable](const char* requestedExtensionName) {
+            if (!IsInstanceExtensionAvailable(available, requestedExtensionName)) return false;
+            enable(requestedExtensionName);
+            return true;
+        };
 
 
-		// required for moltenvk/kosmickrisp
-		const bool portability = enableIfAvailable(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
-		const bool layerSettings = enableIfAvailable(VK_EXT_LAYER_SETTINGS_EXTENSION_NAME);
+        // required for moltenvk/kosmickrisp
+        const bool portability = enableIfAvailable(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
+        const bool layerSettings = enableIfAvailable(VK_EXT_LAYER_SETTINGS_EXTENSION_NAME);
 #ifdef DEBUG
-		const bool debugUtils = enableIfAvailable(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+        const bool debugUtils = enableIfAvailable(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 #else
-		constexpr bool debugUtils = false;
+        constexpr bool debugUtils = false;
 #endif
-		const VkBool32 validateSync = useValidation ? VK_TRUE : VK_FALSE;
+        const VkBool32 validateSync = useValidation ? VK_TRUE : VK_FALSE;
 #if defined __APPLE__ && DEBUG
-		static constexpr uint32_t kMVKLogLevel = 3;
+        static constexpr uint32_t kMVKLogLevel = 3;
 #endif
-		const VkLayerSettingEXT settings[] = {
-			{ .pLayerName = kValidationLayer,
-				.pSettingName = "validate_sync",
-				.type = VK_LAYER_SETTING_TYPE_BOOL32_EXT,
-				.valueCount = 1,
-				.pValues = &validateSync },
+        const VkLayerSettingEXT settings[] = {
+            { .pLayerName = kValidationLayer,
+                .pSettingName = "validate_sync",
+                .type = VK_LAYER_SETTING_TYPE_BOOL32_EXT,
+                .valueCount = 1,
+                .pValues = &validateSync },
 #if defined __APPLE__ && DEBUG
-			{ .pLayerName = "MoltenVK",
-				.pSettingName = "MVK_CONFIG_TRACE_VULKAN_CALLS",
-				.type = VK_LAYER_SETTING_TYPE_UINT32_EXT,
-				.valueCount = 1,
-				.pValues = &kMVKLogLevel }
+            { .pLayerName = "MoltenVK",
+                .pSettingName = "MVK_CONFIG_TRACE_VULKAN_CALLS",
+                .type = VK_LAYER_SETTING_TYPE_UINT32_EXT,
+                .valueCount = 1,
+                .pValues = &kMVKLogLevel }
 #endif
-		};
+        };
 
-		VkLayerSettingsCreateInfoEXT layerSettingsCI = {
-			.sType = VK_STRUCTURE_TYPE_LAYER_SETTINGS_CREATE_INFO_EXT,
-			.settingCount = static_cast<uint32_t>(std::size(settings)),
-			.pSettings = settings
-		};
-		VkDebugUtilsMessengerCreateInfoEXT messengerCI = {
-			.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
-			.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
-			.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT,
-			.pfnUserCallback = DebugCallback
-		};
-		const void* chain = nullptr;
-		if (layerSettings) {
-			layerSettingsCI.pNext = chain;
-			chain = &layerSettingsCI;
-		}
-		if (debugUtils) {
-			messengerCI.pNext = chain;
-			chain = &messengerCI;
-		}
+        VkLayerSettingsCreateInfoEXT layerSettingsCI = {
+            .sType = VK_STRUCTURE_TYPE_LAYER_SETTINGS_CREATE_INFO_EXT,
+            .settingCount = static_cast<uint32_t>(std::size(settings)),
+            .pSettings = settings
+        };
+        VkDebugUtilsMessengerCreateInfoEXT messengerCI = {
+            .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
+            .messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
+            .messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT,
+            .pfnUserCallback = DebugCallback
+        };
+        const void* chain = nullptr;
+        if (layerSettings) {
+            layerSettingsCI.pNext = chain;
+            chain = &layerSettingsCI;
+        }
+        if (debugUtils) {
+            messengerCI.pNext = chain;
+            chain = &messengerCI;
+        }
 
-		const VkApplicationInfo appinfo = {
-			.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
-			.pApplicationName = inputs.appName ? inputs.appName : "",
-			.applicationVersion = inputs.appVersion.getVKVersion(),
-			.pEngineName = inputs.engineName ? inputs.engineName : "",
-			.engineVersion = inputs.engineVersion.getVKVersion(),
-			// mythril hard codes to 1.3
-			.apiVersion = VK_API_VERSION_1_3
-		};
-		const char* layers[] = { kValidationLayer };
-		const VkInstanceCreateInfo instanceCI = {
-			.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
-			.pNext = chain,
-			.flags = portability ? static_cast<VkInstanceCreateFlags>(VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR) : 0u,
-			.pApplicationInfo = &appinfo,
-			.enabledLayerCount = useValidation ? 1u : 0u,
-			.ppEnabledLayerNames = layers,
-			.enabledExtensionCount = static_cast<uint32_t>(extensions.size()),
-			.ppEnabledExtensionNames = extensions.data()
-		};
-		VulkanInstanceOutputs out;
-		const VkResult result = vkCreateInstance(&instanceCI, nullptr, &out.vkInstance);
-		ASSERT_MSG(result == VK_SUCCESS, "Failed to create VkInstance. VkResult: {}", static_cast<int>(result));
-		volkLoadInstance(out.vkInstance);
-		if (debugUtils) {
-			messengerCI.pNext = nullptr;
-			const VkResult messengerResult = vkCreateDebugUtilsMessengerEXT(out.vkInstance, &messengerCI, nullptr, &out.vkDebugMessenger);
-			ASSERT_MSG(messengerResult == VK_SUCCESS, "Failed to create VkDebugUtilsMessengerEXT. VkResult: {}", static_cast<int>(messengerResult));
-		}
-		return out;
-	}
+        const VkApplicationInfo appinfo = {
+            .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
+            .pApplicationName = inputs.appName ? inputs.appName : "",
+            .applicationVersion = inputs.appVersion.getVKVersion(),
+            .pEngineName = inputs.engineName ? inputs.engineName : "",
+            .engineVersion = inputs.engineVersion.getVKVersion(),
+            // mythril hard codes to 1.3
+            .apiVersion = VK_API_VERSION_1_3
+        };
+        const char* layers[] = { kValidationLayer };
+        const VkInstanceCreateInfo instanceCI = {
+            .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
+            .pNext = chain,
+            .flags = portability ? static_cast<VkInstanceCreateFlags>(VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR) : 0u,
+            .pApplicationInfo = &appinfo,
+            .enabledLayerCount = useValidation ? 1u : 0u,
+            .ppEnabledLayerNames = layers,
+            .enabledExtensionCount = static_cast<uint32_t>(extensions.size()),
+            .ppEnabledExtensionNames = extensions.data()
+        };
+        VulkanInstanceOutputs out;
+        const VkResult result = vkCreateInstance(&instanceCI, nullptr, &out.vkInstance);
+        ASSERT_MSG(result == VK_SUCCESS, "Failed to create VkInstance. VkResult: {}", static_cast<int>(result));
+        volkLoadInstance(out.vkInstance);
+        if (debugUtils) {
+            messengerCI.pNext = nullptr;
+            const VkResult messengerResult = vkCreateDebugUtilsMessengerEXT(out.vkInstance, &messengerCI, nullptr, &out.vkDebugMessenger);
+            ASSERT_MSG(messengerResult == VK_SUCCESS, "Failed to create VkDebugUtilsMessengerEXT. VkResult: {}", static_cast<int>(messengerResult));
+        }
+        return out;
+    }
 
-	namespace {
-		struct VulkanPhysicalDeviceInputs {
-			VkInstance vkInstance = VK_NULL_HANDLE;
-			VkSurfaceKHR vkSurface = VK_NULL_HANDLE;
-			const char* preferredDeviceName = nullptr;
-			bool preferDiscrete = true;
-		};
-		struct VulkanQueueOutputs {
-			VkQueue vkGraphicsQueue = VK_NULL_HANDLE;
-			uint32_t graphicsQueueFamilyIndex = -1;
-			VkQueue vkPresentQueue = VK_NULL_HANDLE;
-			uint32_t presentQueueFamilyIndex = -1;
-			VkQueue vkComputeQueue = VK_NULL_HANDLE;
-			uint32_t computeQueueFamilyIndex = -1;
-			VkQueue vkTransferQueue = VK_NULL_HANDLE;
-			uint32_t transferQueueFamilyIndex = -1;
-		};
-		struct VulkanMemoryAllocatorInputs {
-			VkInstance vkInstance;
-			VkPhysicalDevice vkPhysicalDevice;
-			VkDevice vkDevice;
-			bool memoryBudget;
-		};
+    namespace {
+        struct VulkanPhysicalDeviceInputs {
+            VkInstance vkInstance = VK_NULL_HANDLE;
+            VkSurfaceKHR vkSurface = VK_NULL_HANDLE;
+            const char* preferredDeviceName = nullptr;
+            bool preferDiscrete = true;
+        };
+        struct VulkanQueueOutputs {
+            VkQueue vkGraphicsQueue = VK_NULL_HANDLE;
+            uint32_t graphicsQueueFamilyIndex = -1;
+            VkQueue vkPresentQueue = VK_NULL_HANDLE;
+            uint32_t presentQueueFamilyIndex = -1;
+            VkQueue vkComputeQueue = VK_NULL_HANDLE;
+            uint32_t computeQueueFamilyIndex = -1;
+            VkQueue vkTransferQueue = VK_NULL_HANDLE;
+            uint32_t transferQueueFamilyIndex = -1;
+        };
+        struct VulkanMemoryAllocatorInputs {
+            VkInstance vkInstance;
+            VkPhysicalDevice vkPhysicalDevice;
+            VkDevice vkDevice;
+            bool memoryBudget;
+        };
 
-	}
+    }
 
-	static std::string GetUnsuitableReason(VkPhysicalDevice pd, const VkPhysicalDeviceProperties2& props, VkSurfaceKHR surface) {
-		if (const auto apiv = props.properties.apiVersion; apiv < VK_API_VERSION_1_3) {
-			return std::format("apiVersion ({}.{}) is lower then 1.3", std::to_string(VK_API_VERSION_MAJOR(apiv)), std::to_string(VK_API_VERSION_MINOR(apiv)));
-		}
-		if (surface == VK_NULL_HANDLE) return {};
-		uint32_t familyCount = 0;
-		vkGetPhysicalDeviceQueueFamilyProperties2(pd, &familyCount, nullptr);
-		bool canPresent = false;
-		for (uint32_t i = 0; i < familyCount && !canPresent; i++) {
-			VkBool32 supported = VK_FALSE;
-			vkGetPhysicalDeviceSurfaceSupportKHR(pd, i, surface, &supported);
-			canPresent = (supported == VK_TRUE);
-		}
-		if (!canPresent) return "no queue family can present to the surface";
+    static std::string GetUnsuitableReason(VkPhysicalDevice pd, const VkPhysicalDeviceProperties2& props, VkSurfaceKHR surface) {
+        if (const auto apiv = props.properties.apiVersion; apiv < VK_API_VERSION_1_3) {
+            return std::format("apiVersion ({}.{}) is lower then 1.3", std::to_string(VK_API_VERSION_MAJOR(apiv)), std::to_string(VK_API_VERSION_MINOR(apiv)));
+        }
+        if (surface == VK_NULL_HANDLE) return {};
+        uint32_t familyCount = 0;
+        vkGetPhysicalDeviceQueueFamilyProperties2(pd, &familyCount, nullptr);
+        bool canPresent = false;
+        for (uint32_t i = 0; i < familyCount && !canPresent; i++) {
+            VkBool32 supported = VK_FALSE;
+            vkGetPhysicalDeviceSurfaceSupportKHR(pd, i, surface, &supported);
+            canPresent = (supported == VK_TRUE);
+        }
+        if (!canPresent) return "no queue family can present to the surface";
 
-		uint32_t formatCount = 0, modeCount = 0;
-		vkGetPhysicalDeviceSurfaceFormatsKHR(pd, surface, &formatCount, nullptr);
-		vkGetPhysicalDeviceSurfacePresentModesKHR(pd, surface, &modeCount, nullptr);
-		if (formatCount == 0 || modeCount == 0) return "no surface formats available";
-		return {};
-	}
+        uint32_t formatCount = 0, modeCount = 0;
+        vkGetPhysicalDeviceSurfaceFormatsKHR(pd, surface, &formatCount, nullptr);
+        vkGetPhysicalDeviceSurfacePresentModesKHR(pd, surface, &modeCount, nullptr);
+        if (formatCount == 0 || modeCount == 0) return "no surface formats available";
+        return {};
+    }
 
-	static VkPhysicalDevice SelectVulkanPhysicalDevice(VulkanPhysicalDeviceInputs inputs) {
-		ASSERT(inputs.vkInstance != VK_NULL_HANDLE);
+    static VkPhysicalDevice SelectVulkanPhysicalDevice(VulkanPhysicalDeviceInputs inputs) {
+        ASSERT(inputs.vkInstance != VK_NULL_HANDLE);
 
-		uint32_t count = 0;
-		vkEnumeratePhysicalDevices(inputs.vkInstance, &count, nullptr);
-		std::vector<VkPhysicalDevice> devices(count);
-		vkEnumeratePhysicalDevices(inputs.vkInstance, &count, devices.data());
+        uint32_t count = 0;
+        vkEnumeratePhysicalDevices(inputs.vkInstance, &count, nullptr);
+        std::vector<VkPhysicalDevice> devices(count);
+        vkEnumeratePhysicalDevices(inputs.vkInstance, &count, devices.data());
 
-		VkPhysicalDevice selectedDevice = VK_NULL_HANDLE;
-		int selectedRank = -1;
-		std::string rejections;
-		for (VkPhysicalDevice pd: devices) {
-			VkPhysicalDeviceProperties2 props = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2 };
-			vkGetPhysicalDeviceProperties2(pd, &props);
-			if (const std::string reason = GetUnsuitableReason(pd, props, inputs.vkSurface); !reason.empty()) {
-				rejections += std::string("\n\t") + props.properties.deviceName + ": " + reason;
-				continue;
-			}
-			const std::string_view name = props.properties.deviceName;
-			const bool named = inputs.preferredDeviceName && !std::ranges::search(name, std::string_view(inputs.preferredDeviceName), [](char a, char b) { return std::tolower(a) == std::tolower(b); }).empty();
-			const bool discrete = inputs.preferDiscrete && props.properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU;
-			if (const int rank = named ? 2 : discrete ? 1
-			                                          : 0;
-				rank > selectedRank) {
-				selectedDevice = pd;
-				selectedRank = rank;
-			}
-		}
-		if (inputs.preferredDeviceName && selectedRank < 2) {
-			LOG_SYSTEM_NOSOURCE(LogType::Warning, "No suitable device matches preferredDeviceName \"{}\", using default selection", inputs.preferredDeviceName);
-		}
-		ASSERT_MSG(selectedDevice != VK_NULL_HANDLE, "Failed to select VkPhysicalDevice. Error: {}", rejections.c_str());
+        VkPhysicalDevice selectedDevice = VK_NULL_HANDLE;
+        int selectedRank = -1;
+        std::string rejections;
+        for (VkPhysicalDevice pd: devices) {
+            VkPhysicalDeviceProperties2 props = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2 };
+            vkGetPhysicalDeviceProperties2(pd, &props);
+            if (const std::string reason = GetUnsuitableReason(pd, props, inputs.vkSurface); !reason.empty()) {
+                rejections += std::string("\n\t") + props.properties.deviceName + ": " + reason;
+                continue;
+            }
+            const std::string_view name = props.properties.deviceName;
+            const bool named = inputs.preferredDeviceName && !std::ranges::search(name, std::string_view(inputs.preferredDeviceName), [](char a, char b) {
+                return std::tolower(a) == std::tolower(b);
+            }).empty();
+            const bool discrete = inputs.preferDiscrete && props.properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU;
+            if (const int rank = named ? 2 : discrete ? 1
+                                                      : 0;
+                rank > selectedRank) {
+                selectedDevice = pd;
+                selectedRank = rank;
+            }
+        }
+        if (inputs.preferredDeviceName && selectedRank < 2) {
+            LOG_SYSTEM_NOSOURCE(LogType::Warning, "No suitable device matches preferredDeviceName \"{}\", using default selection", inputs.preferredDeviceName);
+        }
+        ASSERT_MSG(selectedDevice != VK_NULL_HANDLE, "Failed to select VkPhysicalDevice. Error: {}", rejections.c_str());
 
-		return selectedDevice;
-	}
+        return selectedDevice;
+    }
 
-	static VkDevice CreateVulkanLogicalDevice(
-		VkPhysicalDevice& vkPhysicalDevice,
-		VkSurfaceKHR vkSurfaceKHR,
-		std::span<const char*> user_device_extensions,
-		const VkPhysicalDeviceFeatures& user_device_features,
-		void* user_device_extension_features,
-		VulkanFeatures& outFeatures,
-		VulkanProperties& outProperties,
-		VulkanQueueOutputs& outQueues,
-		std::vector<std::string>& outEnabledExtensions) {
+    static VkDevice CreateVulkanLogicalDevice(
+        VkPhysicalDevice& vkPhysicalDevice,
+        VkSurfaceKHR vkSurfaceKHR,
+        std::span<const char*> user_device_extensions,
+        const VkPhysicalDeviceFeatures& user_device_features,
+        void* user_device_extension_features,
+        VulkanFeatures& outFeatures,
+        VulkanProperties& outProperties,
+        VulkanQueueOutputs& outQueues,
+        std::vector<std::string>& outEnabledExtensions) {
 
-		ASSERT(vkPhysicalDevice != VK_NULL_HANDLE);
+        ASSERT(vkPhysicalDevice != VK_NULL_HANDLE);
 
-		uint32_t count = 0;
-		vkEnumerateDeviceExtensionProperties(vkPhysicalDevice, nullptr, &count, nullptr);
-		std::vector<VkExtensionProperties> available(count);
-		vkEnumerateDeviceExtensionProperties(vkPhysicalDevice, nullptr, &count, available.data());
-		auto isAvailable = [&available](const char* name) {
-			return std::ranges::any_of(available, [name](const VkExtensionProperties& p) {
-				return std::strcmp(p.extensionName, name) == 0;
-			});
-		};
-		std::vector<std::string> enabledExtensions;
-		// VALIDATE EXTENSIONS
-		{
-			auto enableExtension = [&enabledExtensions](const char* name) {
-				if (std::ranges::find(enabledExtensions, name) == enabledExtensions.end())
-					enabledExtensions.emplace_back(name);
-			};
-			std::string missingExtensions;
-			for (const char* ext: user_device_extensions) {
-				if (isAvailable(ext)) enableExtension(ext);
-				else missingExtensions += "\n\t" + std::string(ext);
-			}
-			if (!missingExtensions.empty()) {
-				LOG_SYSTEM_NOSOURCE(LogType::FatalError, "Device fails to support Vulkan Device Extensions: {}", missingExtensions.c_str());
-				assert(false);
-			}
-			if (vkSurfaceKHR != VK_NULL_HANDLE) enableExtension(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
-			if (isAvailable(VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME)) enableExtension(VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME);
-		}
-
-
-		// query supported features
-		VkPhysicalDeviceFeatures2 supportedfeatures10 = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2 };
-		VkPhysicalDeviceVulkan11Features supportedfeatures11 = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES };
-		VkPhysicalDeviceVulkan12Features supportedfeatures12 = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES };
-		VkPhysicalDeviceVulkan13Features supportedfeatures13 = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES };
-		supportedfeatures10.pNext = &supportedfeatures11;
-		supportedfeatures11.pNext = &supportedfeatures12;
-		supportedfeatures12.pNext = &supportedfeatures13;
-		vkGetPhysicalDeviceFeatures2(vkPhysicalDevice, &supportedfeatures10);
+        uint32_t count = 0;
+        vkEnumerateDeviceExtensionProperties(vkPhysicalDevice, nullptr, &count, nullptr);
+        std::vector<VkExtensionProperties> available(count);
+        vkEnumerateDeviceExtensionProperties(vkPhysicalDevice, nullptr, &count, available.data());
+        auto isAvailable = [&available](const char* name) {
+            return std::ranges::any_of(available, [name](const VkExtensionProperties& p) {
+                return std::strcmp(p.extensionName, name) == 0;
+            });
+        };
+        std::vector<std::string> enabledExtensions;
+        // VALIDATE EXTENSIONS
+        {
+            auto enableExtension = [&enabledExtensions](const char* name) {
+                if (std::ranges::find(enabledExtensions, name) == enabledExtensions.end())
+                    enabledExtensions.emplace_back(name);
+            };
+            std::string missingExtensions;
+            for (const char* ext: user_device_extensions) {
+                if (isAvailable(ext)) enableExtension(ext);
+                else missingExtensions += "\n\t" + std::string(ext);
+            }
+            if (!missingExtensions.empty()) {
+                LOG_SYSTEM_NOSOURCE(LogType::FatalError, "Device fails to support Vulkan Device Extensions: {}", missingExtensions.c_str());
+                assert(false);
+            }
+            if (vkSurfaceKHR != VK_NULL_HANDLE) enableExtension(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
+            if (isAvailable(VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME)) enableExtension(VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME);
+        }
 
 
-		// the following features that are VK_TRUE are required by Mythril
-		// others can be optionally used when supported
-		VkPhysicalDeviceFeatures requiredfeatures10 = {
-			.robustBufferAccess = VK_FALSE,
-			.multiDrawIndirect = VK_TRUE,
-			.depthBiasClamp = supportedfeatures10.features.depthBiasClamp,
-			.samplerAnisotropy = supportedfeatures10.features.samplerAnisotropy,
-			.fragmentStoresAndAtomics = supportedfeatures10.features.fragmentStoresAndAtomics,
-		};
-		// merge our additional features with the required ones
-		static_assert(sizeof(VkPhysicalDeviceFeatures) % sizeof(VkBool32) == 0);
-		{
-			auto* dst = reinterpret_cast<VkBool32*>(&requiredfeatures10);
-			const auto* src = reinterpret_cast<const VkBool32*>(&user_device_features);
-			for (size_t i = 0; i < sizeof(VkPhysicalDeviceFeatures) / sizeof(VkBool32); i++)
-				dst[i] |= src[i];
-		}
-		VkPhysicalDeviceVulkan11Features requiredfeatures11 = {
-			.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
-			.pNext = user_device_extension_features != nullptr ? user_device_extension_features : nullptr,
-			.multiview = supportedfeatures11.multiview,
-			.shaderDrawParameters = VK_TRUE,
-		};
-		VkPhysicalDeviceVulkan12Features requiredfeatures12 = {
-			.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
-			.pNext = &requiredfeatures11,
-			.shaderFloat16 = supportedfeatures12.shaderFloat16,
-			.descriptorIndexing = VK_TRUE,
-			.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE,
-			.descriptorBindingStorageImageUpdateAfterBind = VK_TRUE,
-			.descriptorBindingUpdateUnusedWhilePending = VK_TRUE,
-			.descriptorBindingPartiallyBound = VK_TRUE,
-			.runtimeDescriptorArray = VK_TRUE,
-			.scalarBlockLayout = VK_TRUE, // opt
-			.hostQueryReset = VK_TRUE,
-			.timelineSemaphore = VK_TRUE,
-			.bufferDeviceAddress = VK_TRUE,
-		};
-		VkPhysicalDeviceVulkan13Features requiredfeatures13 = {
-			.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
-			.pNext = &requiredfeatures12,
-			.computeFullSubgroups = supportedfeatures13.computeFullSubgroups,
-			.synchronization2 = VK_TRUE,
-			.dynamicRendering = VK_TRUE,
-		};
+        // query supported features
+        VkPhysicalDeviceFeatures2 supportedfeatures10 = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2 };
+        VkPhysicalDeviceVulkan11Features supportedfeatures11 = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES };
+        VkPhysicalDeviceVulkan12Features supportedfeatures12 = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES };
+        VkPhysicalDeviceVulkan13Features supportedfeatures13 = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES };
+        supportedfeatures10.pNext = &supportedfeatures11;
+        supportedfeatures11.pNext = &supportedfeatures12;
+        supportedfeatures12.pNext = &supportedfeatures13;
+        vkGetPhysicalDeviceFeatures2(vkPhysicalDevice, &supportedfeatures10);
 
-		// VALIDATE FEATURES
-		{
-			std::string missing_features;
+
+        // the following features that are VK_TRUE are required by Mythril
+        // others can be optionally used when supported
+        VkPhysicalDeviceFeatures requiredfeatures10 = {
+            .robustBufferAccess = VK_FALSE,
+            .multiDrawIndirect = VK_TRUE,
+            .depthBiasClamp = supportedfeatures10.features.depthBiasClamp,
+            .samplerAnisotropy = supportedfeatures10.features.samplerAnisotropy,
+            .fragmentStoresAndAtomics = supportedfeatures10.features.fragmentStoresAndAtomics,
+        };
+        // merge our additional features with the required ones
+        static_assert(sizeof(VkPhysicalDeviceFeatures) % sizeof(VkBool32) == 0);
+        {
+            auto* dst = reinterpret_cast<VkBool32*>(&requiredfeatures10);
+            const auto* src = reinterpret_cast<const VkBool32*>(&user_device_features);
+            for (size_t i = 0; i < sizeof(VkPhysicalDeviceFeatures) / sizeof(VkBool32); i++)
+                dst[i] |= src[i];
+        }
+        VkPhysicalDeviceVulkan11Features requiredfeatures11 = {
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
+            .pNext = user_device_extension_features != nullptr ? user_device_extension_features : nullptr,
+            .multiview = supportedfeatures11.multiview,
+            .shaderDrawParameters = VK_TRUE,
+        };
+        VkPhysicalDeviceVulkan12Features requiredfeatures12 = {
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
+            .pNext = &requiredfeatures11,
+            .shaderFloat16 = supportedfeatures12.shaderFloat16,
+            .descriptorIndexing = VK_TRUE,
+            .descriptorBindingSampledImageUpdateAfterBind = VK_TRUE,
+            .descriptorBindingStorageImageUpdateAfterBind = VK_TRUE,
+            .descriptorBindingUpdateUnusedWhilePending = VK_TRUE,
+            .descriptorBindingPartiallyBound = VK_TRUE,
+            .runtimeDescriptorArray = VK_TRUE,
+            .scalarBlockLayout = VK_TRUE, // opt
+            .hostQueryReset = VK_TRUE,
+            .timelineSemaphore = VK_TRUE,
+            .bufferDeviceAddress = VK_TRUE,
+        };
+        VkPhysicalDeviceVulkan13Features requiredfeatures13 = {
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
+            .pNext = &requiredfeatures12,
+            .computeFullSubgroups = supportedfeatures13.computeFullSubgroups,
+            .synchronization2 = VK_TRUE,
+            .dynamicRendering = VK_TRUE,
+        };
+
+        // VALIDATE FEATURES
+        {
+            std::string missing_features;
 #define CHECK_VULKAN_FEATURE(requiredFeatures, availableFeatures, feature, version) \
-	if ((requiredFeatures).feature == VK_TRUE && (availableFeatures).feature == VK_FALSE) \
-		missing_features.append("\n\t(" version ") " #feature);
+    if ((requiredFeatures).feature == VK_TRUE && (availableFeatures).feature == VK_FALSE) \
+        missing_features.append("\n\t(" version ") " #feature);
 #define CHECK_FEATURE_1_0(feature) CHECK_VULKAN_FEATURE(requiredfeatures10, supportedfeatures10.features, feature, "1.0")
-			CHECK_FEATURE_1_0(robustBufferAccess);
-			CHECK_FEATURE_1_0(fullDrawIndexUint32);
-			CHECK_FEATURE_1_0(imageCubeArray);
-			CHECK_FEATURE_1_0(independentBlend);
-			CHECK_FEATURE_1_0(geometryShader);
-			CHECK_FEATURE_1_0(tessellationShader);
-			CHECK_FEATURE_1_0(sampleRateShading);
-			CHECK_FEATURE_1_0(dualSrcBlend);
-			CHECK_FEATURE_1_0(logicOp);
-			CHECK_FEATURE_1_0(multiDrawIndirect);
-			CHECK_FEATURE_1_0(drawIndirectFirstInstance);
-			CHECK_FEATURE_1_0(depthClamp);
-			CHECK_FEATURE_1_0(depthBiasClamp);
-			CHECK_FEATURE_1_0(fillModeNonSolid);
-			CHECK_FEATURE_1_0(depthBounds);
-			CHECK_FEATURE_1_0(wideLines);
-			CHECK_FEATURE_1_0(largePoints);
-			CHECK_FEATURE_1_0(alphaToOne);
-			CHECK_FEATURE_1_0(multiViewport);
-			CHECK_FEATURE_1_0(samplerAnisotropy);
-			CHECK_FEATURE_1_0(textureCompressionETC2);
-			CHECK_FEATURE_1_0(textureCompressionASTC_LDR);
-			CHECK_FEATURE_1_0(textureCompressionBC);
-			CHECK_FEATURE_1_0(occlusionQueryPrecise);
-			CHECK_FEATURE_1_0(pipelineStatisticsQuery);
-			CHECK_FEATURE_1_0(vertexPipelineStoresAndAtomics);
-			CHECK_FEATURE_1_0(fragmentStoresAndAtomics);
-			CHECK_FEATURE_1_0(shaderTessellationAndGeometryPointSize);
-			CHECK_FEATURE_1_0(shaderImageGatherExtended);
-			CHECK_FEATURE_1_0(shaderStorageImageExtendedFormats);
-			CHECK_FEATURE_1_0(shaderStorageImageMultisample);
-			CHECK_FEATURE_1_0(shaderStorageImageReadWithoutFormat);
-			CHECK_FEATURE_1_0(shaderStorageImageWriteWithoutFormat);
-			CHECK_FEATURE_1_0(shaderUniformBufferArrayDynamicIndexing);
-			CHECK_FEATURE_1_0(shaderSampledImageArrayDynamicIndexing);
-			CHECK_FEATURE_1_0(shaderStorageBufferArrayDynamicIndexing);
-			CHECK_FEATURE_1_0(shaderStorageImageArrayDynamicIndexing);
-			CHECK_FEATURE_1_0(shaderClipDistance);
-			CHECK_FEATURE_1_0(shaderCullDistance);
-			CHECK_FEATURE_1_0(shaderFloat64);
-			CHECK_FEATURE_1_0(shaderInt64);
-			CHECK_FEATURE_1_0(shaderInt16);
-			CHECK_FEATURE_1_0(shaderResourceResidency);
-			CHECK_FEATURE_1_0(shaderResourceMinLod);
-			CHECK_FEATURE_1_0(sparseBinding);
-			CHECK_FEATURE_1_0(sparseResidencyBuffer);
-			CHECK_FEATURE_1_0(sparseResidencyImage2D);
-			CHECK_FEATURE_1_0(sparseResidencyImage3D);
-			CHECK_FEATURE_1_0(sparseResidency2Samples);
-			CHECK_FEATURE_1_0(sparseResidency4Samples);
-			CHECK_FEATURE_1_0(sparseResidency8Samples);
-			CHECK_FEATURE_1_0(sparseResidency16Samples);
-			CHECK_FEATURE_1_0(sparseResidencyAliased);
-			CHECK_FEATURE_1_0(variableMultisampleRate);
-			CHECK_FEATURE_1_0(inheritedQueries);
+            CHECK_FEATURE_1_0(robustBufferAccess);
+            CHECK_FEATURE_1_0(fullDrawIndexUint32);
+            CHECK_FEATURE_1_0(imageCubeArray);
+            CHECK_FEATURE_1_0(independentBlend);
+            CHECK_FEATURE_1_0(geometryShader);
+            CHECK_FEATURE_1_0(tessellationShader);
+            CHECK_FEATURE_1_0(sampleRateShading);
+            CHECK_FEATURE_1_0(dualSrcBlend);
+            CHECK_FEATURE_1_0(logicOp);
+            CHECK_FEATURE_1_0(multiDrawIndirect);
+            CHECK_FEATURE_1_0(drawIndirectFirstInstance);
+            CHECK_FEATURE_1_0(depthClamp);
+            CHECK_FEATURE_1_0(depthBiasClamp);
+            CHECK_FEATURE_1_0(fillModeNonSolid);
+            CHECK_FEATURE_1_0(depthBounds);
+            CHECK_FEATURE_1_0(wideLines);
+            CHECK_FEATURE_1_0(largePoints);
+            CHECK_FEATURE_1_0(alphaToOne);
+            CHECK_FEATURE_1_0(multiViewport);
+            CHECK_FEATURE_1_0(samplerAnisotropy);
+            CHECK_FEATURE_1_0(textureCompressionETC2);
+            CHECK_FEATURE_1_0(textureCompressionASTC_LDR);
+            CHECK_FEATURE_1_0(textureCompressionBC);
+            CHECK_FEATURE_1_0(occlusionQueryPrecise);
+            CHECK_FEATURE_1_0(pipelineStatisticsQuery);
+            CHECK_FEATURE_1_0(vertexPipelineStoresAndAtomics);
+            CHECK_FEATURE_1_0(fragmentStoresAndAtomics);
+            CHECK_FEATURE_1_0(shaderTessellationAndGeometryPointSize);
+            CHECK_FEATURE_1_0(shaderImageGatherExtended);
+            CHECK_FEATURE_1_0(shaderStorageImageExtendedFormats);
+            CHECK_FEATURE_1_0(shaderStorageImageMultisample);
+            CHECK_FEATURE_1_0(shaderStorageImageReadWithoutFormat);
+            CHECK_FEATURE_1_0(shaderStorageImageWriteWithoutFormat);
+            CHECK_FEATURE_1_0(shaderUniformBufferArrayDynamicIndexing);
+            CHECK_FEATURE_1_0(shaderSampledImageArrayDynamicIndexing);
+            CHECK_FEATURE_1_0(shaderStorageBufferArrayDynamicIndexing);
+            CHECK_FEATURE_1_0(shaderStorageImageArrayDynamicIndexing);
+            CHECK_FEATURE_1_0(shaderClipDistance);
+            CHECK_FEATURE_1_0(shaderCullDistance);
+            CHECK_FEATURE_1_0(shaderFloat64);
+            CHECK_FEATURE_1_0(shaderInt64);
+            CHECK_FEATURE_1_0(shaderInt16);
+            CHECK_FEATURE_1_0(shaderResourceResidency);
+            CHECK_FEATURE_1_0(shaderResourceMinLod);
+            CHECK_FEATURE_1_0(sparseBinding);
+            CHECK_FEATURE_1_0(sparseResidencyBuffer);
+            CHECK_FEATURE_1_0(sparseResidencyImage2D);
+            CHECK_FEATURE_1_0(sparseResidencyImage3D);
+            CHECK_FEATURE_1_0(sparseResidency2Samples);
+            CHECK_FEATURE_1_0(sparseResidency4Samples);
+            CHECK_FEATURE_1_0(sparseResidency8Samples);
+            CHECK_FEATURE_1_0(sparseResidency16Samples);
+            CHECK_FEATURE_1_0(sparseResidencyAliased);
+            CHECK_FEATURE_1_0(variableMultisampleRate);
+            CHECK_FEATURE_1_0(inheritedQueries);
 #undef CHECK_FEATURE_1_0
 #define CHECK_FEATURE_1_1(feature) CHECK_VULKAN_FEATURE(requiredfeatures11, supportedfeatures11, feature, "1.1")
-			CHECK_FEATURE_1_1(storageBuffer16BitAccess);
-			CHECK_FEATURE_1_1(uniformAndStorageBuffer16BitAccess);
-			CHECK_FEATURE_1_1(storagePushConstant16);
-			CHECK_FEATURE_1_1(storageInputOutput16);
-			CHECK_FEATURE_1_1(multiview);
-			CHECK_FEATURE_1_1(multiviewGeometryShader);
-			CHECK_FEATURE_1_1(multiviewTessellationShader);
-			CHECK_FEATURE_1_1(variablePointersStorageBuffer);
-			CHECK_FEATURE_1_1(variablePointers);
-			CHECK_FEATURE_1_1(protectedMemory);
-			CHECK_FEATURE_1_1(samplerYcbcrConversion);
-			CHECK_FEATURE_1_1(shaderDrawParameters);
+            CHECK_FEATURE_1_1(storageBuffer16BitAccess);
+            CHECK_FEATURE_1_1(uniformAndStorageBuffer16BitAccess);
+            CHECK_FEATURE_1_1(storagePushConstant16);
+            CHECK_FEATURE_1_1(storageInputOutput16);
+            CHECK_FEATURE_1_1(multiview);
+            CHECK_FEATURE_1_1(multiviewGeometryShader);
+            CHECK_FEATURE_1_1(multiviewTessellationShader);
+            CHECK_FEATURE_1_1(variablePointersStorageBuffer);
+            CHECK_FEATURE_1_1(variablePointers);
+            CHECK_FEATURE_1_1(protectedMemory);
+            CHECK_FEATURE_1_1(samplerYcbcrConversion);
+            CHECK_FEATURE_1_1(shaderDrawParameters);
 #undef CHECK_FEATURE_1_1
 #define CHECK_FEATURE_1_2(feature) CHECK_VULKAN_FEATURE(requiredfeatures12, supportedfeatures12, feature, "1.2")
-			CHECK_FEATURE_1_2(samplerMirrorClampToEdge);
-			CHECK_FEATURE_1_2(drawIndirectCount);
-			CHECK_FEATURE_1_2(storageBuffer8BitAccess);
-			CHECK_FEATURE_1_2(uniformAndStorageBuffer8BitAccess);
-			CHECK_FEATURE_1_2(storagePushConstant8);
-			CHECK_FEATURE_1_2(shaderBufferInt64Atomics);
-			CHECK_FEATURE_1_2(shaderSharedInt64Atomics);
-			CHECK_FEATURE_1_2(shaderFloat16);
-			CHECK_FEATURE_1_2(shaderInt8);
-			CHECK_FEATURE_1_2(descriptorIndexing);
-			CHECK_FEATURE_1_2(shaderInputAttachmentArrayDynamicIndexing);
-			CHECK_FEATURE_1_2(shaderUniformTexelBufferArrayDynamicIndexing);
-			CHECK_FEATURE_1_2(shaderStorageTexelBufferArrayDynamicIndexing);
-			CHECK_FEATURE_1_2(shaderUniformBufferArrayNonUniformIndexing);
-			CHECK_FEATURE_1_2(shaderSampledImageArrayNonUniformIndexing);
-			CHECK_FEATURE_1_2(shaderStorageBufferArrayNonUniformIndexing);
-			CHECK_FEATURE_1_2(shaderStorageImageArrayNonUniformIndexing);
-			CHECK_FEATURE_1_2(shaderInputAttachmentArrayNonUniformIndexing);
-			CHECK_FEATURE_1_2(shaderUniformTexelBufferArrayNonUniformIndexing);
-			CHECK_FEATURE_1_2(shaderStorageTexelBufferArrayNonUniformIndexing);
-			CHECK_FEATURE_1_2(descriptorBindingUniformBufferUpdateAfterBind);
-			CHECK_FEATURE_1_2(descriptorBindingSampledImageUpdateAfterBind);
-			CHECK_FEATURE_1_2(descriptorBindingStorageImageUpdateAfterBind);
-			CHECK_FEATURE_1_2(descriptorBindingStorageBufferUpdateAfterBind);
-			CHECK_FEATURE_1_2(descriptorBindingUniformTexelBufferUpdateAfterBind);
-			CHECK_FEATURE_1_2(descriptorBindingStorageTexelBufferUpdateAfterBind);
-			CHECK_FEATURE_1_2(descriptorBindingUpdateUnusedWhilePending);
-			CHECK_FEATURE_1_2(descriptorBindingPartiallyBound);
-			CHECK_FEATURE_1_2(descriptorBindingVariableDescriptorCount);
-			CHECK_FEATURE_1_2(runtimeDescriptorArray);
-			CHECK_FEATURE_1_2(samplerFilterMinmax);
-			CHECK_FEATURE_1_2(scalarBlockLayout);
-			CHECK_FEATURE_1_2(imagelessFramebuffer);
-			CHECK_FEATURE_1_2(uniformBufferStandardLayout);
-			CHECK_FEATURE_1_2(shaderSubgroupExtendedTypes);
-			CHECK_FEATURE_1_2(separateDepthStencilLayouts);
-			CHECK_FEATURE_1_2(hostQueryReset);
-			CHECK_FEATURE_1_2(timelineSemaphore);
-			CHECK_FEATURE_1_2(bufferDeviceAddress);
-			CHECK_FEATURE_1_2(bufferDeviceAddressCaptureReplay);
-			CHECK_FEATURE_1_2(bufferDeviceAddressMultiDevice);
-			CHECK_FEATURE_1_2(vulkanMemoryModel);
-			CHECK_FEATURE_1_2(vulkanMemoryModelDeviceScope);
-			CHECK_FEATURE_1_2(vulkanMemoryModelAvailabilityVisibilityChains);
-			CHECK_FEATURE_1_2(shaderOutputViewportIndex);
-			CHECK_FEATURE_1_2(shaderOutputLayer);
-			CHECK_FEATURE_1_2(subgroupBroadcastDynamicId);
+            CHECK_FEATURE_1_2(samplerMirrorClampToEdge);
+            CHECK_FEATURE_1_2(drawIndirectCount);
+            CHECK_FEATURE_1_2(storageBuffer8BitAccess);
+            CHECK_FEATURE_1_2(uniformAndStorageBuffer8BitAccess);
+            CHECK_FEATURE_1_2(storagePushConstant8);
+            CHECK_FEATURE_1_2(shaderBufferInt64Atomics);
+            CHECK_FEATURE_1_2(shaderSharedInt64Atomics);
+            CHECK_FEATURE_1_2(shaderFloat16);
+            CHECK_FEATURE_1_2(shaderInt8);
+            CHECK_FEATURE_1_2(descriptorIndexing);
+            CHECK_FEATURE_1_2(shaderInputAttachmentArrayDynamicIndexing);
+            CHECK_FEATURE_1_2(shaderUniformTexelBufferArrayDynamicIndexing);
+            CHECK_FEATURE_1_2(shaderStorageTexelBufferArrayDynamicIndexing);
+            CHECK_FEATURE_1_2(shaderUniformBufferArrayNonUniformIndexing);
+            CHECK_FEATURE_1_2(shaderSampledImageArrayNonUniformIndexing);
+            CHECK_FEATURE_1_2(shaderStorageBufferArrayNonUniformIndexing);
+            CHECK_FEATURE_1_2(shaderStorageImageArrayNonUniformIndexing);
+            CHECK_FEATURE_1_2(shaderInputAttachmentArrayNonUniformIndexing);
+            CHECK_FEATURE_1_2(shaderUniformTexelBufferArrayNonUniformIndexing);
+            CHECK_FEATURE_1_2(shaderStorageTexelBufferArrayNonUniformIndexing);
+            CHECK_FEATURE_1_2(descriptorBindingUniformBufferUpdateAfterBind);
+            CHECK_FEATURE_1_2(descriptorBindingSampledImageUpdateAfterBind);
+            CHECK_FEATURE_1_2(descriptorBindingStorageImageUpdateAfterBind);
+            CHECK_FEATURE_1_2(descriptorBindingStorageBufferUpdateAfterBind);
+            CHECK_FEATURE_1_2(descriptorBindingUniformTexelBufferUpdateAfterBind);
+            CHECK_FEATURE_1_2(descriptorBindingStorageTexelBufferUpdateAfterBind);
+            CHECK_FEATURE_1_2(descriptorBindingUpdateUnusedWhilePending);
+            CHECK_FEATURE_1_2(descriptorBindingPartiallyBound);
+            CHECK_FEATURE_1_2(descriptorBindingVariableDescriptorCount);
+            CHECK_FEATURE_1_2(runtimeDescriptorArray);
+            CHECK_FEATURE_1_2(samplerFilterMinmax);
+            CHECK_FEATURE_1_2(scalarBlockLayout);
+            CHECK_FEATURE_1_2(imagelessFramebuffer);
+            CHECK_FEATURE_1_2(uniformBufferStandardLayout);
+            CHECK_FEATURE_1_2(shaderSubgroupExtendedTypes);
+            CHECK_FEATURE_1_2(separateDepthStencilLayouts);
+            CHECK_FEATURE_1_2(hostQueryReset);
+            CHECK_FEATURE_1_2(timelineSemaphore);
+            CHECK_FEATURE_1_2(bufferDeviceAddress);
+            CHECK_FEATURE_1_2(bufferDeviceAddressCaptureReplay);
+            CHECK_FEATURE_1_2(bufferDeviceAddressMultiDevice);
+            CHECK_FEATURE_1_2(vulkanMemoryModel);
+            CHECK_FEATURE_1_2(vulkanMemoryModelDeviceScope);
+            CHECK_FEATURE_1_2(vulkanMemoryModelAvailabilityVisibilityChains);
+            CHECK_FEATURE_1_2(shaderOutputViewportIndex);
+            CHECK_FEATURE_1_2(shaderOutputLayer);
+            CHECK_FEATURE_1_2(subgroupBroadcastDynamicId);
 #undef CHECK_FEATURE_1_2
 #define CHECK_FEATURE_1_3(feature) CHECK_VULKAN_FEATURE(requiredfeatures13, supportedfeatures13, feature, "1.3")
-			CHECK_FEATURE_1_3(robustImageAccess);
-			CHECK_FEATURE_1_3(inlineUniformBlock);
-			CHECK_FEATURE_1_3(descriptorBindingInlineUniformBlockUpdateAfterBind);
-			CHECK_FEATURE_1_3(pipelineCreationCacheControl);
-			CHECK_FEATURE_1_3(privateData);
-			CHECK_FEATURE_1_3(shaderDemoteToHelperInvocation);
-			CHECK_FEATURE_1_3(shaderTerminateInvocation);
-			CHECK_FEATURE_1_3(subgroupSizeControl);
-			CHECK_FEATURE_1_3(computeFullSubgroups);
-			CHECK_FEATURE_1_3(synchronization2);
-			CHECK_FEATURE_1_3(textureCompressionASTC_HDR);
-			CHECK_FEATURE_1_3(shaderZeroInitializeWorkgroupMemory);
-			CHECK_FEATURE_1_3(dynamicRendering);
-			CHECK_FEATURE_1_3(shaderIntegerDotProduct);
-			CHECK_FEATURE_1_3(maintenance4);
+            CHECK_FEATURE_1_3(robustImageAccess);
+            CHECK_FEATURE_1_3(inlineUniformBlock);
+            CHECK_FEATURE_1_3(descriptorBindingInlineUniformBlockUpdateAfterBind);
+            CHECK_FEATURE_1_3(pipelineCreationCacheControl);
+            CHECK_FEATURE_1_3(privateData);
+            CHECK_FEATURE_1_3(shaderDemoteToHelperInvocation);
+            CHECK_FEATURE_1_3(shaderTerminateInvocation);
+            CHECK_FEATURE_1_3(subgroupSizeControl);
+            CHECK_FEATURE_1_3(computeFullSubgroups);
+            CHECK_FEATURE_1_3(synchronization2);
+            CHECK_FEATURE_1_3(textureCompressionASTC_HDR);
+            CHECK_FEATURE_1_3(shaderZeroInitializeWorkgroupMemory);
+            CHECK_FEATURE_1_3(dynamicRendering);
+            CHECK_FEATURE_1_3(shaderIntegerDotProduct);
+            CHECK_FEATURE_1_3(maintenance4);
 #undef CHECK_FEATURE_1_3
 #undef CHECK_VULKAN_FEATURE
-			if (!missing_features.empty()) {
-				LOG_SYSTEM_NOSOURCE(LogType::FatalError, "Device fails to support Vulkan Device Features: {}", missing_features.c_str());
-				assert(false);
-			}
-		}
+            if (!missing_features.empty()) {
+                LOG_SYSTEM_NOSOURCE(LogType::FatalError, "Device fails to support Vulkan Device Features: {}", missing_features.c_str());
+                assert(false);
+            }
+        }
 
-		VkPhysicalDevicePortabilitySubsetFeaturesKHR portability_subset_features = {
-			.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PORTABILITY_SUBSET_FEATURES_KHR,
-			.pNext = &requiredfeatures13,
-			.imageViewFormatSwizzle = VK_TRUE
-		};
+        VkPhysicalDevicePortabilitySubsetFeaturesKHR portability_subset_features = {
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PORTABILITY_SUBSET_FEATURES_KHR,
+            .pNext = &requiredfeatures13,
+            .imageViewFormatSwizzle = VK_TRUE
+        };
 
-		VkPhysicalDeviceFeatures2 features2 = {
-			.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
-			.pNext = isAvailable(VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME)
-			             ? static_cast<void*>(&portability_subset_features)
-			             : static_cast<void*>(&requiredfeatures13),
-			.features = requiredfeatures10
-		};
+        VkPhysicalDeviceFeatures2 features2 = {
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+            .pNext = isAvailable(VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME)
+                         ? static_cast<void*>(&portability_subset_features)
+                         : static_cast<void*>(&requiredfeatures13),
+            .features = requiredfeatures10
+        };
 
-		// query queue family properties
-		VkPhysicalDevice physical_device = vkPhysicalDevice;
-		uint32_t queueFamilyCount = 0;
-		vkGetPhysicalDeviceQueueFamilyProperties2(physical_device, &queueFamilyCount, nullptr);
-		std::vector<VkQueueFamilyProperties2> props(queueFamilyCount);
-		for (auto& p: props)
-			p.sType = VK_STRUCTURE_TYPE_QUEUE_FAMILY_PROPERTIES_2;
-		vkGetPhysicalDeviceQueueFamilyProperties2(physical_device, &queueFamilyCount, props.data());
+        // query queue family properties
+        VkPhysicalDevice physical_device = vkPhysicalDevice;
+        uint32_t queueFamilyCount = 0;
+        vkGetPhysicalDeviceQueueFamilyProperties2(physical_device, &queueFamilyCount, nullptr);
+        std::vector<VkQueueFamilyProperties2> props(queueFamilyCount);
+        for (auto& p: props)
+            p.sType = VK_STRUCTURE_TYPE_QUEUE_FAMILY_PROPERTIES_2;
+        vkGetPhysicalDeviceQueueFamilyProperties2(physical_device, &queueFamilyCount, props.data());
 
-		// log available queue families
-		// for (uint32_t i = 0; i < queueFamilyCount; i++) {
-		//	const VkQueueFamilyProperties& p = props[i].queueFamilyProperties;
-		//	LOG_SYSTEM_NOSOURCE(LogType::Info,
-		//		"Queue Family [{}]: count={} flags={}{}{}{}{}",
-		//		i,
-		//		p.queueCount,
-		//		(p.queueFlags & VK_QUEUE_GRAPHICS_BIT)       ? "GRAPHICS "  : "",
-		//		(p.queueFlags & VK_QUEUE_COMPUTE_BIT)         ? "COMPUTE "   : "",
-		//		(p.queueFlags & VK_QUEUE_TRANSFER_BIT)        ? "TRANSFER "  : "",
-		//		(p.queueFlags & VK_QUEUE_SPARSE_BINDING_BIT)  ? "SPARSE "    : "",
-		//		(p.queueFlags & VK_QUEUE_PROTECTED_BIT)       ? "PROTECTED " : ""
-		//	);
-		//}
+        // log available queue families
+        // for (uint32_t i = 0; i < queueFamilyCount; i++) {
+        //	const VkQueueFamilyProperties& p = props[i].queueFamilyProperties;
+        //	LOG_SYSTEM_NOSOURCE(LogType::Info,
+        //		"Queue Family [{}]: count={} flags={}{}{}{}{}",
+        //		i,
+        //		p.queueCount,
+        //		(p.queueFlags & VK_QUEUE_GRAPHICS_BIT)       ? "GRAPHICS "  : "",
+        //		(p.queueFlags & VK_QUEUE_COMPUTE_BIT)         ? "COMPUTE "   : "",
+        //		(p.queueFlags & VK_QUEUE_TRANSFER_BIT)        ? "TRANSFER "  : "",
+        //		(p.queueFlags & VK_QUEUE_SPARSE_BINDING_BIT)  ? "SPARSE "    : "",
+        //		(p.queueFlags & VK_QUEUE_PROTECTED_BIT)       ? "PROTECTED " : ""
+        //	);
+        //}
 
-		// now we make decisions for what queues we want
-		// for graphics, transfer, compute
-		auto findBestFamilyIndex = [&props](VkQueueFlags requiredFlags, VkQueueFlags avoidedFlags) -> uint32_t {
-			uint32_t fallback = MYTHRIL_INVALID_U32;
-			for (uint32_t i = 0; i < static_cast<uint32_t>(props.size()); i++) {
-				const VkQueueFamilyProperties& p = props[i].queueFamilyProperties;
-				if (!p.queueCount)
-					continue;
-				if ((p.queueFlags & requiredFlags) != requiredFlags)
-					continue;
-				if ((p.queueFlags & avoidedFlags) == 0)
-					return i;
-				if (fallback == MYTHRIL_INVALID_U32)
-					fallback = i;
-			}
-			return fallback; // might still be Invalid<>
-		};
-		// for present
-		auto findBestPresentFamilyIndex = [&](VkSurfaceKHR surface) -> uint32_t {
-			uint32_t fallback = MYTHRIL_INVALID_U32;
-			uint32_t fallbackWithGraphics = MYTHRIL_INVALID_U32;
+        // now we make decisions for what queues we want
+        // for graphics, transfer, compute
+        auto findBestFamilyIndex = [&props](VkQueueFlags requiredFlags, VkQueueFlags avoidedFlags) -> uint32_t {
+            uint32_t fallback = MYTHRIL_INVALID_U32;
+            for (uint32_t i = 0; i < static_cast<uint32_t>(props.size()); i++) {
+                const VkQueueFamilyProperties& p = props[i].queueFamilyProperties;
+                if (!p.queueCount)
+                    continue;
+                if ((p.queueFlags & requiredFlags) != requiredFlags)
+                    continue;
+                if ((p.queueFlags & avoidedFlags) == 0)
+                    return i;
+                if (fallback == MYTHRIL_INVALID_U32)
+                    fallback = i;
+            }
+            return fallback; // might still be Invalid<>
+        };
+        // for present
+        auto findBestPresentFamilyIndex = [&](VkSurfaceKHR surface) -> uint32_t {
+            uint32_t fallback = MYTHRIL_INVALID_U32;
+            uint32_t fallbackWithGraphics = MYTHRIL_INVALID_U32;
 
-			for (uint32_t i = 0; i < static_cast<uint32_t>(props.size()); i++) {
-				const VkQueueFamilyProperties& p = props[i].queueFamilyProperties;
-				if (!p.queueCount)
-					continue;
+            for (uint32_t i = 0; i < static_cast<uint32_t>(props.size()); i++) {
+                const VkQueueFamilyProperties& p = props[i].queueFamilyProperties;
+                if (!p.queueCount)
+                    continue;
 
-				VkBool32 supported = VK_FALSE;
-				vkGetPhysicalDeviceSurfaceSupportKHR(physical_device, i, surface, &supported);
-				if (!supported)
-					continue;
+                VkBool32 supported = VK_FALSE;
+                vkGetPhysicalDeviceSurfaceSupportKHR(physical_device, i, surface, &supported);
+                if (!supported)
+                    continue;
 
-				const bool hasGraphics = (p.queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0;
+                const bool hasGraphics = (p.queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0;
 
-				if (p.queueFlags == 0)
-					return i;
-				if (hasGraphics && fallbackWithGraphics == MYTHRIL_INVALID_U32)
-					fallbackWithGraphics = i;
-				else if (fallback == MYTHRIL_INVALID_U32)
-					fallback = i;
-			}
-			// prefer presentation family that supports graphics rather than just graphics queue family
-			return fallbackWithGraphics != MYTHRIL_INVALID_U32 ? fallbackWithGraphics : fallback;
-		};
+                if (p.queueFlags == 0)
+                    return i;
+                if (hasGraphics && fallbackWithGraphics == MYTHRIL_INVALID_U32)
+                    fallbackWithGraphics = i;
+                else if (fallback == MYTHRIL_INVALID_U32)
+                    fallback = i;
+            }
+            // prefer presentation family that supports graphics rather than just graphics queue family
+            return fallbackWithGraphics != MYTHRIL_INVALID_U32 ? fallbackWithGraphics : fallback;
+        };
 
-		uint32_t graphics = findBestFamilyIndex(VK_QUEUE_GRAPHICS_BIT, 0);
-		uint32_t compute = findBestFamilyIndex(VK_QUEUE_COMPUTE_BIT, VK_QUEUE_GRAPHICS_BIT);
-		uint32_t transfer = findBestFamilyIndex(VK_QUEUE_TRANSFER_BIT, VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT);
-		uint32_t present = 0;
-		if (vkSurfaceKHR != VK_NULL_HANDLE) {
-			present = findBestPresentFamilyIndex(vkSurfaceKHR);
-			ASSERT_MSG(present != MYTHRIL_INVALID_U32, "No present queue family found");
-		}
-		ASSERT_MSG(graphics != MYTHRIL_INVALID_U32, "No graphics queue family found");
-		// if no dedicated compute/transfer family exists, share with graphics
-		if (compute == MYTHRIL_INVALID_U32)
-			compute = graphics;
-		if (transfer == MYTHRIL_INVALID_U32)
-			transfer = graphics;
+        uint32_t graphics = findBestFamilyIndex(VK_QUEUE_GRAPHICS_BIT, 0);
+        uint32_t compute = findBestFamilyIndex(VK_QUEUE_COMPUTE_BIT, VK_QUEUE_GRAPHICS_BIT);
+        uint32_t transfer = findBestFamilyIndex(VK_QUEUE_TRANSFER_BIT, VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT);
+        uint32_t present = 0;
+        if (vkSurfaceKHR != VK_NULL_HANDLE) {
+            present = findBestPresentFamilyIndex(vkSurfaceKHR);
+            ASSERT_MSG(present != MYTHRIL_INVALID_U32, "No present queue family found");
+        }
+        ASSERT_MSG(graphics != MYTHRIL_INVALID_U32, "No graphics queue family found");
+        // if no dedicated compute/transfer family exists, share with graphics
+        if (compute == MYTHRIL_INVALID_U32)
+            compute = graphics;
+        if (transfer == MYTHRIL_INVALID_U32)
+            transfer = graphics;
 
-		struct QueueAllocation {
-			uint32_t familyIndex;
-			uint32_t queueIndex; // index within that family
-		};
-		std::unordered_map<uint32_t, uint32_t> familyNextIndex;
-		auto allocateQueue = [&](uint32_t familyIndex) -> QueueAllocation {
-			uint32_t idx = familyNextIndex[familyIndex]++;
-			uint32_t maxQueues = props[familyIndex].queueFamilyProperties.queueCount;
-			if (idx >= maxQueues) {
-				idx = maxQueues - 1;
-				familyNextIndex[familyIndex] = maxQueues;
-			}
-			return { familyIndex, idx };
-		};
-		QueueAllocation graphicsAlloc = allocateQueue(graphics);
-		QueueAllocation computeAlloc = allocateQueue(compute);
-		QueueAllocation transferAlloc = allocateQueue(transfer);
-		QueueAllocation presentAlloc = allocateQueue(present);
+        struct QueueAllocation {
+            uint32_t familyIndex;
+            uint32_t queueIndex; // index within that family
+        };
+        std::unordered_map<uint32_t, uint32_t> familyNextIndex;
+        auto allocateQueue = [&](uint32_t familyIndex) -> QueueAllocation {
+            uint32_t idx = familyNextIndex[familyIndex]++;
+            uint32_t maxQueues = props[familyIndex].queueFamilyProperties.queueCount;
+            if (idx >= maxQueues) {
+                idx = maxQueues - 1;
+                familyNextIndex[familyIndex] = maxQueues;
+            }
+            return { familyIndex, idx };
+        };
+        QueueAllocation graphicsAlloc = allocateQueue(graphics);
+        QueueAllocation computeAlloc = allocateQueue(compute);
+        QueueAllocation transferAlloc = allocateQueue(transfer);
+        QueueAllocation presentAlloc = allocateQueue(present);
 
-		// check what queue families are actually used
-		// LOG_SYSTEM_NOSOURCE(LogType::Info,
-		//	"Queue Assignments — Graphics: family={} idx={} | Compute: family={} idx={} | Transfer: family={} idx={} | Present: family={} idx={}",
-		//	graphicsAlloc.familyIndex, graphicsAlloc.queueIndex,
-		//	computeAlloc.familyIndex,  computeAlloc.queueIndex,
-		//	transferAlloc.familyIndex, transferAlloc.queueIndex,
-		//	presentAlloc.familyIndex,  presentAlloc.queueIndex
-		//);
+        // check what queue families are actually used
+        // LOG_SYSTEM_NOSOURCE(LogType::Info,
+        //	"Queue Assignments — Graphics: family={} idx={} | Compute: family={} idx={} | Transfer: family={} idx={} | Present: family={} idx={}",
+        //	graphicsAlloc.familyIndex, graphicsAlloc.queueIndex,
+        //	computeAlloc.familyIndex,  computeAlloc.queueIndex,
+        //	transferAlloc.familyIndex, transferAlloc.queueIndex,
+        //	presentAlloc.familyIndex,  presentAlloc.queueIndex
+        //);
 
-		std::vector<std::vector<float>> queuePriorities;
-		std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
+        std::vector<std::vector<float>> queuePriorities;
+        std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
 
-		for (auto& [familyIndex, allocatedCount]: familyNextIndex) {
-			queuePriorities.emplace_back(allocatedCount, 1.0f);
-			queueCreateInfos.push_back({
-				.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-				.queueFamilyIndex = familyIndex,
-				.queueCount = allocatedCount,
-				.pQueuePriorities = queuePriorities.back().data(),
-			});
-		}
+        for (auto& [familyIndex, allocatedCount]: familyNextIndex) {
+            queuePriorities.emplace_back(allocatedCount, 1.0f);
+            queueCreateInfos.push_back({
+                .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+                .queueFamilyIndex = familyIndex,
+                .queueCount = allocatedCount,
+                .pQueuePriorities = queuePriorities.back().data(),
+            });
+        }
 
-		// just to resolve our std::string of enabled to the vulkan friendly format of const char*
-		std::vector<const char*> extensionNames;
-		extensionNames.reserve(enabledExtensions.size());
-		for (const std::string& ext: enabledExtensions) {
-			extensionNames.push_back(ext.c_str());
-		}
-		const VkDeviceCreateInfo device_ci = {
-			.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-			.pNext = &features2,
-			.flags = 0,
-			.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size()),
-			.pQueueCreateInfos = queueCreateInfos.data(),
-			.enabledExtensionCount = static_cast<uint32_t>(enabledExtensions.size()),
-			.ppEnabledExtensionNames = extensionNames.data(),
-		};
-		VkDevice device = VK_NULL_HANDLE;
-		vkCreateDevice(physical_device, &device_ci, nullptr, &device);
-		ASSERT_MSG(device != VK_NULL_HANDLE, "Failed to create Device (VkDevice)");
-		volkLoadDevice(device);
+        // just to resolve our std::string of enabled to the vulkan friendly format of const char*
+        std::vector<const char*> extensionNames;
+        extensionNames.reserve(enabledExtensions.size());
+        for (const std::string& ext: enabledExtensions) {
+            extensionNames.push_back(ext.c_str());
+        }
+        const VkDeviceCreateInfo device_ci = {
+            .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+            .pNext = &features2,
+            .flags = 0,
+            .queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size()),
+            .pQueueCreateInfos = queueCreateInfos.data(),
+            .enabledExtensionCount = static_cast<uint32_t>(enabledExtensions.size()),
+            .ppEnabledExtensionNames = extensionNames.data(),
+        };
+        VkDevice device = VK_NULL_HANDLE;
+        vkCreateDevice(physical_device, &device_ci, nullptr, &device);
+        ASSERT_MSG(device != VK_NULL_HANDLE, "Failed to create Device (VkDevice)");
+        volkLoadDevice(device);
 
-		// retrieve actual VkQueue objects and fill out structure
-		vkGetDeviceQueue(device, graphicsAlloc.familyIndex, graphicsAlloc.queueIndex, &outQueues.vkGraphicsQueue);
-		outQueues.graphicsQueueFamilyIndex = graphicsAlloc.familyIndex;
+        // retrieve actual VkQueue objects and fill out structure
+        vkGetDeviceQueue(device, graphicsAlloc.familyIndex, graphicsAlloc.queueIndex, &outQueues.vkGraphicsQueue);
+        outQueues.graphicsQueueFamilyIndex = graphicsAlloc.familyIndex;
 
-		vkGetDeviceQueue(device, computeAlloc.familyIndex, computeAlloc.queueIndex, &outQueues.vkComputeQueue);
-		outQueues.computeQueueFamilyIndex = computeAlloc.familyIndex;
+        vkGetDeviceQueue(device, computeAlloc.familyIndex, computeAlloc.queueIndex, &outQueues.vkComputeQueue);
+        outQueues.computeQueueFamilyIndex = computeAlloc.familyIndex;
 
-		vkGetDeviceQueue(device, transferAlloc.familyIndex, transferAlloc.queueIndex, &outQueues.vkTransferQueue);
-		outQueues.transferQueueFamilyIndex = transferAlloc.familyIndex;
+        vkGetDeviceQueue(device, transferAlloc.familyIndex, transferAlloc.queueIndex, &outQueues.vkTransferQueue);
+        outQueues.transferQueueFamilyIndex = transferAlloc.familyIndex;
 
-		vkGetDeviceQueue(device, presentAlloc.familyIndex, presentAlloc.queueIndex, &outQueues.vkPresentQueue);
-		outQueues.presentQueueFamilyIndex = presentAlloc.familyIndex;
+        vkGetDeviceQueue(device, presentAlloc.familyIndex, presentAlloc.queueIndex, &outQueues.vkPresentQueue);
+        outQueues.presentQueueFamilyIndex = presentAlloc.familyIndex;
 
-		{
-			const VkDeviceQueueInfo2 qi = { .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_INFO_2, .pNext = nullptr, .queueFamilyIndex = graphicsAlloc.familyIndex, .queueIndex = graphicsAlloc.queueIndex };
-			vkGetDeviceQueue2(device, &qi, &outQueues.vkGraphicsQueue);
-		}
+        {
+            const VkDeviceQueueInfo2 qi = { .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_INFO_2, .pNext = nullptr, .queueFamilyIndex = graphicsAlloc.familyIndex, .queueIndex = graphicsAlloc.queueIndex };
+            vkGetDeviceQueue2(device, &qi, &outQueues.vkGraphicsQueue);
+        }
 
-		// we could do this before building the device but theres no difference
-		// query supported properties
-		{
-			VkPhysicalDeviceProperties2 props10 = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2 };
-			VkPhysicalDeviceVulkan11Properties props11 = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_PROPERTIES };
-			VkPhysicalDeviceVulkan12Properties props12 = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_PROPERTIES };
-			VkPhysicalDeviceVulkan13Properties props13 = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_PROPERTIES };
-			props10.pNext = &props11;
-			props11.pNext = &props12;
-			props12.pNext = &props13;
-			vkGetPhysicalDeviceProperties2(vkPhysicalDevice, &props10);
-			// set outProperties
-			outProperties.props10 = props10.properties;
-			outProperties.props11 = props11;
-			outProperties.props12 = props12;
-			outProperties.props13 = props13;
+        // we could do this before building the device but theres no difference
+        // query supported properties
+        {
+            VkPhysicalDeviceProperties2 props10 = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2 };
+            VkPhysicalDeviceVulkan11Properties props11 = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_PROPERTIES };
+            VkPhysicalDeviceVulkan12Properties props12 = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_PROPERTIES };
+            VkPhysicalDeviceVulkan13Properties props13 = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_PROPERTIES };
+            props10.pNext = &props11;
+            props11.pNext = &props12;
+            props12.pNext = &props13;
+            vkGetPhysicalDeviceProperties2(vkPhysicalDevice, &props10);
+            // set outProperties
+            outProperties.props10 = props10.properties;
+            outProperties.props11 = props11;
+            outProperties.props12 = props12;
+            outProperties.props13 = props13;
 
-			// set outFeatures
-			outFeatures.features10 = requiredfeatures10;
-			outFeatures.features11 = requiredfeatures11;
-			outFeatures.features12 = requiredfeatures12;
-			outFeatures.features13 = requiredfeatures13;
-		}
-		outEnabledExtensions = std::move(enabledExtensions);
-		return device;
-	}
+            // set outFeatures
+            outFeatures.features10 = requiredfeatures10;
+            outFeatures.features11 = requiredfeatures11;
+            outFeatures.features12 = requiredfeatures12;
+            outFeatures.features13 = requiredfeatures13;
+        }
+        outEnabledExtensions = std::move(enabledExtensions);
+        return device;
+    }
 
-	static VmaAllocator CreateVulkanMemoryAllocator(const VulkanMemoryAllocatorInputs& inputs) {
-		VmaAllocatorCreateInfo allocatorInfo = {
-			.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT | VMA_ALLOCATOR_CREATE_KHR_DEDICATED_ALLOCATION_BIT | (inputs.memoryBudget ? VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT : 0u),
-			.physicalDevice = inputs.vkPhysicalDevice,
-			.device = inputs.vkDevice,
-			.instance = inputs.vkInstance,
-			.vulkanApiVersion = VK_API_VERSION_1_3,
-		};
-		VmaVulkanFunctions vulkanFunctions;
-		const VkResult volkimport_result = vmaImportVulkanFunctionsFromVolk(&allocatorInfo, &vulkanFunctions);
-		ASSERT_MSG(volkimport_result == VK_SUCCESS, "Failed to import vulkan functions from Volk for VMA Allocator create!");
-		allocatorInfo.pVulkanFunctions = &vulkanFunctions;
-		VmaAllocator vma_allocator = VK_NULL_HANDLE;
-		const VkResult allocator_result = vmaCreateAllocator(&allocatorInfo, &vma_allocator);
-		ASSERT_MSG(allocator_result == VK_SUCCESS, "Failed to create vma Allocator!");
-		return vma_allocator;
-	}
+    static VmaAllocator CreateVulkanMemoryAllocator(const VulkanMemoryAllocatorInputs& inputs) {
+        VmaAllocatorCreateInfo allocatorInfo = {
+            .flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT | VMA_ALLOCATOR_CREATE_KHR_DEDICATED_ALLOCATION_BIT | (inputs.memoryBudget ? VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT : 0u),
+            .physicalDevice = inputs.vkPhysicalDevice,
+            .device = inputs.vkDevice,
+            .instance = inputs.vkInstance,
+            .vulkanApiVersion = VK_API_VERSION_1_3,
+        };
+        VmaVulkanFunctions vulkanFunctions;
+        const VkResult volkimport_result = vmaImportVulkanFunctionsFromVolk(&allocatorInfo, &vulkanFunctions);
+        ASSERT_MSG(volkimport_result == VK_SUCCESS, "Failed to import vulkan functions from Volk for VMA Allocator create!");
+        allocatorInfo.pVulkanFunctions = &vulkanFunctions;
+        VmaAllocator vma_allocator = VK_NULL_HANDLE;
+        const VkResult allocator_result = vmaCreateAllocator(&allocatorInfo, &vma_allocator);
+        ASSERT_MSG(allocator_result == VK_SUCCESS, "Failed to create vma Allocator!");
+        return vma_allocator;
+    }
 
-	void CtxDeleter::operator()(const CTX* ctx) const noexcept {
-		delete ctx;
-	}
+    void CtxDeleter::operator()(const CTX* ctx) const noexcept {
+        delete ctx;
+    }
 
-	CtxPtr CTXBuilder::build() {
-		MYTH_PROFILER_ZONE_COLOR("CTXBuilder::build", MYTH_PROFILER_COLOR_CREATE);
+    CtxPtr CTXBuilder::build() {
+        MYTH_PROFILER_ZONE_COLOR("CTXBuilder::build", MYTH_PROFILER_COLOR_CREATE);
 
-		const VkResult volk_result = volkInitialize();
-		ASSERT_MSG(volk_result == VK_SUCCESS, "Volk failed to initialize!");
-		// if we resolve headless automatically
-		const bool hasSurface = static_cast<bool>(this->_surfaceSpec.createFunc);
+        if (this->_vulkanCfg.getInstanceProcAddr) {
+            volkInitializeCustom(this->_vulkanCfg.getInstanceProcAddr);
+        } else {
+            const VkResult volk_result = volkInitialize();
+            ASSERT_MSG(volk_result == VK_SUCCESS, "Volk failed to initialize!");
+        }
+        // if we resolve headless automatically
+        const bool hasSurface = static_cast<bool>(this->_surfaceSpec.createFunc);
 
-		// fill in user instance extensions & resolve based on cfg
-		std::vector<const char*> instance_extensions = MergeExtensions(this->_vulkanCfg.instanceExtensionNames, this->_surfaceSpec.instanceExtensions);
-		auto [vk_instance, vk_debug_messenger] = CreateVulkanInstance(
-			{
-				.appVersion = this->_vulkanCfg.app_version,
-				.engineVersion = this->_vulkanCfg.engine_version,
-				.appName = this->_vulkanCfg.app_name,
-				.engineName = this->_vulkanCfg.engine_name,
-			},
-			this->_vulkanCfg.enableValidation,
-			instance_extensions);
-		VkSurfaceKHR vk_surface = VK_NULL_HANDLE;
-		if (hasSurface) {
-			vk_surface = this->_surfaceSpec.createFunc(vk_instance);
-		}
+        // fill in user instance extensions & resolve based on cfg
+        std::vector<const char*> instance_extensions = MergeExtensions(this->_vulkanCfg.instanceExtensionNames, this->_surfaceSpec.instanceExtensions);
+        auto [vk_instance, vk_debug_messenger] = CreateVulkanInstance(
+            {
+                .appVersion = this->_vulkanCfg.app_version,
+                .engineVersion = this->_vulkanCfg.engine_version,
+                .appName = this->_vulkanCfg.app_name,
+                .engineName = this->_vulkanCfg.engine_name,
+            },
+            this->_vulkanCfg.enableValidation,
+            instance_extensions);
+        VkSurfaceKHR vk_surface = VK_NULL_HANDLE;
+        if (hasSurface) {
+            vk_surface = this->_surfaceSpec.createFunc(vk_instance);
+        }
 
-		VkPhysicalDevice vk_physical_device = SelectVulkanPhysicalDevice({ .vkInstance = vk_instance,
-			.vkSurface = vk_surface,
-			.preferredDeviceName = this->_vulkanCfg.preferredDeviceName,
-			.preferDiscrete = this->_vulkanCfg.preferDiscrete });
+        VkPhysicalDevice vk_physical_device = SelectVulkanPhysicalDevice({ .vkInstance = vk_instance,
+            .vkSurface = vk_surface,
+            .preferredDeviceName = this->_vulkanCfg.preferredDeviceName,
+            .preferDiscrete = this->_vulkanCfg.preferDiscrete });
 
-		// fill in user device extensions & resolve based on cfg
-		std::vector device_extensions(std::begin(this->_vulkanCfg.deviceExtensionNames), std::end(this->_vulkanCfg.deviceExtensionNames));
-		VulkanFeatures features{};
-		VulkanProperties properties{};
-		VulkanQueueOutputs queues{};
-		// sets features & properties
-		std::vector<std::string> enabled_device_extensions;
-		VkDevice vk_device = CreateVulkanLogicalDevice(vk_physical_device, vk_surface, device_extensions, this->_vulkanCfg.additionalDeviceFeatures, this->_vulkanCfg.deviceExtensionFeatureChain, features, properties, queues, enabled_device_extensions);
-		LOG_SYSTEM_NOSOURCE(LogType::Info, "Using device {} (Vulkan {}.{}, driver {} {})", properties.props10.deviceName, VK_API_VERSION_MAJOR(properties.props10.apiVersion), VK_API_VERSION_MINOR(properties.props10.apiVersion), properties.props12.driverName, properties.props12.driverInfo);
-		VmaAllocator vma_allocator = CreateVulkanMemoryAllocator({ .vkInstance = vk_instance,
-			.vkPhysicalDevice = vk_physical_device,
-			.vkDevice = vk_device,
-			.memoryBudget = std::ranges::find(enabled_device_extensions, VK_EXT_MEMORY_BUDGET_EXTENSION_NAME) != enabled_device_extensions.end() });
+        // fill in user device extensions & resolve based on cfg
+        std::vector device_extensions(std::begin(this->_vulkanCfg.deviceExtensionNames), std::end(this->_vulkanCfg.deviceExtensionNames));
+        VulkanFeatures features{};
+        VulkanProperties properties{};
+        VulkanQueueOutputs queues{};
+        // sets features & properties
+        std::vector<std::string> enabled_device_extensions;
+        VkDevice vk_device = CreateVulkanLogicalDevice(vk_physical_device, vk_surface, device_extensions, this->_vulkanCfg.additionalDeviceFeatures, this->_vulkanCfg.deviceExtensionFeatureChain, features, properties, queues, enabled_device_extensions);
+        LOG_SYSTEM_NOSOURCE(LogType::Info, "Using device {} (Vulkan {}.{}, driver {} {})", properties.props10.deviceName, VK_API_VERSION_MAJOR(properties.props10.apiVersion), VK_API_VERSION_MINOR(properties.props10.apiVersion), properties.props12.driverName, properties.props12.driverInfo);
+        VmaAllocator vma_allocator = CreateVulkanMemoryAllocator({ .vkInstance = vk_instance,
+            .vkPhysicalDevice = vk_physical_device,
+            .vkDevice = vk_device,
+            .memoryBudget = std::ranges::find(enabled_device_extensions, VK_EXT_MEMORY_BUDGET_EXTENSION_NAME) != enabled_device_extensions.end() });
 
-		// most of the setup we need to worry about is done in the constructor
-		// this is the same thing as make_unique, ignore the warning
-		auto ctx = CtxPtr(new CTX());
-		// manually transfer the values recieved previously to ctx
+        // most of the setup we need to worry about is done in the constructor
+        // this is the same thing as make_unique, ignore the warning
+        auto ctx = CtxPtr(new CTX());
+        // manually transfer the values recieved previously to ctx
 
-		// important handles
-		ctx->_vkInstance = vk_instance;
-		ctx->_vkDebugMessenger = vk_debug_messenger;
-		ctx->_vkSurfaceKHR = vk_surface;
-		ctx->_surfaceDestroyFunc = this->_surfaceSpec.destroyFunc;
-		ctx->_vkPhysicalDevice = vk_physical_device;
-		ctx->_vkDevice = vk_device;
-		ctx->_vmaAllocator = vma_allocator;
-		// info
-		ctx->_featuresVulkan = features;
-		ctx->_propertiesVulkan = properties;
+        // important handles
+        ctx->_vkInstance = vk_instance;
+        ctx->_vkDebugMessenger = vk_debug_messenger;
+        ctx->_vkSurfaceKHR = vk_surface;
+        ctx->_surfaceDestroyFunc = this->_surfaceSpec.destroyFunc;
+        ctx->_vkPhysicalDevice = vk_physical_device;
+        ctx->_vkDevice = vk_device;
+        ctx->_vmaAllocator = vma_allocator;
+        // info
+        ctx->_featuresVulkan = features;
+        ctx->_propertiesVulkan = properties;
 
-		// insert extensions that were properly enabeld
-		ctx->_enabledExtensionNames.clear();
-		for (const std::string& ext: enabled_device_extensions) {
-			ctx->_enabledExtensionNames.insert(ext);
-		}
-		// stupid special cases for ray tracnig + as
-		{
-			ctx->_accelerationStructureProperties = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_PROPERTIES_KHR };
-			ctx->_rayTracingProperties = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR };
-			VkPhysicalDeviceProperties2 props = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2 };
-			if (ctx->isExtensionEnabled(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME)) {
-				ctx->_accelerationStructureProperties.pNext = props.pNext;
-				props.pNext = &ctx->_accelerationStructureProperties;
-			}
-			if (ctx->isExtensionEnabled(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME)) {
-				ctx->_rayTracingProperties.pNext = props.pNext;
-				props.pNext = &ctx->_rayTracingProperties;
-			}
-			vkGetPhysicalDeviceProperties2(ctx->_vkPhysicalDevice, &props);
-			// stored structs must not keep pointers into this stack frame
-			ctx->_accelerationStructureProperties.pNext = nullptr;
-			ctx->_rayTracingProperties.pNext = nullptr;
-		}
+        // insert extensions that were properly enabeld
+        ctx->_enabledExtensionNames.clear();
+        for (const std::string& ext: enabled_device_extensions) {
+            ctx->_enabledExtensionNames.insert(ext);
+        }
+        // stupid special cases for ray tracnig + as
+        {
+            ctx->_accelerationStructureProperties = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_PROPERTIES_KHR };
+            ctx->_rayTracingProperties = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR };
+            VkPhysicalDeviceProperties2 props = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2 };
+            if (ctx->isExtensionEnabled(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME)) {
+                ctx->_accelerationStructureProperties.pNext = props.pNext;
+                props.pNext = &ctx->_accelerationStructureProperties;
+            }
+            if (ctx->isExtensionEnabled(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME)) {
+                ctx->_rayTracingProperties.pNext = props.pNext;
+                props.pNext = &ctx->_rayTracingProperties;
+            }
+            vkGetPhysicalDeviceProperties2(ctx->_vkPhysicalDevice, &props);
+            // stored structs must not keep pointers into this stack frame
+            ctx->_accelerationStructureProperties.pNext = nullptr;
+            ctx->_rayTracingProperties.pNext = nullptr;
+        }
 
-		// queues, required + optional
-		ctx->_vkGraphicsQueue = queues.vkGraphicsQueue;
-		ctx->_graphicsQueueFamilyIndex = queues.graphicsQueueFamilyIndex;
-		ctx->_vkComputeQueue = queues.vkComputeQueue;
-		ctx->_computeQueueFamilyIndex = queues.computeQueueFamilyIndex;
-		ctx->_vkTransferQueue = queues.vkTransferQueue;
-		ctx->_transferQueueFamilyIndex = queues.transferQueueFamilyIndex;
-		ctx->_vkPresentQueue = queues.vkPresentQueue;
-		ctx->_presentQueueFamilyIndex = queues.presentQueueFamilyIndex;
+        // queues, required + optional
+        ctx->_vkGraphicsQueue = queues.vkGraphicsQueue;
+        ctx->_graphicsQueueFamilyIndex = queues.graphicsQueueFamilyIndex;
+        ctx->_vkComputeQueue = queues.vkComputeQueue;
+        ctx->_computeQueueFamilyIndex = queues.computeQueueFamilyIndex;
+        ctx->_vkTransferQueue = queues.vkTransferQueue;
+        ctx->_transferQueueFamilyIndex = queues.transferQueueFamilyIndex;
+        ctx->_vkPresentQueue = queues.vkPresentQueue;
+        ctx->_presentQueueFamilyIndex = queues.presentQueueFamilyIndex;
 
-		// defered initialization of the CTX instance
-		ctx->construct();
-		if (this->_requestedSwapchain) {
-			if (this->_swapchainSpec.width == 0 && this->_swapchainSpec.height == 0) {
-				// swapchain must be built after default texture has been made
-				// or else the fallback texture is the swapchain's texture
-				this->_swapchainSpec.width = 1280;
-				this->_swapchainSpec.height = 720;
-			}
-			if (this->_swapchainSpec.format == VK_FORMAT_MAX_ENUM) {
-				this->_swapchainSpec.format = kDefaultSwapchainFormat;
-			}
-			if (this->_swapchainSpec.colorSpace == VK_COLOR_SPACE_MAX_ENUM_KHR) {
-				this->_swapchainSpec.colorSpace = kDefaultSwapchainColorSpace;
-			}
-			if (this->_swapchainSpec.presentMode == VK_PRESENT_MODE_MAX_ENUM_KHR) {
-				this->_swapchainSpec.presentMode = kDefaultSwapchainPresentMode;
-			}
-			ctx->createSwapchain(this->_swapchainSpec);
-		}
+        // defered initialization of the CTX instance
+        ctx->construct();
+        if (this->_requestedSwapchain) {
+            if (this->_swapchainSpec.width == 0 && this->_swapchainSpec.height == 0) {
+                // swapchain must be built after default texture has been made
+                // or else the fallback texture is the swapchain's texture
+                this->_swapchainSpec.width = 1280;
+                this->_swapchainSpec.height = 720;
+            }
+            if (this->_swapchainSpec.format == VK_FORMAT_MAX_ENUM) {
+                this->_swapchainSpec.format = kDefaultSwapchainFormat;
+            }
+            if (this->_swapchainSpec.colorSpace == VK_COLOR_SPACE_MAX_ENUM_KHR) {
+                this->_swapchainSpec.colorSpace = kDefaultSwapchainColorSpace;
+            }
+            if (this->_swapchainSpec.presentMode == VK_PRESENT_MODE_MAX_ENUM_KHR) {
+                this->_swapchainSpec.presentMode = kDefaultSwapchainPresentMode;
+            }
+            ctx->createSwapchain(this->_swapchainSpec);
+        }
 
-		// now we can build plugins!
+        // now we can build plugins!
 #ifdef MYTH_ENABLED_IMGUI
-		if (_usingImGui) {
-			ctx->_imguiPlugin.onInit(*ctx, this->_imguiSpec);
-		}
+        if (_usingImGui) {
+            ctx->_imguiPlugin.onInit(*ctx, this->_imguiSpec);
+        }
 #endif
 #ifdef MYTH_ENABLED_TRACY_GPU
-		ctx->_tracyPlugin.onInit(*ctx);
+        ctx->_tracyPlugin.onInit(*ctx);
 #endif
-		return ctx;
-		MYTH_PROFILER_ZONE_END();
-	}
+        return ctx;
+        MYTH_PROFILER_ZONE_END();
+    }
 } // namespace mythril

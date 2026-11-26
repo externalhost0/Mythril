@@ -1,7 +1,7 @@
 BasedOnStyle: LLVM
 Language: Cpp
 Standard: c++20
-UseTab: AlignWithSpaces
+UseTab: Never
 TabWidth: 4
 IndentWidth: 4
 ContinuationIndentWidth: 4
@@ -26,7 +26,7 @@ AllowShortFunctionsOnASingleLine: All
 AllowShortIfStatementsOnASingleLine: AllIfsAndElse
 AllowShortLoopsOnASingleLine: true
 AllowShortBlocksOnASingleLine: Always
-AllowShortLambdasOnASingleLine: All
+AllowShortLambdasOnASingleLine: Empty
 AllowShortEnumsOnASingleLine: true
 AllowShortCaseLabelsOnASingleLine: true
 BreakConstructorInitializers: AfterColon
