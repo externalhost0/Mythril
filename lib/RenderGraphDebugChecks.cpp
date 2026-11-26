@@ -13,7 +13,7 @@ namespace mythril {
 
 #ifdef DEBUG
 	void RenderGraph::reportDeclarations(const std::vector<uint32_t>& culled_order, const std::vector<PassUses>& passUses, std::unordered_set<std::string>& findings) const {
-		const auto isNew = [&](std::string key) { return findings.insert(key).second && !_findings.contains(key); };
+		const auto isNew = [&](const std::string& key) { return findings.insert(key).second && !_findings.contains(key); };
 		{
 			constexpr Options kDefaults{};
 			const auto option = [&](const char* name, const bool value, const bool fallback) {

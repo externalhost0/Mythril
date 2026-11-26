@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# usage: clang-tidy.sh [files...]. reports only, never edits files.
 # runs clang-tidy on the given files (default: every tracked c++ source) against a preset's compile database.
 # a header has no compile command, so it is checked through the translation units of its directory.
 # env: MYTH_TIDY_PRESET (default debug-samples), MYTH_TIDY_JOBS (default 4), CLANG_TIDY (binary), VULKAN_SDK.
@@ -6,6 +7,19 @@ set -euo pipefail
 
 name=clang-tidy.sh
 source "$(dirname "$0")/common.sh"
+
+color=()
+if [[ -t 1 && -z ${NO_COLOR:-} ]]; then
+	color=(--use-color)
+fi
+jobs=${MYTH_TIDY_JOBS:-4}
+
+for a in "$@"; do
+	if [[ $a == -* ]]; then
+		echo "$name: unknown option $a (usage: $name [files...])" >&2
+		exit 2
+	fi
+done
 
 preset=${MYTH_TIDY_PRESET:-debug-samples}
 db=$root/build/$preset
@@ -53,8 +67,8 @@ status=0
 run() {
 	local filter=$1
 	shift
-	printf '%s\0' "$@" | xargs -0 -n1 -P "${MYTH_TIDY_JOBS:-4}" \
-		"$tidy" -p "$db" --quiet "--header-filter=$filter" ${extra[@]+"${extra[@]}"} >>"$log" 2>&1 || status=1
+	printf '%s\0' "$@" | xargs -0 -n1 -P "$jobs" \
+		"$tidy" -p "$db" --quiet "--header-filter=$filter" ${color[@]+"${color[@]}"} ${extra[@]+"${extra[@]}"} >>"$log" 2>&1 || status=1
 }
 
 if [[ ${#sources[@]} -gt 0 ]]; then
@@ -88,10 +102,21 @@ if [[ ${#headers[@]} -gt 0 ]]; then
 	fi
 fi
 
-# one header is reached from many units, print each diagnostic once
-report=$(awk '/^[^ ].*: (warning|error): / { show = !seen[$0]++ } show' "$log")
+# one header is reached from many units, print each diagnostic once. notes pointing outside the repo (sdk, libc++) are dropped with their code lines.
+report=$(awk -v root="$root/" '
+	function flush() {
+		if (block != "" && !seen[head]++) printf "%s", block
+		block = ""
+	}
+	{ plain = $0; gsub(/\033\[[0-9;]*m/, "", plain) }
+	plain ~ /^[^ ].*: (warning|error): / { flush(); head = plain; skip = 0 }
+	plain ~ /^[^ ].*: note: / { skip = (index(plain, root) != 1) }
+	head != "" && !skip { block = block $0 "\n" }
+	END { flush() }' "$log")
+report=${report%$'\n'}
 if [[ -n $report ]]; then
 	echo "$report"
+	report=$(printf '%s\n' "$report" | sed $'s/\033\\[[0-9;]*m//g')
 	diag_files=$(echo "$report" | grep -oE '^[^ :]+:[0-9]+:[0-9]+: (warning|error)' | cut -d: -f1 | sort -u | wc -l | tr -d ' ')
 	diag_count=$(echo "$report" | grep -cE '^[^ ].*: (warning|error): ')
 	echo "$name: $diag_count diagnostics in $diag_files files (${#files[@]} files checked)"

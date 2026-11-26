@@ -37,7 +37,7 @@ namespace mythril {
 		};
 	} // namespace
 
-	void ImGuiPlugin::onInit(CTX& ctx, ImGuiPluginSpec spec) {
+	void ImGuiPlugin::onInit(CTX& ctx, const ImGuiPluginSpec& spec) {
 		ASSERT_MSG(_activePlugin == nullptr || _activePlugin == this, "Only one Mythril ImGui plugin can be active at a time.");
 
 		this->_requestedFormat = spec.format;
@@ -55,19 +55,20 @@ namespace mythril {
 #endif
 
 		VkDescriptorPoolSize pool_sizes[] = {
-			{VK_DESCRIPTOR_TYPE_SAMPLER, 1000},
-			{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000},
-			{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1000},
-			{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1000},
-			{VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1000},
-			{VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 1000},
-			{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000},
-			{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000},
-			{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1000},
-			{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 1000},
-			{VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1000}};
+			{ VK_DESCRIPTOR_TYPE_SAMPLER, 1000 },
+			{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000 },
+			{ VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1000 },
+			{ VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1000 },
+			{ VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1000 },
+			{ VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 1000 },
+			{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000 },
+			{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000 },
+			{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1000 },
+			{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 1000 },
+			{ VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1000 }
+		};
 
-		VkDescriptorPoolCreateInfo pool_info = {.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
+		VkDescriptorPoolCreateInfo pool_info = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO };
 		pool_info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
 		pool_info.maxSets = 1000;
 		pool_info.poolSizeCount = static_cast<uint32_t>(std::size(pool_sizes));
@@ -85,10 +86,8 @@ namespace mythril {
 			.DescriptorPool = this->_descriptorPool,
 			.MinImageCount = 2,
 			.ImageCount = kNUM_FRAMES_IN_FLIGHT,
-			.PipelineInfoMain =
-				{.MSAASamples = VK_SAMPLE_COUNT_1_BIT,
-					.PipelineRenderingCreateInfo =
-						{.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO, .pNext = nullptr, .colorAttachmentCount = 1, .pColorAttachmentFormats = &this->_requestedFormat}},
+			.PipelineInfoMain = { .MSAASamples = VK_SAMPLE_COUNT_1_BIT,
+				.PipelineRenderingCreateInfo = { .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO, .pNext = nullptr, .colorAttachmentCount = 1, .pColorAttachmentFormats = &this->_requestedFormat } },
 			.UseDynamicRendering = true,
 			.Allocator = nullptr,
 			.CheckVkResultFn = [](VkResult err) {
@@ -143,10 +142,10 @@ namespace mythril {
 		const detail::AllocatedTexture& texture = _ctx->view(texHandle);
 		ASSERT_MSG(texture.isSampledImage(), "Texture '{}' must have sampled flag!", texture.getDebugName());
 
-		const VkSampler sampler = samplerHandle.valid() ? _ctx->view(samplerHandle).getSampler() : _defaultSampler;
+		VkSampler sampler = samplerHandle.valid() ? _ctx->view(samplerHandle).getSampler() : _defaultSampler;
 		ScopedImGuiContext context(_backendContext);
 		VkDescriptorSet ds = ImGui_ImplVulkan_AddTexture(sampler, texture.getImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-		_imageDescriptors.insert({key, ds});
+		_imageDescriptors.insert({ key, ds });
 		return ds;
 	}
 
@@ -205,7 +204,7 @@ namespace mythril {
 		ImVec2 size;
 		if (image_size.x <= 0 && image_size.y <= 0) {
 			const Dimensions dims = plugin->_ctx->view(texHandle).getDimensions();
-			size = {static_cast<float>(dims.width), static_cast<float>(dims.height)};
+			size = { static_cast<float>(dims.width), static_cast<float>(dims.height) };
 		} else {
 			size = image_size;
 		}

@@ -15,18 +15,28 @@ find_tool() {
 	echo "$found"
 }
 
-# collect_files [files...]: sets the global array files to the given files, else every tracked c++ source
+source_include='^(lib|include|samples|tests|tools)/.*\.(cpp|cc|cxx|h|hpp)$'
+source_exclude='^(tests/push_layout/golden|build|\.cache)/'
+
+# collect_files [files...]: sets the global array files (absolute paths) to the given files, else every tracked file, keeping only c++ sources the tools own
 collect_files() {
+	local candidates=() f abs rel
 	if [[ $# -gt 0 ]]; then
-		files=("$@")
-		return
+		candidates=("$@")
+	else
+		while IFS= read -r f; do
+			candidates+=("$root/$f")
+		done < <(git -C "$root" ls-files)
 	fi
 	files=()
-	local f
-	while IFS= read -r f; do
-		files+=("$root/$f")
-	done < <(git -C "$root" ls-files -- lib include samples tests tools |
-		grep -E '\.(cpp|cc|cxx|h|hpp)$' | grep -vE '^tests/push_layout/golden/' || true)
+	for f in ${candidates[@]+"${candidates[@]}"}; do
+		[[ -f $f ]] || continue
+		abs=$(cd "$(dirname "$f")" && pwd)/$(basename "$f")
+		rel=${abs#"$root"/}
+		if [[ $rel =~ $source_include && ! $rel =~ $source_exclude ]]; then
+			files+=("$abs")
+		fi
+	done
 }
 
 report_clean() { echo "$name: nothing to fix ($1 files checked)"; }

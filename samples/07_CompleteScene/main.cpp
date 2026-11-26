@@ -171,7 +171,7 @@ struct AssetCompiled {
 };
 
 struct TextureData {
-	std::unique_ptr<uint8_t[], decltype(&stbi_image_free)> pixels{nullptr, stbi_image_free};
+	std::unique_ptr<uint8_t[], decltype(&stbi_image_free)> pixels{ nullptr, stbi_image_free };
 	uint32_t width;
 	uint32_t height;
 	uint32_t channels;
@@ -199,7 +199,7 @@ struct AssetData {
 				if (materialData[primitive.materialIndex].isTransparent) continue;
 				outPrim.push_back(primitive);
 			}
-			outMesh.push_back({outPrim});
+			outMesh.push_back({ outPrim });
 		}
 		return outMesh;
 	}
@@ -213,7 +213,7 @@ struct AssetData {
 				if (!materialData[primitive.materialIndex].isTransparent) continue;
 				outPrim.push_back(primitive);
 			}
-			outMesh.push_back({outPrim});
+			outMesh.push_back({ outPrim });
 		}
 		return outMesh;
 	}
@@ -223,7 +223,7 @@ static AssetData loadGLTFAsset(const std::filesystem::path& filepath) {
 	// 1. load asset
 	fastgltf::Parser parser;
 	auto data_result = fastgltf::GltfDataBuffer::FromPath(filepath);
-	SAMPLE_ASSERT_MSG(data_result.error() == fastgltf::Error::None, "Data load from path {} failed!", filepath.string().c_str());
+	SAMPLE_ASSERT_MSG(data_result.error() == fastgltf::Error::None, "Data load from path {} failed!", filepath.string());
 	fastgltf::GltfDataBuffer data = std::move(data_result.get());
 
 	constexpr fastgltf::Options options =
@@ -243,7 +243,7 @@ static AssetData loadGLTFAsset(const std::filesystem::path& filepath) {
 		case fastgltf::GltfType::Invalid:
 			assert(false);
 	}
-	SAMPLE_ASSERT_MSG(asset_result.error() == fastgltf::Error::None, "Error when validating {}", filepath.string().c_str());
+	SAMPLE_ASSERT_MSG(asset_result.error() == fastgltf::Error::None, "Error when validating {}", filepath.string());
 	fastgltf::Asset gltf = std::move(asset_result.get());
 
 	// 2. process asset
@@ -274,7 +274,7 @@ static AssetData loadGLTFAsset(const std::filesystem::path& filepath) {
 			material_data.roughnessMetallicTextureIndex = 0;
 		}
 		auto& base_color = material.pbrData.baseColorFactor;
-		material_data.baseColorFactor = {base_color.x(), base_color.y(), base_color.z(), base_color.w()};
+		material_data.baseColorFactor = { base_color.x(), base_color.y(), base_color.z(), base_color.w() };
 		material_data.isTransparent = material.alphaMode == fastgltf::AlphaMode::Blend || material.alphaMode == fastgltf::AlphaMode::Mask;
 		materials.push_back(material_data);
 	}
@@ -309,9 +309,9 @@ static AssetData loadGLTFAsset(const std::filesystem::path& filepath) {
 					shaders::Vertex vertex{};
 					vertex.position = v;
 					vertex.uv_x = 0;
-					vertex.normal = glm::vec3{1, 0, 0};
+					vertex.normal = glm::vec3{ 1, 0, 0 };
 					vertex.uv_y = 0;
-					vertex.tangent = glm::vec4{1.f};
+					vertex.tangent = glm::vec4{ 1.f };
 					vertices[initial_vertex + index] = vertex;
 				});
 
@@ -339,10 +339,10 @@ static AssetData loadGLTFAsset(const std::filesystem::path& filepath) {
 			}
 			int material_index = primitive.materialIndex.has_value() ? static_cast<int>(primitive.materialIndex.value()) : 0;
 			// store
-			primitives.push_back(PrimitiveData{vertices, indices, material_index});
+			primitives.push_back(PrimitiveData{ vertices, indices, material_index });
 		}
 		// store
-		meshes.emplace_back(MeshData{primitives});
+		meshes.emplace_back(MeshData{ primitives });
 	}
 
 	std::vector<TextureData> textures = {};
@@ -355,7 +355,7 @@ static AssetData loadGLTFAsset(const std::filesystem::path& filepath) {
 		int w, h, nChannels;
 		std::visit(fastgltf::visitor{
 					   [&](auto& args) {
-						   SAMPLE_ASSERT_MSG(false, "Unsupported image named: '{}' from gltf: '{}'", image.name, filepath.string().c_str());
+						   SAMPLE_ASSERT_MSG(false, "Unsupported image named: '{}' from gltf: '{}'", image.name, filepath.string());
 					   },
 					   [&](const fastgltf::sources::BufferView& view) {
 						   const fastgltf::BufferView& bufferView = gltf.bufferViews[view.bufferViewIndex];
@@ -367,12 +367,12 @@ static AssetData loadGLTFAsset(const std::filesystem::path& filepath) {
 												  reinterpret_cast<const stbi_uc*>(vector.bytes.data() + bufferView.byteOffset),
 												  static_cast<int>(bufferView.byteLength),
 												  &w, &h, &nChannels, 4);
-											  SAMPLE_ASSERT_MSG(image_data, "Failed to load data from image named: '{}' from gltf: '{}'", image.name, filepath.string().c_str());
+											  SAMPLE_ASSERT_MSG(image_data, "Failed to load data from image named: '{}' from gltf: '{}'", image.name, filepath.string());
 											  texture.width = w;
 											  texture.height = h;
 											  texture.channels = nChannels;
 											  texture.pixels.reset(image_data);
-										  }},
+										  } },
 							   buffer.data);
 					   },
 					   // this is the codepath basically most of sponza takes
@@ -381,7 +381,7 @@ static AssetData loadGLTFAsset(const std::filesystem::path& filepath) {
 							   reinterpret_cast<const stbi_uc*>(array.bytes.data()),
 							   static_cast<int>(array.bytes.size()),
 							   &w, &h, &nChannels, 4);
-						   SAMPLE_ASSERT_MSG(image_data, "Failed to load data from image named: '{}' from gltf: '{}'", image.name, filepath.string().c_str());
+						   SAMPLE_ASSERT_MSG(image_data, "Failed to load data from image named: '{}' from gltf: '{}'", image.name, filepath.string());
 						   texture.width = w;
 						   texture.height = h;
 						   texture.channels = nChannels;
@@ -392,7 +392,7 @@ static AssetData loadGLTFAsset(const std::filesystem::path& filepath) {
 							   reinterpret_cast<const stbi_uc*>(vector.bytes.data()),
 							   static_cast<int>(vector.bytes.size()),
 							   &w, &h, &nChannels, 4);
-						   SAMPLE_ASSERT_MSG(image_data, "Failed to load data from image named: '{}' from gltf: '{}'", image.name, filepath.string().c_str());
+						   SAMPLE_ASSERT_MSG(image_data, "Failed to load data from image named: '{}' from gltf: '{}'", image.name, filepath.string());
 						   texture.width = w;
 						   texture.height = h;
 						   texture.channels = nChannels;
@@ -404,16 +404,16 @@ static AssetData loadGLTFAsset(const std::filesystem::path& filepath) {
 
 						   const std::filesystem::path image_path = uri_source.uri.path();
 						   unsigned char* image_data = stbi_load(image_path.string().c_str(), &w, &h, &nChannels, 4);
-						   SAMPLE_ASSERT_MSG(image_data, "Failed to load data from image named: '{}' from gltf: '{}'", image.name, filepath.string().c_str());
+						   SAMPLE_ASSERT_MSG(image_data, "Failed to load data from image named: '{}' from gltf: '{}'", image.name, filepath.string());
 						   texture.width = w;
 						   texture.height = h;
 						   texture.channels = nChannels;
 						   texture.pixels.reset(image_data);
-					   }},
+					   } },
 			image.data);
 		textures.push_back(std::move(texture));
 	}
-	return AssetData{meshes, std::move(textures), std::move(materials)};
+	return AssetData{ meshes, std::move(textures), std::move(materials) };
 }
 
 static mythril::Texture loadTexture(mythril::CTX& ctx, const std::filesystem::path& filepath) {
@@ -423,14 +423,14 @@ static mythril::Texture loadTexture(mythril::CTX& ctx, const std::filesystem::pa
 	int w, h, nChannels;
 	unsigned char* image_data = stbi_load(filepath.string().c_str(), &w, &h, &nChannels, 4);
 	assert(image_data);
-	mythril::Texture texture = ctx.createTexture({.dimension = {static_cast<uint32_t>(w), static_cast<uint32_t>(h)},
+	mythril::Texture texture = ctx.createTexture({ .dimension = { static_cast<uint32_t>(w), static_cast<uint32_t>(h) },
 		.format = VK_FORMAT_R8G8B8A8_UNORM,
 		.usage = mythril::TextureUsageBits_Sampled,
 		.storage = mythril::StorageType::Device,
 		.numMipLevels = sample::CalcNumMipLevels(w, h),
 		.initialData = std::span(image_data, static_cast<size_t>(w) * h * 4),
 		.generateMipmaps = true,
-		.debugName = filepath.filename().string().c_str()});
+		.debugName = filepath.filename().string().c_str() });
 	stbi_image_free(image_data);
 	return texture;
 }
@@ -457,21 +457,21 @@ static AssetCompiled compileGLTFAsset(mythril::CTX& ctx, AssetData& data) {
 			MeshCompiled mesh_compiled;
 			mesh_compiled.materialIndex = primitive_data.materialIndex;
 
-			const mythril::BufferHandle mesh_vertex_buffer = ctx.createBuffer({.size = sizeof(shaders::Vertex) * primitive_data.vertexData.size(),
+			const mythril::BufferHandle mesh_vertex_buffer = ctx.createBuffer({ .size = sizeof(shaders::Vertex) * primitive_data.vertexData.size(),
 																				  .usage = mythril::BufferUsageBits::BufferUsageBits_Storage,
 																				  .storage = mythril::StorageType::Device,
 																				  .initialData = primitive_data.vertexData,
-																				  .debugName = vertex_name_buf})
+																				  .debugName = vertex_name_buf })
 			                                                     .release();
 			mesh_compiled.vertexBufHandle = mesh_vertex_buffer;
 			mesh_compiled.vertexAddress = ctx.gpuAddress(mesh_vertex_buffer);
 			mesh_compiled.vertexCount = primitive_data.vertexData.size();
 
-			const mythril::BufferHandle mesh_index_buffer = ctx.createBuffer({.size = sizeof(uint32_t) * primitive_data.indexData.size(),
+			const mythril::BufferHandle mesh_index_buffer = ctx.createBuffer({ .size = sizeof(uint32_t) * primitive_data.indexData.size(),
 																				 .usage = mythril::BufferUsageBits::BufferUsageBits_Index,
 																				 .storage = mythril::StorageType::Device,
 																				 .initialData = primitive_data.indexData,
-																				 .debugName = index_name_buf})
+																				 .debugName = index_name_buf })
 			                                                    .release();
 			mesh_compiled.indexBufHandle = mesh_index_buffer;
 			mesh_compiled.indexCount = primitive_data.indexData.size();
@@ -488,13 +488,13 @@ static AssetCompiled compileGLTFAsset(mythril::CTX& ctx, AssetData& data) {
 		mythril::TextureHandle texture_handle;
 		// our textures need to have mipmaps to prevent the shimmering
 		if (texture_data.pixels) {
-			texture_handle = ctx.createTexture({.dimension = {texture_data.width, texture_data.height},
+			texture_handle = ctx.createTexture({ .dimension = { texture_data.width, texture_data.height },
 												   .format = VK_FORMAT_R8G8B8A8_UNORM,
 												   .usage = mythril::TextureUsageBits::TextureUsageBits_Sampled,
 												   .numMipLevels = sample::CalcNumMipLevels(texture_data.width, texture_data.height),
 												   .initialData = std::span(texture_data.pixels.get(), static_cast<size_t>(texture_data.width) * texture_data.height * 4),
 												   .generateMipmaps = true,
-												   .debugName = texture_name_buf})
+												   .debugName = texture_name_buf })
 			                     .release();
 			// call stbi_image_free on our data now that its uploaded safely
 			texture_data.pixels.reset(nullptr);
@@ -573,7 +573,7 @@ struct GpuTimeline {
 };
 
 void DrawGpuTimeline(GpuTimeline& timeline) {
-	ImGui::SetNextWindowSize({1400, 300}, ImGuiCond_FirstUseEver);
+	ImGui::SetNextWindowSize({ 1400, 300 }, ImGuiCond_FirstUseEver);
 	const std::vector<GpuTimeline::Block>& blocks = timeline.showAverage ? timeline.averaged : timeline.latest;
 	if (!ImGui::Begin("GPU Timeline") || blocks.empty()) {
 		ImGui::End();
@@ -591,10 +591,10 @@ void DrawGpuTimeline(GpuTimeline& timeline) {
 	ImGui::Checkbox("Average (EMA)", &timeline.showAverage);
 
 	// indexed by PassDesc::Type
-	constexpr const char* kTypeNames[] = {"Graphics", "Compute", "Transfer", "Ray Tracing"};
-	constexpr ImU32 kFill[] = {IM_COL32(147, 196, 125, 255), IM_COL32(255, 217, 102, 255), IM_COL32(183, 183, 183, 255), IM_COL32(224, 102, 102, 255)};
+	constexpr const char* kTypeNames[] = { "Graphics", "Compute", "Transfer", "Ray Tracing" };
+	constexpr ImU32 kFill[] = { IM_COL32(147, 196, 125, 255), IM_COL32(255, 217, 102, 255), IM_COL32(183, 183, 183, 255), IM_COL32(224, 102, 102, 255) };
 
-	constexpr const char* kQueueNames[] = {"main", "async compute", "async transfer"};
+	constexpr const char* kQueueNames[] = { "main", "async compute", "async transfer" };
 	const float lineH = ImGui::GetTextLineHeight();
 	const float blockH = 3.f * lineH;
 	constexpr int kLabelLines = 4;
@@ -615,7 +615,7 @@ void DrawGpuTimeline(GpuTimeline& timeline) {
 		const float x0 = origin.x + gutter;
 		const float top = origin.y + kLabelLines * lineH;
 		const float bottom = top + blockH;
-		draw->AddText({origin.x, top + (blockH - lineH) * 0.5f}, text, kQueueNames[q]);
+		draw->AddText({ origin.x, top + (blockH - lineH) * 0.5f }, text, kQueueNames[q]);
 
 		// a label takes the innermost line it does not overlap on, or the least crowded one
 		std::array<float, kLabelLines> nameRight{};
@@ -627,30 +627,30 @@ void DrawGpuTimeline(GpuTimeline& timeline) {
 			const auto free = std::ranges::find_if(right, [&](const float r) { return left >= r; });
 			const int line = static_cast<int>((free != right.end() ? free : std::ranges::min_element(right)) - right.begin());
 			right[line] = left + textW + ImGui::GetStyle().ItemSpacing.x;
-			return std::pair{left, line};
+			return std::pair{ left, line };
 		};
 		for (const GpuTimeline::Block& b: blocks) {
 			if (static_cast<size_t>(b.queue) != q) continue;
-			const ImVec2 pMin{x0 + static_cast<float>(b.startMs) * scale, top};
-			const ImVec2 pMax{std::max(x0 + static_cast<float>(b.endMs) * scale, pMin.x + 1.f), bottom};
+			const ImVec2 pMin{ x0 + static_cast<float>(b.startMs) * scale, top };
+			const ImVec2 pMax{ std::max(x0 + static_cast<float>(b.endMs) * scale, pMin.x + 1.f), bottom };
 			draw->AddRectFilled(pMin, pMax, kFill[static_cast<size_t>(b.type)]);
 			draw->AddRect(pMin, pMax, border);
 			const float center = (pMin.x + pMax.x) * 0.5f;
 
 			const float nameW = ImGui::CalcTextSize(b.name.c_str()).x;
 			const auto [nameX, nameLine] = place(nameRight, center, nameW);
-			draw->AddText({nameX, top - (1.f + nameLine) * lineH}, text, b.name.c_str());
+			draw->AddText({ nameX, top - (1.f + nameLine) * lineH }, text, b.name.c_str());
 
 			char timeBuf[32];
 			std::snprintf(timeBuf, sizeof(timeBuf), "%.3f ms", b.endMs - b.startMs);
 			const float timeW = ImGui::CalcTextSize(timeBuf).x;
 			const auto [timeX, timeLine] = place(timeRight, center, timeW);
-			draw->AddText({timeX, bottom + timeLine * lineH}, text, timeBuf);
+			draw->AddText({ timeX, bottom + timeLine * lineH }, text, timeBuf);
 
 			if (ImGui::IsMouseHoveringRect(pMin, pMax))
 				ImGui::SetTooltip("%s\n%s on %s\nstart %.3f ms\nduration %.3f ms", b.name.c_str(), kTypeNames[static_cast<size_t>(b.type)], kQueueNames[q], b.startMs, b.endMs - b.startMs);
 		}
-		ImGui::Dummy({width + gutter, rowH});
+		ImGui::Dummy({ width + gutter, rowH });
 	}
 	ImGui::End();
 }
@@ -755,12 +755,12 @@ static void UpdatePointLightShadowMatrices(
 		glm::vec3 target;
 		glm::vec3 up;
 	} faceDirs[6] = {
-		{{1, 0, 0}, {0, -1, 0}}, // +X
-		{{-1, 0, 0}, {0, -1, 0}}, // -X
-		{{0, -1, 0}, {0, 0, -1}}, // -Y
-		{{0, 1, 0}, {0, 0, 1}}, // +Y
-		{{0, 0, 1}, {0, -1, 0}}, // +Z
-		{{0, 0, -1}, {0, -1, 0}} // -Z
+		{ { 1, 0, 0 }, { 0, -1, 0 } }, // +X
+		{ { -1, 0, 0 }, { 0, -1, 0 } }, // -X
+		{ { 0, -1, 0 }, { 0, 0, -1 } }, // -Y
+		{ { 0, 1, 0 }, { 0, 0, 1 } }, // +Y
+		{ { 0, 0, 1 }, { 0, -1, 0 } }, // +Z
+		{ { 0, 0, -1 }, { 0, -1, 0 } } // -Z
 	};
 	for (int i = 0; i < kNumPointLights; ++i) {
 		const glm::vec3& lightPos = lightingData.pointLights[i].position;
@@ -782,25 +782,25 @@ int main() {
 		               .set_vulkan_cfg({
 						   .app_name = "Cool App Name",
 						   .engine_name = "Cool Engine Name",
-						   .app_version = {0, 0, 1},
-						   .engine_version = {0, 0, 1},
+						   .app_version = { 0, 0, 1 },
+						   .engine_version = { 0, 0, 1 },
 						   .enableValidation = true,
-						   .deviceExtensionNames = {VK_EXT_MEMORY_BUDGET_EXTENSION_NAME},
+						   .deviceExtensionNames = { VK_EXT_MEMORY_BUDGET_EXTENSION_NAME },
 					   })
-		               .set_window_surface({.instanceExtensions = std::span(sdlExtensions, sdlExtensionCount),
+		               .set_window_surface({ .instanceExtensions = std::span(sdlExtensions, sdlExtensionCount),
 						   .createFunc = [sdlWindow](VkInstance instance) {
 				VkSurfaceKHR surface;
 				SDL_Vulkan_CreateSurface(sdlWindow, instance, nullptr, &surface);
 				return surface; },
-						   .destroyFunc = [](VkInstance instance, VkSurfaceKHR surface) { SDL_Vulkan_DestroySurface(instance, surface, nullptr); }})
+						   .destroyFunc = [](VkInstance instance, VkSurfaceKHR surface) { SDL_Vulkan_DestroySurface(instance, surface, nullptr); } })
 		               .with_default_swapchain({
 						   .width = initialWindowSize.width,
 						   .height = initialWindowSize.height,
 						   .presentMode = VK_PRESENT_MODE_IMMEDIATE_KHR,
 					   })
-		               .with_ImGui({.format = kOffscreenFormat,
+		               .with_ImGui({ .format = kOffscreenFormat,
 						   .windowInitFunction = [sdlWindow] { ImGui_ImplSDL3_InitForVulkan(sdlWindow); },
-						   .windowDestroyFunction = [] { ImGui_ImplSDL3_Shutdown(); }})
+						   .windowDestroyFunction = [] { ImGui_ImplSDL3_Shutdown(); } })
 		               .build();
 
 		static constexpr VkFormat kDepthFormat = VK_FORMAT_D32_SFLOAT;
@@ -811,71 +811,74 @@ int main() {
 			.r = mythril::Swizzle::Swizzle_R,
 			.g = mythril::Swizzle::Swizzle_R,
 			.b = mythril::Swizzle::Swizzle_R,
-			.a = mythril::Swizzle::Swizzle_1};
+			.a = mythril::Swizzle::Swizzle_1
+		};
 
-		mythril::Sampler repeatSampler = ctx->createSampler({.magFilter = mythril::SamplerFilter::Linear,
+		mythril::Sampler repeatSampler = ctx->createSampler({ .magFilter = mythril::SamplerFilter::Linear,
 			.minFilter = mythril::SamplerFilter::Linear,
 			.mipMap = mythril::SamplerMipMap::Linear,
 			.wrapU = mythril::SamplerWrap::Repeat,
 			.wrapV = mythril::SamplerWrap::Repeat,
 			.wrapW = mythril::SamplerWrap::Repeat,
-			.debugName = "Repeating Linear Mipmap Sampler"});
+			.debugName = "Repeating Linear Mipmap Sampler" });
 
 		// every shader is created here, so hot reload reloads each one from the file it came from
 		std::deque<std::pair<mythril::Shader, const char*>> loadedShaders;
 		const auto loadShader = [&](const char* file, const char* debugName) -> const mythril::Shader& {
-			return loadedShaders.emplace_back(ctx->createShader({.path = kDataDir / file, .debugName = debugName}), file).first;
+			return loadedShaders.emplace_back(ctx->createShader({ .path = kDataDir / file, .debugName = debugName }), file).first;
 		};
 		const mythril::Shader& shadowShader = loadShader(shaders::DepthOnly::kSpirvFile, "Shadow Shader");
 
-		mythril::GraphicsPipeline shadowPipeline = ctx->createGraphicsPipeline({.vertexShader = {shadowShader},
-			.fragmentShader = {shadowShader},
+		mythril::GraphicsPipeline shadowPipeline = ctx->createGraphicsPipeline({ .vertexShader = { shadowShader },
+			.fragmentShader = { shadowShader },
 			.cull = mythril::CullMode::OFF,
-			.debugName = "Shadow Graphics Pipeline"});
+			.debugName = "Shadow Graphics Pipeline" });
 
-		mythril::GraphicsPipeline depthPrepassPipeline = ctx->createGraphicsPipeline({.vertexShader = {shadowShader},
-			.fragmentShader = {shadowShader},
+		mythril::GraphicsPipeline depthPrepassPipeline = ctx->createGraphicsPipeline({ .vertexShader = { shadowShader },
+			.fragmentShader = { shadowShader },
 			.cull = mythril::CullMode::BACK,
 			.multisample = mythril::SampleCount::X4,
-			.debugName = "Depth Prepass Pipeline"});
+			.debugName = "Depth Prepass Pipeline" });
 
 		const mythril::Shader& redDebugShader = loadShader(shaders::RedDebug::kSpirvFile, "Red Shader");
-		mythril::GraphicsPipeline redDebugPipeline = ctx->createGraphicsPipeline({.vertexShader = {redDebugShader},
-			.fragmentShader = {redDebugShader},
-			.debugName = "Red Graphics Pipeline"});
+		mythril::GraphicsPipeline redDebugPipeline = ctx->createGraphicsPipeline({ .vertexShader = { redDebugShader },
+			.fragmentShader = { redDebugShader },
+			.debugName = "Red Graphics Pipeline" });
 
-		mythril::Buffer frameDataHandle = ctx->createBuffer({.size = sizeof(shaders::FrameData),
+		mythril::Buffer frameDataHandle = ctx->createBuffer({ .size = sizeof(shaders::FrameData),
 			.usage = mythril::BufferUsageBits::BufferUsageBits_Storage,
 			.storage = mythril::StorageType::Device,
-			.debugName = "frameData Buffer"});
+			.debugName = "frameData Buffer" });
 
-		mythril::Sampler clampSampler = ctx->createSampler({.magFilter = mythril::SamplerFilter::Linear,
+		mythril::Sampler clampSampler = ctx->createSampler({ .magFilter = mythril::SamplerFilter::Linear,
 			.minFilter = mythril::SamplerFilter::Linear,
 			.wrapU = mythril::SamplerWrap::ClampEdge,
 			.wrapV = mythril::SamplerWrap::ClampEdge,
-			.debugName = "Clamp Sampler"});
+			.debugName = "Clamp Sampler" });
 
 
 		const mythril::Shader& fullscreenCompositeShader = loadShader(shaders::FullscreenComposite::kSpirvFile, "Fullscreen Composite Shader");
-		mythril::GraphicsPipeline fullscreenCompositePipeline = ctx->createGraphicsPipeline({.vertexShader = {fullscreenCompositeShader},
-			.fragmentShader = {fullscreenCompositeShader},
+		mythril::GraphicsPipeline fullscreenCompositePipeline = ctx->createGraphicsPipeline({ .vertexShader = { fullscreenCompositeShader },
+			.fragmentShader = { fullscreenCompositeShader },
 			.cull = mythril::CullMode::OFF,
-			.debugName = "Fullscreen Composite Graphics Pipeline"});
+			.debugName = "Fullscreen Composite Graphics Pipeline" });
 
 		const uint16_t brightPixel = glm::packHalf1x16(0);
 		const mythril::TextureSpec lumtexspec0 = {
-			.dimension = {1, 1},
+			.dimension = { 1, 1 },
 			.format = VK_FORMAT_R16_SFLOAT,
 			.usage = mythril::TextureUsageBits::TextureUsageBits_Sampled | mythril::TextureUsageBits_Storage,
 			.storage = mythril::StorageType::Device,
 			.components = red_swizzle,
 			.initialData = brightPixel,
-			.debugName = "Luminance Adaptation 0"};
+			.debugName = "Luminance Adaptation 0"
+		};
 		mythril::TextureSpec lumtexspec1 = lumtexspec0;
 		lumtexspec1.debugName = "Luminance Adaptation 1";
 		mythril::Texture adaptedLuminanceTextures[2] = {
 			ctx->createTexture(lumtexspec0),
-			ctx->createTexture(lumtexspec1)};
+			ctx->createTexture(lumtexspec1)
+		};
 
 		// load gltf asset
 		AssetData sponzaData = loadGLTFAsset(kDataDir / "meshes/sponza/Sponza.gltf");
@@ -923,61 +926,61 @@ int main() {
 			}
 			opaqueDrawCount = indirect_mesh_data.size();
 			// once we have contigous data we can put them in a buffer like we normally do
-			opaqueSponzaVertexBuf = ctx->createBuffer({.size = allVertexData.size() * sizeof(shaders::Vertex),
+			opaqueSponzaVertexBuf = ctx->createBuffer({ .size = allVertexData.size() * sizeof(shaders::Vertex),
 				.usage = mythril::BufferUsageBits::BufferUsageBits_Storage,
 				.storage = mythril::StorageType::Device,
 				.initialData = allVertexData,
-				.debugName = "Sponza Opaque All Vertex Buf"});
-			opaqueSponzaIndexBuf = ctx->createBuffer({.size = allIndexData.size() * sizeof(uint32_t),
+				.debugName = "Sponza Opaque All Vertex Buf" });
+			opaqueSponzaIndexBuf = ctx->createBuffer({ .size = allIndexData.size() * sizeof(uint32_t),
 				.usage = mythril::BufferUsageBits::BufferUsageBits_Index,
 				.storage = mythril::StorageType::Device,
 				.initialData = allIndexData,
-				.debugName = "Sponza Opaque All Index Buf"});
+				.debugName = "Sponza Opaque All Index Buf" });
 
 			// we are not dependant on the buffers we created so the order here doesnt matter
 			uint32_t drawId = 0;
 			std::vector<VkDrawIndexedIndirectCommand> indirectCmds;
 			for (const IndirectMeshData& mesh: indirect_mesh_data) {
-				indirectCmds.push_back({.indexCount = mesh.indexCount,
+				indirectCmds.push_back({ .indexCount = mesh.indexCount,
 					.instanceCount = 1,
 					.firstIndex = mesh.firstIndex,
 					.vertexOffset = mesh.vertexOffset,
-					.firstInstance = drawId});
+					.firstInstance = drawId });
 				drawId++;
 			}
 			// make the indirect buffer object
-			opaqueSponzaIndirectBuf = ctx->createBuffer({.size = sizeof(VkDrawIndexedIndirectCommand) * indirectCmds.size(),
+			opaqueSponzaIndirectBuf = ctx->createBuffer({ .size = sizeof(VkDrawIndexedIndirectCommand) * indirectCmds.size(),
 				.usage = mythril::BufferUsageBits::BufferUsageBits_Indirect,
 				.storage = mythril::StorageType::Device,
 				.initialData = indirectCmds,
-				.debugName = "Sponza Indirect Buf"});
+				.debugName = "Sponza Indirect Buf" });
 		}
 
 		constexpr float kMODELSCALE = 0.05f;
 		constexpr float kReverseZFarDepth = 0.f;
 		mythril::RenderGraph graph;
-		GpuTimeline gpuTimeline{.pool = ctx->createQueryPool({.count = GpuTimeline::kSlots * 2 * GpuTimeline::kMaxGroups, .debugName = "GPU Timeline Queries"})};
-		const mythril::GraphTexture rgShadowMap = graph.createTexture({.size = mythril::Dimensions{shadow_map_size, shadow_map_size},
+		GpuTimeline gpuTimeline{ .pool = ctx->createQueryPool({ .count = GpuTimeline::kSlots * 2 * GpuTimeline::kMaxGroups, .debugName = "GPU Timeline Queries" }) };
+		const mythril::GraphTexture rgShadowMap = graph.createTexture({ .size = mythril::Dimensions{ shadow_map_size, shadow_map_size },
 			.format = kShadowFormat,
-			.debugName = "Shadow Map Texture"});
-		const mythril::GraphTexture rgMsaaColorTarget = graph.createTexture({.size = mythril::RelativeSize{},
+			.debugName = "Shadow Map Texture" });
+		const mythril::GraphTexture rgMsaaColorTarget = graph.createTexture({ .size = mythril::RelativeSize{},
 			.format = kOffscreenFormat,
 			.samples = mythril::SampleCount::X4,
-			.debugName = "MSAA Color Texture"});
-		const mythril::GraphTexture rgMsaaDepthTarget = graph.createTexture({.size = mythril::RelativeSize{},
+			.debugName = "MSAA Color Texture" });
+		const mythril::GraphTexture rgMsaaDepthTarget = graph.createTexture({ .size = mythril::RelativeSize{},
 			.format = kDepthFormat,
 			.samples = mythril::SampleCount::X4,
-			.debugName = "MSAA Depth Texture"});
-		const mythril::GraphTexture rgOffscreenColorTarget = graph.createTexture({.size = mythril::RelativeSize{}, .format = kOffscreenFormat, .debugName = "Offscreen Color Texture"});
-		const mythril::GraphTexture rgDepthTarget = graph.createTexture({.size = mythril::RelativeSize{}, .format = kDepthFormat, .debugName = "Offscreen Depth Texture"});
-		const mythril::GraphTexture rgFinalColorTarget = graph.createTexture({.size = mythril::RelativeSize{}, .format = kOffscreenFormat, .debugName = "Final Color Target (Takes in OffscreenColor)"});
+			.debugName = "MSAA Depth Texture" });
+		const mythril::GraphTexture rgOffscreenColorTarget = graph.createTexture({ .size = mythril::RelativeSize{}, .format = kOffscreenFormat, .debugName = "Offscreen Color Texture" });
+		const mythril::GraphTexture rgDepthTarget = graph.createTexture({ .size = mythril::RelativeSize{}, .format = kDepthFormat, .debugName = "Offscreen Depth Texture" });
+		const mythril::GraphTexture rgFinalColorTarget = graph.createTexture({ .size = mythril::RelativeSize{}, .format = kOffscreenFormat, .debugName = "Final Color Target (Takes in OffscreenColor)" });
 		const mythril::GraphTexture rgAdaptedLuminanceTextures[2] = {
 			graph.importTexture(adaptedLuminanceTextures[0]),
 			graph.importTexture(adaptedLuminanceTextures[1]),
 		};
 
 		shaders::LightingData lightingData = {};
-		lightingData.directionalLight.color = {1.0f, 1.0f, 0.97f};
+		lightingData.directionalLight.color = { 1.0f, 1.0f, 0.97f };
 		lightingData.directionalLight.intensity = 8.0f;
 		shaders::FrameData frameData{};
 
@@ -1002,23 +1005,23 @@ int main() {
 		for (int i = 0; i < kNumPointLights; i++) {
 			char debug_name[128];
 			snprintf(debug_name, sizeof(debug_name), "Point Light Shadow Tex %d", i);
-			pointLightShadowTex[i] = ctx->createTexture({.dimension = {pointLightShadowResolution, pointLightShadowResolution, 1},
+			pointLightShadowTex[i] = ctx->createTexture({ .dimension = { pointLightShadowResolution, pointLightShadowResolution, 1 },
 				.type = mythril::TextureType::Type_Cube,
 				.format = kShadowFormat,
 				.usage = mythril::TextureUsageBits_Attachment | mythril::TextureUsageBits_Sampled,
-				.debugName = debug_name});
+				.debugName = debug_name });
 			rgPointLightShadowTex[i] = graph.importTexture(pointLightShadowTex[i]);
 		}
 		const mythril::Shader& pointshadowShader = loadShader(shaders::PointShadow::kSpirvFile, "Point Shadow Map Shader");
-		mythril::GraphicsPipeline pointShadowGraphicsPipeline = ctx->createGraphicsPipeline({.vertexShader = pointshadowShader,
+		mythril::GraphicsPipeline pointShadowGraphicsPipeline = ctx->createGraphicsPipeline({ .vertexShader = pointshadowShader,
 			.fragmentShader = pointshadowShader,
 			.cull = mythril::CullMode::BACK,
-			.debugName = "Point Shadow Map Graphics Pipeline"});
+			.debugName = "Point Shadow Map Graphics Pipeline" });
 		// we need position data
-		lightingData.pointLights[0] = {{1.0f, 0.8f, 0.7f}, 10.0f, {10.0f, 3.0f, 2.0f}, 20.f};
-		lightingData.pointLights[1] = {{0.7f, 0.8f, 1.0f}, 9.0f, {-30.0f, 2.5f, -1.0f}, 50.f};
-		lightingData.pointLights[2] = {{0.7f, 1.0f, 0.7f}, 12.0f, {40.0f, 4.0f, -3.0f}, 14.f};
-		lightingData.pointLights[3] = {{1.0f, 0.0f, 0.1f}, 11.0f, {-40.0f, 1.0f, 4.0f}, 25.f};
+		lightingData.pointLights[0] = { { 1.0f, 0.8f, 0.7f }, 10.0f, { 10.0f, 3.0f, 2.0f }, 20.f };
+		lightingData.pointLights[1] = { { 0.7f, 0.8f, 1.0f }, 9.0f, { -30.0f, 2.5f, -1.0f }, 50.f };
+		lightingData.pointLights[2] = { { 0.7f, 1.0f, 0.7f }, 12.0f, { 40.0f, 4.0f, -3.0f }, 14.f };
+		lightingData.pointLights[3] = { { 1.0f, 0.0f, 0.1f }, 11.0f, { -40.0f, 1.0f, 4.0f }, 25.f };
 
 		const auto scaledModel = glm::scale(glm::mat4(1.0), glm::vec3(kMODELSCALE));
 
@@ -1035,50 +1038,50 @@ int main() {
 			pointlight_farplane,
 			shadowMatrices);
 
-		mythril::Buffer pointLightShadowMatrixBuf = ctx->createBuffer({.size = sizeof(glm::mat4) * kNumPointLights * 6,
+		mythril::Buffer pointLightShadowMatrixBuf = ctx->createBuffer({ .size = sizeof(glm::mat4) * kNumPointLights * 6,
 			.usage = mythril::BufferUsageBits::BufferUsageBits_Storage,
 			.storage = mythril::StorageType::Device,
 			.initialData = shadowMatrices,
-			.debugName = "Point Light Shadow Matrices Buffer"});
+			.debugName = "Point Light Shadow Matrices Buffer" });
 
 
 		shaders::LightingData lastFramelightingData{};
 
-		mythril::Sampler shadowSampler = ctx->createSampler({.wrapU = mythril::SamplerWrap::ClampBorder,
+		mythril::Sampler shadowSampler = ctx->createSampler({ .wrapU = mythril::SamplerWrap::ClampBorder,
 			.wrapV = mythril::SamplerWrap::ClampBorder,
 			.depthCompareEnabled = true,
 			.depthCompareOp = mythril::CompareOp::LessEqual,
-			.debugName = "Shadow Sampler Comparison"});
+			.debugName = "Shadow Sampler Comparison" });
 
 		const mythril::Shader& standardShader = loadShader(shaders::Standard::kSpirvFile, "Standard Shader");
-		mythril::GraphicsPipeline opaquePipeline = ctx->createGraphicsPipeline({.vertexShader = {standardShader},
-			.fragmentShader = {standardShader},
+		mythril::GraphicsPipeline opaquePipeline = ctx->createGraphicsPipeline({ .vertexShader = { standardShader },
+			.fragmentShader = { standardShader },
 			.blend = mythril::BlendingMode::OFF,
 			.cull = mythril::CullMode::BACK,
 			.multisample = mythril::SampleCount::X4,
-			.debugName = "Opaque Graphics Pipeline"});
+			.debugName = "Opaque Graphics Pipeline" });
 		// same shader as opaque, only blending and culling differ
-		mythril::GraphicsPipeline transparentPipeline = ctx->createGraphicsPipeline({.vertexShader = {standardShader},
-			.fragmentShader = {standardShader},
+		mythril::GraphicsPipeline transparentPipeline = ctx->createGraphicsPipeline({ .vertexShader = { standardShader },
+			.fragmentShader = { standardShader },
 			.blend = mythril::BlendingMode::ALPHA_BLEND,
 			.cull = mythril::CullMode::OFF,
 			.multisample = mythril::SampleCount::X4,
-			.debugName = "Transparent Graphics Pipeline"});
+			.debugName = "Transparent Graphics Pipeline" });
 		const mythril::Shader& skyShader = loadShader(shaders::Sky::kSpirvFile, "Sky Shader");
-		mythril::GraphicsPipeline skyPipeline = ctx->createGraphicsPipeline({.vertexShader = {skyShader},
-			.fragmentShader = {skyShader},
+		mythril::GraphicsPipeline skyPipeline = ctx->createGraphicsPipeline({ .vertexShader = { skyShader },
+			.fragmentShader = { skyShader },
 			.blend = mythril::BlendingMode::OFF,
 			.cull = mythril::CullMode::OFF,
 			.multisample = mythril::SampleCount::X4,
-			.debugName = "Sky Graphics Pipeline"});
+			.debugName = "Sky Graphics Pipeline" });
 
 		const mythril::Shader& particleShader = loadShader(shaders::Particles::kSpirvFile, "Ambient Particle Shader");
-		mythril::GraphicsPipeline particle_pipeline = ctx->createGraphicsPipeline({.vertexShader = particleShader,
+		mythril::GraphicsPipeline particle_pipeline = ctx->createGraphicsPipeline({ .vertexShader = particleShader,
 			.fragmentShader = particleShader,
 			.blend = mythril::BlendingMode::ALPHA_BLEND,
 			.cull = mythril::CullMode::OFF,
 			.multisample = mythril::SampleCount::X4,
-			.debugName = "Ambient Particle Pipeline"});
+			.debugName = "Ambient Particle Pipeline" });
 
 		auto particles = GenerateParticles(
 			5'000,
@@ -1086,27 +1089,27 @@ int main() {
 			glm::vec3(100.0f),
 			0.01f,
 			0.15f,
-			{66.f / 255.f, 60.f / 255.f, 50.f / 255.f},
+			{ 66.f / 255.f, 60.f / 255.f, 50.f / 255.f },
 			10.f,
 			0.1f,
 			0.1f);
 
-		mythril::Buffer particles_buffer = ctx->createBuffer({.size = particles.size() * sizeof(shaders::ParticleData),
+		mythril::Buffer particles_buffer = ctx->createBuffer({ .size = particles.size() * sizeof(shaders::ParticleData),
 			.usage = mythril::BufferUsageBits::BufferUsageBits_Storage,
 			.storage = mythril::StorageType::Device,
 			.initialData = particles,
-			.debugName = "Particle Buffer"});
+			.debugName = "Particle Buffer" });
 
-		mythril::Buffer particle_vertex_buffer = ctx->createBuffer({.size = Primitives::kHexVertices.size() * sizeof(Primitives::Vertex2D),
+		mythril::Buffer particle_vertex_buffer = ctx->createBuffer({ .size = Primitives::kHexVertices.size() * sizeof(Primitives::Vertex2D),
 			.usage = mythril::BufferUsageBits::BufferUsageBits_Storage,
 			.storage = mythril::StorageType::Device,
 			.initialData = Primitives::kHexVertices,
-			.debugName = "Quad Vertex Buffer"});
-		mythril::Buffer particle_index_buffer = ctx->createBuffer({.size = Primitives::kHexIndices.size() * sizeof(uint32_t),
+			.debugName = "Quad Vertex Buffer" });
+		mythril::Buffer particle_index_buffer = ctx->createBuffer({ .size = Primitives::kHexIndices.size() * sizeof(uint32_t),
 			.usage = mythril::BufferUsageBits::BufferUsageBits_Index,
 			.storage = mythril::StorageType::Device,
 			.initialData = Primitives::kHexIndices,
-			.debugName = "Quad Index Buffer"});
+			.debugName = "Quad Index Buffer" });
 
 		float particle_emission = 0.7f;
 		float particle_speed = 4.f;
@@ -1117,32 +1120,32 @@ int main() {
 		for (int i = 0; i < kNumColorMips; i++) {
 			char namebuf[64];
 			snprintf(namebuf, sizeof(namebuf), "Color Bloom Tex %i", i);
-			rgOffscreenColorTexs[i] = graph.createTexture({.size = mythril::RelativeSize{.scale = 1.f / static_cast<float>(2u << i)},
+			rgOffscreenColorTexs[i] = graph.createTexture({ .size = mythril::RelativeSize{ .scale = 1.f / static_cast<float>(2u << i) },
 				.format = VK_FORMAT_B10G11R11_UFLOAT_PACK32,
-				.debugName = namebuf});
+				.debugName = namebuf });
 		}
 		const mythril::Shader& downsampleComputeShader = loadShader(shaders::Downsample::kSpirvFile, "Downsample Compute Shader");
-		mythril::ComputePipeline downsampleComputePipeline = ctx->createComputePipeline({.shader = downsampleComputeShader.handle(),
-			.debugName = "Downsample Compute Pipeline"});
+		mythril::ComputePipeline downsampleComputePipeline = ctx->createComputePipeline({ .shader = downsampleComputeShader.handle(),
+			.debugName = "Downsample Compute Pipeline" });
 
 
 		const mythril::Shader& luminanceConversionShader = loadShader(shaders::ConversionLuminance::kSpirvFile, "Luminance Conversion Compute Shader");
-		mythril::ComputePipeline conversionLuminancePipeline = ctx->createComputePipeline({.shader = luminanceConversionShader.handle(),
-			.debugName = "Luminance Conversion Pipeline"});
-		const mythril::GraphTexture rgCurrentLuminanceTex = graph.createTexture({.size = mythril::Dimensions{1, 1, 1},
+		mythril::ComputePipeline conversionLuminancePipeline = ctx->createComputePipeline({ .shader = luminanceConversionShader.handle(),
+			.debugName = "Luminance Conversion Pipeline" });
+		const mythril::GraphTexture rgCurrentLuminanceTex = graph.createTexture({ .size = mythril::Dimensions{ 1, 1, 1 },
 			.format = VK_FORMAT_R8_UNORM,
 			.components = red_swizzle,
-			.debugName = "Luminance Current Texture"});
+			.debugName = "Luminance Current Texture" });
 
 		const mythril::Shader& upsampleComputeShader = loadShader(shaders::Upsample::kSpirvFile, "Upsample Compute Shader");
-		mythril::ComputePipeline upsampleComputePipeline = ctx->createComputePipeline({.shader = upsampleComputeShader.handle(),
-			.debugName = "Upsample Compute Pipeline"});
+		mythril::ComputePipeline upsampleComputePipeline = ctx->createComputePipeline({ .shader = upsampleComputeShader.handle(),
+			.debugName = "Upsample Compute Pipeline" });
 		float filter_radius = 1.f;
 		float blend = 1.f;
 
 		const mythril::Shader& adaptationShader = loadShader(shaders::Adaptation::kSpirvFile, "Adaptation Compute Shader");
-		mythril::ComputePipeline adaptationComputePipeline = ctx->createComputePipeline({.shader = adaptationShader.handle(),
-			.debugName = "Adaptation Compute Pipeline"});
+		mythril::ComputePipeline adaptationComputePipeline = ctx->createComputePipeline({ .shader = adaptationShader.handle(),
+			.debugName = "Adaptation Compute Pipeline" });
 
 
 		float adaptationSpeed = 1.5f;
@@ -1169,9 +1172,9 @@ int main() {
 		float uchimuraB = 0.0f;
 		float khronosStartCompression = 0.15f;
 		float khronosDesaturation = 0.15f;
-		glm::vec3 agxSlope = {1.f, 1.f, 1.f};
-		glm::vec3 agxOffset = {0.f, 0.f, 0.f};
-		glm::vec3 agxPower = {1.f, 1.f, 1.f};
+		glm::vec3 agxSlope = { 1.f, 1.f, 1.f };
+		glm::vec3 agxOffset = { 0.f, 0.f, 0.f };
+		glm::vec3 agxPower = { 1.f, 1.f, 1.f };
 		float agxSaturation = 1.f;
 
 		const mythril::GraphBuffer rgFrameData = graph.importBuffer(frameDataHandle);
@@ -1194,7 +1197,7 @@ int main() {
 			static void draw(const SponzaDraw& d, mythril::GraphicsCmd& cmd) {
 				cmd.cmdBindGraphicsPipeline(d.pipeline);
 				// opaque depth comes from depth_prepass, so only shade the surface that won
-				cmd.cmdBindDepthState(d.transparent ? mythril::DepthState{mythril::CompareOp::Greater, true} : mythril::DepthState{mythril::CompareOp::GreaterEqual, false});
+				cmd.cmdBindDepthState(d.transparent ? mythril::DepthState{ mythril::CompareOp::Greater, true } : mythril::DepthState{ mythril::CompareOp::GreaterEqual, false });
 				shaders::GeometryPushConstants push = d.push;
 				push.shadowTexture = cmd.texture(d.shadowMap);
 				for (int i = 0; i < kNumPointLights; i++)
@@ -1224,10 +1227,11 @@ int main() {
 				.model = scaledModel,
 				.mvp = projViewFromCamera * scaledModel,
 				.frame = ctx->gpuAddress(frameDataHandle),
-				.tintColor = {1, 1, 1, 1},
+				.tintColor = { 1, 1, 1, 1 },
 				.linearSampler = repeatSampler,
 				.shadowSamplerComparison = shadowSampler,
-				.pointLightFarPlane = pointlight_farplane};
+				.pointLightFarPlane = pointlight_farplane
+			};
 		};
 		struct DepthOnlyDraw {
 			mythril::GraphicsPipelineHandle pipeline;
@@ -1256,7 +1260,7 @@ int main() {
 			mythril::GraphTexture bloomMips[kNumColorMips];
 			std::ranges::copy(rgOffscreenColorTexs, bloomMips);
 			mythril::GraphTexture currentLuminance = rgCurrentLuminanceTex;
-			mythril::GraphTexture adaptedLuminance[2] = {rgAdaptedLuminanceTextures[0], rgAdaptedLuminanceTextures[1]};
+			mythril::GraphTexture adaptedLuminance[2] = { rgAdaptedLuminanceTextures[0], rgAdaptedLuminanceTextures[1] };
 			mythril::GraphTexture finalColor = rgFinalColorTarget;
 			mythril::GraphBuffer frameBuffer = rgFrameData;
 			mythril::GraphBuffer shadowMatrixBuffer = rgPointLightShadowMatrices;
@@ -1644,9 +1648,9 @@ int main() {
 				b.blit(finalColor, graph.backBuffer());
 			});
 		};
-		FlyCamera camera(sdlWindow, {0.f, 5.f, 0.f}, {.yaw = 0.f, .pitch = 0.f, .speed = 8.f, .farPlane = 200.f});
+		FlyCamera camera(sdlWindow, { 0.f, 5.f, 0.f }, { .yaw = 0.f, .pitch = 0.f, .speed = 8.f, .farPlane = 200.f });
 
-		lightingData.environmentLight.color = {0.25f, 0.30f, 0.35f};
+		lightingData.environmentLight.color = { 0.25f, 0.30f, 0.35f };
 		lightingData.environmentLight.intensity = 0.2f;
 
 		float dayTime = 0.25f; // 0..1 (0=midnight, 0.25=sunrise, 0.5=noon, 0.75=sunset)
@@ -1660,9 +1664,9 @@ int main() {
 			const glm::vec3 sunDir = sun_quaternion * glm::vec3(0.f, 0.f, -1.f);
 			const float sunUp = glm::max(0.f, -sunDir.y);
 			const float horizonT = glm::pow(1.f - glm::abs(sunDir.y), 6.f) * sunUp;
-			constexpr glm::vec3 noonColor = {1.00f, 0.97f, 0.90f};
-			constexpr glm::vec3 horizonColor = {1.00f, 0.45f, 0.10f};
-			constexpr glm::vec3 moonColor = {0.55f, 0.62f, 0.78f};
+			constexpr glm::vec3 noonColor = { 1.00f, 0.97f, 0.90f };
+			constexpr glm::vec3 horizonColor = { 1.00f, 0.45f, 0.10f };
+			constexpr glm::vec3 moonColor = { 0.55f, 0.62f, 0.78f };
 			const float moonUp = glm::max(0.f, sunDir.y);
 			// const float nightBlend = glm::smoothstep(0.0f, 0.12f, -sunDir.y);
 
@@ -1676,8 +1680,8 @@ int main() {
 				lightingData.directionalLight.direction = -sunDir;
 			}
 
-			constexpr glm::vec3 nightEnv = {0.02f, 0.03f, 0.09f};
-			constexpr glm::vec3 dayEnv = {0.22f, 0.32f, 0.52f};
+			constexpr glm::vec3 nightEnv = { 0.02f, 0.03f, 0.09f };
+			constexpr glm::vec3 dayEnv = { 0.22f, 0.32f, 0.52f };
 			lightingData.environmentLight.color = glm::mix(nightEnv, dayEnv, sunUp);
 			lightingData.environmentLight.intensity = glm::mix(0.05f, 0.28f, sunUp);
 		};
@@ -1693,8 +1697,8 @@ int main() {
 
 			const auto [width, height] = GetSDLWindowFramebufferSize(sdlWindow);
 			if (ctx->isSwapchainDirty()) {
-				ctx->recreateSwapchain({.width = width,
-					.height = height});
+				ctx->recreateSwapchain({ .width = width,
+					.height = height });
 			}
 
 			SDL_Event e;
@@ -1733,10 +1737,10 @@ int main() {
 				return viewPos / viewPos.z;
 			};
 			glm::mat4 invProj = glm::inverse(reversedCameraProj);
-			glm::vec3 view00 = UVToViewRay({0, 0}, invProj);
-			glm::vec3 view11 = UVToViewRay({1, 1}, invProj);
-			glm::vec2 ray00 = {view00.x / view00.z, view00.y / view00.z};
-			glm::vec2 ray11 = {view11.x / view11.z, view11.y / view11.z};
+			glm::vec3 view00 = UVToViewRay({ 0, 0 }, invProj);
+			glm::vec3 view11 = UVToViewRay({ 1, 1 }, invProj);
+			glm::vec2 ray00 = { view00.x / view00.z, view00.y / view00.z };
+			glm::vec2 ray11 = { view11.x / view11.z, view11.y / view11.z };
 			projViewFromCamera = reversedCameraProj * cameraView;
 			const shaders::CameraData cameraData = {
 				.projView = projViewFromCamera,
@@ -1748,7 +1752,8 @@ int main() {
 				.g_f2UVToViewA = ray11 - ray00,
 				.g_f2UVToViewB = ray00,
 				.farPlane = camera.farPlane(),
-				.nearPlane = camera.nearPlane()};
+				.nearPlane = camera.nearPlane()
+			};
 
 			ImGui_ImplVulkan_NewFrame();
 			ImGui_ImplSDL3_NewFrame();
@@ -1768,16 +1773,16 @@ int main() {
 
 			ImGuiWindowFlags window_flags = camera.mouseLook() ? ImGuiWindowFlags_NoMouseInputs : ImGuiWindowFlags_None;
 			ImGui::Begin("Previews", nullptr, window_flags);
-			ImGui::Image(rgShadowMap, {200, 200});
+			ImGui::Image(rgShadowMap, { 200, 200 });
 			ImGui::Text("Average Luminance");
-			ImGui::Image(adaptedLuminanceTextures[lumFlip], {100, 100});
+			ImGui::Image(adaptedLuminanceTextures[lumFlip], { 100, 100 });
 			// for (int face = 0; face < 6; face++) {
 			// ImGui::Image(pointLightShadowTex[0], pointLightShadowTex[0].getView(0, face), {200, 200});
 			// }
 			ImGui::Text("Progressively Blurred Color Targets");
 			for (int i = 0; i < kNumColorMips; i++) {
-				mythril::Dimensions dims = {320, 240};
-				ImGui::Image(rgOffscreenColorTexs[kNumColorMips - 1 - i], {static_cast<float>(dims.width), static_cast<float>(dims.height)});
+				mythril::Dimensions dims = { 320, 240 };
+				ImGui::Image(rgOffscreenColorTexs[kNumColorMips - 1 - i], { static_cast<float>(dims.width), static_cast<float>(dims.height) });
 			}
 			ImGui::End();
 
@@ -1862,8 +1867,8 @@ int main() {
 				ImGui::Text("Framebuffer Size: %dx%d", windowFramebufferSize.width, windowFramebufferSize.height);
 			}
 			ImGui::End();
-			ImGui::SetNextWindowPos({660, 60}, ImGuiCond_FirstUseEver);
-			ImGui::SetNextWindowSize({420, 420}, ImGuiCond_FirstUseEver);
+			ImGui::SetNextWindowPos({ 660, 60 }, ImGuiCond_FirstUseEver);
+			ImGui::SetNextWindowSize({ 420, 420 }, ImGuiCond_FirstUseEver);
 			ImGui::Begin("Render Graph");
 			if (ImGui::BeginTable("schedule", 5, ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_SizingFixedFit)) {
 				ImGui::TableSetupColumn("Pass");
@@ -1873,7 +1878,7 @@ int main() {
 				ImGui::TableSetupColumn("Culled");
 				ImGui::TableHeadersRow();
 				for (const mythril::ScheduledPass& pass: graph.schedule()) {
-					constexpr const char* kQueueNames[] = {"main", "async compute", "async transfer"};
+					constexpr const char* kQueueNames[] = { "main", "async compute", "async transfer" };
 					ImGui::TableNextRow();
 					ImGui::TableNextColumn();
 					ImGui::TextUnformatted(pass.name.c_str());
@@ -1926,7 +1931,8 @@ int main() {
 				.camera = cameraData,
 				.lighting = lightingData,
 				.time = elapsedTime,
-				.deltaTime = deltaTime};
+				.deltaTime = deltaTime
+			};
 
 			MYTH_PROFILER_ZONE("updating buffers cpu");
 			UpdateParticles(particles, deltaTime, particle_speed);

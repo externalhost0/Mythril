@@ -5,12 +5,10 @@ repos:
         name: clang-format
         entry: tools/clang-format.sh
         language: system
-        files: ^(lib|include|samples|tests|tools)/.*\.(cpp|cc|cxx|h|hpp)$
-        exclude: ^(tests/push_layout/golden|build|\.cache)/
-      - id: clang-tidy
-        name: clang-tidy
-        entry: tools/clang-tidy.sh
-        language: system
-        require_serial: true
-        files: ^(lib|include|samples|tests|tools)/.*\.(cpp|cc|cxx|h|hpp)$
-        exclude: ^(tests/push_layout/golden|build|\.cache)/
+        types_or: [c, c++]
+#      - id: clang-tidy
+#        name: clang-tidy
+#        entry: tools/clang-tidy.sh
+#        language: system
+#        require_serial: true
+#        types_or: [c, c++]

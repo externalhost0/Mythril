@@ -82,14 +82,6 @@ jobs:
           $sdk = "C:\VulkanSDK\$env:VULKAN_SDK_VERSION"
           "VULKAN_SDK=$sdk" >> $env:GITHUB_ENV
 
-      - name: List SDK spirv headers (temporary)
-        shell: bash
-        run: |
-          echo "VULKAN_SDK=$VULKAN_SDK"
-          ls "$VULKAN_SDK"
-          ls "$VULKAN_SDK"/[Ii]nclude
-          find "$VULKAN_SDK" -iname 'spirv.h' -o -iname 'spirv.hpp'
-
       - name: Set up MSVC
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1

@@ -45,23 +45,23 @@ namespace Helpers {
 		float h = hsv.x, s = hsv.y, v = hsv.z;
 
 		if (s == 0.0f) {
-			return glm::vec3(v, v, v);
+			return { v, v, v };
 		}
 
 		h = fmod(h, 360.0f) / 60.0f;
-		int i = (int)floor(h);
+		int i = static_cast<int>(floor(h));
 		float f = h - i;
 		float p = v * (1.0f - s);
 		float q = v * (1.0f - s * f);
 		float t = v * (1.0f - s * (1.0f - f));
 
 		switch (i) {
-			case 0: return glm::vec3(v, t, p);
-			case 1: return glm::vec3(q, v, p);
-			case 2: return glm::vec3(p, v, t);
-			case 3: return glm::vec3(p, q, v);
-			case 4: return glm::vec3(t, p, v);
-			default: return glm::vec3(v, p, q);
+			case 0: return { v, t, p };
+			case 1: return { q, v, p };
+			case 2: return { p, v, t };
+			case 3: return { p, q, v };
+			case 4: return { t, p, v };
+			default: return { v, p, q };
 		}
 	}
 }

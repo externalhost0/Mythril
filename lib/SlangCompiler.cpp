@@ -40,7 +40,7 @@ export T getDescriptorFromHandle<T : IOpaqueDescriptor>(DescriptorHandle<T> hand
 			.profile = compiler._globalSlangSession->findProfile("spirv_1_6"),
 		};
 		const auto option = [](const slang::CompilerOptionName name, const int value) {
-			return slang::CompilerOptionEntry{.name = name, .value = {.kind = slang::CompilerOptionValueKind::Int, .intValue0 = value}};
+			return slang::CompilerOptionEntry{ .name = name, .value = { .kind = slang::CompilerOptionValueKind::Int, .intValue0 = value } };
 		};
 		std::array entries = {
 			option(slang::CompilerOptionName::BindlessSpaceIndex, 0),
@@ -54,9 +54,11 @@ export T getDescriptorFromHandle<T : IOpaqueDescriptor>(DescriptorHandle<T> hand
 
 		// path::c_str() is wchar_t on Windows, slang wants char
 		std::vector<std::string> searchPaths;
+		searchPaths.reserve(options.searchPaths.size());
 		for (const std::filesystem::path& path: options.searchPaths)
 			searchPaths.push_back(path.string());
 		std::vector<const char*> searchPathPointers;
+		searchPathPointers.reserve(searchPaths.size());
 		for (const std::string& path: searchPaths)
 			searchPathPointers.push_back(path.c_str());
 
@@ -85,15 +87,14 @@ export T getDescriptorFromHandle<T : IOpaqueDescriptor>(DescriptorHandle<T> hand
 	}
 
 	static bool DeclaresBindlessOverride(slang::DeclReflection* moduleDecl) {
-		for (slang::DeclReflection* child: moduleDecl->getChildren()) {
+		auto children = moduleDecl->getChildren();
+		return std::any_of(children.begin(), children.end(), [](slang::DeclReflection* child) {
 			const auto kind = child->getKind();
 			if (kind != slang::DeclReflection::Kind::Func && kind != slang::DeclReflection::Kind::Generic)
-				continue;
+				return false;
 			const char* name = child->getName();
-			if (name && std::strcmp(name, kBindlessFunctionName) == 0)
-				return true;
-		}
-		return false;
+			return name && std::strcmp(name, kBindlessFunctionName) == 0;
+		});
 	}
 
 	std::string SlangCompiler::findBindlessOverride() const {
@@ -200,7 +201,7 @@ export T getDescriptorFromHandle<T : IOpaqueDescriptor>(DescriptorHandle<T> hand
 				continue;
 			const auto scalar = type->getScalarType();
 			if (scalar == slang::TypeReflection::ScalarType::Int32 || scalar == slang::TypeReflection::ScalarType::UInt32)
-				out.constants.push_back({variable->getName(), scalar == slang::TypeReflection::ScalarType::Int32, value, file});
+				out.constants.push_back({ variable->getName(), scalar == slang::TypeReflection::ScalarType::Int32, value, file });
 		}
 	}
 

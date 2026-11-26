@@ -51,7 +51,7 @@ namespace mythril {
 		VkShaderStageFlags vkShaderStageFlags = 0;
 		for (const SpirvLayout::EntryPoint& entryPoint: layout.entryPoints) {
 			const VkShaderStageFlagBits stage = ToShaderStage(entryPoint.model);
-			result.entryPoints.push_back({entryPoint.name, stage});
+			result.entryPoints.push_back({ entryPoint.name, stage });
 			vkShaderStageFlags |= stage;
 		}
 
@@ -66,7 +66,7 @@ namespace mythril {
 			info.size = layout.size(type->second);
 
 			result.specializationInfo.specializationConstants.emplace_back(info);
-			result.specializationInfo.nameToID.insert({info.varName, info.id});
+			result.specializationInfo.nameToID.insert({ info.varName, info.id });
 		}
 
 		result.pipelineLayoutSignature.usesBindless = std::ranges::any_of(layout.resourceVariables, [&](const SpirvLayout::Variable& variable) { return layout.descriptorSets.contains(variable.id) && layout.bindings.contains(variable.id); });
@@ -76,7 +76,7 @@ namespace mythril {
 			uint32_t offset = std::numeric_limits<uint32_t>::max();
 			for (uint32_t m = 0; m < layout.type(block).args.size(); ++m)
 				offset = std::min(offset, layout.offset(block, m).value_or(0));
-			result.pipelineLayoutSignature.pushes.push_back({.stageFlags = vkShaderStageFlags, .offset = offset, .size = layout.size(block) - offset});
+			result.pipelineLayoutSignature.pushes.push_back({ .stageFlags = vkShaderStageFlags, .offset = offset, .size = layout.size(block) - offset });
 		}
 
 		return result;
@@ -100,7 +100,7 @@ namespace mythril {
 #endif
 
 		// _vkShaderModule
-		VkShaderModuleCreateInfo create_info = {.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO, .pNext = nullptr};
+		VkShaderModuleCreateInfo create_info = { .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO, .pNext = nullptr };
 		create_info.flags = 0;
 		create_info.pCode = layout.words().data();
 		create_info.codeSize = layout.words().size_bytes();
@@ -144,7 +144,7 @@ namespace mythril {
 		if (!layout)
 			FATAL("Shader '{}' cannot load '{}'. {}", spec.debugName, spec.path.string(), error);
 		ShaderHandle handle = _shaderPool.create(buildShaderImpl(*layout, spec.debugName));
-		return {this, handle};
+		return { this, handle };
 	}
 
 #ifdef DEBUG
@@ -156,8 +156,8 @@ namespace mythril {
 	}
 	static void ForEachStage(const ComputePipelineSpec& spec, const auto& fn) { fn(spec.shader, kComputeEntryPoint, VK_SHADER_STAGE_COMPUTE_BIT); }
 	static void ForEachStage(const RayTracingPipelineSpec& spec, const auto& fn) {
-		for (const auto& [stages, bit]: {std::pair{&spec.rayGenShaders, VK_SHADER_STAGE_RAYGEN_BIT_KHR}, std::pair{&spec.missShaders, VK_SHADER_STAGE_MISS_BIT_KHR},
-				 std::pair{&spec.closestHitShaders, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR}, std::pair{&spec.callableShader, VK_SHADER_STAGE_CALLABLE_BIT_KHR}})
+		for (const auto& [stages, bit]: { std::pair{ &spec.rayGenShaders, VK_SHADER_STAGE_RAYGEN_BIT_KHR }, std::pair{ &spec.missShaders, VK_SHADER_STAGE_MISS_BIT_KHR },
+				 std::pair{ &spec.closestHitShaders, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR }, std::pair{ &spec.callableShader, VK_SHADER_STAGE_CALLABLE_BIT_KHR } })
 			for (const ShaderStage& stage: *stages)
 				fn(stage.handle, stage.entryPoint, bit);
 	}
@@ -224,6 +224,7 @@ namespace mythril {
 		AllocatedShader fresh = buildShaderImpl(*layout, current->_debugName);
 		const auto pushHashes = [](const AllocatedShader& s) {
 			std::vector<uint64_t> hashes;
+			hashes.reserve(s._pipelineSignature.pushBlocks.size());
 			for (const PushBlockLayout& block: s._pipelineSignature.pushBlocks)
 				hashes.push_back(block.hash);
 			std::ranges::sort(hashes);
@@ -297,11 +298,11 @@ namespace mythril {
 						CollectLeaves(field.fields.front(), shift + element * field.stride, name, out);
 					return;
 				case PushField::Kind::Pointer:
-					out.push_back({&field, std::string(name), field.offset + shift});
+					out.push_back({ &field, std::string(name), field.offset + shift });
 					return;
 				case PushField::Kind::Vector:
 					if (field.columns == 2 && field.scalar == ScalarKind::UInt && field.bits == 32)
-						out.push_back({&field, std::string(name), field.offset + shift});
+						out.push_back({ &field, std::string(name), field.offset + shift });
 					return;
 				default:
 					return;
@@ -334,7 +335,7 @@ namespace mythril {
 		private:
 			bool run() {
 				for (const SpirvLayout::Variable& variable: _layout.pushVariables)
-					_tags[variable.id] = {{0, _layout.size(_layout.pointee(variable.pointerType)), _layout.pointee(variable.pointerType), {}}};
+					_tags[variable.id] = { { 0, _layout.size(_layout.pointee(variable.pointerType)), _layout.pointee(variable.pointerType), {} } };
 				for (uint32_t pass = 0; pass < 64; ++pass) {
 					_changed = false;
 					for (const std::span<const uint32_t> inst: _body)
@@ -437,7 +438,7 @@ namespace mythril {
 						const std::optional<uint32_t> offset = known && *known < members.size() ? _layout.offset(range.type, *known) : std::nullopt;
 						if (!offset)
 							return false;
-						out.push_back({range.lo + *offset, range.lo + *offset + _layout.size(members[*known]), members[*known], {}});
+						out.push_back({ range.lo + *offset, range.lo + *offset + _layout.size(members[*known]), members[*known], {} });
 						return true;
 					}
 					case SpvOpTypeArray:
@@ -450,11 +451,11 @@ namespace mythril {
 						if (stride == 0 || last > length)
 							return false;
 						for (uint32_t element = first; element < last; ++element)
-							out.push_back({range.lo + element * stride, range.lo + (element + 1) * stride, a, {}});
+							out.push_back({ range.lo + element * stride, range.lo + (element + 1) * stride, a, {} });
 						return true;
 					}
 					case SpvOpTypeMatrix:
-						out.push_back({range.lo, range.hi, a, {}});
+						out.push_back({ range.lo, range.hi, a, {} });
 						return true;
 					default:
 						return false;
@@ -592,7 +593,7 @@ namespace mythril {
 					case SpvOpCompositeConstruct:
 						_resultType[w[2]] = w[1];
 						for (uint32_t k = 3; k < count; ++k)
-							add(w[2], prefixed(tagOf(w[k]), std::array{k - 3}));
+							add(w[2], prefixed(tagOf(w[k]), std::array{ k - 3 }));
 						return;
 					case SpvOpCopyObject:
 					case SpvOpCopyLogical:
@@ -794,7 +795,7 @@ namespace mythril {
 			// the node of an array element holds every element
 			leaves[i].node->kind = *kind;
 			leaves[i].node->access = MergeAccess(leaves[i].node->access, walk.access(i));
-			fields.push_back({std::move(leaves[i].name), leaves[i].offset, *kind, walk.access(i)});
+			fields.push_back({ std::move(leaves[i].name), leaves[i].offset, *kind, walk.access(i) });
 		}
 		std::ranges::sort(fields, {}, &PushResourceField::offset);
 		return fields;

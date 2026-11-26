@@ -29,7 +29,7 @@ namespace mythril {
 #ifdef MYTH_ENABLED_IMGUI
 	class ImGuiPlugin {
 	public:
-		void onInit(CTX& ctx, ImGuiPluginSpec spec);
+		void onInit(CTX& ctx, const ImGuiPluginSpec& spec);
 		void onDestroy();
 		bool isEnabled() const { return _isEnabeld; }
 		VkFormat getFormat() const { return _requestedFormat; }

@@ -2,7 +2,12 @@
 
 #include "mythril/Shader.h"
 
+#if __has_include(<spirv/unified1/spirv.h>)
 #include <spirv/unified1/spirv.h>
+#else
+// the windows sdk ships the headers flat under spirv-headers
+#include <spirv-headers/spirv.h>
+#endif
 
 #include <cstdint>
 #include <optional>

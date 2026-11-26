@@ -2,7 +2,6 @@
 #include "SpirvLayout.h"
 
 #include <slang/slang-com-ptr.h>
-#include <spirv/unified1/spirv.h>
 
 #include <fmt/format.h>
 #include <fmt/ranges.h>
@@ -23,19 +22,19 @@ namespace mythril {
 	static ScalarInfo Scalar(const slang::TypeReflection::ScalarType scalar) {
 		using S = slang::TypeReflection::ScalarType;
 		switch (scalar) {
-			case S::Bool: return {"bool", nullptr, 8};
-			case S::Int8: return {"int8_t", "int8_t", 8};
-			case S::UInt8: return {"uint8_t", "uint8_t", 8};
-			case S::Int16: return {"int16_t", "int16_t", 16};
-			case S::UInt16: return {"uint16_t", "uint16_t", 16};
-			case S::Float16: return {"half", "uint16_t", 16};
-			case S::Int32: return {"int", "int32_t", 32};
-			case S::UInt32: return {"uint", "uint32_t", 32};
-			case S::Int64: return {"int64_t", "int64_t", 64};
-			case S::UInt64: return {"uint64_t", "uint64_t", 64};
-			case S::Float32: return {"float", "float", 32};
-			case S::Float64: return {"double", "double", 64};
-			default: return {"?", nullptr, 32};
+			case S::Bool: return { "bool", nullptr, 8 };
+			case S::Int8: return { "int8_t", "int8_t", 8 };
+			case S::UInt8: return { "uint8_t", "uint8_t", 8 };
+			case S::Int16: return { "int16_t", "int16_t", 16 };
+			case S::UInt16: return { "uint16_t", "uint16_t", 16 };
+			case S::Float16: return { "half", "uint16_t", 16 };
+			case S::Int32: return { "int", "int32_t", 32 };
+			case S::UInt32: return { "uint", "uint32_t", 32 };
+			case S::Int64: return { "int64_t", "int64_t", 64 };
+			case S::UInt64: return { "uint64_t", "uint64_t", 64 };
+			case S::Float32: return { "float", "float", 32 };
+			case S::Float64: return { "double", "double", 64 };
+			default: return { "?", nullptr, 32 };
 		}
 	}
 
@@ -44,7 +43,7 @@ namespace mythril {
 		if (!type || SLANG_FAILED(type->getFullName(blob.writeRef())) || !blob)
 			return {};
 		const auto* text = static_cast<const char*>(blob->getBufferPointer());
-		return {text, strnlen(text, blob->getBufferSize())};
+		return { text, strnlen(text, blob->getBufferSize()) };
 	}
 
 	const ReflectedStruct* ReflectedTypes::find(const std::string_view name) const {
@@ -195,7 +194,7 @@ namespace mythril {
 	} // namespace
 
 	void ReflectPushTypes(slang::ProgramLayout* layout, const std::string_view origin, StructRegistry& registry, ReflectedTypes& out) {
-		TypeWalker walker{origin, registry, out};
+		TypeWalker walker{ origin, registry, out };
 		for (unsigned i = 0; i < layout->getParameterCount(); ++i) {
 			slang::VariableLayoutReflection* parameter = layout->getParameterByIndex(i);
 			if (parameter->getCategory() != slang::ParameterCategory::PushConstantBuffer)
@@ -207,7 +206,7 @@ namespace mythril {
 				continue;
 			walker.visitStruct(type);
 			if (std::ranges::find(out.pushBlocks, std::string_view(type->getName()), &ReflectedPushBlock::type) == out.pushBlocks.end())
-				out.pushBlocks.push_back({parameter->getName() ? parameter->getName() : "", type->getName()});
+				out.pushBlocks.push_back({ parameter->getName() ? parameter->getName() : "", type->getName() });
 		}
 		for (unsigned i = 0; i < layout->getEntryPointCount(); ++i) {
 			slang::EntryPointReflection* entryPoint = layout->getEntryPointByIndex(i);

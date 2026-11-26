@@ -61,7 +61,7 @@ namespace mythril {
 #ifdef DEBUG
 		ASSERT_PASS(std::ranges::binary_search(member.sortedDeclaredTextures, IdOf(texture), {}, IdOf), pass, "'{}' reads texture '{}' without declaring it.", member.name, rCtx.view(handle).getDebugName());
 #endif
-		return {handle, rCtx.getTextureDimensions(handle)};
+		return { handle, rCtx.getTextureDimensions(handle) };
 	}
 
 	GraphTexture RenderGraph::importTexture(const Texture& texture) {
@@ -69,11 +69,11 @@ namespace mythril {
 		ASSERT_MSG(!texture.getContext()->isSwapchainTexture(texture.handle()), "Swapchain images are not imported, use RenderGraph::backBuffer().");
 		for (uint32_t i = 0; i < _textures.size(); ++i) {
 			if (const auto* imported = std::get_if<ImportedTexture>(&_textures[i].source); imported && imported->handle == texture.handle())
-				return GraphTexture{i};
+				return GraphTexture{ i };
 		}
 		const AllocatedTexture& live = texture.getContext()->view(texture.handle());
-		_textures.push_back({ImportedTexture{texture.handle(), std::string(live.getDebugName()), live.getNumMips()}});
-		return GraphTexture{static_cast<uint32_t>(_textures.size() - 1)};
+		_textures.push_back({ ImportedTexture{ texture.handle(), std::string(live.getDebugName()), live.getNumMips() } });
+		return GraphTexture{ static_cast<uint32_t>(_textures.size() - 1) };
 	}
 
 	GraphTexture RenderGraph::importTexture(const Texture& texture, const ExternalAccess& external) {
@@ -91,10 +91,10 @@ namespace mythril {
 		ASSERT_MSG(buffer.valid(), "RenderGraph::importBuffer called with an invalid buffer.");
 		for (uint32_t i = 0; i < _buffers.size(); ++i) {
 			if (_buffers[i].handle == buffer.handle())
-				return GraphBuffer{i};
+				return GraphBuffer{ i };
 		}
-		_buffers.push_back({buffer.handle(), std::string(buffer.getContext()->view(buffer.handle()).getDebugName())});
-		return GraphBuffer{static_cast<uint32_t>(_buffers.size() - 1)};
+		_buffers.push_back({ buffer.handle(), std::string(buffer.getContext()->view(buffer.handle()).getDebugName()) });
+		return GraphBuffer{ static_cast<uint32_t>(_buffers.size() - 1) };
 	}
 
 	const std::vector<uint32_t>& RenderGraph::producersOf(const uint32_t id) const {
@@ -178,7 +178,7 @@ namespace mythril {
 		return isWrite(access) ? _rGraph.writeVersion(_passSource, texDesc.texture) : _rGraph.readVersion(_passSource, texDesc.texture);
 	}
 	GraphBuffer BasePassBuilder::declare(const GraphBuffer buffer, const BufferAccess access) {
-		_passSource.bufferDependencyOperations.push_back({buffer, _rGraph.handleOf(buffer), access});
+		_passSource.bufferDependencyOperations.push_back({ buffer, _rGraph.handleOf(buffer), access });
 		return isWrite(access) ? _rGraph.writeVersion(_passSource, buffer) : _rGraph.readVersion(_passSource, buffer);
 	}
 	GraphBuffer BasePassBuilder::dependency(const GraphBuffer buffer, const BufferAccess access) {
@@ -192,7 +192,7 @@ namespace mythril {
 	}
 	AttachmentOutput BasePassBuilder::attachment(const AttachmentDesc& desc) {
 		_passSource.attachmentOperations.push_back(desc);
-		AttachmentOutput out{.texture = _rGraph.writeVersion(_passSource, desc.texDesc.texture)};
+		AttachmentOutput out{ .texture = _rGraph.writeVersion(_passSource, desc.texDesc.texture) };
 		if (desc.resolveTexDesc.has_value())
 			out.resolve = _rGraph.writeVersion(_passSource, desc.resolveTexDesc->texture);
 		return out;
@@ -207,31 +207,31 @@ namespace mythril {
 			ASSERT_MSG(relative->extent._index < _extents.size(), "RenderGraph::createTexture: '{}' follows an extent from another RenderGraph.", spec.debugName);
 		}
 		ASSERT_MSG(spec.numMipLevels > 0 && spec.numLayers > 0, "RenderGraph::createTexture: '{}' needs at least one mip level and layer.", spec.debugName);
-		_textures.push_back({DeclaredTexture{.spec = std::move(spec)}});
+		_textures.push_back({ DeclaredTexture{ .spec = std::move(spec) } });
 		_hasCompiled = false;
-		return GraphTexture{static_cast<uint32_t>(_textures.size() - 1)};
+		return GraphTexture{ static_cast<uint32_t>(_textures.size() - 1) };
 	}
 
 	GraphTexture RenderGraph::backBuffer() {
 		for (uint32_t i = 0; i < _textures.size(); ++i) {
 			if (std::holds_alternative<SwapchainTexture>(_textures[i].source))
-				return GraphTexture{i};
+				return GraphTexture{ i };
 		}
-		_textures.push_back({SwapchainTexture{}});
-		return GraphTexture{static_cast<uint32_t>(_textures.size() - 1)};
+		_textures.push_back({ SwapchainTexture{} });
+		return GraphTexture{ static_cast<uint32_t>(_textures.size() - 1) };
 	}
 
 	GraphExtent RenderGraph::createExtent(const Dimensions dimensions) {
 		ASSERT_MSG(dimensions.width > 0 && dimensions.height > 0, "RenderGraph::createExtent needs a non zero extent.");
-		_extents.emplace_back(Dimensions{dimensions.width, dimensions.height, 1});
-		return GraphExtent{static_cast<uint32_t>(_extents.size() - 1)};
+		_extents.emplace_back(Dimensions{ dimensions.width, dimensions.height, 1 });
+		return GraphExtent{ static_cast<uint32_t>(_extents.size() - 1) };
 	}
 
 	void RenderGraph::setExtent(const GraphExtent extent, const Dimensions dimensions) {
 		ASSERT_MSG(extent != GraphExtent::swapchain(), "The swapchain extent follows CTX::recreateSwapchain and cannot be set.");
 		ASSERT_MSG(extent._index < _extents.size(), "GraphExtent does not belong to this RenderGraph.");
 		ASSERT_MSG(dimensions.width > 0 && dimensions.height > 0, "RenderGraph::setExtent needs a non zero extent.");
-		_extents[extent._index] = Dimensions{dimensions.width, dimensions.height, 1};
+		_extents[extent._index] = Dimensions{ dimensions.width, dimensions.height, 1 };
 	}
 
 	Dimensions RenderGraph::extentOf(const CTX& rCtx, const GraphExtent extent) const {
@@ -253,13 +253,13 @@ namespace mythril {
 	GraphTexture TransferBuilder::blit(TextureDesc src, TextureDesc dst) {
 		base.dependency(src, TextureAccess::TransferRead);
 		const GraphTexture out = base.dependency(dst, TextureAccess::TransferWrite);
-		base._passSource.transferOps.emplace_back(BlitOp{src.texture, dst.texture});
+		base._passSource.transferOps.emplace_back(BlitOp{ src.texture, dst.texture });
 		return out;
 	}
 	GraphTexture TransferBuilder::copy(TextureDesc src, TextureDesc dst) {
 		base.dependency(src, TextureAccess::TransferRead);
 		const GraphTexture out = base.dependency(dst, TextureAccess::TransferWrite);
-		base._passSource.transferOps.emplace_back(CopyOp{src.texture, dst.texture});
+		base._passSource.transferOps.emplace_back(CopyOp{ src.texture, dst.texture });
 		return out;
 	}
 
@@ -267,7 +267,7 @@ namespace mythril {
 		ASSERT_PASS(base._rGraph.handleOf(src) != base._rGraph.handleOf(dst), base._passSource, "TransferBuilder::copy: source and destination are the same buffer.");
 		base.dependency(src, BufferAccess::TransferRead);
 		const GraphBuffer out = base.dependency(dst, BufferAccess::TransferWrite);
-		base._passSource.transferOps.emplace_back(BufferCopyOp{base._rGraph.handleOf(src), base._rGraph.handleOf(dst)});
+		base._passSource.transferOps.emplace_back(BufferCopyOp{ base._rGraph.handleOf(src), base._rGraph.handleOf(dst) });
 		return out;
 	}
 	GraphBuffer TransferBuilder::readback(const TextureDesc src, const GraphBuffer dst) {
@@ -276,7 +276,7 @@ namespace mythril {
 		oneMip.baseLevel = src.baseLevel.value_or(0);
 		base.dependency(oneMip, TextureAccess::TransferRead);
 		const GraphBuffer out = base.dependency(dst, BufferAccess::TransferWrite);
-		base._passSource.transferOps.emplace_back(ReadbackOp{oneMip, base._rGraph.handleOf(dst)});
+		base._passSource.transferOps.emplace_back(ReadbackOp{ oneMip, base._rGraph.handleOf(dst) });
 		return out;
 	}
 	GraphTexture TransferBuilder::upload(const TextureDesc dst, const std::span<const std::byte> bytes) {
@@ -285,20 +285,20 @@ namespace mythril {
 		TextureDesc oneMip = dst;
 		oneMip.baseLevel = dst.baseLevel.value_or(0);
 		const GraphTexture out = base.dependency(oneMip, TextureAccess::TransferWrite);
-		base._passSource.transferOps.emplace_back(ImageUploadOp{oneMip, base._rGraph._arena.copy(bytes)});
+		base._passSource.transferOps.emplace_back(ImageUploadOp{ oneMip, base._rGraph._arena.copy(bytes) });
 		return out;
 	}
 	GraphTexture TransferBuilder::generateMipmaps(const GraphTexture texture) {
 		const uint32_t numMips = base._rGraph.mipCountOf(texture);
 		ASSERT_PASS(numMips > 1, base._passSource, "TransferBuilder::generateMipmaps: '{}' has only one mip level.", base._rGraph.nameOf(texture));
-		TextureDesc top{texture};
+		TextureDesc top{ texture };
 		top.baseLevel = 0;
-		TextureDesc rest{texture};
+		TextureDesc rest{ texture };
 		rest.baseLevel = 1;
 		rest.numLevels = numMips - 1;
 		base.dependency(top, TextureAccess::TransferRead);
 		const GraphTexture out = base.dependency(rest, TextureAccess::TransferWrite);
-		base._passSource.transferOps.emplace_back(GenerateMipsOp{texture});
+		base._passSource.transferOps.emplace_back(GenerateMipsOp{ texture });
 		return out;
 	}
 	GraphTexture TransferBuilder::dependency(const TextureDesc& texDesc, const TextureAccess access) {
@@ -315,13 +315,13 @@ namespace mythril {
 		ASSERT_PASS(bytes.size() % 4 == 0, base._passSource, "TransferBuilder::update size must be a multiple of 4 bytes.");
 		ASSERT_PASS(dstOffset % 4 == 0, base._passSource, "TransferBuilder::update offset must be a multiple of 4 bytes.");
 		const GraphBuffer out = base.dependency(buffer, BufferAccess::TransferWrite);
-		base._passSource.transferOps.emplace_back(UpdateOp{base._rGraph.handleOf(buffer), dstOffset, base._rGraph._arena.copy(bytes)});
+		base._passSource.transferOps.emplace_back(UpdateOp{ base._rGraph.handleOf(buffer), dstOffset, base._rGraph._arena.copy(bytes) });
 		return out;
 	}
 	GraphBuffer TransferBuilder::upload(const GraphBuffer buffer, const std::span<const std::byte> bytes, const size_t dstOffset) {
 		ASSERT_PASS(!bytes.empty(), base._passSource, "TransferBuilder::upload size must be greater than 0.");
 		const GraphBuffer out = base.dependency(buffer, BufferAccess::TransferWrite);
-		base._passSource.transferOps.emplace_back(UploadOp{base._rGraph.handleOf(buffer), dstOffset, base._rGraph._arena.copy(bytes)});
+		base._passSource.transferOps.emplace_back(UploadOp{ base._rGraph.handleOf(buffer), dstOffset, base._rGraph._arena.copy(bytes) });
 		return out;
 	}
 
@@ -348,18 +348,18 @@ namespace mythril {
 			}
 		}
 		const size_t blockSize = std::max(size, kArenaBlockSize);
-		_blocks.push_back({std::make_unique<std::byte[]>(blockSize), blockSize});
+		_blocks.push_back({ std::make_unique<std::byte[]>(blockSize), blockSize });
 		_offset = size;
 		return _blocks.back().bytes.get();
 	}
 	std::span<const std::byte> PassArena::copy(const std::span<const std::byte> bytes) {
 		auto* dst = static_cast<std::byte*>(allocate(bytes.size(), 1));
 		std::memcpy(dst, bytes.data(), bytes.size());
-		return {dst, bytes.size()};
+		return { dst, bytes.size() };
 	}
 	void PassArena::clear() {
-		for (auto it = _destructors.rbegin(); it != _destructors.rend(); ++it)
-			it->destroy(it->object);
+		for (auto& _destructor: std::views::reverse(_destructors))
+			_destructor.destroy(_destructor.object);
 		_destructors.clear();
 		_block = 0;
 		_offset = 0;
@@ -374,12 +374,12 @@ namespace mythril {
 		const uint32_t baseLayer = desc.baseLayer.value_or(0);
 		const uint32_t numLayers = desc.numLayers.value_or(desc.baseLayer.has_value() ? 1 : tex.getNumLayers());
 		const Dimensions full = tex.getDimensions();
-		const VkExtent3D extent = {std::max(1u, full.width >> mip), std::max(1u, full.height >> mip), std::max(1u, full.depth >> mip)};
+		const VkExtent3D extent = { std::max(1u, full.width >> mip), std::max(1u, full.height >> mip), std::max(1u, full.depth >> mip) };
 		const VkImageAspectFlags aspect = vkutil::AspectMaskFromFormat(tex.getFormat());
 		ASSERT_PASS(std::has_single_bit(aspect), pass, "'{}' has depth and stencil, which one copy cannot cover.", tex.getDebugName());
 		return {
-			.region = {.imageSubresource = {aspect, mip, baseLayer, numLayers}, .imageExtent = extent},
-			.bytes = VkDeviceSize{extent.width} * extent.height * extent.depth * numLayers * vkutil::GetBytesPerPixel(tex.getFormat()),
+			.region = { .imageSubresource = { aspect, mip, baseLayer, numLayers }, .imageExtent = extent },
+			.bytes = VkDeviceSize{ extent.width } * extent.height * extent.depth * numLayers * vkutil::GetBytesPerPixel(tex.getFormat()),
 		};
 	}
 	void RenderGraph::RecordReadback(CommandBuffer& cmd, const CompiledPass& pass, const ReadbackOp& op) const {
@@ -409,24 +409,24 @@ namespace mythril {
 		const uint32_t numMips = tex.getNumMips();
 		const uint32_t numLayers = tex.getNumLayers();
 		const Dimensions full = tex.getDimensions();
-		constexpr vkutil::StageAccess kWrite = {.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = VK_ACCESS_2_TRANSFER_WRITE_BIT};
-		constexpr vkutil::StageAccess kRead = {.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = VK_ACCESS_2_TRANSFER_READ_BIT};
+		constexpr vkutil::StageAccess kWrite = { .stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = VK_ACCESS_2_TRANSFER_WRITE_BIT };
+		constexpr vkutil::StageAccess kRead = { .stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = VK_ACCESS_2_TRANSFER_READ_BIT };
 		const auto extentOf = [&](const uint32_t mip) {
-			return VkOffset3D{std::max(1, static_cast<int32_t>(full.width >> mip)), std::max(1, static_cast<int32_t>(full.height >> mip)), std::max(1, static_cast<int32_t>(full.depth >> mip))};
+			return VkOffset3D{ std::max(1, static_cast<int32_t>(full.width >> mip)), std::max(1, static_cast<int32_t>(full.height >> mip)), std::max(1, static_cast<int32_t>(full.depth >> mip)) };
 		};
 		for (uint32_t i = 1; i < numMips; ++i) {
 			const VkImageBlit blit = {
-				.srcSubresource = {aspect, i - 1, 0, numLayers},
-				.srcOffsets = {{0, 0, 0}, extentOf(i - 1)},
-				.dstSubresource = {aspect, i, 0, numLayers},
-				.dstOffsets = {{0, 0, 0}, extentOf(i)},
+				.srcSubresource = { aspect, i - 1, 0, numLayers },
+				.srcOffsets = { { 0, 0, 0 }, extentOf(i - 1) },
+				.dstSubresource = { aspect, i, 0, numLayers },
+				.dstOffsets = { { 0, 0, 0 }, extentOf(i) },
 			};
 			vkCmdBlitImage(cmd, tex.getImage(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, tex.getImage(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, linear ? VK_FILTER_LINEAR : VK_FILTER_NEAREST);
 			if (i + 1 < numMips)
-				vkutil::ImageMemoryBarrier2(cmd, tex.getImage(), kWrite, kRead, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, {aspect, i, 1, 0, numLayers});
+				vkutil::ImageMemoryBarrier2(cmd, tex.getImage(), kWrite, kRead, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, { aspect, i, 1, 0, numLayers });
 		}
 		if (numMips > 2)
-			vkutil::ImageMemoryBarrier2(cmd, tex.getImage(), kRead, kWrite, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, {aspect, 1, numMips - 2, 0, numLayers});
+			vkutil::ImageMemoryBarrier2(cmd, tex.getImage(), kRead, kWrite, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, { aspect, 1, numMips - 2, 0, numLayers });
 	}
 
 	void RenderGraph::RecordTransferOps(CommandBuffer& cmd, const CompiledPass& pass) const {
@@ -466,7 +466,7 @@ namespace mythril {
 				ASSERT_PASS(src._vkUsageFlags & VK_BUFFER_USAGE_TRANSFER_SRC_BIT, pass, "TransferBuilder::copy: buffer '{}' was not created with TRANSFER_SRC usage.", src._debugName);
 				ASSERT_PASS(dst._vkUsageFlags & VK_BUFFER_USAGE_TRANSFER_DST_BIT, pass, "TransferBuilder::copy: buffer '{}' was not created with TRANSFER_DST usage.", dst._debugName);
 				ASSERT_PASS(src._bufferSize <= dst._bufferSize, pass, "TransferBuilder::copy: '{}' ({} bytes) does not fit in '{}' ({} bytes).", src._debugName, src._bufferSize, dst._debugName, dst._bufferSize);
-				const VkBufferCopy region = {.srcOffset = 0, .dstOffset = 0, .size = src._bufferSize};
+				const VkBufferCopy region = { .srcOffset = 0, .dstOffset = 0, .size = src._bufferSize };
 				vkCmdCopyBuffer(cmd._wrapper->_cmdBuf, src._vkBuffer, dst._vkBuffer, 1, &region);
 			} else if (const auto* readback = std::get_if<ReadbackOp>(&op)) {
 				RecordReadback(cmd, pass, *readback);
@@ -497,7 +497,7 @@ namespace mythril {
 		}
 	}
 	static constexpr VkImageSubresourceRange MakeVkRange(VkFormat fmt, SubresourceRange range) {
-		return {vkutil::AspectMaskFromFormat(fmt), range.baseMip, range.numMips, range.baseLayer, range.numLayers};
+		return { vkutil::AspectMaskFromFormat(fmt), range.baseMip, range.numMips, range.baseLayer, range.numLayers };
 	}
 	TextureShape RenderGraph::shapeOf(const CTX& rCtx, const GraphTexture texture) const {
 		if (const auto* declared = std::get_if<DeclaredTexture>(&ResourceOf(_textures, texture).source)) {
@@ -547,7 +547,7 @@ namespace mythril {
 			baseLayer + numLayers,
 			shape.numLayers);
 
-		return {baseMip, numMips, baseLayer, numLayers};
+		return { baseMip, numMips, baseLayer, numLayers };
 	}
 
 	static AttachmentTarget PlanAttachmentTarget(const TextureDesc& texDesc, const TextureShape& shape, const PassDesc& pass) {
@@ -590,22 +590,22 @@ namespace mythril {
 		switch (access) {
 			case TextureAccess::Sampled:
 			case TextureAccess::StorageRead:
-				return {.stage = shaderStages, .access = VK_ACCESS_2_SHADER_READ_BIT};
+				return { .stage = shaderStages, .access = VK_ACCESS_2_SHADER_READ_BIT };
 			case TextureAccess::StorageWrite:
-				return {.stage = shaderStages, .access = VK_ACCESS_2_SHADER_WRITE_BIT};
+				return { .stage = shaderStages, .access = VK_ACCESS_2_SHADER_WRITE_BIT };
 			case TextureAccess::StorageReadWrite:
-				return {.stage = shaderStages, .access = VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT};
+				return { .stage = shaderStages, .access = VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT };
 			case TextureAccess::TransferRead:
-				return {.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = VK_ACCESS_2_TRANSFER_READ_BIT};
+				return { .stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = VK_ACCESS_2_TRANSFER_READ_BIT };
 			case TextureAccess::TransferWrite:
-				return {.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = VK_ACCESS_2_TRANSFER_WRITE_BIT};
+				return { .stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = VK_ACCESS_2_TRANSFER_WRITE_BIT };
 		}
 		UNREACHABLE("Unsupported TextureAccess value.");
 	}
 	void RenderGraph::planResourceAccess(const CTX& rCtx, const TextureDesc& texDesc, VkImageLayout desiredLayout, const StageAccess& dstMask, CompiledPass& outPass, const PassDesc& pass, const bool keepsContents) const {
 		const SubresourceRange range = ResolveSubresourceRange(texDesc, shapeOf(rCtx, texDesc.texture), pass);
 		const bool firstDeclaredVersion = VersionOf(texDesc.texture) == 0 && std::holds_alternative<DeclaredTexture>(ResourceOf(_textures, texDesc.texture).source);
-		outPass.imageBarriers.push_back({.resource = BaseOf(texDesc.texture), .range = range, .dstLayout = desiredLayout, .dstMask = dstMask, .isSwapchain = IsBackBuffer(_textures, texDesc.texture), .keepsContents = keepsContents && !firstDeclaredVersion});
+		outPass.imageBarriers.push_back({ .resource = BaseOf(texDesc.texture), .range = range, .dstLayout = desiredLayout, .dstMask = dstMask, .isSwapchain = IsBackBuffer(_textures, texDesc.texture), .keepsContents = keepsContents && !firstDeclaredVersion });
 	}
 
 	void RenderGraph::planPassResources(const CTX& rCtx, const PassDesc& passDesc, CompiledPass& outPass) const {
@@ -621,7 +621,7 @@ namespace mythril {
 
 			if (attachment_desc.resolveTexDesc.has_value()) {
 				// resolves always write in color attachment output, even for depth/stencil
-				constexpr StageAccess resolveMask = {.stage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, .access = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT};
+				constexpr StageAccess resolveMask = { .stage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, .access = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT };
 				planResourceAccess(rCtx, attachment_desc.resolveTexDesc.value(), layout, resolveMask, outPass, passDesc, false);
 			}
 		}
@@ -732,7 +732,7 @@ namespace mythril {
 			max_width = std::max(max_width, width);
 			max_height = std::max(max_height, height);
 		}
-		outPass.renderArea = {{0, 0}, {max_width, max_height}};
+		outPass.renderArea = { { 0, 0 }, { max_width, max_height } };
 	}
 
 	void RenderGraph::bindPass(CTX& rCtx, CompiledPass& pass) const {
@@ -788,7 +788,7 @@ namespace mythril {
 				break;
 		}
 		if (!match) {
-			match = &entries.emplace_back(Entry{key, ctx.createTexture(spec)});
+			match = &entries.emplace_back(Entry{ key, ctx.createTexture(spec) });
 		}
 		match->taken = true;
 		match->lastUsedFrame = ctx.getCurrentFrameNumber();
@@ -873,11 +873,10 @@ namespace mythril {
 	// any of these would need a barrier between members, which a single rendering scope cannot hold
 	static bool HasMemberHazard(const PassResourceUse& group, const PassResourceUse& next) {
 		const auto writeConflict = [](const auto& a, const auto& b) {
-			for (const auto& [handle, written]: a) {
-				if (const auto it = b.find(handle); it != b.end() && (written || it->second))
-					return true;
-			}
-			return false;
+			return std::ranges::any_of(a, [&b](const auto& entry) {
+				const auto it = b.find(entry.first);
+				return it != b.end() && (entry.second || it->second);
+			});
 		};
 		for (const auto& [handle, written]: next.textures) {
 			if (group.attachments.contains(handle))
@@ -1041,14 +1040,14 @@ namespace mythril {
 		// a build records on a compute capable queue, the transfer queue cannot run it
 		const PassDesc::Type type = pass.type == PassDesc::Type::Transfer && HasOp<AccelerationStructureBuildOp>(pass) ? PassDesc::Type::Compute : pass.type;
 		if (pass.type == PassDesc::Type::Graphics)
-			return {type, "a graphics pass"};
+			return { type, "a graphics pass" };
 		if (HasOp<BlitOp>(pass))
-			return {type, "a blit"};
+			return { type, "a blit" };
 		if (HasOp<GenerateMipsOp>(pass))
-			return {type, "mip generation"};
+			return { type, "mip generation" };
 		if (std::ranges::any_of(pass.textureDependencyOperations, [&](const TextureDependencyDesc& dependency) { return IsBackBuffer(textures, dependency.texDesc.texture); }))
-			return {type, "the back buffer"};
-		return {type};
+			return { type, "the back buffer" };
+		return { type };
 	}
 
 	void RenderGraph::compile(CTX& rCtx) {
@@ -1071,12 +1070,12 @@ namespace mythril {
 		const std::vector<uint32_t> culled_order = _options.cull ? cull_unused_passes(declaration_order, edges.data, _passDescriptions, _textures) : declaration_order;
 #ifdef DEBUG
 		std::unordered_set<std::string> findings;
-		const auto isNew = [&](std::string key) { return findings.insert(key).second && !_findings.contains(key); };
+		const auto isNew = [&](const std::string& key) { return findings.insert(key).second && !_findings.contains(key); };
 		reportDeclarations(culled_order, passUses, findings);
 #endif
 
 		const auto usable = [&](const std::unique_ptr<ImmediateCommands>& imm) { return imm && _options.async; };
-		const AsyncQueues available{.compute = usable(rCtx._immAsyncCompute), .transfer = usable(rCtx._immAsyncTransfer)};
+		const AsyncQueues available{ .compute = usable(rCtx._immAsyncCompute), .transfer = usable(rCtx._immAsyncTransfer) };
 #ifdef DEBUG
 		const bool logRouting = !this->_hasReportedCompile && _options.async;
 #endif
@@ -1225,9 +1224,9 @@ namespace mythril {
 			const GraphTexture backBuffer = std::ranges::find_if(presenter->imageBarriers, &CompiledImageBarrier::isSwapchain)->resource;
 			presenter->exitBarriers.push_back({
 				.resource = backBuffer,
-				.range = {0, 1, 0, 1},
+				.range = { 0, 1, 0, 1 },
 				.dstLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-				.dstMask = {.stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, .access = VK_ACCESS_2_NONE},
+				.dstMask = { .stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, .access = VK_ACCESS_2_NONE },
 				.isSwapchain = true,
 			});
 		}
@@ -1272,12 +1271,12 @@ namespace mythril {
 			pass.batch = batches[compiled_idx].batch;
 			pass.batchWaits = batches[compiled_idx].waits;
 			for (const uint32_t pass_idx: pass.descIndices)
-				this->_scheduleView.push_back({.name = _passDescriptions[pass_idx].name, .type = _passDescriptions[pass_idx].type, .queue = pass.queue, .batch = pass.batch, .mergeGroup = compiled_idx});
+				this->_scheduleView.push_back({ .name = _passDescriptions[pass_idx].name, .type = _passDescriptions[pass_idx].type, .queue = pass.queue, .batch = pass.batch, .mergeGroup = compiled_idx });
 		}
 		for (uint32_t pass_idx = 0; pass_idx < _passDescriptions.size(); ++pass_idx) {
 			const PassDesc& desc = _passDescriptions[pass_idx];
 			if (descToCompiled[pass_idx] == kUnscheduled)
-				this->_scheduleView.push_back({.name = desc.name, .type = desc.type, .queue = QueueOf(QueueNeedOf(desc, _textures).type, desc.async, available), .culled = true});
+				this->_scheduleView.push_back({ .name = desc.name, .type = desc.type, .queue = QueueOf(QueueNeedOf(desc, _textures).type, desc.async, available), .culled = true });
 		}
 		if (planOwnership(rCtx)) {
 			realizeDeclared(rCtx, culled_order, confined);
@@ -1364,11 +1363,11 @@ namespace mythril {
 		std::vector<OwnershipPass> passes;
 		passes.reserve(_compiledPasses.size());
 		for (const CompiledPass& pass: _compiledPasses) {
-			OwnershipPass& owned = passes.emplace_back(OwnershipPass{familyOf(pass), {}});
+			OwnershipPass& owned = passes.emplace_back(OwnershipPass{ familyOf(pass), {} });
 			for (uint32_t b = 0; b < pass.imageBarriers.size(); ++b) {
 				const CompiledImageBarrier& barrier = pass.imageBarriers[b];
 				if (!barrier.isSwapchain && !rCtx.view(barrier.handle)._concurrent)
-					owned.uses.push_back({IdOf(barrier.resource), barrier.range, b, barrier.keepsContents});
+					owned.uses.push_back({ IdOf(barrier.resource), barrier.range, b, barrier.keepsContents });
 			}
 		}
 		OwnershipPlan plan = PlanOwnership(passes, graphicsFamily);
@@ -1433,9 +1432,9 @@ namespace mythril {
 	}
 
 	static TextureAccessCache& TrackerOf(std::unordered_map<TextureHandle, TextureAccessCache>& trackers, AllocatedTexture& texture, const TextureHandle handle) {
-		auto [it, inserted] = trackers.try_emplace(handle, TextureAccessCache{SubresourceMap<StageAccess>{texture.getNumMips(), texture.getNumLayers()}});
+		auto [it, inserted] = trackers.try_emplace(handle, TextureAccessCache{ SubresourceMap<StageAccess>{ texture.getNumMips(), texture.getNumLayers() } });
 		if (inserted || it->second.layoutVersion != texture.getLayoutVersion())
-			it->second.masks.set(it->second.masks.wholeRange(), {.stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, .access = VK_ACCESS_2_MEMORY_WRITE_BIT});
+			it->second.masks.set(it->second.masks.wholeRange(), { .stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, .access = VK_ACCESS_2_MEMORY_WRITE_BIT });
 		return it->second;
 	}
 
@@ -1443,11 +1442,11 @@ namespace mythril {
 		_externals.clear();
 		for (uint32_t i = 0; i < _textures.size(); ++i) {
 			if (_textures[i].external)
-				_externals.push_back({.texture = GraphTextureAccess::make(i), .access = *_textures[i].external});
+				_externals.push_back({ .texture = GraphTextureAccess::make(i), .access = *_textures[i].external });
 		}
 		for (const GraphBufferResource& buffer: _buffers) {
 			if (buffer.external)
-				_externals.push_back({.buffer = buffer.handle, .access = *buffer.external});
+				_externals.push_back({ .buffer = buffer.handle, .access = *buffer.external });
 		}
 		const uint32_t graphicsFamily = ImmOf(rCtx, QueueAffinity::Graphics).getQueueFamilyIndex();
 		for (uint32_t e = 0; e < _externals.size(); ++e) {
@@ -1476,9 +1475,9 @@ namespace mythril {
 				const TextureShape shape = shapeOf(rCtx, use.texture);
 				_compiledPasses[use.last].exitBarriers.push_back({
 					.resource = use.texture,
-					.range = {0, shape.numMips, 0, shape.numLayers},
+					.range = { 0, shape.numMips, 0, shape.numLayers },
 					.dstLayout = use.access.exitLayout,
-					.dstMask = {.stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, .access = VK_ACCESS_2_NONE},
+					.dstMask = { .stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, .access = VK_ACCESS_2_NONE },
 				});
 			}
 		}
@@ -1490,7 +1489,7 @@ namespace mythril {
 		if (access.waitSemaphore)
 			imm.waitTimeline(access.waitSemaphore, access.waitValue, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT);
 		const bool acquires = access.ownerFamily != VK_QUEUE_FAMILY_IGNORED && access.ownerFamily != imm.getQueueFamilyIndex();
-		constexpr StageAccess kAfterWait = {.stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, .access = VK_ACCESS_2_NONE};
+		constexpr StageAccess kAfterWait = { .stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, .access = VK_ACCESS_2_NONE };
 		if (!use.texture.valid()) {
 			_bufferTrackers[use.buffer] = {};
 			if (acquires) {
@@ -1503,14 +1502,14 @@ namespace mythril {
 					.buffer = cmd._ctx->view(use.buffer)._vkBuffer,
 					.size = VK_WHOLE_SIZE,
 				};
-				const VkDependencyInfo info = {.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO, .bufferMemoryBarrierCount = 1, .pBufferMemoryBarriers = &barrier};
+				const VkDependencyInfo info = { .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO, .bufferMemoryBarrierCount = 1, .pBufferMemoryBarriers = &barrier };
 				vkCmdPipelineBarrier2(cmd._wrapper->_cmdBuf, &info);
 			}
 			return;
 		}
 		const TextureHandle handle = ResolveHandle(_textures, *cmd._ctx, use.texture);
 		AllocatedTexture& texture = cmd._ctx->access(handle);
-		const SubresourceRange whole = {0, texture.getNumMips(), 0, texture.getNumLayers()};
+		const SubresourceRange whole = { 0, texture.getNumMips(), 0, texture.getNumLayers() };
 		// an UNDEFINED entry drops the contents, so the transfer is skipped
 		if (acquires && access.entryLayout != VK_IMAGE_LAYOUT_UNDEFINED) {
 			const VkImageMemoryBarrier2 barrier = {
@@ -1524,7 +1523,7 @@ namespace mythril {
 				.image = texture.getImage(),
 				.subresourceRange = MakeVkRange(texture.getFormat(), whole),
 			};
-			const VkDependencyInfo info = {.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO, .imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &barrier};
+			const VkDependencyInfo info = { .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO, .imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &barrier };
 			vkCmdPipelineBarrier2(cmd._wrapper->_cmdBuf, &info);
 		}
 		texture.setLayout(whole, access.entryLayout);
@@ -1536,7 +1535,7 @@ namespace mythril {
 	void RenderGraph::recordExternalExit(CommandBuffer& cmd, ImmediateCommands& imm, const ExternalUse& use) const {
 		const ExternalAccess& access = use.access;
 		if (access.ownerFamily != VK_QUEUE_FAMILY_IGNORED && access.ownerFamily != imm.getQueueFamilyIndex()) {
-			VkDependencyInfo info = {.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+			VkDependencyInfo info = { .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO };
 			VkBufferMemoryBarrier2 bufferBarrier{};
 			VkImageMemoryBarrier2 imageBarrier{};
 			if (!use.texture.valid()) {
@@ -1562,7 +1561,7 @@ namespace mythril {
 					.srcQueueFamilyIndex = imm.getQueueFamilyIndex(),
 					.dstQueueFamilyIndex = access.ownerFamily,
 					.image = texture.getImage(),
-					.subresourceRange = MakeVkRange(texture.getFormat(), {0, texture.getNumMips(), 0, texture.getNumLayers()}),
+					.subresourceRange = MakeVkRange(texture.getFormat(), { 0, texture.getNumMips(), 0, texture.getNumLayers() }),
 				};
 				info.imageMemoryBarrierCount = 1;
 				info.pImageMemoryBarriers = &imageBarrier;
@@ -1602,20 +1601,21 @@ namespace mythril {
 				.subresourceRange = MakeVkRange(texture.getFormat(), range),
 			});
 		});
-		const VkDependencyInfo dependency = {.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO, .imageMemoryBarrierCount = static_cast<uint32_t>(barriers.size()), .pImageMemoryBarriers = barriers.data()};
+		const VkDependencyInfo dependency = { .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO, .imageMemoryBarrierCount = static_cast<uint32_t>(barriers.size()), .pImageMemoryBarriers = barriers.data() };
 		vkCmdPipelineBarrier2(cmd._wrapper->_cmdBuf, &dependency);
 		if (!returns)
 			texture.setLayout(transfer.range, target.dstLayout);
-		cache.masks.set(transfer.range, {.stage = VK_PIPELINE_STAGE_2_NONE, .access = VK_ACCESS_2_NONE});
+		cache.masks.set(transfer.range, { .stage = VK_PIPELINE_STAGE_2_NONE, .access = VK_ACCESS_2_NONE });
 		cache.layoutVersion = texture.getLayoutVersion();
 	}
 
 	void RenderGraph::recordAcquire(CommandBuffer& cmd, const OwnershipTransfer& transfer) {
 		const bool returns = transfer.acquirePass == OwnershipTransfer::kFrameEnd;
 		const CompiledImageBarrier& target = returns ? _compiledPasses[transfer.releasePass].imageBarriers[transfer.releaseBarrier] : _compiledPasses[transfer.acquirePass].imageBarriers[transfer.acquireBarrier];
-		const StageAccess dst = returns ? StageAccess{.stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, .access = VK_ACCESS_2_NONE} : target.dstMask;
+		const StageAccess dst = returns ? StageAccess{ .stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, .access = VK_ACCESS_2_NONE } : target.dstMask;
 		AllocatedTexture& texture = cmd._ctx->access(target.handle);
 		std::vector<VkImageMemoryBarrier2> barriers;
+		barriers.reserve(transfer.recordedLayouts.size());
 		for (const auto& [range, layout]: transfer.recordedLayouts) {
 			barriers.push_back({
 				.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
@@ -1631,7 +1631,7 @@ namespace mythril {
 				.subresourceRange = MakeVkRange(texture.getFormat(), range),
 			});
 		}
-		const VkDependencyInfo dependency = {.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO, .imageMemoryBarrierCount = static_cast<uint32_t>(barriers.size()), .pImageMemoryBarriers = barriers.data()};
+		const VkDependencyInfo dependency = { .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO, .imageMemoryBarrierCount = static_cast<uint32_t>(barriers.size()), .pImageMemoryBarriers = barriers.data() };
 		vkCmdPipelineBarrier2(cmd._wrapper->_cmdBuf, &dependency);
 		TextureAccessCache& cache = TrackerOf(_resourceTrackers, texture, target.handle);
 		cache.masks.set(transfer.range, dst);
@@ -1645,12 +1645,12 @@ namespace mythril {
 
 		// per-pass scratch lives on the stack and only spills to the heap for unusually large passes
 		std::array<std::byte, 8192> scratch{};
-		std::pmr::monotonic_buffer_resource arena{scratch.data(), scratch.size()};
-		std::pmr::vector<VkImageMemoryBarrier2> vkImageBarriers{&arena};
+		std::pmr::monotonic_buffer_resource arena{ scratch.data(), scratch.size() };
+		std::pmr::vector<VkImageMemoryBarrier2> vkImageBarriers{ &arena };
 		vkImageBarriers.reserve(imageBarriers.size());
-		std::pmr::vector<VkBufferMemoryBarrier2> vkBufferBarriers{&arena};
+		std::pmr::vector<VkBufferMemoryBarrier2> vkBufferBarriers{ &arena };
 		vkBufferBarriers.reserve(bufferBarriers.size());
-		std::pmr::vector<SubresourceMap<StageAccess>::Entry> mergedReads{&arena};
+		std::pmr::vector<SubresourceMap<StageAccess>::Entry> mergedReads{ &arena };
 		for (const CompiledImageBarrier& req: imageBarriers) {
 			// we have to update the image associated if its a swapchain image
 			// as it changes every frame
@@ -1671,11 +1671,11 @@ namespace mythril {
 					const StageAccess currentMask = ClampToQueue(*cmd._ctx, cmd._queue, trackedMask);
 					if (!req.discardContents && !NeedsBarrier(currentLayout, currentMask, req.dstLayout, req.dstMask)) {
 						// a later write must wait on every reader since the last barrier
-						mergedReads.push_back({range, {.stage = trackedMask.stage | req.dstMask.stage, .access = trackedMask.access | req.dstMask.access}});
+						mergedReads.push_back({ range, { .stage = trackedMask.stage | req.dstMask.stage, .access = trackedMask.access | req.dstMask.access } });
 						return;
 					}
 					vkImageBarriers.push_back(
-						{.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+						{ .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
 							.srcStageMask = currentMask.stage,
 							.srcAccessMask = currentMask.access,
 							.dstStageMask = req.dstMask.stage,
@@ -1685,7 +1685,7 @@ namespace mythril {
 							.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
 							.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
 							.image = activeTexture.getImage(),
-							.subresourceRange = MakeVkRange(activeTexture.getFormat(), range)});
+							.subresourceRange = MakeVkRange(activeTexture.getFormat(), range) });
 				});
 			});
 			cache.masks.set(req.range, req.dstMask);
@@ -1702,7 +1702,7 @@ namespace mythril {
 				continue;
 			barrier->src = ClampToQueue(*cmd._ctx, cmd._queue, barrier->src);
 			const AllocatedBuffer& buffer = cmd._ctx->view(req.handle);
-			vkBufferBarriers.push_back({.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
+			vkBufferBarriers.push_back({ .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
 				.srcStageMask = barrier->src.stage,
 				.srcAccessMask = barrier->src.access,
 				.dstStageMask = barrier->dst.stage,
@@ -1711,7 +1711,7 @@ namespace mythril {
 				.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
 				.buffer = buffer._vkBuffer,
 				.offset = 0,
-				.size = VK_WHOLE_SIZE});
+				.size = VK_WHOLE_SIZE });
 		}
 		if (!vkImageBarriers.empty() || !vkBufferBarriers.empty()) {
 			const VkDependencyInfo dependencyInfo = {
@@ -1720,7 +1720,8 @@ namespace mythril {
 				.bufferMemoryBarrierCount = static_cast<uint32_t>(vkBufferBarriers.size()),
 				.pBufferMemoryBarriers = vkBufferBarriers.data(),
 				.imageMemoryBarrierCount = static_cast<uint32_t>(vkImageBarriers.size()),
-				.pImageMemoryBarriers = vkImageBarriers.data()};
+				.pImageMemoryBarriers = vkImageBarriers.data()
+			};
 			vkCmdPipelineBarrier2(cmd._wrapper->_cmdBuf, &dependencyInfo);
 		}
 	}
@@ -1741,7 +1742,7 @@ namespace mythril {
 
 	std::string RenderGraph::dump() const {
 		ASSERT_MSG(_hasCompiled, "RenderGraph::dump needs a compile since the last reset.");
-		constexpr std::array<const char*, kQueueCount> kQueueNames{"main", "async compute", "async transfer"};
+		constexpr std::array<const char*, kQueueCount> kQueueNames{ "main", "async compute", "async transfer" };
 		const auto escape = [](const std::string_view text) {
 			std::string out;
 			for (const char c: text) {
@@ -1833,17 +1834,17 @@ namespace mythril {
 			vkGetPhysicalDeviceQueueFamilyProperties(rCtx._vkPhysicalDevice, &familyCount, nullptr);
 			std::vector<VkQueueFamilyProperties> families(familyCount);
 			vkGetPhysicalDeviceQueueFamilyProperties(rCtx._vkPhysicalDevice, &familyCount, families.data());
-			const std::array<uint32_t, kQueueCount> familyOf{rCtx._graphicsQueueFamilyIndex, rCtx._computeQueueFamilyIndex, rCtx._transferQueueFamilyIndex};
+			const std::array<uint32_t, kQueueCount> familyOf{ rCtx._graphicsQueueFamilyIndex, rCtx._computeQueueFamilyIndex, rCtx._transferQueueFamilyIndex };
 			for (size_t q = 0; q < kQueueCount; ++q)
 				stampsQueue[q] = familyOf[q] < familyCount && families[familyOf[q]].timestampValidBits > 0;
 		}
 
 		constexpr uint32_t kNone = BatchSlot::kNone;
-		const std::array<ImmediateCommands*, kQueueCount> imms{rCtx._immGraphics.get(), rCtx._immAsyncCompute.get(), rCtx._immAsyncTransfer.get()};
+		const std::array<ImmediateCommands*, kQueueCount> imms{ rCtx._immGraphics.get(), rCtx._immAsyncCompute.get(), rCtx._immAsyncTransfer.get() };
 		// main records into the CTX's command buffer, pipeline creation reads its active pass
 		std::array<CommandBuffer, kQueueCount> asyncLanes;
-		std::array<CommandBuffer*, kQueueCount> lanes{acquired, nullptr, nullptr};
-		std::array<uint32_t, kQueueCount> laneBatch{0, kNone, kNone};
+		std::array<CommandBuffer*, kQueueCount> lanes{ acquired, nullptr, nullptr };
+		std::array<uint32_t, kQueueCount> laneBatch{ 0, kNone, kNone };
 		std::array<std::vector<uint64_t>, kQueueCount> signaled;
 		const auto submitLane = [&](const size_t q) {
 			CommandBuffer& lane = *lanes[q];
@@ -1909,7 +1910,7 @@ namespace mythril {
 					.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
 					.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT,
 				};
-				const VkDependencyInfo full = {.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO, .memoryBarrierCount = 1, .pMemoryBarriers = &kFull};
+				const VkDependencyInfo full = { .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO, .memoryBarrierCount = 1, .pMemoryBarriers = &kFull };
 				vkCmdPipelineBarrier2(cmd._wrapper->_cmdBuf, &full);
 			}
 			// perform batched vkCmdPipelineBarrier
@@ -1981,7 +1982,7 @@ namespace mythril {
 				.dstStageMask = VK_PIPELINE_STAGE_2_HOST_BIT,
 				.dstAccessMask = VK_ACCESS_2_HOST_READ_BIT,
 			};
-			const VkDependencyInfo toHost = {.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO, .memoryBarrierCount = 1, .pMemoryBarriers = &kToHost};
+			const VkDependencyInfo toHost = { .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO, .memoryBarrierCount = 1, .pMemoryBarriers = &kToHost };
 			vkCmdPipelineBarrier2(lanes[0]->_wrapper->_cmdBuf, &toHost);
 		}
 		for (const ExternalUse& use: _externals) {
