@@ -36,7 +36,7 @@ namespace mythril {
 	static std::vector<const char*> MergeExtensions(std::span<const char* const> a, std::span<const char* const> b) {
 		std::vector<const char*> merged;
 		merged.reserve(a.size() + b.size());
-		for (const auto list: {a, b}) {
+		for (const auto list: { a, b }) {
 			for (const char* name: list) {
 				const bool seen = std::ranges::any_of(merged, [name](const char* m) { return std::strcmp(m, name) == 0; });
 				if (!seen) merged.push_back(name);
@@ -143,29 +143,31 @@ namespace mythril {
 		static constexpr uint32_t kMVKLogLevel = 3;
 #endif
 		const VkLayerSettingEXT settings[] = {
-			{.pLayerName = kValidationLayer,
+			{ .pLayerName = kValidationLayer,
 				.pSettingName = "validate_sync",
 				.type = VK_LAYER_SETTING_TYPE_BOOL32_EXT,
 				.valueCount = 1,
-				.pValues = &validateSync},
+				.pValues = &validateSync },
 #if defined __APPLE__ && DEBUG
-			{.pLayerName = "MoltenVK",
+			{ .pLayerName = "MoltenVK",
 				.pSettingName = "MVK_CONFIG_TRACE_VULKAN_CALLS",
 				.type = VK_LAYER_SETTING_TYPE_UINT32_EXT,
 				.valueCount = 1,
-				.pValues = &kMVKLogLevel}
+				.pValues = &kMVKLogLevel }
 #endif
 		};
 
 		VkLayerSettingsCreateInfoEXT layerSettingsCI = {
 			.sType = VK_STRUCTURE_TYPE_LAYER_SETTINGS_CREATE_INFO_EXT,
 			.settingCount = static_cast<uint32_t>(std::size(settings)),
-			.pSettings = settings};
+			.pSettings = settings
+		};
 		VkDebugUtilsMessengerCreateInfoEXT messengerCI = {
 			.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
 			.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
 			.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT,
-			.pfnUserCallback = DebugCallback};
+			.pfnUserCallback = DebugCallback
+		};
 		const void* chain = nullptr;
 		if (layerSettings) {
 			layerSettingsCI.pNext = chain;
@@ -183,8 +185,9 @@ namespace mythril {
 			.pEngineName = inputs.engineName ? inputs.engineName : "",
 			.engineVersion = inputs.engineVersion.getVKVersion(),
 			// mythril hard codes to 1.3
-			.apiVersion = VK_API_VERSION_1_3};
-		const char* layers[] = {kValidationLayer};
+			.apiVersion = VK_API_VERSION_1_3
+		};
+		const char* layers[] = { kValidationLayer };
 		const VkInstanceCreateInfo instanceCI = {
 			.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
 			.pNext = chain,
@@ -193,7 +196,8 @@ namespace mythril {
 			.enabledLayerCount = useValidation ? 1u : 0u,
 			.ppEnabledLayerNames = layers,
 			.enabledExtensionCount = static_cast<uint32_t>(extensions.size()),
-			.ppEnabledExtensionNames = extensions.data()};
+			.ppEnabledExtensionNames = extensions.data()
+		};
 		VulkanInstanceOutputs out;
 		const VkResult result = vkCreateInstance(&instanceCI, nullptr, &out.vkInstance);
 		ASSERT_MSG(result == VK_SUCCESS, "Failed to create VkInstance. VkResult: {}", static_cast<int>(result));
@@ -266,7 +270,7 @@ namespace mythril {
 		int selectedRank = -1;
 		std::string rejections;
 		for (VkPhysicalDevice pd: devices) {
-			VkPhysicalDeviceProperties2 props = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
+			VkPhysicalDeviceProperties2 props = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2 };
 			vkGetPhysicalDeviceProperties2(pd, &props);
 			if (const std::string reason = GetUnsuitableReason(pd, props, inputs.vkSurface); !reason.empty()) {
 				rejections += std::string("\n\t") + props.properties.deviceName + ": " + reason;
@@ -334,10 +338,10 @@ namespace mythril {
 
 
 		// query supported features
-		VkPhysicalDeviceFeatures2 supportedfeatures10 = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
-		VkPhysicalDeviceVulkan11Features supportedfeatures11 = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES};
-		VkPhysicalDeviceVulkan12Features supportedfeatures12 = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
-		VkPhysicalDeviceVulkan13Features supportedfeatures13 = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES};
+		VkPhysicalDeviceFeatures2 supportedfeatures10 = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2 };
+		VkPhysicalDeviceVulkan11Features supportedfeatures11 = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES };
+		VkPhysicalDeviceVulkan12Features supportedfeatures12 = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES };
+		VkPhysicalDeviceVulkan13Features supportedfeatures13 = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES };
 		supportedfeatures10.pNext = &supportedfeatures11;
 		supportedfeatures11.pNext = &supportedfeatures12;
 		supportedfeatures12.pNext = &supportedfeatures13;
@@ -394,7 +398,7 @@ namespace mythril {
 		{
 			std::string missing_features;
 #define CHECK_VULKAN_FEATURE(requiredFeatures, availableFeatures, feature, version) \
-	if ((requiredFeatures.feature) == VK_TRUE && (availableFeatures.feature) == VK_FALSE) \
+	if ((requiredFeatures).feature == VK_TRUE && (availableFeatures).feature == VK_FALSE) \
 		missing_features.append("\n\t(" version ") " #feature);
 #define CHECK_FEATURE_1_0(feature) CHECK_VULKAN_FEATURE(requiredfeatures10, supportedfeatures10.features, feature, "1.0")
 			CHECK_FEATURE_1_0(robustBufferAccess);
@@ -543,14 +547,16 @@ namespace mythril {
 		VkPhysicalDevicePortabilitySubsetFeaturesKHR portability_subset_features = {
 			.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PORTABILITY_SUBSET_FEATURES_KHR,
 			.pNext = &requiredfeatures13,
-			.imageViewFormatSwizzle = VK_TRUE};
+			.imageViewFormatSwizzle = VK_TRUE
+		};
 
 		VkPhysicalDeviceFeatures2 features2 = {
 			.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
 			.pNext = isAvailable(VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME)
 			             ? static_cast<void*>(&portability_subset_features)
 			             : static_cast<void*>(&requiredfeatures13),
-			.features = requiredfeatures10};
+			.features = requiredfeatures10
+		};
 
 		// query queue family properties
 		VkPhysicalDevice physical_device = vkPhysicalDevice;
@@ -648,7 +654,7 @@ namespace mythril {
 				idx = maxQueues - 1;
 				familyNextIndex[familyIndex] = maxQueues;
 			}
-			return {familyIndex, idx};
+			return { familyIndex, idx };
 		};
 		QueueAllocation graphicsAlloc = allocateQueue(graphics);
 		QueueAllocation computeAlloc = allocateQueue(compute);
@@ -711,17 +717,17 @@ namespace mythril {
 		outQueues.presentQueueFamilyIndex = presentAlloc.familyIndex;
 
 		{
-			const VkDeviceQueueInfo2 qi = {.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_INFO_2, .pNext = nullptr, .queueFamilyIndex = graphicsAlloc.familyIndex, .queueIndex = graphicsAlloc.queueIndex};
+			const VkDeviceQueueInfo2 qi = { .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_INFO_2, .pNext = nullptr, .queueFamilyIndex = graphicsAlloc.familyIndex, .queueIndex = graphicsAlloc.queueIndex };
 			vkGetDeviceQueue2(device, &qi, &outQueues.vkGraphicsQueue);
 		}
 
 		// we could do this before building the device but theres no difference
 		// query supported properties
 		{
-			VkPhysicalDeviceProperties2 props10 = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
-			VkPhysicalDeviceVulkan11Properties props11 = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_PROPERTIES};
-			VkPhysicalDeviceVulkan12Properties props12 = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_PROPERTIES};
-			VkPhysicalDeviceVulkan13Properties props13 = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_PROPERTIES};
+			VkPhysicalDeviceProperties2 props10 = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2 };
+			VkPhysicalDeviceVulkan11Properties props11 = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_PROPERTIES };
+			VkPhysicalDeviceVulkan12Properties props12 = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_PROPERTIES };
+			VkPhysicalDeviceVulkan13Properties props13 = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_PROPERTIES };
 			props10.pNext = &props11;
 			props11.pNext = &props12;
 			props12.pNext = &props13;
@@ -788,10 +794,10 @@ namespace mythril {
 			vk_surface = this->_surfaceSpec.createFunc(vk_instance);
 		}
 
-		VkPhysicalDevice vk_physical_device = SelectVulkanPhysicalDevice({.vkInstance = vk_instance,
+		VkPhysicalDevice vk_physical_device = SelectVulkanPhysicalDevice({ .vkInstance = vk_instance,
 			.vkSurface = vk_surface,
 			.preferredDeviceName = this->_vulkanCfg.preferredDeviceName,
-			.preferDiscrete = this->_vulkanCfg.preferDiscrete});
+			.preferDiscrete = this->_vulkanCfg.preferDiscrete });
 
 		// fill in user device extensions & resolve based on cfg
 		std::vector device_extensions(std::begin(this->_vulkanCfg.deviceExtensionNames), std::end(this->_vulkanCfg.deviceExtensionNames));
@@ -802,10 +808,10 @@ namespace mythril {
 		std::vector<std::string> enabled_device_extensions;
 		VkDevice vk_device = CreateVulkanLogicalDevice(vk_physical_device, vk_surface, device_extensions, this->_vulkanCfg.additionalDeviceFeatures, this->_vulkanCfg.deviceExtensionFeatureChain, features, properties, queues, enabled_device_extensions);
 		LOG_SYSTEM_NOSOURCE(LogType::Info, "Using device {} (Vulkan {}.{}, driver {} {})", properties.props10.deviceName, VK_API_VERSION_MAJOR(properties.props10.apiVersion), VK_API_VERSION_MINOR(properties.props10.apiVersion), properties.props12.driverName, properties.props12.driverInfo);
-		VmaAllocator vma_allocator = CreateVulkanMemoryAllocator({.vkInstance = vk_instance,
+		VmaAllocator vma_allocator = CreateVulkanMemoryAllocator({ .vkInstance = vk_instance,
 			.vkPhysicalDevice = vk_physical_device,
 			.vkDevice = vk_device,
-			.memoryBudget = std::ranges::find(enabled_device_extensions, VK_EXT_MEMORY_BUDGET_EXTENSION_NAME) != enabled_device_extensions.end()});
+			.memoryBudget = std::ranges::find(enabled_device_extensions, VK_EXT_MEMORY_BUDGET_EXTENSION_NAME) != enabled_device_extensions.end() });
 
 		// most of the setup we need to worry about is done in the constructor
 		// this is the same thing as make_unique, ignore the warning
@@ -831,9 +837,9 @@ namespace mythril {
 		}
 		// stupid special cases for ray tracnig + as
 		{
-			ctx->_accelerationStructureProperties = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_PROPERTIES_KHR};
-			ctx->_rayTracingProperties = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR};
-			VkPhysicalDeviceProperties2 props = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
+			ctx->_accelerationStructureProperties = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_PROPERTIES_KHR };
+			ctx->_rayTracingProperties = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR };
+			VkPhysicalDeviceProperties2 props = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2 };
 			if (ctx->isExtensionEnabled(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME)) {
 				ctx->_accelerationStructureProperties.pNext = props.pNext;
 				props.pNext = &ctx->_accelerationStructureProperties;

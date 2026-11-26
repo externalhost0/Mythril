@@ -43,7 +43,7 @@ FixNamespaceComments: false
 ShortNamespaceLines: 0
 EmptyLineBeforeAccessModifier: Leave
 EmptyLineAfterAccessModifier: Leave
-Cpp11BracedListStyle: true
+Cpp11BracedListStyle: Block
 ReflowComments: IndentOnly
 InsertNewlineAtEOF: true
 SpaceBeforeParensOptions:
