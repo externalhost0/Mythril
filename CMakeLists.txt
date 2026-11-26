@@ -11,12 +11,14 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 # ==================== User Options ====================
 option(MYTH_BUILD_SAMPLES "Build sample applications" OFF)
-option(MYTH_BUILD_TESTS "Build unit tests" ${PROJECT_IS_TOP_LEVEL})
 option(MYTH_ENABLE_IMGUI_STANDARD "Enable ImGui plugin (main branch)" OFF)
 option(MYTH_ENABLE_IMGUI_DOCKING "Enable ImGui plugin (docking branch)" OFF)
 option(MYTH_ENABLE_TRACY "Enable Tracy profiling" OFF)
 option(MYTH_ENABLE_TRACY_GPU "Enable Tracy GPU profiling (EXPERIMENTAL)" OFF)
 option(MYTH_ENABLE_TRACY_GPU_COMMANDS "Enable Tracy GPU per-command zones, dont use for measurement!" OFF)
+# ====================== Auto Options ===========================
+option(MYTH_BUILD_TESTS "Build unit tests" ${PROJECT_IS_TOP_LEVEL})
+option(MYTH_INSTALL "Generate install rules" ${PROJECT_IS_TOP_LEVEL})
 
 # ==================== Sample Feature Requirements ====================
 set(SAMPLE_01_ClearWindow_REQUIRES        "")
@@ -307,7 +309,30 @@ target_link_libraries(mythril-slang PUBLIC mythril-spirv fmt::fmt "${SLANG_LIBRA
 
 add_executable(mythril-reflect EXCLUDE_FROM_ALL tools/mythril-reflect/main.cpp)
 target_link_libraries(mythril-reflect PRIVATE mythril-slang)
+# the installed tool finds libslang next to the Vulkan SDK it was built against
+get_filename_component(_slang_libdir "${SLANG_LIBRARY}" DIRECTORY)
+set_target_properties(mythril-reflect PROPERTIES INSTALL_RPATH "${_slang_libdir}")
 include(cmake/MythrilReflect.cmake)
+
+# ==================== Install ====================
+if(MYTH_INSTALL)
+    set(_install_targets mythril mythril-spirv volk fmt)
+    install(DIRECTORY include/mythril DESTINATION include)
+    install(FILES "${volk_SOURCE_DIR}/volk.h" DESTINATION include)
+    if(MYTH_ENABLE_IMGUI_STANDARD OR MYTH_ENABLE_IMGUI_DOCKING)
+        list(APPEND _install_targets imgui)
+        file(GLOB _imgui_headers "${imgui_SOURCE_DIR}/*.h" "${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.h")
+        install(FILES ${_imgui_headers} DESTINATION include)
+    endif()
+    if(MYTH_ENABLE_TRACY)
+        list(APPEND _install_targets TracyClient)
+        install(DIRECTORY "${tracy_SOURCE_DIR}/public/tracy" DESTINATION include)
+    endif()
+    install(TARGETS ${_install_targets} ARCHIVE DESTINATION lib)
+    install(TARGETS mythril-reflect RUNTIME DESTINATION bin OPTIONAL)
+    install(FILES cmake/MythrilReflect.cmake DESTINATION share/mythril)
+    install(DIRECTORY xmake/rules DESTINATION .)
+endif()
 
 # ==================== Samples ====================
 if(MYTH_BUILD_SAMPLES)

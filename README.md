@@ -93,6 +93,19 @@ target_link_libraries(my_app PRIVATE mythril::mythril)
 ```
 Be aware that Mythril exposes the `Vulkan` and `volk` headers to consumers.
 
+### Use from xmake
+This repo is also an xmake package repository. xmake runs the CMake build above for you and links everything:
+```lua
+add_repositories("mythril https://github.com/externalhost0/Mythril.git")
+add_requires("mythril", {debug = is_mode("debug"), configs = {imgui = true}})
+
+target("your-app")
+    add_packages("mythril")
+    add_rules("@mythril/shaders")
+    add_files("shaders/*.slang")
+```
+Package configs: `imgui`, `imgui_docking`, `tracy`, `tracy_gpu`, `tracy_gpu_commands` (same meaning as the CMake options). Keep `debug` matching your build mode, because public headers change with `DEBUG`. Shader rule settings are listed at the top of `xmake/rules/shaders/xmake.lua`. A local checkout works too, `add_repositories("mythril third_party/mythril")`.
+
 ### Building the samples
 Samples are off by default. To build and run them locally:
 ```bash
