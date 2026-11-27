@@ -33,2156 +33,2222 @@
 #include "mythril/CommandBuffer.h"
 
 namespace mythril {
-	using namespace detail;
-	// we arent using VkMutable
-	// https://docs.shader-slang.org/en/latest/external/slang/docs/user-guide/03-convenience-features.html#descriptorhandle-for-bindless-descriptor-access:~:text=None%20provides%20the%20following%20bindings%20for%20descriptor%20types%3A-,Enum,-Value
-	namespace BindlessSpaceIndex {
-		enum Type : uint8_t {
-			kSampler = 0,
-			//			kCombinedImageSampler = 1,
-			kSampledImage = 2,
-			kStorageImage = 3,
-			//			kUniformTexelBuffer = 2,
-			//			kStorageTexelBuffer = 2,
-			//			kUniformBuffer = 2,
-			//			kStorageBuffer = 2,
+    using namespace detail;
+    // we arent using VkMutable
+    // https://docs.shader-slang.org/en/latest/external/slang/docs/user-guide/03-convenience-features.html#descriptorhandle-for-bindless-descriptor-access:~:text=None%20provides%20the%20following%20bindings%20for%20descriptor%20types%3A-,Enum,-Value
+    namespace BindlessSpaceIndex {
+        enum Type : uint8_t {
+            kSampler = 0,
+            //			kCombinedImageSampler = 1,
+            kSampledImage = 2,
+            kStorageImage = 3,
+            //			kUniformTexelBuffer = 2,
+            //			kStorageTexelBuffer = 2,
+            //			kUniformBuffer = 2,
+            //			kStorageBuffer = 2,
 
-			// this MUST be manually updated
-			kNumOfBinds = 3
-		};
-	} // namespace BindlessSpaceIndex
+            // this MUST be manually updated
+            kNumOfBinds = 3
+        };
+    } // namespace BindlessSpaceIndex
 
-	static uint64_t getAlignedAddress(uint64_t addr, uint64_t align) {
-		const uint64_t offs = addr % align;
-		return offs ? addr + (align - offs) : addr;
-	}
+    static uint64_t getAlignedAddress(uint64_t addr, uint64_t align) {
+        const uint64_t offs = addr % align;
+        return offs ? addr + (align - offs) : addr;
+    }
 
-	static VkMemoryPropertyFlags StorageTypeToVkMemoryPropertyFlags(StorageType storage) {
-		VkMemoryPropertyFlags memFlags{0};
-		switch (storage) {
-			case StorageType::Device:
-				memFlags |= VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-				break;
-			case StorageType::HostVisible: // dangerous
-				memFlags |= VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-				break;
-			case StorageType::Memoryless:
-				memFlags |= VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT;
-				break;
-		}
-		return memFlags;
-	}
+    static VkMemoryPropertyFlags StorageTypeToVkMemoryPropertyFlags(StorageType storage) {
+        VkMemoryPropertyFlags memFlags{ 0 };
+        switch (storage) {
+            case StorageType::Device:
+                memFlags |= VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+                break;
+            case StorageType::HostVisible: // dangerous
+                memFlags |= VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+                break;
+            case StorageType::Memoryless:
+                memFlags |= VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT;
+                break;
+        }
+        return memFlags;
+    }
 
-	static bool ValidateRange(const VkExtent3D& extent3D, uint32_t numLevels, const TexRange& range) {
-		if (range.dimensions.width <= 0 || range.dimensions.height <= 0 || range.dimensions.depth <= 0 || range.numLayers <= 0 || range.numMipLevels <= 0) {
-			LOG_SYSTEM(LogType::Error, "Values like: width, height, depth, numLayers and mipLevel must all be at least greater than 0.");
-			return false;
-		}
-		if (range.mipLevel > numLevels) {
-			LOG_SYSTEM(LogType::Error, "Requested mipLevels exceed texture's mipLevels!");
-			return false;
-		}
-		const uint32_t texWidth = std::max(extent3D.width >> range.mipLevel, 1u);
-		const uint32_t texHeight = std::max(extent3D.height >> range.mipLevel, 1u);
-		const uint32_t texDepth = std::max(extent3D.depth >> range.mipLevel, 1u);
+    static bool ValidateRange(const VkExtent3D& extent3D, uint32_t numLevels, const TexRange& range) {
+        if (range.dimensions.width <= 0 || range.dimensions.height <= 0 || range.dimensions.depth <= 0 || range.numLayers <= 0 || range.numMipLevels <= 0) {
+            LOG_SYSTEM(LogType::Error, "Values like: width, height, depth, numLayers and mipLevel must all be at least greater than 0.");
+            return false;
+        }
+        if (range.mipLevel > numLevels) {
+            LOG_SYSTEM(LogType::Error, "Requested mipLevels exceed texture's mipLevels!");
+            return false;
+        }
+        const uint32_t texWidth = std::max(extent3D.width >> range.mipLevel, 1u);
+        const uint32_t texHeight = std::max(extent3D.height >> range.mipLevel, 1u);
+        const uint32_t texDepth = std::max(extent3D.depth >> range.mipLevel, 1u);
 
-		if (range.dimensions.width > texWidth || range.dimensions.height > texHeight || range.dimensions.depth > texDepth) {
-			LOG_SYSTEM(LogType::Error, "Range dimensions exceed texture dimensions!");
-			return false;
-		}
-		if (range.offset.x > texWidth - range.dimensions.width || range.offset.y > texHeight - range.dimensions.height || range.offset.z > texDepth - range.dimensions.depth) {
-			LOG_SYSTEM(LogType::Error, "Range dimensions exceed texture dimensions when accounting for offsets!");
-			return false;
-		}
-		return true;
-	}
+        if (range.dimensions.width > texWidth || range.dimensions.height > texHeight || range.dimensions.depth > texDepth) {
+            LOG_SYSTEM(LogType::Error, "Range dimensions exceed texture dimensions!");
+            return false;
+        }
+        if (range.offset.x > texWidth - range.dimensions.width || range.offset.y > texHeight - range.dimensions.height || range.offset.z > texDepth - range.dimensions.depth) {
+            LOG_SYSTEM(LogType::Error, "Range dimensions exceed texture dimensions when accounting for offsets!");
+            return false;
+        }
+        return true;
+    }
 
-	bool CTX::isExtensionEnabled(const std::string_view extensionName) const { return _enabledExtensionNames.contains(extensionName); }
-	size_t CTX::getGPUMemoryUsage() const {
-		const VkPhysicalDeviceMemoryProperties* memoryProperties = nullptr;
-		vmaGetMemoryProperties(_vmaAllocator, &memoryProperties);
-		VmaBudget budgets[VK_MAX_MEMORY_HEAPS];
-		vmaGetHeapBudgets(_vmaAllocator, budgets);
-		size_t usage = 0;
-		for (uint32_t i = 0; i < memoryProperties->memoryHeapCount; ++i) {
-			if (memoryProperties->memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) usage += budgets[i].usage;
-		}
-		return usage;
-	}
-	CTX::QueueFamilies CTX::queueFamiliesInUse() const {
-		QueueFamilies families;
-		for (const ImmediateCommands* imm: {_immGraphics.get(), _immAsyncCompute.get(), _immAsyncTransfer.get()}) {
-			if (!imm)
-				continue;
-			const uint32_t family = imm->getQueueFamilyIndex();
-			if (std::find(families.indices.begin(), families.indices.begin() + families.count, family) == families.indices.begin() + families.count)
-				families.indices[families.count++] = family;
-		}
-		return families;
-	}
-	void CTX::construct() {
-		ASSERT(this->_vkInstance != VK_NULL_HANDLE);
-		ASSERT(this->_vkPhysicalDevice != VK_NULL_HANDLE);
-		ASSERT(this->_vkDevice != VK_NULL_HANDLE);
+    bool CTX::isExtensionEnabled(const std::string_view extensionName) const { return _enabledExtensionNames.contains(extensionName); }
+    size_t CTX::getGPUMemoryUsage() const {
+        const VkPhysicalDeviceMemoryProperties* memoryProperties = nullptr;
+        vmaGetMemoryProperties(_vmaAllocator, &memoryProperties);
+        VmaBudget budgets[VK_MAX_MEMORY_HEAPS];
+        vmaGetHeapBudgets(_vmaAllocator, budgets);
+        size_t usage = 0;
+        for (uint32_t i = 0; i < memoryProperties->memoryHeapCount; ++i) {
+            if (memoryProperties->memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) usage += budgets[i].usage;
+        }
+        return usage;
+    }
+    CTX::QueueFamilies CTX::queueFamiliesInUse() const {
+        QueueFamilies families;
+        for (const ImmediateCommands* imm: { _immGraphics.get(), _immAsyncCompute.get(), _immAsyncTransfer.get() }) {
+            if (!imm)
+                continue;
+            const uint32_t family = imm->getQueueFamilyIndex();
+            if (std::find(families.indices.begin(), families.indices.begin() + families.count, family) == families.indices.begin() + families.count)
+                families.indices[families.count++] = family;
+        }
+        return families;
+    }
+    void CTX::construct() {
+        ASSERT(this->_vkInstance != VK_NULL_HANDLE);
+        ASSERT(this->_vkPhysicalDevice != VK_NULL_HANDLE);
+        ASSERT(this->_vkDevice != VK_NULL_HANDLE);
 
-		// ACTUAL INIT
-		this->_immGraphics = std::make_unique<ImmediateCommands>(this->_vkDevice, this->_graphicsQueueFamilyIndex, this->_vkGraphicsQueue);
-		if (_vkComputeQueue && _vkComputeQueue != _vkGraphicsQueue)
-			this->_immAsyncCompute = std::make_unique<ImmediateCommands>(this->_vkDevice, this->_computeQueueFamilyIndex, this->_vkComputeQueue);
-		if (_vkTransferQueue && _vkTransferQueue != _vkGraphicsQueue && _vkTransferQueue != _vkComputeQueue)
-			this->_immAsyncTransfer = std::make_unique<ImmediateCommands>(this->_vkDevice, this->_transferQueueFamilyIndex, this->_vkTransferQueue);
+        // ACTUAL INIT
+        this->_immGraphics = std::make_unique<ImmediateCommands>(this->_vkDevice, this->_graphicsQueueFamilyIndex, this->_vkGraphicsQueue);
+        if (_vkComputeQueue && _vkComputeQueue != _vkGraphicsQueue)
+            this->_immAsyncCompute = std::make_unique<ImmediateCommands>(this->_vkDevice, this->_computeQueueFamilyIndex, this->_vkComputeQueue);
+        if (_vkTransferQueue && _vkTransferQueue != _vkGraphicsQueue && _vkTransferQueue != _vkComputeQueue)
+            this->_immAsyncTransfer = std::make_unique<ImmediateCommands>(this->_vkDevice, this->_transferQueueFamilyIndex, this->_vkTransferQueue);
 
-		this->_staging = std::make_unique<StagingDevice>(*this);
-		this->_timelineSemaphore = vkutil::CreateTimelineSemaphore(this->_vkDevice, 0);
-		// DEFAULT VULKAN OBJECTS
-		{
-			// pattern xor
-			constexpr uint32_t texWidth = 256;
-			constexpr uint32_t texHeight = 256;
-			std::vector<uint32_t> pixels(texWidth * texHeight);
-			for (uint32_t y = 0; y != texHeight; y++) {
-				for (uint32_t x = 0; x != texWidth; x++) {
-					pixels[y * texWidth + x] = 0xFF000000 + ((x ^ y) << 16) + ((x ^ y) << 8) + (x ^ y);
-				}
-			}
-			// now take the pattern and create the first texture
-			// fallback texture, index 0
-			this->_dummyTexture = this->createTexture(
-				{.dimension = {texWidth, texHeight},
-					.format = VK_FORMAT_R8G8B8A8_UNORM,
-					.usage = TextureUsageBits::TextureUsageBits_Sampled | TextureUsageBits::TextureUsageBits_Storage,
-					.initialData = pixels,
-					.debugName = "Internal_Dummy_Texture"});
-			// fallback sampler, index 0
-			this->_dummyLinearSampler = this->createSampler(
-				{.magFilter = SamplerFilter::Linear,
-					.minFilter = SamplerFilter::Linear,
-					.wrapU = SamplerWrap::ClampEdge,
-					.wrapV = SamplerWrap::ClampEdge,
-					.wrapW = SamplerWrap::ClampEdge,
-					.debugName = "Internal_Linear_Sampler"});
-			// initial descriptor pool creation
-			this->growBindlessDescriptorPoolImpl(this->_currentMaxSamplerCount, this->_currentMaxTextureCount);
-		}
-	}
+        this->_staging = std::make_unique<StagingDevice>(*this);
+        this->_timelineSemaphore = vkutil::CreateTimelineSemaphore(this->_vkDevice, 0);
+        // DEFAULT VULKAN OBJECTS
+        {
+            // pattern xor
+            constexpr uint32_t texWidth = 256;
+            constexpr uint32_t texHeight = 256;
+            std::vector<uint32_t> pixels(texWidth * texHeight);
+            for (uint32_t y = 0; y != texHeight; y++) {
+                for (uint32_t x = 0; x != texWidth; x++) {
+                    pixels[y * texWidth + x] = 0xFF000000 + ((x ^ y) << 16) + ((x ^ y) << 8) + (x ^ y);
+                }
+            }
+            // now take the pattern and create the first texture
+            // fallback texture, index 0
+            this->_dummyTexture = this->createTexture(
+                { .dimension = { texWidth, texHeight },
+                    .format = VK_FORMAT_R8G8B8A8_UNORM,
+                    .usage = TextureUsageBits::TextureUsageBits_Sampled | TextureUsageBits::TextureUsageBits_Storage,
+                    .initialData = pixels,
+                    .debugName = "Internal_Dummy_Texture" });
+            // fallback sampler, index 0
+            this->_dummyLinearSampler = this->createSampler(
+                { .magFilter = SamplerFilter::Linear,
+                    .minFilter = SamplerFilter::Linear,
+                    .wrapU = SamplerWrap::ClampEdge,
+                    .wrapV = SamplerWrap::ClampEdge,
+                    .wrapW = SamplerWrap::ClampEdge,
+                    .debugName = "Internal_Linear_Sampler" });
+            // initial descriptor pool creation
+            this->growBindlessDescriptorPoolImpl(this->_currentMaxSamplerCount, this->_currentMaxTextureCount);
+        }
+    }
 
-	CTX::CTX() = default;
-	CTX::CTX(CTX&&) noexcept = default;
-	CTX& CTX::operator=(CTX&&) noexcept = default;
+    CTX::CTX() = default;
+    CTX::CTX(CTX&&) noexcept = default;
+    CTX& CTX::operator=(CTX&&) noexcept = default;
 
-	bool CTX::isSwapchainDirty() const {
-		ASSERT_MSG(_swapchain, "Swapchain has not been created!");
-		return _swapchain->isDirty();
-	}
-	const TextureHandle& CTX::getCurrentSwapchainTexHandle() const {
-		ASSERT_MSG(_swapchain, "Swapchain has not been created!");
-		return _swapchain->getCurrentSwapchainTextureHandle();
-	}
-	Dimensions CTX::getSwapchainDimensions() const {
-		if (!_swapchain)
-			return {lastSwapchainSpec.width, lastSwapchainSpec.height, 1};
-		const VkExtent2D extent = _swapchain->getSwapchainExtent();
-		return {extent.width, extent.height, 1};
-	}
-	bool CTX::isHeadless() const { return _swapchain == nullptr; }
-	bool CTX::isSwapchainTexture(TextureHandle handle) const { return view(handle).isSwapchainImage(); }
-	const AllocatedShader& CTX::inspectShader(ShaderHandle handle) const { return view(handle); }
+    bool CTX::isSwapchainDirty() const {
+        ASSERT_MSG(_swapchain, "Swapchain has not been created!");
+        return _swapchain->isDirty();
+    }
+    const TextureHandle& CTX::getCurrentSwapchainTexHandle() const {
+        ASSERT_MSG(_swapchain, "Swapchain has not been created!");
+        return _swapchain->getCurrentSwapchainTextureHandle();
+    }
+    Dimensions CTX::getSwapchainDimensions() const {
+        if (!_swapchain)
+            return { lastSwapchainSpec.width, lastSwapchainSpec.height, 1 };
+        const VkExtent2D extent = _swapchain->getSwapchainExtent();
+        return { extent.width, extent.height, 1 };
+    }
+    bool CTX::isHeadless() const { return _swapchain == nullptr; }
+    bool CTX::isSwapchainTexture(TextureHandle handle) const { return view(handle).isSwapchainImage(); }
+    const AllocatedShader& CTX::inspectShader(ShaderHandle handle) const { return view(handle); }
 
-	CTX::~CTX() {
-		VK_CHECK(vkDeviceWaitIdle(this->_vkDevice));
-		// more like awaitingDestruction :0
-		this->_awaitingCreation = true;
+    CTX::~CTX() {
+        VK_CHECK(vkDeviceWaitIdle(this->_vkDevice));
+        // more like awaitingDestruction :0
+        this->_awaitingCreation = true;
 
 #ifdef MYTH_ENABLED_IMGUI
-		if (this->_imguiPlugin.isEnabled()) {
-			this->_imguiPlugin.onDestroy();
-		}
+        if (this->_imguiPlugin.isEnabled()) {
+            this->_imguiPlugin.onDestroy();
+        }
 #endif
 #ifdef MYTH_ENABLED_TRACY_GPU
-		this->_tracyPlugin.onDestroy();
+        this->_tracyPlugin.onDestroy();
 #endif
 
-		destroy(this->_staging->_stagingBuffer);
-		this->_staging.reset(nullptr);
-		this->destroySwapchain();
-		vkDestroySemaphore(this->_vkDevice, this->_timelineSemaphore, nullptr);
-		(void)this->_dummyTexture.release();
-		(void)this->_dummyLinearSampler.release();
+        destroy(this->_staging->_stagingBuffer);
+        this->_staging.reset(nullptr);
+        // optional destruction in case they do headless
+        if (_swapchain)
+            this->destroySwapchain();
+        vkDestroySemaphore(this->_vkDevice, this->_timelineSemaphore, nullptr);
+        (void)this->_dummyTexture.release();
+        (void)this->_dummyLinearSampler.release();
 
-		// TODO::fixing the allocation not being proerly freed for buffers VMA
-		auto destroyAll = [this]<typename H, typename O>(HandlePool<H, O>& pool, const char* name) {
-			if (!pool.numObjects())
-				return;
-			LOG_SYSTEM(LogType::Info, "Cleaned up {} {}", pool.numObjects(), name);
-			for (uint32_t i = 0; i < pool._objects.size(); i++)
-				destroy(pool.getHandle(i));
-		};
-		destroyAll(_shaderPool, "shader modules");
-		destroyAll(_graphicsPipelinePool, "graphics pipelines");
-		destroyAll(_computePipelinePool, "compute pipelines");
-		destroyAll(_rayTracingPipelinePool, "raytracing pipelines");
-		destroyAll(_samplerPool, "samplers");
-		destroyAll(_queryPoolPool, "query pools");
-		destroyAll(_texturePool, "textures");
-		destroyAll(_bufferPool, "buffers");
-		destroyAll(_accelerationStructurePool, "acceleration structures");
-
-
-		// the order of operations is very specific so that we dont trigger any validation warnings
-
-		// wipe buffers
-		_bufferPool.clear();
-		_texturePool.clear();
-		_samplerPool.clear();
-		_queryPoolPool.clear();
-		_shaderPool.clear();
-		_graphicsPipelinePool.clear();
-		_computePipelinePool.clear();
-		_rayTracingPipelinePool.clear();
-		_accelerationStructurePool.clear();
-		// make sure imm tasks are complete
-		waitDeferredTasks();
-		_immAsyncTransfer.reset(nullptr);
-		_immAsyncCompute.reset(nullptr);
-		_immGraphics.reset(nullptr);
-
-		// destroy our bindless descriptor stuff
-		vkDestroyDescriptorSetLayout(_vkDevice, _vkBindlessDSL, nullptr);
-		vkDestroyDescriptorPool(_vkDevice, _vkBindlessDPool, nullptr);
-
-		vmaDestroyAllocator(_vmaAllocator);
-		// destroy pure vk objects
-		vkDestroyDevice(_vkDevice, nullptr);
-		if (_vkDebugMessenger != VK_NULL_HANDLE) {
-			vkDestroyDebugUtilsMessengerEXT(_vkInstance, _vkDebugMessenger, nullptr);
-		}
-		if (this->_surfaceDestroyFunc) {
-			this->_surfaceDestroyFunc(_vkInstance, _vkSurfaceKHR);
-		}
-		vkDestroyInstance(_vkInstance, nullptr);
-	}
-
-	void CTX::recreateSwapchain(const SwapchainSpec& spec) {
-		destroySwapchain();
-		createSwapchain(spec);
-	}
-
-	void CTX::destroySwapchain() {
-		if (!_swapchain) {
-			LOG_SYSTEM(LogType::Warning, "CTX::destroySwapchain called when no existing swapchain exists!");
-			return;
-		}
-		VK_CHECK(vkDeviceWaitIdle(this->_vkDevice));
-		this->_swapchain.reset(nullptr);
-	}
-
-	template<typename T>
-	static void AssignIfValid(T& dst, const T& src, T invalid) {
-		if (src != invalid && dst != src)
-			dst = src;
-	}
-	void CTX::createSwapchain(const SwapchainSpec& spec) {
-		// does some checks for the user that the default constructor doesnt do
-		if (_swapchain) {
-			LOG_SYSTEM(LogType::Warning, "CTX::createSwapchain called when an already existing swapchain exists!");
-			return;
-		}
-		SwapchainSpec new_swapchain_spec = {
-			.width = lastSwapchainSpec.width,
-			.height = lastSwapchainSpec.height,
-			.format = lastSwapchainSpec.format,
-			.colorSpace = lastSwapchainSpec.colorSpace,
-			.presentMode = lastSwapchainSpec.presentMode,
-		};
-		AssignIfValid(new_swapchain_spec.width, spec.width, static_cast<uint32_t>(0));
-		AssignIfValid(new_swapchain_spec.height, spec.height, static_cast<uint32_t>(0));
-		AssignIfValid(new_swapchain_spec.format, spec.format, VK_FORMAT_MAX_ENUM);
-		AssignIfValid(new_swapchain_spec.colorSpace, spec.colorSpace, VK_COLOR_SPACE_MAX_ENUM_KHR);
-		AssignIfValid(new_swapchain_spec.presentMode, spec.presentMode, VK_PRESENT_MODE_MAX_ENUM_KHR);
-
-		ASSERT_MSG(!_currentCommandBuffer._ctx, "Cannot create a swapchain while a CommandBuffer is open, deferred tasks are flushed here.");
-		VK_CHECK(vkDeviceWaitIdle(this->_vkDevice));
-		// trivial win which opens the ability for the swapchian to reuse existing indicies that are now available
-		waitDeferredTasks();
-		this->_swapchain = std::make_unique<Swapchain>(*this, new_swapchain_spec);
-		lastSwapchainSpec = new_swapchain_spec;
-	}
-
-	void CTX::checkAndUpdateBindlessDescriptorSetImpl() {
-		MYTH_PROFILER_FUNCTION();
-		if (!_awaitingCreation) {
-			return;
-		}
-		uint32_t newMaxSamplers = _currentMaxSamplerCount;
-		uint32_t newMaxTextures = _currentMaxTextureCount;
-
-		while (_samplerPool._objects.size() > newMaxSamplers) {
-			newMaxSamplers *= 2;
-		}
-		while (_texturePool._objects.size() > newMaxTextures) {
-			newMaxTextures *= 2;
-		}
-		if (newMaxSamplers != _currentMaxSamplerCount || newMaxTextures != _currentMaxTextureCount) {
-			// actual call site for growing
-			this->growBindlessDescriptorPoolImpl(newMaxSamplers, newMaxTextures);
-			// pipeline layouts include the old DSL's descriptor counts so they are incompatible with the new set and must be rebuilt
-			forEachPipelinePoolImpl([this](auto& pool) {
-				for (auto& obj: pool._objects)
-					if (obj._obj._shared.core._vkBindlessDescriptorSet != VK_NULL_HANDLE)
-						invalidatePipelineImpl(obj._obj._shared);
-			});
-		}
-		// only reached when a slot write failed, so the target is a fresh set after a grow or one that was never bound
-		_awaitingCreation = false;
-		writeSamplerDescriptorsImpl(0, static_cast<uint32_t>(_samplerPool._objects.size()));
-		writeTextureDescriptorsImpl(0, static_cast<uint32_t>(_texturePool._objects.size()));
-	}
-
-	void CTX::writeTextureDescriptorsImpl(uint32_t first, uint32_t count) {
-		if (_awaitingCreation || _vkBindlessDSet == VK_NULL_HANDLE || first + count > _currentMaxTextureCount) {
-			_awaitingCreation = true;
-			return;
-		}
-		if (count == 0)
-			return;
-		// our dummyTexture, the cross pattern, is the backup/resolve
-		VkImageView dummyImageView = _texturePool._objects[0]._obj._vkImageView;
-		// sampled infos first, storage infos after, so each binding gets one contiguous run
-		std::vector<VkDescriptorImageInfo> infos(2 * count);
-		for (uint32_t k = 0; k < count; ++k) {
-			const AllocatedTexture& img = _texturePool._objects[first + k]._obj;
-			// swapchain images must not be in bindless, after present, the drawable is returned to
-			// already presenting this drawable on moltenvk
-			// multisampled images cannot be directly accessed from shaders
-			const bool isTextureAvailable = !img.isSwapchainImage() && (img.getSampleCount() & VK_SAMPLE_COUNT_1_BIT) == VK_SAMPLE_COUNT_1_BIT;
-			VkImageView storageView = img._vkImageViewStorage ? img._vkImageViewStorage : img._vkImageView;
-			infos[k] = {
-				.sampler = VK_NULL_HANDLE,
-				.imageView = isTextureAvailable && img.isSampledImage() ? img._vkImageView : dummyImageView,
-				.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-			};
-			ASSERT_MSG(infos[k].imageView != VK_NULL_HANDLE, "Sampled imageView is null!");
-			// storage images could be used for anything, per in general layout
-			infos[count + k] = {
-				.sampler = VK_NULL_HANDLE,
-				.imageView = isTextureAvailable && img.isStorageImage() ? storageView : dummyImageView,
-				.imageLayout = VK_IMAGE_LAYOUT_GENERAL,
-			};
-		}
-		const VkWriteDescriptorSet writes[] = {
-			VkWriteDescriptorSet{
-				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-				.dstSet = _vkBindlessDSet,
-				.dstBinding = BindlessSpaceIndex::kSampledImage,
-				.dstArrayElement = first,
-				.descriptorCount = count,
-				.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
-				.pImageInfo = infos.data(),
-			},
-			VkWriteDescriptorSet{
-				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-				.dstSet = _vkBindlessDSet,
-				.dstBinding = BindlessSpaceIndex::kStorageImage,
-				.dstArrayElement = first,
-				.descriptorCount = count,
-				.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-				.pImageInfo = infos.data() + count,
-			},
-		};
-		vkUpdateDescriptorSets(_vkDevice, 2, writes, 0, nullptr);
-	}
-
-	void CTX::writeSamplerDescriptorsImpl(uint32_t first, uint32_t count) {
-		if (_awaitingCreation || _vkBindlessDSet == VK_NULL_HANDLE || first + count > _currentMaxSamplerCount) {
-			_awaitingCreation = true;
-			return;
-		}
-		if (count == 0)
-			return;
-		// our linear sampler is the backup/resolve
-		VkSampler linearSampler = _samplerPool._objects[0]._obj._vkSampler;
-		std::vector<VkDescriptorImageInfo> infos;
-		infos.reserve(count);
-		for (uint32_t i = first; i < first + count; ++i) {
-			VkSampler sampler = _samplerPool._objects[i]._obj._vkSampler;
-			infos.push_back({.sampler = sampler ? sampler : linearSampler, .imageView = VK_NULL_HANDLE, .imageLayout = VK_IMAGE_LAYOUT_UNDEFINED});
-		}
-		const VkWriteDescriptorSet write = {
-			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-			.dstSet = _vkBindlessDSet,
-			.dstBinding = BindlessSpaceIndex::kSampler,
-			.dstArrayElement = first,
-			.descriptorCount = count,
-			.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER,
-			.pImageInfo = infos.data(),
-		};
-		vkUpdateDescriptorSets(_vkDevice, 1, &write, 0, nullptr);
-	}
-
-	void CTX::growBindlessDescriptorPoolImpl(uint32_t newMaxSamplerCount, uint32_t newMaxTextureCount) {
-		MYTH_PROFILER_FUNCTION();
-		_currentMaxSamplerCount = newMaxSamplerCount;
-		_currentMaxTextureCount = newMaxTextureCount;
-
-		const uint32_t MAX_TEXTURE_LIMIT = getPhysicalDeviceProperties12().maxDescriptorSetUpdateAfterBindSampledImages;
-		ASSERT_MSG(newMaxTextureCount <= MAX_TEXTURE_LIMIT, "Max sampled textures exceeded: {}, but maximum of {} is allowed!", newMaxTextureCount, MAX_TEXTURE_LIMIT);
-
-		const uint32_t MAX_SAMPLER_LIMIT = getPhysicalDeviceProperties12().maxDescriptorSetUpdateAfterBindSamplers;
-		ASSERT_MSG(newMaxSamplerCount <= MAX_SAMPLER_LIMIT, "Max samplers exceeded: {}, but maximum of {} is allowed!", newMaxSamplerCount, MAX_SAMPLER_LIMIT);
-
-		if (_vkBindlessDSL != VK_NULL_HANDLE) {
-			deferTask(std::packaged_task<void()>([device = _vkDevice, dsl = _vkBindlessDSL]() { vkDestroyDescriptorSetLayout(device, dsl, nullptr); }));
-		}
-		if (_vkBindlessDPool != VK_NULL_HANDLE) {
-			deferTask(std::packaged_task<void()>([device = _vkDevice, dp = _vkBindlessDPool]() { vkDestroyDescriptorPool(device, dp, nullptr); }));
-		}
-
-		VkShaderStageFlags stage_flags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
-		if (isExtensionEnabled(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME)) {
-			stage_flags |= (VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR |
-							VK_SHADER_STAGE_MISS_BIT_KHR | VK_SHADER_STAGE_INTERSECTION_BIT_KHR | VK_SHADER_STAGE_CALLABLE_BIT_KHR);
-		}
-		const VkDescriptorSetLayoutBinding bindings[BindlessSpaceIndex::kNumOfBinds] = {
-			// __DynamicResource<__DynamicResourceKind.Sampler>
-			VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kSampler, VK_DESCRIPTOR_TYPE_SAMPLER, newMaxSamplerCount, stage_flags, nullptr),
-			// __DynamicResource<__DynamicResourceKind.General>
-			//				VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kCombinedImageSampler, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, newMaxTextureCount, stage_flags, nullptr),
-			VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kSampledImage, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, newMaxTextureCount, stage_flags, nullptr),
-			VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kStorageImage, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, newMaxTextureCount, stage_flags, nullptr),
-			//				VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kUniformTexelBuffer, VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, newMaxTextureCount, stage_flags, nullptr),
-			//				VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kStorageTexelBuffer, VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, newMaxTextureCount, stage_flags, nullptr),
-			//				VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kUniformBuffer, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, newMaxTextureCount, stage_flags, nullptr),
-			//				VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kStorageBuffer, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, newMaxTextureCount, stage_flags, nullptr),
-		};
-		constexpr uint32_t dsbinding_flags = VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_UNUSED_WHILE_PENDING_BIT | VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT;
-		// assign each of our descriptors the same flags
-		VkDescriptorBindingFlags bindingFlags[BindlessSpaceIndex::kNumOfBinds];
-		for (VkDescriptorBindingFlags& bindingFlag: bindingFlags) {
-			bindingFlag = dsbinding_flags;
-		}
-		const VkDescriptorSetLayoutBindingFlagsCreateInfo dsl_bf_ci = {
-			.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO,
-			.bindingCount = BindlessSpaceIndex::kNumOfBinds,
-			.pBindingFlags = bindingFlags,
-		};
-		const VkDescriptorSetLayoutCreateInfo dsl_ci = {
-			.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-			.pNext = &dsl_bf_ci,
-			.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT,
-			.bindingCount = BindlessSpaceIndex::kNumOfBinds,
-			.pBindings = bindings,
-		};
-		VK_CHECK(vkCreateDescriptorSetLayout(_vkDevice, &dsl_ci, nullptr, &_vkBindlessDSL));
-		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT, reinterpret_cast<uint64_t>(_vkBindlessDSL), "Mythril's Bindless Descriptor SetLayout");
-
-		// always just have as max possible length
-		VkDescriptorPoolSize poolSizes[BindlessSpaceIndex::kNumOfBinds]{
-			VkDescriptorPoolSize(VK_DESCRIPTOR_TYPE_SAMPLER, newMaxSamplerCount),
-			//			VkDescriptorPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, newMaxTextureCount),
-			VkDescriptorPoolSize(VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, newMaxTextureCount),
-			VkDescriptorPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, newMaxTextureCount),
-			//			VkDescriptorPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, newMaxTextureCount),
-			//			VkDescriptorPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, newMaxTextureCount),
-			//			VkDescriptorPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, newMaxTextureCount),
-			//			VkDescriptorPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, newMaxTextureCount),
-		};
-		const VkDescriptorPoolCreateInfo dp_ci = {
-			.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-			.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT,
-			.maxSets = 1,
-			.poolSizeCount = BindlessSpaceIndex::kNumOfBinds,
-			.pPoolSizes = poolSizes,
-		};
-		VK_CHECK(vkCreateDescriptorPool(_vkDevice, &dp_ci, nullptr, &_vkBindlessDPool));
-		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_DESCRIPTOR_POOL, reinterpret_cast<uint64_t>(_vkBindlessDPool), "Mythril's Bindless Descriptor Pool");
-		const VkDescriptorSetAllocateInfo ds_ai = {
-			.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-			.descriptorPool = _vkBindlessDPool,
-			.descriptorSetCount = 1,
-			.pSetLayouts = &_vkBindlessDSL,
-		};
-		VK_CHECK(vkAllocateDescriptorSets(_vkDevice, &ds_ai, &_vkBindlessDSet));
-		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_DESCRIPTOR_SET, reinterpret_cast<uint64_t>(_vkBindlessDSet), "Mythril's Bindless Descriptor Set");
-	}
-
-	DeviceAddress CTX::gpuAddress(BufferHandle handle, size_t offset) const {
-		const AllocatedBuffer* buf = _bufferPool.get(handle);
-		ASSERT_MSG(buf, "Buffer handle (index {}, gen {}) is empty or stale!", handle.index(), handle.gen());
-		ASSERT_MSG(buf->_vkDeviceAddress, "Buffer '{}' doesnt have a valid device address!", buf->getDebugName());
-		return {buf->_vkDeviceAddress + offset};
-	}
-	DeviceAddress CTX::gpuAddress(AccelerationStructureHandle handle) const {
-		const AllocatedAccelerationStructure* structure = _accelerationStructurePool.get(handle);
-		ASSERT_MSG(structure, "Acceleration Structure handle (index {}, gen {}) is empty or stale!", handle.index(), handle.gen());
-		ASSERT_MSG(structure->_vkDeviceAddress, "Acceleration Structure '{}' doesnt have a valid device address!", structure->getDebugName());
-		return {structure->_vkDeviceAddress};
-	}
-
-	static VkPipelineLayout BuildPipelineLayout(VkDevice device, const std::vector<VkDescriptorSetLayout>& layouts, const std::vector<VkPushConstantRange>& ranges) {
-		const VkPipelineLayoutCreateInfo pipeline_layout_info = {
-			.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-			.setLayoutCount = static_cast<uint32_t>(layouts.size()),
-			.pSetLayouts = layouts.data(),
-			.pushConstantRangeCount = static_cast<uint32_t>(ranges.size()),
-			.pPushConstantRanges = ranges.data(),
-		};
-		VkPipelineLayout plLayout = VK_NULL_HANDLE;
-		VK_CHECK(vkCreatePipelineLayout(device, &pipeline_layout_info, nullptr, &plLayout));
-		return plLayout;
-	}
-
-	static PipelineLayoutSignature MergeSignatures(const std::vector<PipelineLayoutSignature>& pipelineSignatures) {
-		PipelineLayoutSignature out;
-
-		for (const PipelineLayoutSignature& sig: pipelineSignatures)
-			out.usesBindless |= sig.usesBindless;
-
-		// 2. merge push constant func
-		// apply merge func to every pushes by reference
-		for (const PipelineLayoutSignature& sig: pipelineSignatures) {
-			for (const VkPushConstantRange& src: sig.pushes) {
-				bool found = false;
-
-				for (auto& dst: out.pushes) {
-					// check if the block we are comparing is actually the same where it matters (size & offset)
-					if (dst.offset == src.offset && dst.size == src.size) {
-						dst.stageFlags |= src.stageFlags;
-						found = true;
-						break;
-					}
-				}
-
-				if (!found) {
-					// check for overlaps between multiple push constants, vulkan spec disallows this
-					for (const auto& dst: out.pushes) {
-						const bool overlap = !(src.offset + src.size <= dst.offset || dst.offset + dst.size <= src.offset);
-						ASSERT_MSG(!overlap, "Push constant ranges overlap but differ in size or offset.");
-					}
-					out.pushes.push_back(src);
-				}
-			}
-			for (const PushBlockLayout& block: sig.pushBlocks)
-				if (std::ranges::find(out.pushBlocks, block.hash, &PushBlockLayout::hash) == out.pushBlocks.end())
-					out.pushBlocks.push_back(block);
-			for (const PushResourceField& field: sig.pushResources) {
-				if (const auto it = std::ranges::find(out.pushResources, field.offset, &PushResourceField::offset); it != out.pushResources.end())
-					it->access = MergeAccess(it->access, field.access);
-				else
-					out.pushResources.push_back(field);
-			}
-		}
-		return out;
-	}
+        // TODO::fixing the allocation not being proerly freed for buffers VMA
+        auto destroyAll = [this]<typename H, typename O>(HandlePool<H, O>& pool, const char* name) {
+            if (!pool.numObjects())
+                return;
+            LOG_SYSTEM(LogType::Info, "Cleaned up {} {}", pool.numObjects(), name);
+            for (uint32_t i = 0; i < pool._objects.size(); i++)
+                destroy(pool.getHandle(i));
+        };
+        destroyAll(_shaderPool, "shader modules");
+        destroyAll(_graphicsPipelinePool, "graphics pipelines");
+        destroyAll(_computePipelinePool, "compute pipelines");
+        destroyAll(_rayTracingPipelinePool, "raytracing pipelines");
+        destroyAll(_samplerPool, "samplers");
+        destroyAll(_queryPoolPool, "query pools");
+        destroyAll(_texturePool, "textures");
+        destroyAll(_bufferPool, "buffers");
+        destroyAll(_accelerationStructurePool, "acceleration structures");
 
 
-	static int ResolveSpecializationConstantID(const std::variant<std::string, int>& identifier, const std::unordered_map<std::string, int>& map) {
-		bool isString = std::holds_alternative<std::string>(identifier);
-		if (!isString)
-			return std::get<int>(identifier);
-		const auto& name = std::get<std::string>(identifier);
-		auto it = map.find(name);
-		if (it != map.end()) {
-			return it->second;
-		}
-		UNREACHABLE("Your specialization constant entry '{}' could not be found", name);
-	}
+        // the order of operations is very specific so that we dont trigger any validation warnings
 
-	struct SpecializationInfoBundle {
-		VkSpecializationInfo vkInfo{};
-		// purely for lifetime reasons
-		std::vector<VkSpecializationMapEntry> mapEntriesData;
-		std::vector<std::byte> packedData;
-	};
-	static std::unique_ptr<SpecializationInfoBundle> BuildSpecializationInfoBundle(SpecializationConstantEntry* pEntries, uint32_t entryCount, const SpecializationInfo& info) {
-		// if entryCount is 0 just save ourselves time
-		if (entryCount < 1)
-			return nullptr;
-		// the pipeline's entries are shared by every stage, a stage with no specialization constants ignores them
-		if (info.nameToID.empty())
-			return nullptr;
-		const std::unordered_map<std::string, int>& map = info.nameToID;
+        // wipe buffers
+        _bufferPool.clear();
+        _texturePool.clear();
+        _samplerPool.clear();
+        _queryPoolPool.clear();
+        _shaderPool.clear();
+        _graphicsPipelinePool.clear();
+        _computePipelinePool.clear();
+        _rayTracingPipelinePool.clear();
+        _accelerationStructurePool.clear();
+        // make sure imm tasks are complete
+        waitDeferredTasks();
+        _immAsyncTransfer.reset(nullptr);
+        _immAsyncCompute.reset(nullptr);
+        _immGraphics.reset(nullptr);
 
-		auto bundle = std::make_unique<SpecializationInfoBundle>();
-		bundle->mapEntriesData.reserve(entryCount);
+        // destroy our bindless descriptor stuff
+        vkDestroyDescriptorSetLayout(_vkDevice, _vkBindlessDSL, nullptr);
+        vkDestroyDescriptorPool(_vkDevice, _vkBindlessDPool, nullptr);
 
-		size_t offset = 0;
-		for (uint32_t i_entry = 0; i_entry < entryCount; i_entry++) {
-			const SpecializationConstantEntry& spec_entry = pEntries[i_entry];
-			VkSpecializationMapEntry vk_entry = {};
-			vk_entry.size = spec_entry.size;
-			vk_entry.offset = offset;
-			vk_entry.constantID = ResolveSpecializationConstantID(spec_entry.identifier, map);
-			bundle->mapEntriesData.push_back(vk_entry);
-			offset += spec_entry.size;
-		}
+        vmaDestroyAllocator(_vmaAllocator);
+        // destroy pure vk objects
+        vkDestroyDevice(_vkDevice, nullptr);
+        if (_vkDebugMessenger != VK_NULL_HANDLE) {
+            vkDestroyDebugUtilsMessengerEXT(_vkInstance, _vkDebugMessenger, nullptr);
+        }
+        if (this->_surfaceDestroyFunc) {
+            this->_surfaceDestroyFunc(_vkInstance, _vkSurfaceKHR);
+        }
+        vkDestroyInstance(_vkInstance, nullptr);
+    }
 
-		// make packed structure
-		bundle->packedData.resize(offset);
-		for (uint32_t i = 0; i < entryCount; i++) {
-			const SpecializationConstantEntry& spec_entry = pEntries[i];
-			const size_t dstOffset = bundle->mapEntriesData[i].offset;
-			std::memcpy(bundle->packedData.data() + dstOffset, spec_entry.data, spec_entry.size);
-		}
+    void CTX::recreateSwapchain(const SwapchainSpec& spec) {
+        destroySwapchain();
+        createSwapchain(spec);
+    }
 
-		bundle->vkInfo.mapEntryCount = bundle->mapEntriesData.size();
-		bundle->vkInfo.pMapEntries = bundle->mapEntriesData.data();
-		bundle->vkInfo.dataSize = bundle->packedData.size();
-		bundle->vkInfo.pData = bundle->packedData.data();
+    void CTX::destroySwapchain() {
+        if (!_swapchain) {
+            LOG_SYSTEM(LogType::Warning, "CTX::destroySwapchain called when no existing swapchain exists!");
+            return;
+        }
+        VK_CHECK(vkDeviceWaitIdle(this->_vkDevice));
+        this->_swapchain.reset(nullptr);
+    }
 
-		return bundle;
-	}
+    template<typename T>
+    static void AssignIfValid(T& dst, const T& src, T invalid) {
+        if (src != invalid && dst != src)
+            dst = src;
+    }
+    void CTX::createSwapchain(const SwapchainSpec& spec) {
+        // does some checks for the user that the default constructor doesnt do
+        if (_swapchain) {
+            LOG_SYSTEM(LogType::Warning, "CTX::createSwapchain called when an already existing swapchain exists!");
+            return;
+        }
+        SwapchainSpec new_swapchain_spec = {
+            .width = lastSwapchainSpec.width,
+            .height = lastSwapchainSpec.height,
+            .format = lastSwapchainSpec.format,
+            .colorSpace = lastSwapchainSpec.colorSpace,
+            .presentMode = lastSwapchainSpec.presentMode,
+        };
+        AssignIfValid(new_swapchain_spec.width, spec.width, static_cast<uint32_t>(0));
+        AssignIfValid(new_swapchain_spec.height, spec.height, static_cast<uint32_t>(0));
+        AssignIfValid(new_swapchain_spec.format, spec.format, VK_FORMAT_MAX_ENUM);
+        AssignIfValid(new_swapchain_spec.colorSpace, spec.colorSpace, VK_COLOR_SPACE_MAX_ENUM_KHR);
+        AssignIfValid(new_swapchain_spec.presentMode, spec.presentMode, VK_PRESENT_MODE_MAX_ENUM_KHR);
 
-	PipelineCoreData CTX::buildPipelineCommonDataExceptVkPipelineImpl(const PipelineLayoutSignature& signature) const {
-		// because we are fully bindless, we have at most one descriptor set (the bindless one) is ever bound
-		// however i want to leave this legacy code in here :)
-		std::vector<VkDescriptorSetLayout> layouts;
-		if (signature.usesBindless)
-			layouts.push_back(_vkBindlessDSL);
+        ASSERT_MSG(!_currentCommandBuffer._ctx, "Cannot create a swapchain while a CommandBuffer is open, deferred tasks are flushed here.");
+        VK_CHECK(vkDeviceWaitIdle(this->_vkDevice));
+        // trivial win which opens the ability for the swapchian to reuse existing indicies that are now available
+        waitDeferredTasks();
+        this->_swapchain = std::make_unique<Swapchain>(*this, new_swapchain_spec);
+        lastSwapchainSpec = new_swapchain_spec;
+    }
 
-		VkPipelineLayout vk_pipeline_layout = BuildPipelineLayout(this->_vkDevice, layouts, signature.pushes);
+    void CTX::checkAndUpdateBindlessDescriptorSetImpl() {
+        MYTH_PROFILER_FUNCTION();
+        if (!_awaitingCreation) {
+            return;
+        }
+        uint32_t newMaxSamplers = _currentMaxSamplerCount;
+        uint32_t newMaxTextures = _currentMaxTextureCount;
 
-		PipelineCoreData common;
-		common._vkPipelineLayout = vk_pipeline_layout;
-		common.signature = signature;
-		common._vkBindlessDescriptorSet = signature.usesBindless ? this->_vkBindlessDSet : VK_NULL_HANDLE;
-		return common;
-	}
+        while (_samplerPool._objects.size() > newMaxSamplers) {
+            newMaxSamplers *= 2;
+        }
+        while (_texturePool._objects.size() > newMaxTextures) {
+            newMaxTextures *= 2;
+        }
+        if (newMaxSamplers != _currentMaxSamplerCount || newMaxTextures != _currentMaxTextureCount) {
+            // actual call site for growing
+            this->growBindlessDescriptorPoolImpl(newMaxSamplers, newMaxTextures);
+            // pipeline layouts include the old DSL's descriptor counts so they are incompatible with the new set and must be rebuilt
+            forEachPipelinePoolImpl([this](auto& pool) {
+                for (auto& obj: pool._objects)
+                    if (obj._obj._shared.core._vkBindlessDescriptorSet != VK_NULL_HANDLE)
+                        invalidatePipelineImpl(obj._obj._shared);
+            });
+        }
+        // only reached when a slot write failed, so the target is a fresh set after a grow or one that was never bound
+        _awaitingCreation = false;
+        writeSamplerDescriptorsImpl(0, static_cast<uint32_t>(_samplerPool._objects.size()));
+        writeTextureDescriptorsImpl(0, static_cast<uint32_t>(_texturePool._objects.size()));
+    }
 
-	// graphics pipeline doesnt have one of these because that is abstracted inside the GraphicsPipelineBuilder class
-	VkPipeline CTX::buildComputePipelineImpl(VkPipelineLayout layout, ComputePipelineSpec spec) {
-		uint32_t sc_count = 0;
-		while (sc_count < 16 && spec.specConstants[sc_count].size) {
-			sc_count++;
-		}
-		// a compute pipeline only has one shader anyways
-		const AllocatedShader* shader = _shaderPool.get(spec.shader);
-		const std::unique_ptr<SpecializationInfoBundle> spec_constants_bundle = BuildSpecializationInfoBundle(spec.specConstants, sc_count, shader->_specializationInfo);
+    void CTX::writeTextureDescriptorsImpl(uint32_t first, uint32_t count) {
+        if (_awaitingCreation || _vkBindlessDSet == VK_NULL_HANDLE || first + count > _currentMaxTextureCount) {
+            _awaitingCreation = true;
+            return;
+        }
+        if (count == 0)
+            return;
+        // our dummyTexture, the cross pattern, is the backup/resolve
+        VkImageView dummyImageView = _texturePool._objects[0]._obj._vkImageView;
+        // sampled infos first, storage infos after, so each binding gets one contiguous run
+        std::vector<VkDescriptorImageInfo> infos(2 * count);
+        for (uint32_t k = 0; k < count; ++k) {
+            const AllocatedTexture& img = _texturePool._objects[first + k]._obj;
+            // swapchain images must not be in bindless, after present, the drawable is returned to
+            // already presenting this drawable on moltenvk
+            // multisampled images cannot be directly accessed from shaders
+            const bool isTextureAvailable = !img.isSwapchainImage() && (img.getSampleCount() & VK_SAMPLE_COUNT_1_BIT) == VK_SAMPLE_COUNT_1_BIT;
+            VkImageView storageView = img._vkImageViewStorage ? img._vkImageViewStorage : img._vkImageView;
+            infos[k] = {
+                .sampler = VK_NULL_HANDLE,
+                .imageView = isTextureAvailable && img.isSampledImage() ? img._vkImageView : dummyImageView,
+                .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            };
+            ASSERT_MSG(infos[k].imageView != VK_NULL_HANDLE, "Sampled imageView is null!");
+            // storage images could be used for anything, per in general layout
+            infos[count + k] = {
+                .sampler = VK_NULL_HANDLE,
+                .imageView = isTextureAvailable && img.isStorageImage() ? storageView : dummyImageView,
+                .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
+            };
+        }
+        const VkWriteDescriptorSet writes[] = {
+            VkWriteDescriptorSet{
+                .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                .dstSet = _vkBindlessDSet,
+                .dstBinding = BindlessSpaceIndex::kSampledImage,
+                .dstArrayElement = first,
+                .descriptorCount = count,
+                .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
+                .pImageInfo = infos.data(),
+            },
+            VkWriteDescriptorSet{
+                .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                .dstSet = _vkBindlessDSet,
+                .dstBinding = BindlessSpaceIndex::kStorageImage,
+                .dstArrayElement = first,
+                .descriptorCount = count,
+                .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+                .pImageInfo = infos.data() + count,
+            },
+        };
+        vkUpdateDescriptorSets(_vkDevice, 2, writes, 0, nullptr);
+    }
 
-		VkPipelineShaderStageCreateInfo shader_stage_ci = {
-			.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-			.pNext = nullptr,
-			.flags = 0,
-			.stage = VK_SHADER_STAGE_COMPUTE_BIT,
-			.module = shader->_vkShaderModule,
-			.pName = kComputeEntryPoint,
-			.pSpecializationInfo = spec_constants_bundle ? &spec_constants_bundle->vkInfo : nullptr,
-		};
-		VkComputePipelineCreateInfo pipeline_ci = {.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO, .pNext = nullptr, .flags = 0, .stage = shader_stage_ci, .layout = layout};
+    void CTX::writeSamplerDescriptorsImpl(uint32_t first, uint32_t count) {
+        if (_awaitingCreation || _vkBindlessDSet == VK_NULL_HANDLE || first + count > _currentMaxSamplerCount) {
+            _awaitingCreation = true;
+            return;
+        }
+        if (count == 0)
+            return;
+        // our linear sampler is the backup/resolve
+        VkSampler linearSampler = _samplerPool._objects[0]._obj._vkSampler;
+        std::vector<VkDescriptorImageInfo> infos;
+        infos.reserve(count);
+        for (uint32_t i = first; i < first + count; ++i) {
+            VkSampler sampler = _samplerPool._objects[i]._obj._vkSampler;
+            infos.push_back({ .sampler = sampler ? sampler : linearSampler, .imageView = VK_NULL_HANDLE, .imageLayout = VK_IMAGE_LAYOUT_UNDEFINED });
+        }
+        const VkWriteDescriptorSet write = {
+            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .dstSet = _vkBindlessDSet,
+            .dstBinding = BindlessSpaceIndex::kSampler,
+            .dstArrayElement = first,
+            .descriptorCount = count,
+            .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER,
+            .pImageInfo = infos.data(),
+        };
+        vkUpdateDescriptorSets(_vkDevice, 1, &write, 0, nullptr);
+    }
 
-		VkPipeline vk_pipeline = VK_NULL_HANDLE;
-		VK_CHECK(vkCreateComputePipelines(_vkDevice, nullptr, 1, &pipeline_ci, nullptr, &vk_pipeline));
-		return vk_pipeline;
-	}
+    void CTX::growBindlessDescriptorPoolImpl(uint32_t newMaxSamplerCount, uint32_t newMaxTextureCount) {
+        MYTH_PROFILER_FUNCTION();
+        _currentMaxSamplerCount = newMaxSamplerCount;
+        _currentMaxTextureCount = newMaxTextureCount;
 
-	VkPipeline CTX::buildRayTracingPipelineImpl(VkPipelineLayout layout, RayTracingPipelineSpec& spec) {
-		// sc_count is across all stages of a shader
-		uint32_t sc_count = 0;
-		while (sc_count < 16 && spec.specConstants[sc_count].size) {
-			sc_count++;
-		}
+        const uint32_t MAX_TEXTURE_LIMIT = getPhysicalDeviceProperties12().maxDescriptorSetUpdateAfterBindSampledImages;
+        ASSERT_MSG(newMaxTextureCount <= MAX_TEXTURE_LIMIT, "Max sampled textures exceeded: {}, but maximum of {} is allowed!", newMaxTextureCount, MAX_TEXTURE_LIMIT);
 
-		// track number for later states
-		uint32_t numShaderStages = 0;
-		uint32_t numShaderGroups = 0;
-		// track individual shader stages
-		uint32_t idxMiss = 0;
-		uint32_t numMissGroups = 0;
-		uint32_t idxHit = 0;
-		uint32_t numHitGroups = 0;
-		uint32_t idxCallable = 0;
-		uint32_t numCallableGroups = 0;
+        const uint32_t MAX_SAMPLER_LIMIT = getPhysicalDeviceProperties12().maxDescriptorSetUpdateAfterBindSamplers;
+        ASSERT_MSG(newMaxSamplerCount <= MAX_SAMPLER_LIMIT, "Max samplers exceeded: {}, but maximum of {} is allowed!", newMaxSamplerCount, MAX_SAMPLER_LIMIT);
 
-		// a single hit group can have up to 3 shader stages: source lvkweight said so
-		const size_t kMaxRayTracingShaderStages =
-			spec.rayGenShaders.size() +
-			spec.missShaders.size() +
-			spec.callableShader.size() +
-			3 * spec.closestHitShaders.size();
+        if (_vkBindlessDSL != VK_NULL_HANDLE) {
+            deferTask(std::packaged_task<void()>([device = _vkDevice, dsl = _vkBindlessDSL]() {
+                vkDestroyDescriptorSetLayout(device, dsl, nullptr);
+            }));
+        }
+        if (_vkBindlessDPool != VK_NULL_HANDLE) {
+            deferTask(std::packaged_task<void()>([device = _vkDevice, dp = _vkBindlessDPool]() {
+                vkDestroyDescriptorPool(device, dp, nullptr);
+            }));
+        }
 
-		std::vector<VkPipelineShaderStageCreateInfo> createInfoShaderStages(kMaxRayTracingShaderStages);
-		// pSpecializationInfo points into these, so they must outlive vkCreateRayTracingPipelinesKHR
-		std::vector<std::unique_ptr<SpecializationInfoBundle>> specConstantsBundles;
-		specConstantsBundles.reserve(kMaxRayTracingShaderStages);
-		auto addStage = [this, sc_count, &spec, &numShaderStages, &createInfoShaderStages, &specConstantsBundles](VkShaderStageFlagBits stageFlag, const ShaderStage& shaderStage) -> uint32_t {
-			if (shaderStage.handle.empty())
-				return VK_SHADER_UNUSED_KHR;
-			AllocatedShader* shader = _shaderPool.get(shaderStage.handle);
-			ASSERT_MSG(shader, "A shader for raytracing pipeline: '{}' was destroyed or moved.", spec.debugName);
-			ASSERT_MSG(shaderStage.entryPoint, "RayTracing shaders have no default entry point, one must be given for raytracing pipeline: '{}'.", spec.debugName);
-			specConstantsBundles.push_back(BuildSpecializationInfoBundle(spec.specConstants, sc_count, shader->_specializationInfo));
-			const SpecializationInfoBundle* bundle = specConstantsBundles.back().get();
-			createInfoShaderStages[numShaderStages] = {
-				.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-				.pNext = nullptr,
-				.flags = 0,
-				.stage = stageFlag,
-				.module = shader->_vkShaderModule,
-				.pName = shaderStage.entryPoint,
-				.pSpecializationInfo = bundle ? &bundle->vkInfo : nullptr};
-			return numShaderStages++;
-		};
+        VkShaderStageFlags stage_flags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
+        if (isExtensionEnabled(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME)) {
+            stage_flags |= (VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR |
+                            VK_SHADER_STAGE_MISS_BIT_KHR | VK_SHADER_STAGE_INTERSECTION_BIT_KHR | VK_SHADER_STAGE_CALLABLE_BIT_KHR);
+        }
+        const VkDescriptorSetLayoutBinding bindings[BindlessSpaceIndex::kNumOfBinds] = {
+            // __DynamicResource<__DynamicResourceKind.Sampler>
+            VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kSampler, VK_DESCRIPTOR_TYPE_SAMPLER, newMaxSamplerCount, stage_flags, nullptr),
+            // __DynamicResource<__DynamicResourceKind.General>
+            //				VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kCombinedImageSampler, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, newMaxTextureCount, stage_flags, nullptr),
+            VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kSampledImage, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, newMaxTextureCount, stage_flags, nullptr),
+            VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kStorageImage, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, newMaxTextureCount, stage_flags, nullptr),
+            //				VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kUniformTexelBuffer, VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, newMaxTextureCount, stage_flags, nullptr),
+            //				VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kStorageTexelBuffer, VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, newMaxTextureCount, stage_flags, nullptr),
+            //				VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kUniformBuffer, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, newMaxTextureCount, stage_flags, nullptr),
+            //				VkDescriptorSetLayoutBinding(BindlessSpaceIndex::kStorageBuffer, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, newMaxTextureCount, stage_flags, nullptr),
+        };
+        constexpr uint32_t dsbinding_flags = VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_UNUSED_WHILE_PENDING_BIT | VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT;
+        // assign each of our descriptors the same flags
+        VkDescriptorBindingFlags bindingFlags[BindlessSpaceIndex::kNumOfBinds];
+        for (VkDescriptorBindingFlags& bindingFlag: bindingFlags) {
+            bindingFlag = dsbinding_flags;
+        }
+        const VkDescriptorSetLayoutBindingFlagsCreateInfo dsl_bf_ci = {
+            .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO,
+            .bindingCount = BindlessSpaceIndex::kNumOfBinds,
+            .pBindingFlags = bindingFlags,
+        };
+        const VkDescriptorSetLayoutCreateInfo dsl_ci = {
+            .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+            .pNext = &dsl_bf_ci,
+            .flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT,
+            .bindingCount = BindlessSpaceIndex::kNumOfBinds,
+            .pBindings = bindings,
+        };
+        VK_CHECK(vkCreateDescriptorSetLayout(_vkDevice, &dsl_ci, nullptr, &_vkBindlessDSL));
+        vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT, reinterpret_cast<uint64_t>(_vkBindlessDSL), "Mythril's Bindless Descriptor SetLayout");
+
+        // always just have as max possible length
+        VkDescriptorPoolSize poolSizes[BindlessSpaceIndex::kNumOfBinds]{
+            VkDescriptorPoolSize(VK_DESCRIPTOR_TYPE_SAMPLER, newMaxSamplerCount),
+            //			VkDescriptorPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, newMaxTextureCount),
+            VkDescriptorPoolSize(VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, newMaxTextureCount),
+            VkDescriptorPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, newMaxTextureCount),
+            //			VkDescriptorPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, newMaxTextureCount),
+            //			VkDescriptorPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, newMaxTextureCount),
+            //			VkDescriptorPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, newMaxTextureCount),
+            //			VkDescriptorPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, newMaxTextureCount),
+        };
+        const VkDescriptorPoolCreateInfo dp_ci = {
+            .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+            .flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT,
+            .maxSets = 1,
+            .poolSizeCount = BindlessSpaceIndex::kNumOfBinds,
+            .pPoolSizes = poolSizes,
+        };
+        VK_CHECK(vkCreateDescriptorPool(_vkDevice, &dp_ci, nullptr, &_vkBindlessDPool));
+        vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_DESCRIPTOR_POOL, reinterpret_cast<uint64_t>(_vkBindlessDPool), "Mythril's Bindless Descriptor Pool");
+        const VkDescriptorSetAllocateInfo ds_ai = {
+            .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+            .descriptorPool = _vkBindlessDPool,
+            .descriptorSetCount = 1,
+            .pSetLayouts = &_vkBindlessDSL,
+        };
+        VK_CHECK(vkAllocateDescriptorSets(_vkDevice, &ds_ai, &_vkBindlessDSet));
+        vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_DESCRIPTOR_SET, reinterpret_cast<uint64_t>(_vkBindlessDSet), "Mythril's Bindless Descriptor Set");
+    }
+
+    DeviceAddress CTX::gpuAddress(BufferHandle handle, size_t offset) const {
+        const AllocatedBuffer* buf = _bufferPool.get(handle);
+        ASSERT_MSG(buf, "Buffer handle (index {}, gen {}) is empty or stale!", handle.index(), handle.gen());
+        ASSERT_MSG(buf->_vkDeviceAddress, "Buffer '{}' doesnt have a valid device address!", buf->getDebugName());
+        return { buf->_vkDeviceAddress + offset };
+    }
+    DeviceAddress CTX::gpuAddress(AccelerationStructureHandle handle) const {
+        const AllocatedAccelerationStructure* structure = _accelerationStructurePool.get(handle);
+        ASSERT_MSG(structure, "Acceleration Structure handle (index {}, gen {}) is empty or stale!", handle.index(), handle.gen());
+        ASSERT_MSG(structure->_vkDeviceAddress, "Acceleration Structure '{}' doesnt have a valid device address!", structure->getDebugName());
+        return { structure->_vkDeviceAddress };
+    }
+
+    static VkPipelineLayout BuildPipelineLayout(VkDevice device, const std::vector<VkDescriptorSetLayout>& layouts, const std::vector<VkPushConstantRange>& ranges) {
+        const VkPipelineLayoutCreateInfo pipeline_layout_info = {
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+            .setLayoutCount = static_cast<uint32_t>(layouts.size()),
+            .pSetLayouts = layouts.data(),
+            .pushConstantRangeCount = static_cast<uint32_t>(ranges.size()),
+            .pPushConstantRanges = ranges.data(),
+        };
+        VkPipelineLayout plLayout = VK_NULL_HANDLE;
+        VK_CHECK(vkCreatePipelineLayout(device, &pipeline_layout_info, nullptr, &plLayout));
+        return plLayout;
+    }
+
+    static PipelineLayoutSignature MergeSignatures(const std::vector<PipelineLayoutSignature>& pipelineSignatures) {
+        PipelineLayoutSignature out;
+
+        for (const PipelineLayoutSignature& sig: pipelineSignatures)
+            out.usesBindless |= sig.usesBindless;
+
+        // 2. merge push constant func
+        // apply merge func to every pushes by reference
+        for (const PipelineLayoutSignature& sig: pipelineSignatures) {
+            for (const VkPushConstantRange& src: sig.pushes) {
+                bool found = false;
+
+                for (auto& dst: out.pushes) {
+                    // check if the block we are comparing is actually the same where it matters (size & offset)
+                    if (dst.offset == src.offset && dst.size == src.size) {
+                        dst.stageFlags |= src.stageFlags;
+                        found = true;
+                        break;
+                    }
+                }
+
+                if (!found) {
+                    // check for overlaps between multiple push constants, vulkan spec disallows this
+                    for (const auto& dst: out.pushes) {
+                        const bool overlap = !(src.offset + src.size <= dst.offset || dst.offset + dst.size <= src.offset);
+                        ASSERT_MSG(!overlap, "Push constant ranges overlap but differ in size or offset.");
+                    }
+                    out.pushes.push_back(src);
+                }
+            }
+            for (const PushBlockLayout& block: sig.pushBlocks)
+                if (std::ranges::find(out.pushBlocks, block.hash, &PushBlockLayout::hash) == out.pushBlocks.end())
+                    out.pushBlocks.push_back(block);
+            for (const PushResourceField& field: sig.pushResources) {
+                if (const auto it = std::ranges::find(out.pushResources, field.offset, &PushResourceField::offset); it != out.pushResources.end())
+                    it->access = MergeAccess(it->access, field.access);
+                else
+                    out.pushResources.push_back(field);
+            }
+        }
+        return out;
+    }
 
 
-		const uint32_t kMaxShaderGroups =
-			spec.rayGenShaders.size() +
-			spec.missShaders.size() +
-			spec.callableShader.size() +
-			spec.closestHitShaders.size();
-		// we can safely index into it
-		std::vector<VkRayTracingShaderGroupCreateInfoKHR> shaderGroups(kMaxShaderGroups);
+    static int ResolveSpecializationConstantID(const std::variant<std::string, int>& identifier, const std::unordered_map<std::string, int>& map) {
+        bool isString = std::holds_alternative<std::string>(identifier);
+        if (!isString)
+            return std::get<int>(identifier);
+        const auto& name = std::get<std::string>(identifier);
+        auto it = map.find(name);
+        if (it != map.end()) {
+            return it->second;
+        }
+        UNREACHABLE("Your specialization constant entry '{}' could not be found", name);
+    }
 
-		for (auto& raygenShader: spec.rayGenShaders) {
-			if (const auto shader = _shaderPool.get(raygenShader.handle)) {
-				shaderGroups[numShaderGroups++] = {
-					.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR,
-					.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR,
-					.generalShader = addStage(VK_SHADER_STAGE_RAYGEN_BIT_KHR, raygenShader),
-					.closestHitShader = VK_SHADER_UNUSED_KHR,
-					.anyHitShader = VK_SHADER_UNUSED_KHR,
-					.intersectionShader = VK_SHADER_UNUSED_KHR};
-			}
-		}
-		for (auto& missShader: spec.missShaders) {
-			if (const auto shader = _shaderPool.get(missShader.handle)) {
-				numMissGroups++;
-				shaderGroups[numShaderGroups++] = {
-					.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR,
-					.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR,
-					.generalShader = addStage(VK_SHADER_STAGE_MISS_BIT_KHR, missShader),
-					.closestHitShader = VK_SHADER_UNUSED_KHR,
-					.anyHitShader = VK_SHADER_UNUSED_KHR,
-					.intersectionShader = VK_SHADER_UNUSED_KHR};
-			}
-		}
-		for (auto& closestHitShader: spec.closestHitShaders) {
-			if (const auto shader = _shaderPool.get(closestHitShader.handle)) {
-				numHitGroups++;
-				shaderGroups[numShaderGroups++] = {
-					.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR,
-					.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR,
-					.generalShader = VK_SHADER_UNUSED_KHR,
-					.closestHitShader = addStage(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, closestHitShader),
-					.anyHitShader = VK_SHADER_UNUSED_KHR,
-					.intersectionShader = VK_SHADER_UNUSED_KHR};
-			}
-		}
-		for (auto& callableShader: spec.callableShader) {
-			if (const auto shader = _shaderPool.get(callableShader.handle)) {
-				numCallableGroups++;
-				shaderGroups[numShaderGroups++] = {
-					.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR,
-					.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR,
-					.generalShader = addStage(VK_SHADER_STAGE_CALLABLE_BIT_KHR, callableShader),
-					.closestHitShader = VK_SHADER_UNUSED_KHR,
-					.anyHitShader = VK_SHADER_UNUSED_KHR,
-					.intersectionShader = VK_SHADER_UNUSED_KHR};
-			}
-		}
+    struct SpecializationInfoBundle {
+        VkSpecializationInfo vkInfo{};
+        // purely for lifetime reasons
+        std::vector<VkSpecializationMapEntry> mapEntriesData;
+        std::vector<std::byte> packedData;
+    };
+    static std::unique_ptr<SpecializationInfoBundle> BuildSpecializationInfoBundle(SpecializationConstantEntry* pEntries, uint32_t entryCount, const SpecializationInfo& info) {
+        // if entryCount is 0 just save ourselves time
+        if (entryCount < 1)
+            return nullptr;
+        // the pipeline's entries are shared by every stage, a stage with no specialization constants ignores them
+        if (info.nameToID.empty())
+            return nullptr;
+        const std::unordered_map<std::string, int>& map = info.nameToID;
 
-		const uint32_t maxDepth = _rayTracingProperties.maxRayRecursionDepth;
-		const uint32_t depth = spec.maxRecursionDepth ? spec.maxRecursionDepth : 0;
-		// only need
-		constexpr VkDynamicState dynamicState = VK_DYNAMIC_STATE_RAY_TRACING_PIPELINE_STACK_SIZE_KHR;
-		const VkPipelineDynamicStateCreateInfo ciDynamicState = {
-			.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
-			.dynamicStateCount = 1,
-			.pDynamicStates = &dynamicState};
-		const VkRayTracingPipelineCreateInfoKHR pipeline_ci = {
-			.sType = VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR,
-			.pNext = nullptr,
-			.flags = 0,
-			.stageCount = numShaderStages,
-			.pStages = createInfoShaderStages.data(),
-			.groupCount = numShaderGroups,
-			.pGroups = shaderGroups.data(),
-			.maxPipelineRayRecursionDepth = depth ? std::min(depth, maxDepth) : maxDepth,
-			.pDynamicState = spec.stackSize ? &ciDynamicState : nullptr,
-			.layout = layout};
-		VkPipeline vk_pipeline = VK_NULL_HANDLE;
-		VK_CHECK(vkCreateRayTracingPipelinesKHR(_vkDevice, nullptr, nullptr, 1, &pipeline_ci, nullptr, &vk_pipeline));
+        auto bundle = std::make_unique<SpecializationInfoBundle>();
+        bundle->mapEntriesData.reserve(entryCount);
 
-		return vk_pipeline;
-	}
+        size_t offset = 0;
+        for (uint32_t i_entry = 0; i_entry < entryCount; i_entry++) {
+            const SpecializationConstantEntry& spec_entry = pEntries[i_entry];
+            VkSpecializationMapEntry vk_entry = {};
+            vk_entry.size = spec_entry.size;
+            vk_entry.offset = offset;
+            vk_entry.constantID = ResolveSpecializationConstantID(spec_entry.identifier, map);
+            bundle->mapEntriesData.push_back(vk_entry);
+            offset += spec_entry.size;
+        }
 
-	void CTX::resolveComputePipelineImpl(AllocatedComputePipeline& pipeline) {
-		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_CREATE);
+        // make packed structure
+        bundle->packedData.resize(offset);
+        for (uint32_t i = 0; i < entryCount; i++) {
+            const SpecializationConstantEntry& spec_entry = pEntries[i];
+            const size_t dstOffset = bundle->mapEntriesData[i].offset;
+            std::memcpy(bundle->packedData.data() + dstOffset, spec_entry.data, spec_entry.size);
+        }
+
+        bundle->vkInfo.mapEntryCount = bundle->mapEntriesData.size();
+        bundle->vkInfo.pMapEntries = bundle->mapEntriesData.data();
+        bundle->vkInfo.dataSize = bundle->packedData.size();
+        bundle->vkInfo.pData = bundle->packedData.data();
+
+        return bundle;
+    }
+
+    PipelineCoreData CTX::buildPipelineCommonDataExceptVkPipelineImpl(const PipelineLayoutSignature& signature) const {
+        // because we are fully bindless, we have at most one descriptor set (the bindless one) is ever bound
+        // however i want to leave this legacy code in here :)
+        std::vector<VkDescriptorSetLayout> layouts;
+        if (signature.usesBindless)
+            layouts.push_back(_vkBindlessDSL);
+
+        VkPipelineLayout vk_pipeline_layout = BuildPipelineLayout(this->_vkDevice, layouts, signature.pushes);
+
+        PipelineCoreData common;
+        common._vkPipelineLayout = vk_pipeline_layout;
+        common.signature = signature;
+        common._vkBindlessDescriptorSet = signature.usesBindless ? this->_vkBindlessDSet : VK_NULL_HANDLE;
+        return common;
+    }
+
+    // graphics pipeline doesnt have one of these because that is abstracted inside the GraphicsPipelineBuilder class
+    VkPipeline CTX::buildComputePipelineImpl(VkPipelineLayout layout, ComputePipelineSpec spec) {
+        uint32_t sc_count = 0;
+        while (sc_count < 16 && spec.specConstants[sc_count].size) {
+            sc_count++;
+        }
+        // a compute pipeline only has one shader anyways
+        const AllocatedShader* shader = _shaderPool.get(spec.shader);
+        const std::unique_ptr<SpecializationInfoBundle> spec_constants_bundle = BuildSpecializationInfoBundle(spec.specConstants, sc_count, shader->_specializationInfo);
+
+        VkPipelineShaderStageCreateInfo shader_stage_ci = {
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            .pNext = nullptr,
+            .flags = 0,
+            .stage = VK_SHADER_STAGE_COMPUTE_BIT,
+            .module = shader->_vkShaderModule,
+            .pName = kComputeEntryPoint,
+            .pSpecializationInfo = spec_constants_bundle ? &spec_constants_bundle->vkInfo : nullptr,
+        };
+        VkComputePipelineCreateInfo pipeline_ci = { .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO, .pNext = nullptr, .flags = 0, .stage = shader_stage_ci, .layout = layout };
+
+        VkPipeline vk_pipeline = VK_NULL_HANDLE;
+        VK_CHECK(vkCreateComputePipelines(_vkDevice, nullptr, 1, &pipeline_ci, nullptr, &vk_pipeline));
+        return vk_pipeline;
+    }
+
+    VkPipeline CTX::buildRayTracingPipelineImpl(VkPipelineLayout layout, RayTracingPipelineSpec& spec) {
+        // sc_count is across all stages of a shader
+        uint32_t sc_count = 0;
+        while (sc_count < 16 && spec.specConstants[sc_count].size) {
+            sc_count++;
+        }
+
+        // track number for later states
+        uint32_t numShaderStages = 0;
+        uint32_t numShaderGroups = 0;
+        // track individual shader stages
+        uint32_t idxMiss = 0;
+        uint32_t numMissGroups = 0;
+        uint32_t idxHit = 0;
+        uint32_t numHitGroups = 0;
+        uint32_t idxCallable = 0;
+        uint32_t numCallableGroups = 0;
+
+        // a single hit group can have up to 3 shader stages: source lvkweight said so
+        const size_t kMaxRayTracingShaderStages =
+            spec.rayGenShaders.size() +
+            spec.missShaders.size() +
+            spec.callableShader.size() +
+            3 * spec.closestHitShaders.size();
+
+        std::vector<VkPipelineShaderStageCreateInfo> createInfoShaderStages(kMaxRayTracingShaderStages);
+        // pSpecializationInfo points into these, so they must outlive vkCreateRayTracingPipelinesKHR
+        std::vector<std::unique_ptr<SpecializationInfoBundle>> specConstantsBundles;
+        specConstantsBundles.reserve(kMaxRayTracingShaderStages);
+        auto addStage = [this, sc_count, &spec, &numShaderStages, &createInfoShaderStages, &specConstantsBundles](VkShaderStageFlagBits stageFlag, const ShaderStage& shaderStage) -> uint32_t {
+            if (shaderStage.handle.empty())
+                return VK_SHADER_UNUSED_KHR;
+            AllocatedShader* shader = _shaderPool.get(shaderStage.handle);
+            ASSERT_MSG(shader, "A shader for raytracing pipeline: '{}' was destroyed or moved.", spec.debugName);
+            ASSERT_MSG(shaderStage.entryPoint, "RayTracing shaders have no default entry point, one must be given for raytracing pipeline: '{}'.", spec.debugName);
+            specConstantsBundles.push_back(BuildSpecializationInfoBundle(spec.specConstants, sc_count, shader->_specializationInfo));
+            const SpecializationInfoBundle* bundle = specConstantsBundles.back().get();
+            createInfoShaderStages[numShaderStages] = {
+                .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                .pNext = nullptr,
+                .flags = 0,
+                .stage = stageFlag,
+                .module = shader->_vkShaderModule,
+                .pName = shaderStage.entryPoint,
+                .pSpecializationInfo = bundle ? &bundle->vkInfo : nullptr
+            };
+            return numShaderStages++;
+        };
+
+
+        const uint32_t kMaxShaderGroups =
+            spec.rayGenShaders.size() +
+            spec.missShaders.size() +
+            spec.callableShader.size() +
+            spec.closestHitShaders.size();
+        // we can safely index into it
+        std::vector<VkRayTracingShaderGroupCreateInfoKHR> shaderGroups(kMaxShaderGroups);
+
+        for (auto& raygenShader: spec.rayGenShaders) {
+            if (const auto shader = _shaderPool.get(raygenShader.handle)) {
+                shaderGroups[numShaderGroups++] = {
+                    .sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR,
+                    .type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR,
+                    .generalShader = addStage(VK_SHADER_STAGE_RAYGEN_BIT_KHR, raygenShader),
+                    .closestHitShader = VK_SHADER_UNUSED_KHR,
+                    .anyHitShader = VK_SHADER_UNUSED_KHR,
+                    .intersectionShader = VK_SHADER_UNUSED_KHR
+                };
+            }
+        }
+        for (auto& missShader: spec.missShaders) {
+            if (const auto shader = _shaderPool.get(missShader.handle)) {
+                numMissGroups++;
+                shaderGroups[numShaderGroups++] = {
+                    .sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR,
+                    .type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR,
+                    .generalShader = addStage(VK_SHADER_STAGE_MISS_BIT_KHR, missShader),
+                    .closestHitShader = VK_SHADER_UNUSED_KHR,
+                    .anyHitShader = VK_SHADER_UNUSED_KHR,
+                    .intersectionShader = VK_SHADER_UNUSED_KHR
+                };
+            }
+        }
+        for (auto& closestHitShader: spec.closestHitShaders) {
+            if (const auto shader = _shaderPool.get(closestHitShader.handle)) {
+                numHitGroups++;
+                shaderGroups[numShaderGroups++] = {
+                    .sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR,
+                    .type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR,
+                    .generalShader = VK_SHADER_UNUSED_KHR,
+                    .closestHitShader = addStage(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, closestHitShader),
+                    .anyHitShader = VK_SHADER_UNUSED_KHR,
+                    .intersectionShader = VK_SHADER_UNUSED_KHR
+                };
+            }
+        }
+        for (auto& callableShader: spec.callableShader) {
+            if (const auto shader = _shaderPool.get(callableShader.handle)) {
+                numCallableGroups++;
+                shaderGroups[numShaderGroups++] = {
+                    .sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR,
+                    .type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR,
+                    .generalShader = addStage(VK_SHADER_STAGE_CALLABLE_BIT_KHR, callableShader),
+                    .closestHitShader = VK_SHADER_UNUSED_KHR,
+                    .anyHitShader = VK_SHADER_UNUSED_KHR,
+                    .intersectionShader = VK_SHADER_UNUSED_KHR
+                };
+            }
+        }
+
+        const uint32_t maxDepth = _rayTracingProperties.maxRayRecursionDepth;
+        const uint32_t depth = spec.maxRecursionDepth ? spec.maxRecursionDepth : 0;
+        // only need
+        constexpr VkDynamicState dynamicState = VK_DYNAMIC_STATE_RAY_TRACING_PIPELINE_STACK_SIZE_KHR;
+        const VkPipelineDynamicStateCreateInfo ciDynamicState = {
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+            .dynamicStateCount = 1,
+            .pDynamicStates = &dynamicState
+        };
+        const VkRayTracingPipelineCreateInfoKHR pipeline_ci = {
+            .sType = VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR,
+            .pNext = nullptr,
+            .flags = 0,
+            .stageCount = numShaderStages,
+            .pStages = createInfoShaderStages.data(),
+            .groupCount = numShaderGroups,
+            .pGroups = shaderGroups.data(),
+            .maxPipelineRayRecursionDepth = depth ? std::min(depth, maxDepth) : maxDepth,
+            .pDynamicState = spec.stackSize ? &ciDynamicState : nullptr,
+            .layout = layout
+        };
+        VkPipeline vk_pipeline = VK_NULL_HANDLE;
+        VK_CHECK(vkCreateRayTracingPipelinesKHR(_vkDevice, nullptr, nullptr, 1, &pipeline_ci, nullptr, &vk_pipeline));
+
+        return vk_pipeline;
+    }
+
+    void CTX::resolveComputePipelineImpl(AllocatedComputePipeline& pipeline) {
+        MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_CREATE);
 #ifdef DEBUG
-		const std::string problem = findBuildProblemImpl(pipeline);
-		ASSERT_MSG(problem.empty(), "Pipeline '{}' cannot be built, {}.", pipeline.getDebugName(), problem);
+        const std::string problem = findBuildProblemImpl(pipeline);
+        ASSERT_MSG(problem.empty(), "Pipeline '{}' cannot be built, {}.", pipeline.getDebugName(), problem);
 #endif
-		if (_currentFrameNumber > 0) {
-			LOG_SYSTEM(LogType::Warning, "Building compute pipeline '{}' after the first frame, this stalls the frame it lands in.", pipeline.getDebugName());
-		}
-		// aliases
-		ComputePipelineSpec& spec = pipeline._spec;
-		AllocatedShader* shader = _shaderPool.get(spec.shader);
-		ASSERT_MSG(shader, "The shader for compute pipeline: '{}' was destroyed or moved.", spec.debugName);
+        if (_currentFrameNumber > 0) {
+            LOG_SYSTEM(LogType::Warning, "Building compute pipeline '{}' after the first frame, this stalls the frame it lands in.", pipeline.getDebugName());
+        }
+        // aliases
+        ComputePipelineSpec& spec = pipeline._spec;
+        AllocatedShader* shader = _shaderPool.get(spec.shader);
+        ASSERT_MSG(shader, "The shader for compute pipeline: '{}' was destroyed or moved.", spec.debugName);
 
-		// resolvement and assignment
-		PipelineCoreData common = this->buildPipelineCommonDataExceptVkPipelineImpl(shader->_pipelineSignature);
-		pipeline._shared.core = common;
-		pipeline._shared.core._vkPipeline = this->buildComputePipelineImpl(common._vkPipelineLayout, spec);
-		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_PIPELINE, reinterpret_cast<uint64_t>(pipeline._shared.core._vkPipeline), pipeline.getDebugName().data());
-		// good to go, maybe later you could return it
-	}
-	void CTX::resolveRayTracingPipelineImpl(AllocatedRayTracingPipeline& pipeline) {
-		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_CREATE);
+        // resolvement and assignment
+        PipelineCoreData common = this->buildPipelineCommonDataExceptVkPipelineImpl(shader->_pipelineSignature);
+        pipeline._shared.core = common;
+        pipeline._shared.core._vkPipeline = this->buildComputePipelineImpl(common._vkPipelineLayout, spec);
+        vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_PIPELINE, reinterpret_cast<uint64_t>(pipeline._shared.core._vkPipeline), pipeline.getDebugName().data());
+        // good to go, maybe later you could return it
+    }
+    void CTX::resolveRayTracingPipelineImpl(AllocatedRayTracingPipeline& pipeline) {
+        MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_CREATE);
 #ifdef DEBUG
-		const std::string problem = findBuildProblemImpl(pipeline);
-		ASSERT_MSG(problem.empty(), "Pipeline '{}' cannot be built, {}.", pipeline.getDebugName(), problem);
+        const std::string problem = findBuildProblemImpl(pipeline);
+        ASSERT_MSG(problem.empty(), "Pipeline '{}' cannot be built, {}.", pipeline.getDebugName(), problem);
 #endif
-		if (_currentFrameNumber > 0) {
-			LOG_SYSTEM(LogType::Warning, "Building ray tracing pipeline '{}' after the first frame, this stalls the frame it lands in.", pipeline.getDebugName());
-		}
-		// aliases
-		RayTracingPipelineSpec& spec = pipeline._spec;
+        if (_currentFrameNumber > 0) {
+            LOG_SYSTEM(LogType::Warning, "Building ray tracing pipeline '{}' after the first frame, this stalls the frame it lands in.", pipeline.getDebugName());
+        }
+        // aliases
+        RayTracingPipelineSpec& spec = pipeline._spec;
 
-		// shader signature collection
-		std::vector<PipelineLayoutSignature> pipeline_layout_signatures = {};
-		for (const std::vector<ShaderStage>* stages: {&spec.rayGenShaders, &spec.missShaders, &spec.closestHitShaders, &spec.callableShader}) {
-			for (const ShaderStage& stage: *stages) {
-				if (!stage.valid())
-					continue;
-				AllocatedShader* shader = _shaderPool.get(stage.handle);
-				ASSERT_MSG(shader, "A shader for raytracing pipeline: '{}' was destroyed or moved.", spec.debugName);
-				pipeline_layout_signatures.push_back(shader->_pipelineSignature);
-			}
-		}
-		const PipelineLayoutSignature merged_pl_signature = MergeSignatures(pipeline_layout_signatures);
+        // shader signature collection
+        std::vector<PipelineLayoutSignature> pipeline_layout_signatures = {};
+        for (const std::vector<ShaderStage>* stages: { &spec.rayGenShaders, &spec.missShaders, &spec.closestHitShaders, &spec.callableShader }) {
+            for (const ShaderStage& stage: *stages) {
+                if (!stage.valid())
+                    continue;
+                AllocatedShader* shader = _shaderPool.get(stage.handle);
+                ASSERT_MSG(shader, "A shader for raytracing pipeline: '{}' was destroyed or moved.", spec.debugName);
+                pipeline_layout_signatures.push_back(shader->_pipelineSignature);
+            }
+        }
+        const PipelineLayoutSignature merged_pl_signature = MergeSignatures(pipeline_layout_signatures);
 
-		// resolvement and assignment
-		PipelineCoreData common = this->buildPipelineCommonDataExceptVkPipelineImpl(merged_pl_signature);
-		pipeline._shared.core = common;
-		pipeline._shared.core._vkPipeline = this->buildRayTracingPipelineImpl(common._vkPipelineLayout, spec);
-		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_PIPELINE, reinterpret_cast<uint64_t>(pipeline._shared.core._vkPipeline), pipeline.getDebugName().data());
-		buildShaderBindingTableImpl(pipeline);
-	}
+        // resolvement and assignment
+        PipelineCoreData common = this->buildPipelineCommonDataExceptVkPipelineImpl(merged_pl_signature);
+        pipeline._shared.core = common;
+        pipeline._shared.core._vkPipeline = this->buildRayTracingPipelineImpl(common._vkPipelineLayout, spec);
+        vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_PIPELINE, reinterpret_cast<uint64_t>(pipeline._shared.core._vkPipeline), pipeline.getDebugName().data());
+        buildShaderBindingTableImpl(pipeline);
+    }
 
-	void CTX::invalidatePipelineImpl(SharedPipelineInfo& shared) {
-		PipelineCoreData& core = shared.core;
-		if (core._vkPipeline == VK_NULL_HANDLE)
-			return;
-		deferTask(std::packaged_task<void()>([device = _vkDevice, pipeline = core._vkPipeline]() { vkDestroyPipeline(device, pipeline, nullptr); }));
-		deferTask(std::packaged_task<void()>([device = _vkDevice, layout = core._vkPipelineLayout]() { vkDestroyPipelineLayout(device, layout, nullptr); }));
-		core._vkPipeline = VK_NULL_HANDLE;
-		core._vkPipelineLayout = VK_NULL_HANDLE;
-		core._vkBindlessDescriptorSet = VK_NULL_HANDLE;
-	}
+    void CTX::invalidatePipelineImpl(SharedPipelineInfo& shared) {
+        PipelineCoreData& core = shared.core;
+        if (core._vkPipeline == VK_NULL_HANDLE)
+            return;
+        deferTask(std::packaged_task<void()>([device = _vkDevice, pipeline = core._vkPipeline]() {
+            vkDestroyPipeline(device, pipeline, nullptr);
+        }));
+        deferTask(std::packaged_task<void()>([device = _vkDevice, layout = core._vkPipelineLayout]() {
+            vkDestroyPipelineLayout(device, layout, nullptr);
+        }));
+        core._vkPipeline = VK_NULL_HANDLE;
+        core._vkPipelineLayout = VK_NULL_HANDLE;
+        core._vkBindlessDescriptorSet = VK_NULL_HANDLE;
+    }
 
-	void CTX::buildShaderBindingTableImpl(AllocatedRayTracingPipeline& pipeline) {
-		const RayTracingPipelineSpec& spec = pipeline._spec;
-		// must mirror the group order and skip rule in buildRayTracingPipelineImpl
-		const auto countLive = [this](const std::vector<ShaderStage>& stages) {
-			uint32_t count = 0;
-			for (const ShaderStage& stage: stages) {
-				if (_shaderPool.get(stage.handle))
-					count++;
-			}
-			return count;
-		};
-		const uint32_t numRaygen = countLive(spec.rayGenShaders);
-		const uint32_t numMiss = countLive(spec.missShaders);
-		const uint32_t numHit = countLive(spec.closestHitShaders);
-		const uint32_t numCallable = countLive(spec.callableShader);
-		const uint32_t numGroups = numRaygen + numMiss + numHit + numCallable;
-		ASSERT_MSG(numRaygen > 0, "RayTracing pipeline '{}' needs at least one ray generation shader.", spec.debugName);
+    void CTX::buildShaderBindingTableImpl(AllocatedRayTracingPipeline& pipeline) {
+        const RayTracingPipelineSpec& spec = pipeline._spec;
+        // must mirror the group order and skip rule in buildRayTracingPipelineImpl
+        const auto countLive = [this](const std::vector<ShaderStage>& stages) {
+            uint32_t count = 0;
+            for (const ShaderStage& stage: stages) {
+                if (_shaderPool.get(stage.handle))
+                    count++;
+            }
+            return count;
+        };
+        const uint32_t numRaygen = countLive(spec.rayGenShaders);
+        const uint32_t numMiss = countLive(spec.missShaders);
+        const uint32_t numHit = countLive(spec.closestHitShaders);
+        const uint32_t numCallable = countLive(spec.callableShader);
+        const uint32_t numGroups = numRaygen + numMiss + numHit + numCallable;
+        ASSERT_MSG(numRaygen > 0, "RayTracing pipeline '{}' needs at least one ray generation shader.", spec.debugName);
 
-		const uint32_t handleSize = _rayTracingProperties.shaderGroupHandleSize;
-		const uint32_t handleAlignment = _rayTracingProperties.shaderGroupHandleAlignment;
-		const uint32_t baseAlignment = _rayTracingProperties.shaderGroupBaseAlignment;
-		ASSERT_MSG(handleSize && handleAlignment && baseAlignment, "Ray tracing pipeline properties were never queried.");
-		const VkDeviceSize handleStride = getAlignedAddress(handleSize, handleAlignment);
-		const VkDeviceSize raygenSize = getAlignedAddress(handleStride, baseAlignment);
-		const VkDeviceSize missSize = getAlignedAddress(numMiss * handleStride, baseAlignment);
-		const VkDeviceSize hitSize = getAlignedAddress(numHit * handleStride, baseAlignment);
-		const VkDeviceSize callableSize = getAlignedAddress(numCallable * handleStride, baseAlignment);
+        const uint32_t handleSize = _rayTracingProperties.shaderGroupHandleSize;
+        const uint32_t handleAlignment = _rayTracingProperties.shaderGroupHandleAlignment;
+        const uint32_t baseAlignment = _rayTracingProperties.shaderGroupBaseAlignment;
+        ASSERT_MSG(handleSize && handleAlignment && baseAlignment, "Ray tracing pipeline properties were never queried.");
+        const VkDeviceSize handleStride = getAlignedAddress(handleSize, handleAlignment);
+        const VkDeviceSize raygenSize = getAlignedAddress(handleStride, baseAlignment);
+        const VkDeviceSize missSize = getAlignedAddress(numMiss * handleStride, baseAlignment);
+        const VkDeviceSize hitSize = getAlignedAddress(numHit * handleStride, baseAlignment);
+        const VkDeviceSize callableSize = getAlignedAddress(numCallable * handleStride, baseAlignment);
 
-		std::vector<uint8_t> handles(static_cast<size_t>(numGroups) * handleSize);
-		VK_CHECK(vkGetRayTracingShaderGroupHandlesKHR(_vkDevice, pipeline._shared.core._vkPipeline, 0, numGroups, handles.size(), handles.data()));
+        std::vector<uint8_t> handles(static_cast<size_t>(numGroups) * handleSize);
+        VK_CHECK(vkGetRayTracingShaderGroupHandlesKHR(_vkDevice, pipeline._shared.core._vkPipeline, 0, numGroups, handles.size(), handles.data()));
 
-		std::vector<uint8_t> table(raygenSize + missSize + hitSize + callableSize + baseAlignment, 0);
-		char buffer_name[128];
-		snprintf(buffer_name, sizeof(buffer_name), "SBT - %s", spec.debugName);
-		pipeline._sbtBuffer = this->createBuffer({.size = table.size(),
-			.usage = BufferUsageBits_ShaderBindingTable,
-			.storage = StorageType::HostVisible,
-			.debugName = buffer_name});
-		const VkDeviceAddress bufferAddress = gpuAddress(pipeline._sbtBuffer.handle());
-		const VkDeviceAddress raygenAddress = getAlignedAddress(bufferAddress, baseAlignment);
-		const VkDeviceSize baseOffset = raygenAddress - bufferAddress;
+        std::vector<uint8_t> table(raygenSize + missSize + hitSize + callableSize + baseAlignment, 0);
+        char buffer_name[128];
+        snprintf(buffer_name, sizeof(buffer_name), "SBT - %s", spec.debugName);
+        pipeline._sbtBuffer = this->createBuffer({ .size = table.size(),
+            .usage = BufferUsageBits_ShaderBindingTable,
+            .storage = StorageType::HostVisible,
+            .debugName = buffer_name });
+        const VkDeviceAddress bufferAddress = gpuAddress(pipeline._sbtBuffer.handle());
+        const VkDeviceAddress raygenAddress = getAlignedAddress(bufferAddress, baseAlignment);
+        const VkDeviceSize baseOffset = raygenAddress - bufferAddress;
 
-		uint32_t group = 0;
-		const auto writeRegion = [&](VkDeviceSize regionOffset, uint32_t count) {
-			for (uint32_t i = 0; i < count; i++, group++) {
-				memcpy(table.data() + baseOffset + regionOffset + i * handleStride, handles.data() + static_cast<size_t>(group) * handleSize, handleSize);
-			}
-		};
-		writeRegion(0, 1);
-		group = numRaygen;
-		writeRegion(raygenSize, numMiss);
-		writeRegion(raygenSize + missSize, numHit);
-		writeRegion(raygenSize + missSize + hitSize, numCallable);
-		upload(pipeline._sbtBuffer.handle(), table);
+        uint32_t group = 0;
+        const auto writeRegion = [&](VkDeviceSize regionOffset, uint32_t count) {
+            for (uint32_t i = 0; i < count; i++, group++) {
+                memcpy(table.data() + baseOffset + regionOffset + i * handleStride, handles.data() + static_cast<size_t>(group) * handleSize, handleSize);
+            }
+        };
+        writeRegion(0, 1);
+        group = numRaygen;
+        writeRegion(raygenSize, numMiss);
+        writeRegion(raygenSize + missSize, numHit);
+        writeRegion(raygenSize + missSize + hitSize, numCallable);
+        upload(pipeline._sbtBuffer.handle(), table);
 
-		pipeline._sbtEntryRayGen = VkStridedDeviceAddressRegionKHR{.deviceAddress = raygenAddress, .stride = raygenSize, .size = raygenSize};
-		pipeline._sbtEntryMiss = numMiss ? VkStridedDeviceAddressRegionKHR{.deviceAddress = raygenAddress + raygenSize, .stride = handleStride, .size = missSize} : VkStridedDeviceAddressRegionKHR{};
-		pipeline._sbtEntryHit = numHit ? VkStridedDeviceAddressRegionKHR{.deviceAddress = raygenAddress + raygenSize + missSize, .stride = handleStride, .size = hitSize} : VkStridedDeviceAddressRegionKHR{};
-		pipeline._sbtEntryCallable = numCallable ? VkStridedDeviceAddressRegionKHR{.deviceAddress = raygenAddress + raygenSize + missSize + hitSize, .stride = handleStride, .size = callableSize} : VkStridedDeviceAddressRegionKHR{};
-	}
+        pipeline._sbtEntryRayGen = VkStridedDeviceAddressRegionKHR{ .deviceAddress = raygenAddress, .stride = raygenSize, .size = raygenSize };
+        pipeline._sbtEntryMiss = numMiss ? VkStridedDeviceAddressRegionKHR{ .deviceAddress = raygenAddress + raygenSize, .stride = handleStride, .size = missSize } : VkStridedDeviceAddressRegionKHR{};
+        pipeline._sbtEntryHit = numHit ? VkStridedDeviceAddressRegionKHR{ .deviceAddress = raygenAddress + raygenSize + missSize, .stride = handleStride, .size = hitSize } : VkStridedDeviceAddressRegionKHR{};
+        pipeline._sbtEntryCallable = numCallable ? VkStridedDeviceAddressRegionKHR{ .deviceAddress = raygenAddress + raygenSize + missSize + hitSize, .stride = handleStride, .size = callableSize } : VkStridedDeviceAddressRegionKHR{};
+    }
 
-	void CTX::resolveGraphicsPipelineImpl(AllocatedGraphicsPipeline& pipeline, uint32_t viewMask) {
-		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_CREATE);
+    void CTX::resolveGraphicsPipelineImpl(AllocatedGraphicsPipeline& pipeline, uint32_t viewMask) {
+        MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_CREATE);
 #ifdef DEBUG
-		const std::string problem = findBuildProblemImpl(pipeline);
-		ASSERT_MSG(problem.empty(), "Pipeline '{}' cannot be built, {}.", pipeline.getDebugName(), problem);
+        const std::string problem = findBuildProblemImpl(pipeline);
+        ASSERT_MSG(problem.empty(), "Pipeline '{}' cannot be built, {}.", pipeline.getDebugName(), problem);
 #endif
-		if (_currentFrameNumber > 0) {
-			LOG_SYSTEM(LogType::Warning, "Building graphics pipeline '{}' after the first frame, this stalls the frame it lands in.", pipeline.getDebugName());
-		}
+        if (_currentFrameNumber > 0) {
+            LOG_SYSTEM(LogType::Warning, "Building graphics pipeline '{}' after the first frame, this stalls the frame it lands in.", pipeline.getDebugName());
+        }
 
-		GraphicsPipelineSpec& spec = pipeline._spec;
+        GraphicsPipelineSpec& spec = pipeline._spec;
 
-		// things the user defined previously
-		GraphicsPipelineBuilder builder = {};
-		builder.set_cull_mode(spec.cull);
-		builder.set_polygon_mode(spec.polygon);
-		builder.set_topology_mode(spec.topology);
-		builder.set_multisampling_mode(spec.multisample);
-		builder.set_blending_mode(spec.blend);
-		builder.set_viewmask(viewMask);
+        // things the user defined previously
+        GraphicsPipelineBuilder builder = {};
+        builder.set_cull_mode(spec.cull);
+        builder.set_polygon_mode(spec.polygon);
+        builder.set_topology_mode(spec.topology);
+        builder.set_multisampling_mode(spec.multisample);
+        builder.set_blending_mode(spec.blend);
+        builder.set_viewmask(viewMask);
 
-		// things we gather in the middle of the renderpass (attachment formats)
-		// looks at the current pass and reflects those formats in use
-		ASSERT_MSG(_currentCommandBuffer._activePass, "A graphics pipeline can only be resolved inside a render graph pass!");
-		const CompiledPass& current_pass_info = *_currentCommandBuffer._activePass;
-		std::vector<VkFormat> colorFormats;
-		colorFormats.reserve(current_pass_info.colorAttachments.size());
-		for (const AttachmentInfo& colorAttachment: current_pass_info.colorAttachments) {
-			colorFormats.push_back(colorAttachment.imageFormat);
-		}
-		builder.set_color_formats(colorFormats);
-		if (current_pass_info.depthAttachment.has_value()) {
-			builder.set_depth_format(current_pass_info.depthAttachment->imageFormat);
-		}
-		pipeline._builtColorFormats = colorFormats;
-		pipeline._builtDepthFormat = current_pass_info.depthAttachment.has_value() ? current_pass_info.depthAttachment->imageFormat : VK_FORMAT_UNDEFINED;
-		pipeline._builtViewMask = viewMask;
-		// manually resolve the # of spec constants user gave
-		uint32_t sc_count = 0;
-		while (sc_count < 16 && spec.specConstants[sc_count].size) {
-			sc_count++;
-		}
+        // things we gather in the middle of the renderpass (attachment formats)
+        // looks at the current pass and reflects those formats in use
+        ASSERT_MSG(_currentCommandBuffer._activePass, "A graphics pipeline can only be resolved inside a render graph pass!");
+        const CompiledPass& current_pass_info = *_currentCommandBuffer._activePass;
+        std::vector<VkFormat> colorFormats;
+        colorFormats.reserve(current_pass_info.colorAttachments.size());
+        for (const AttachmentInfo& colorAttachment: current_pass_info.colorAttachments) {
+            colorFormats.push_back(colorAttachment.imageFormat);
+        }
+        builder.set_color_formats(colorFormats);
+        if (current_pass_info.depthAttachment.has_value()) {
+            builder.set_depth_format(current_pass_info.depthAttachment->imageFormat);
+        }
+        pipeline._builtColorFormats = colorFormats;
+        pipeline._builtDepthFormat = current_pass_info.depthAttachment.has_value() ? current_pass_info.depthAttachment->imageFormat : VK_FORMAT_UNDEFINED;
+        pipeline._builtViewMask = viewMask;
+        // manually resolve the # of spec constants user gave
+        uint32_t sc_count = 0;
+        while (sc_count < 16 && spec.specConstants[sc_count].size) {
+            sc_count++;
+        }
 
-		// shader setup & signature collection
-		std::vector<PipelineLayoutSignature> pipeline_layout_signatures = {};
+        // shader setup & signature collection
+        std::vector<PipelineLayoutSignature> pipeline_layout_signatures = {};
 
-		ShaderStage& vertStage = spec.vertexShader;
-		std::unique_ptr<SpecializationInfoBundle> vertSpecConstantsBundle;
-		if (vertStage.valid()) {
-			if (!vertStage.entryPoint) {
-				vertStage.entryPoint = kVertexEntryPoint;
-			}
-			AllocatedShader* shader = _shaderPool.get(vertStage.handle);
-			ASSERT_MSG(shader, "The vertex shader for graphics pipeline: '{}' was destroyed or moved.", spec.debugName);
-			vertSpecConstantsBundle = BuildSpecializationInfoBundle(spec.specConstants, sc_count, shader->_specializationInfo);
-			builder.add_shader_module(shader->_vkShaderModule, VK_SHADER_STAGE_VERTEX_BIT, vertStage.entryPoint, vertSpecConstantsBundle ? &vertSpecConstantsBundle->vkInfo : nullptr);
-			pipeline_layout_signatures.push_back(shader->_pipelineSignature);
-		}
-		ShaderStage& fragStage = spec.fragmentShader;
-		std::unique_ptr<SpecializationInfoBundle> fragSpecConstantsBundle;
-		if (fragStage.valid()) {
-			if (!fragStage.entryPoint) {
-				fragStage.entryPoint = kFragmentEntryPoint;
-			}
-			AllocatedShader* shader = _shaderPool.get(fragStage.handle);
-			ASSERT_MSG(shader, "The fragment shader for graphics pipeline: '{}' was destroyed or moved.", spec.debugName);
-			fragSpecConstantsBundle = BuildSpecializationInfoBundle(spec.specConstants, sc_count, shader->_specializationInfo);
-			builder.add_shader_module(shader->_vkShaderModule, VK_SHADER_STAGE_FRAGMENT_BIT, fragStage.entryPoint, fragSpecConstantsBundle ? &fragSpecConstantsBundle->vkInfo : nullptr);
-			pipeline_layout_signatures.push_back(shader->_pipelineSignature);
-		}
+        ShaderStage& vertStage = spec.vertexShader;
+        std::unique_ptr<SpecializationInfoBundle> vertSpecConstantsBundle;
+        if (vertStage.valid()) {
+            if (!vertStage.entryPoint) {
+                vertStage.entryPoint = kVertexEntryPoint;
+            }
+            AllocatedShader* shader = _shaderPool.get(vertStage.handle);
+            ASSERT_MSG(shader, "The vertex shader for graphics pipeline: '{}' was destroyed or moved.", spec.debugName);
+            vertSpecConstantsBundle = BuildSpecializationInfoBundle(spec.specConstants, sc_count, shader->_specializationInfo);
+            builder.add_shader_module(shader->_vkShaderModule, VK_SHADER_STAGE_VERTEX_BIT, vertStage.entryPoint, vertSpecConstantsBundle ? &vertSpecConstantsBundle->vkInfo : nullptr);
+            pipeline_layout_signatures.push_back(shader->_pipelineSignature);
+        }
+        ShaderStage& fragStage = spec.fragmentShader;
+        std::unique_ptr<SpecializationInfoBundle> fragSpecConstantsBundle;
+        if (fragStage.valid()) {
+            if (!fragStage.entryPoint) {
+                fragStage.entryPoint = kFragmentEntryPoint;
+            }
+            AllocatedShader* shader = _shaderPool.get(fragStage.handle);
+            ASSERT_MSG(shader, "The fragment shader for graphics pipeline: '{}' was destroyed or moved.", spec.debugName);
+            fragSpecConstantsBundle = BuildSpecializationInfoBundle(spec.specConstants, sc_count, shader->_specializationInfo);
+            builder.add_shader_module(shader->_vkShaderModule, VK_SHADER_STAGE_FRAGMENT_BIT, fragStage.entryPoint, fragSpecConstantsBundle ? &fragSpecConstantsBundle->vkInfo : nullptr);
+            pipeline_layout_signatures.push_back(shader->_pipelineSignature);
+        }
 
-		const PipelineLayoutSignature merged_pl_signature = MergeSignatures(pipeline_layout_signatures);
+        const PipelineLayoutSignature merged_pl_signature = MergeSignatures(pipeline_layout_signatures);
 
-		PipelineCoreData common = this->buildPipelineCommonDataExceptVkPipelineImpl(merged_pl_signature);
-		pipeline._shared.core = common;
-		pipeline._shared.core._vkPipeline = builder.build(_vkDevice, common._vkPipelineLayout);
-		// 0 represents the first compile of a pipeline
-		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_PIPELINE, reinterpret_cast<uint64_t>(pipeline._shared.core._vkPipeline), pipeline.getDebugName().data());
-		// good to go, maybe later you could return it
-	}
+        PipelineCoreData common = this->buildPipelineCommonDataExceptVkPipelineImpl(merged_pl_signature);
+        pipeline._shared.core = common;
+        pipeline._shared.core._vkPipeline = builder.build(_vkDevice, common._vkPipelineLayout);
+        // 0 represents the first compile of a pipeline
+        vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_PIPELINE, reinterpret_cast<uint64_t>(pipeline._shared.core._vkPipeline), pipeline.getDebugName().data());
+        // good to go, maybe later you could return it
+    }
 
-	Sampler CTX::createSampler(SamplerSpec spec) {
-		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_CREATE);
-		// creating sampler requires little work so we dont need an _Impl function for it
-		const bool usesReduction = spec.reduction != SamplerReduction::WeightedAverage;
-		ASSERT_MSG(!(usesReduction && spec.depthCompareEnabled), "You cannot use the SamplerReduction feature (reduction) and depthCompareEnabled be true!");
-		VkSamplerReductionModeCreateInfo reduction_ci;
-		if (usesReduction) {
-			if (spec.minFilter == SamplerFilter::Nearest || spec.magFilter == SamplerFilter::Nearest) {
-				LOG_SYSTEM(LogType::Warning, "Sampler '{}' uses a reduction mode with a Nearest filter, Nearest fetches a single texel so the reduction has no effect.", spec.debugName);
-			}
-			const auto wraps = [](SamplerWrap w) { return w == SamplerWrap::Repeat || w == SamplerWrap::MirrorRepeat; };
-			if (wraps(spec.wrapU) || wraps(spec.wrapV) || wraps(spec.wrapW)) {
-				LOG_SYSTEM(LogType::Warning, "Sampler '{}' uses a reduction mode with a repeating wrap, edge texels will reduce against the opposite edge, use ClampEdge.", spec.debugName);
-			}
-			reduction_ci = {
-				.sType = VK_STRUCTURE_TYPE_SAMPLER_REDUCTION_MODE_CREATE_INFO,
-				.pNext = nullptr,
-				.reductionMode = toVulkan(spec.reduction)};
-		}
-		VkSamplerCreateInfo ci = {
-			.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
-			.pNext = usesReduction ? &reduction_ci : nullptr,
-			.flags = 0,
+    Sampler CTX::createSampler(SamplerSpec spec) {
+        MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_CREATE);
+        // creating sampler requires little work so we dont need an _Impl function for it
+        const bool usesReduction = spec.reduction != SamplerReduction::WeightedAverage;
+        ASSERT_MSG(!(usesReduction && spec.depthCompareEnabled), "You cannot use the SamplerReduction feature (reduction) and depthCompareEnabled be true!");
+        VkSamplerReductionModeCreateInfo reduction_ci;
+        if (usesReduction) {
+            if (spec.minFilter == SamplerFilter::Nearest || spec.magFilter == SamplerFilter::Nearest) {
+                LOG_SYSTEM(LogType::Warning, "Sampler '{}' uses a reduction mode with a Nearest filter, Nearest fetches a single texel so the reduction has no effect.", spec.debugName);
+            }
+            const auto wraps = [](SamplerWrap w) {
+                return w == SamplerWrap::Repeat || w == SamplerWrap::MirrorRepeat;
+            };
+            if (wraps(spec.wrapU) || wraps(spec.wrapV) || wraps(spec.wrapW)) {
+                LOG_SYSTEM(LogType::Warning, "Sampler '{}' uses a reduction mode with a repeating wrap, edge texels will reduce against the opposite edge, use ClampEdge.", spec.debugName);
+            }
+            reduction_ci = {
+                .sType = VK_STRUCTURE_TYPE_SAMPLER_REDUCTION_MODE_CREATE_INFO,
+                .pNext = nullptr,
+                .reductionMode = toVulkan(spec.reduction)
+            };
+        }
+        VkSamplerCreateInfo ci = {
+            .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+            .pNext = usesReduction ? &reduction_ci : nullptr,
+            .flags = 0,
 
-			.magFilter = toVulkan(spec.magFilter),
-			.minFilter = toVulkan(spec.minFilter),
-			.mipmapMode = toVulkan(spec.mipMap),
-			.addressModeU = toVulkan(spec.wrapU),
-			.addressModeV = toVulkan(spec.wrapV),
-			.addressModeW = toVulkan(spec.wrapW),
+            .magFilter = toVulkan(spec.magFilter),
+            .minFilter = toVulkan(spec.minFilter),
+            .mipmapMode = toVulkan(spec.mipMap),
+            .addressModeU = toVulkan(spec.wrapU),
+            .addressModeV = toVulkan(spec.wrapV),
+            .addressModeW = toVulkan(spec.wrapW),
 
-			.mipLodBias = 0.f,
-			.anisotropyEnable = spec.anisotropic ? VK_TRUE : VK_FALSE,
-			.maxAnisotropy = static_cast<float>(spec.maxAnisotropic),
+            .mipLodBias = 0.f,
+            .anisotropyEnable = spec.anisotropic ? VK_TRUE : VK_FALSE,
+            .maxAnisotropy = static_cast<float>(spec.maxAnisotropic),
 
-			.compareEnable = spec.depthCompareEnabled ? VK_TRUE : VK_FALSE,
-			.compareOp = spec.depthCompareEnabled ? toVulkan(spec.depthCompareOp) : VK_COMPARE_OP_ALWAYS,
+            .compareEnable = spec.depthCompareEnabled ? VK_TRUE : VK_FALSE,
+            .compareOp = spec.depthCompareEnabled ? toVulkan(spec.depthCompareOp) : VK_COMPARE_OP_ALWAYS,
 
-			.minLod = static_cast<float>(spec.mipLodMin),
-			.maxLod = (spec.mipMap == SamplerMipMap::Disabled) ? static_cast<float>(spec.mipLodMin) : static_cast<float>(spec.mipLodMax),
+            .minLod = static_cast<float>(spec.mipLodMin),
+            .maxLod = (spec.mipMap == SamplerMipMap::Disabled) ? static_cast<float>(spec.mipLodMin) : static_cast<float>(spec.mipLodMax),
 
-			.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK,
-			.unnormalizedCoordinates = VK_FALSE,
-		};
-		auto a = this->getPhysicalDeviceProperties10();
+            .borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK,
+            .unnormalizedCoordinates = VK_FALSE,
+        };
+        auto a = this->getPhysicalDeviceProperties10();
 
-		if (spec.maxAnisotropic > 1) {
-			const float maxSamplerAnisotropy = this->getPhysicalDeviceProperties10().limits.maxSamplerAnisotropy;
-			const bool isAnisotropicFilteringSupported = maxSamplerAnisotropy > 1;
-			ASSERT_MSG(isAnisotropicFilteringSupported, "Anisotropic filtering is not supported by the device.");
-			ci.anisotropyEnable = spec.anisotropic ? VK_TRUE : VK_FALSE;
-			// fixme: not sure why maxAnisotropic is of type uint_
-			if (maxSamplerAnisotropy < static_cast<float>(spec.maxAnisotropic)) {
-				LOG_SYSTEM(LogType::Warning, "Supplied sampler anisotropic value greater than max supported by the device, setting to {}", static_cast<double>(maxSamplerAnisotropy));
-			}
-			ci.maxAnisotropy = std::min(static_cast<float>(maxSamplerAnisotropy), static_cast<float>(spec.maxAnisotropic));
-		}
+        if (spec.maxAnisotropic > 1) {
+            const float maxSamplerAnisotropy = this->getPhysicalDeviceProperties10().limits.maxSamplerAnisotropy;
+            const bool isAnisotropicFilteringSupported = maxSamplerAnisotropy > 1;
+            ASSERT_MSG(isAnisotropicFilteringSupported, "Anisotropic filtering is not supported by the device.");
+            ci.anisotropyEnable = spec.anisotropic ? VK_TRUE : VK_FALSE;
+            // fixme: not sure why maxAnisotropic is of type uint_
+            if (maxSamplerAnisotropy < static_cast<float>(spec.maxAnisotropic)) {
+                LOG_SYSTEM(LogType::Warning, "Supplied sampler anisotropic value greater than max supported by the device, setting to {}", static_cast<double>(maxSamplerAnisotropy));
+            }
+            ci.maxAnisotropy = std::min(static_cast<float>(maxSamplerAnisotropy), static_cast<float>(spec.maxAnisotropic));
+        }
 
-		AllocatedSampler obj = {};
-		vkCreateSampler(_vkDevice, &ci, nullptr, &obj._vkSampler);
-		snprintf(obj._debugName, sizeof(obj._debugName), "%s", spec.debugName);
-		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_SAMPLER, reinterpret_cast<uint64_t>(obj._vkSampler), obj.getDebugName().data());
-		SamplerHandle handle = _samplerPool.create(std::move(obj));
-		writeSamplerDescriptorsImpl(handle.index(), 1);
-		return {this, handle};
-	}
-	QueryPool CTX::createQueryPool(const QueryPoolSpec& spec) {
-		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_CREATE);
-		ASSERT_MSG(spec.count > 0, "Query pool '{}' must have a count greater than zero!", spec.debugName);
+        AllocatedSampler obj = {};
+        vkCreateSampler(_vkDevice, &ci, nullptr, &obj._vkSampler);
+        snprintf(obj._debugName, sizeof(obj._debugName), "%s", spec.debugName);
+        vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_SAMPLER, reinterpret_cast<uint64_t>(obj._vkSampler), obj.getDebugName().data());
+        SamplerHandle handle = _samplerPool.create(std::move(obj));
+        writeSamplerDescriptorsImpl(handle.index(), 1);
+        return { this, handle };
+    }
+    QueryPool CTX::createQueryPool(const QueryPoolSpec& spec) {
+        MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_CREATE);
+        ASSERT_MSG(spec.count > 0, "Query pool '{}' must have a count greater than zero!", spec.debugName);
 
-		uint32_t familyCount = 0;
-		vkGetPhysicalDeviceQueueFamilyProperties(_vkPhysicalDevice, &familyCount, nullptr);
-		std::vector<VkQueueFamilyProperties> families(familyCount);
-		vkGetPhysicalDeviceQueueFamilyProperties(_vkPhysicalDevice, &familyCount, families.data());
-		const uint32_t validBits = families[_graphicsQueueFamilyIndex].timestampValidBits;
-		if (validBits == 0) {
-			LOG_SYSTEM(LogType::Error, "Cannot create query pool '{}', the graphics queue does not support timestamps!", spec.debugName);
-			return {};
-		}
+        uint32_t familyCount = 0;
+        vkGetPhysicalDeviceQueueFamilyProperties(_vkPhysicalDevice, &familyCount, nullptr);
+        std::vector<VkQueueFamilyProperties> families(familyCount);
+        vkGetPhysicalDeviceQueueFamilyProperties(_vkPhysicalDevice, &familyCount, families.data());
+        const uint32_t validBits = families[_graphicsQueueFamilyIndex].timestampValidBits;
+        if (validBits == 0) {
+            LOG_SYSTEM(LogType::Error, "Cannot create query pool '{}', the graphics queue does not support timestamps!", spec.debugName);
+            return {};
+        }
 
-		const VkQueryPoolCreateInfo info = {
-			.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
-			.pNext = nullptr,
-			.flags = 0,
-			.queryType = VK_QUERY_TYPE_TIMESTAMP,
-			.queryCount = spec.count,
-			.pipelineStatistics = 0,
-		};
-		AllocatedQueryPool obj = {};
-		VK_CHECK(vkCreateQueryPool(_vkDevice, &info, nullptr, &obj._vkQueryPool));
-		obj._count = spec.count;
-		obj._validBitsMask = validBits >= 64 ? ~0ull : (1ull << validBits) - 1;
-		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_QUERY_POOL, reinterpret_cast<uint64_t>(obj._vkQueryPool), spec.debugName);
-		return {this, _queryPoolPool.create(std::move(obj))};
-	}
-	void CTX::resetQueryPool(QueryPoolHandle handle, uint32_t first, uint32_t count) const {
-		const AllocatedQueryPool& pool = view(handle);
-		ASSERT_MSG(first + count <= pool._count, "Query range [{}, {}) is out of bounds for a pool of {} queries!", first, first + count, pool._count);
-		vkResetQueryPool(_vkDevice, pool._vkQueryPool, first, count);
-	}
-	bool CTX::getQueryPoolResults(QueryPoolHandle handle, uint32_t first, std::span<uint64_t> outTicks) const {
-		const AllocatedQueryPool& pool = view(handle);
-		const auto count = static_cast<uint32_t>(outTicks.size());
-		ASSERT_MSG(first + count <= pool._count, "Query range [{}, {}) is out of bounds for a pool of {} queries!", first, first + count, pool._count);
-		const VkResult result = vkGetQueryPoolResults(_vkDevice, pool._vkQueryPool, first, count, outTicks.size_bytes(), outTicks.data(), sizeof(uint64_t), VK_QUERY_RESULT_64_BIT);
-		if (result == VK_NOT_READY)
-			return false;
-		for (uint64_t& ticks: outTicks)
-			ticks &= pool._validBitsMask;
-		return true;
-	}
-	double CTX::timestampTicksToNs(uint64_t ticks) const {
-		return static_cast<double>(ticks) * static_cast<double>(_propertiesVulkan.props10.limits.timestampPeriod);
-	}
-	Buffer CTX::createBuffer(BufferSpec spec) {
-		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_CREATE);
-		const VkBufferUsageFlags usage_flags = vkutil::ToVkBufferUsage(spec.usage, spec.storage);
+        const VkQueryPoolCreateInfo info = {
+            .sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
+            .pNext = nullptr,
+            .flags = 0,
+            .queryType = VK_QUERY_TYPE_TIMESTAMP,
+            .queryCount = spec.count,
+            .pipelineStatistics = 0,
+        };
+        AllocatedQueryPool obj = {};
+        VK_CHECK(vkCreateQueryPool(_vkDevice, &info, nullptr, &obj._vkQueryPool));
+        obj._count = spec.count;
+        obj._validBitsMask = validBits >= 64 ? ~0ull : (1ull << validBits) - 1;
+        vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_QUERY_POOL, reinterpret_cast<uint64_t>(obj._vkQueryPool), spec.debugName);
+        return { this, _queryPoolPool.create(std::move(obj)) };
+    }
+    void CTX::resetQueryPool(QueryPoolHandle handle, uint32_t first, uint32_t count) const {
+        const AllocatedQueryPool& pool = view(handle);
+        ASSERT_MSG(first + count <= pool._count, "Query range [{}, {}) is out of bounds for a pool of {} queries!", first, first + count, pool._count);
+        vkResetQueryPool(_vkDevice, pool._vkQueryPool, first, count);
+    }
+    bool CTX::getQueryPoolResults(QueryPoolHandle handle, uint32_t first, std::span<uint64_t> outTicks) const {
+        const AllocatedQueryPool& pool = view(handle);
+        const auto count = static_cast<uint32_t>(outTicks.size());
+        ASSERT_MSG(first + count <= pool._count, "Query range [{}, {}) is out of bounds for a pool of {} queries!", first, first + count, pool._count);
+        const VkResult result = vkGetQueryPoolResults(_vkDevice, pool._vkQueryPool, first, count, outTicks.size_bytes(), outTicks.data(), sizeof(uint64_t), VK_QUERY_RESULT_64_BIT);
+        if (result == VK_NOT_READY)
+            return false;
+        for (uint64_t& ticks: outTicks)
+            ticks &= pool._validBitsMask;
+        return true;
+    }
+    double CTX::timestampTicksToNs(uint64_t ticks) const {
+        return static_cast<double>(ticks) * static_cast<double>(_propertiesVulkan.props10.limits.timestampPeriod);
+    }
+    Buffer CTX::createBuffer(BufferSpec spec) {
+        MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_CREATE);
+        const VkBufferUsageFlags usage_flags = vkutil::ToVkBufferUsage(spec.usage, spec.storage);
 
-		ASSERT_MSG(usage_flags, "Invalid buffer creation specification!");
-		const VkMemoryPropertyFlags mem_flags = StorageTypeToVkMemoryPropertyFlags(spec.storage);
-		if (spec.size == 0)
-			spec.size = spec.initialData.bytes.size();
-		ASSERT_MSG(spec.initialData.bytes.size() <= spec.size, "Buffer '{}' initialData ({} bytes) is larger than its size ({} bytes)!", spec.debugName, spec.initialData.bytes.size(), spec.size);
+        ASSERT_MSG(usage_flags, "Invalid buffer creation specification!");
+        const VkMemoryPropertyFlags mem_flags = StorageTypeToVkMemoryPropertyFlags(spec.storage);
+        if (spec.size == 0)
+            spec.size = spec.initialData.bytes.size();
+        ASSERT_MSG(spec.initialData.bytes.size() <= spec.size, "Buffer '{}' initialData ({} bytes) is larger than its size ({} bytes)!", spec.debugName, spec.initialData.bytes.size(), spec.size);
 
-		AllocatedBuffer obj = this->createBufferImpl(spec.size, usage_flags, mem_flags);
-		snprintf(obj._debugName, sizeof(obj._debugName), "%s", spec.debugName);
-		vmaSetAllocationName(_vmaAllocator, obj._vmaAllocation, obj._debugName);
-		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_BUFFER, reinterpret_cast<uint64_t>(obj._vkBuffer), obj.getDebugName().data());
-		BufferHandle handle = _bufferPool.create(std::move(obj));
-		if (!spec.initialData.bytes.empty()) {
-			upload(handle, spec.initialData);
-		}
-		return {this, handle};
-	}
-	AllocatedBuffer CTX::createBufferImpl(VkDeviceSize bufferSize, VkBufferUsageFlags usageFlags, VkMemoryPropertyFlags memFlags) {
-		ASSERT_MSG(bufferSize > 0, "Buffer size needs to be greater than 0!");
+        AllocatedBuffer obj = this->createBufferImpl(spec.size, usage_flags, mem_flags);
+        snprintf(obj._debugName, sizeof(obj._debugName), "%s", spec.debugName);
+        vmaSetAllocationName(_vmaAllocator, obj._vmaAllocation, obj._debugName);
+        vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_BUFFER, reinterpret_cast<uint64_t>(obj._vkBuffer), obj.getDebugName().data());
+        BufferHandle handle = _bufferPool.create(std::move(obj));
+        if (!spec.initialData.bytes.empty()) {
+            upload(handle, spec.initialData);
+        }
+        return { this, handle };
+    }
+    AllocatedBuffer CTX::createBufferImpl(VkDeviceSize bufferSize, VkBufferUsageFlags usageFlags, VkMemoryPropertyFlags memFlags) {
+        ASSERT_MSG(bufferSize > 0, "Buffer size needs to be greater than 0!");
 
-		AllocatedBuffer obj = {};
-		obj._bufferSize = bufferSize;
-		obj._vkUsageFlags = usageFlags;
-		obj._vkMemoryPropertyFlags = memFlags;
+        AllocatedBuffer obj = {};
+        obj._bufferSize = bufferSize;
+        obj._vkUsageFlags = usageFlags;
+        obj._vkMemoryPropertyFlags = memFlags;
 
-		const QueueFamilies families = queueFamiliesInUse();
-		const VkBufferCreateInfo buffer_ci = {
-			.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-			.pNext = nullptr,
-			.flags = 0,
-			.size = bufferSize,
-			.usage = usageFlags,
-			.sharingMode = families.count > 1 ? VK_SHARING_MODE_CONCURRENT : VK_SHARING_MODE_EXCLUSIVE,
-			.queueFamilyIndexCount = families.count > 1 ? families.count : 0,
-			.pQueueFamilyIndices = families.count > 1 ? families.indices.data() : nullptr,
-		};
-		VmaAllocationCreateInfo vmaAllocInfo = {};
+        const QueueFamilies families = queueFamiliesInUse();
+        const VkBufferCreateInfo buffer_ci = {
+            .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+            .pNext = nullptr,
+            .flags = 0,
+            .size = bufferSize,
+            .usage = usageFlags,
+            .sharingMode = families.count > 1 ? VK_SHARING_MODE_CONCURRENT : VK_SHARING_MODE_EXCLUSIVE,
+            .queueFamilyIndexCount = families.count > 1 ? families.count : 0,
+            .pQueueFamilyIndices = families.count > 1 ? families.indices.data() : nullptr,
+        };
+        VmaAllocationCreateInfo vmaAllocInfo = {};
 
-		if (memFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
-			vmaAllocInfo = {
-				.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT,
-				.requiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
-				.preferredFlags = VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT,
-			};
-		}
-		vmaAllocInfo.usage = VMA_MEMORY_USAGE_AUTO;
-		VmaAllocationInfo allocInfo = {};
-		VK_CHECK(vmaCreateBufferWithAlignment(_vmaAllocator, &buffer_ci, &vmaAllocInfo, 16, &obj._vkBuffer, &obj._vmaAllocation, &allocInfo));
-		if (memFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
-			obj._mappedPtr = allocInfo.pMappedData;
-			VkMemoryPropertyFlags actualFlags = 0;
-			vmaGetAllocationMemoryProperties(_vmaAllocator, obj._vmaAllocation, &actualFlags);
-			obj._isCoherentMemory = actualFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-		}
+        if (memFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
+            vmaAllocInfo = {
+                .flags = VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT,
+                .requiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+                .preferredFlags = VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT,
+            };
+        }
+        vmaAllocInfo.usage = VMA_MEMORY_USAGE_AUTO;
+        VmaAllocationInfo allocInfo = {};
+        VK_CHECK(vmaCreateBufferWithAlignment(_vmaAllocator, &buffer_ci, &vmaAllocInfo, 16, &obj._vkBuffer, &obj._vmaAllocation, &allocInfo));
+        if (memFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
+            obj._mappedPtr = allocInfo.pMappedData;
+            VkMemoryPropertyFlags actualFlags = 0;
+            vmaGetAllocationMemoryProperties(_vmaAllocator, obj._vmaAllocation, &actualFlags);
+            obj._isCoherentMemory = actualFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+        }
 
-		ASSERT_MSG(obj._vkBuffer != VK_NULL_HANDLE, "VkBuffer is VK_NULL_HANDLE after creation!");
+        ASSERT_MSG(obj._vkBuffer != VK_NULL_HANDLE, "VkBuffer is VK_NULL_HANDLE after creation!");
 
-		// shader access
-		if (usageFlags & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) {
-			const VkBufferDeviceAddressInfo buffer_device_ai = {
-				.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
-				.buffer = obj._vkBuffer,
-			};
-			obj._vkDeviceAddress = vkGetBufferDeviceAddress(_vkDevice, &buffer_device_ai);
-			ASSERT_MSG(obj._vkDeviceAddress, "Buffer device address is zero after creation!");
-		}
-		return obj;
-	}
+        // shader access
+        if (usageFlags & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) {
+            const VkBufferDeviceAddressInfo buffer_device_ai = {
+                .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
+                .buffer = obj._vkBuffer,
+            };
+            obj._vkDeviceAddress = vkGetBufferDeviceAddress(_vkDevice, &buffer_device_ai);
+            ASSERT_MSG(obj._vkDeviceAddress, "Buffer device address is zero after creation!");
+        }
+        return obj;
+    }
 
-	void CTX::resizeBuffer(BufferHandle handle, size_t newSize) {
-		MYTH_PROFILER_FUNCTION();
-		AllocatedBuffer* buffer = _bufferPool.get(handle);
-		if (!buffer) {
-			LOG_SYSTEM(LogType::Warning, "'resizeBuffer' called on invalid handle!");
-			return;
-		}
-		if (newSize <= buffer->_bufferSize) {
-			LOG_SYSTEM(LogType::Warning, "'resizeBuffer' called with a smaller size then it already has has.");
-		}
+    void CTX::resizeBuffer(BufferHandle handle, size_t newSize) {
+        MYTH_PROFILER_FUNCTION();
+        AllocatedBuffer* buffer = _bufferPool.get(handle);
+        if (!buffer) {
+            LOG_SYSTEM(LogType::Warning, "'resizeBuffer' called on invalid handle!");
+            return;
+        }
+        if (newSize <= buffer->_bufferSize) {
+            LOG_SYSTEM(LogType::Warning, "'resizeBuffer' called with a smaller size then it already has has.");
+        }
 
-		deferTask(std::packaged_task<void()>([vma = _vmaAllocator, vkBuf = buffer->_vkBuffer, allocation = buffer->_vmaAllocation]() {
-			vmaDestroyBuffer(vma, vkBuf, allocation);
-		}));
+        deferTask(std::packaged_task<void()>([vma = _vmaAllocator, vkBuf = buffer->_vkBuffer, allocation = buffer->_vmaAllocation]() {
+            vmaDestroyBuffer(vma, vkBuf, allocation);
+        }));
 
-		AllocatedBuffer newBuf = this->createBufferImpl(newSize, buffer->_vkUsageFlags, buffer->_vkMemoryPropertyFlags);
-		vmaSetAllocationName(_vmaAllocator, newBuf._vmaAllocation, buffer->_debugName);
-		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_BUFFER, reinterpret_cast<uint64_t>(newBuf._vkBuffer), buffer->getDebugName().data());
+        AllocatedBuffer newBuf = this->createBufferImpl(newSize, buffer->_vkUsageFlags, buffer->_vkMemoryPropertyFlags);
+        vmaSetAllocationName(_vmaAllocator, newBuf._vmaAllocation, buffer->_debugName);
+        vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_BUFFER, reinterpret_cast<uint64_t>(newBuf._vkBuffer), buffer->getDebugName().data());
 
-		buffer->_vkBuffer = newBuf._vkBuffer;
-		buffer->_vmaAllocation = newBuf._vmaAllocation;
-		buffer->_bufferSize = newBuf._bufferSize;
-		buffer->_vkDeviceAddress = newBuf._vkDeviceAddress;
-		buffer->_mappedPtr = newBuf._mappedPtr;
-		buffer->_isCoherentMemory = newBuf._isCoherentMemory;
-	}
+        buffer->_vkBuffer = newBuf._vkBuffer;
+        buffer->_vmaAllocation = newBuf._vmaAllocation;
+        buffer->_bufferSize = newBuf._bufferSize;
+        buffer->_vkDeviceAddress = newBuf._vkDeviceAddress;
+        buffer->_mappedPtr = newBuf._mappedPtr;
+        buffer->_isCoherentMemory = newBuf._isCoherentMemory;
+    }
 
-	void CTX::resizeTextureEXT(TextureHandle handle, Dimensions newDimensions) {
-		ASSERT_MSG(!_currentCommandBuffer._ctx, "Cannot resize a texture while a CommandBuffer is open, already recorded commands reference the old image.");
-		resizeTextureImpl(handle, newDimensions);
-	}
+    void CTX::resizeTextureEXT(TextureHandle handle, Dimensions newDimensions) {
+        ASSERT_MSG(!_currentCommandBuffer._ctx, "Cannot resize a texture while a CommandBuffer is open, already recorded commands reference the old image.");
+        resizeTextureImpl(handle, newDimensions);
+    }
 
-	static VkImageSubresourceRange ViewRangeOf(const TextureViewKey key, const VkImageAspectFlags aspect) {
-		const auto field = [key](const int shift, const uint32_t remaining) {
-			const uint32_t value = static_cast<uint32_t>(key >> shift) & 0xFFFF;
-			return value == 0xFFFF ? remaining : value;
-		};
-		return {aspect, field(48, 0), field(32, VK_REMAINING_MIP_LEVELS), field(16, 0), field(0, VK_REMAINING_ARRAY_LAYERS)};
-	}
+    static VkImageSubresourceRange ViewRangeOf(const TextureViewKey key, const VkImageAspectFlags aspect) {
+        const auto field = [key](const int shift, const uint32_t remaining) {
+            const uint32_t value = static_cast<uint32_t>(key >> shift) & 0xFFFF;
+            return value == 0xFFFF ? remaining : value;
+        };
+        return { aspect, field(48, 0), field(32, VK_REMAINING_MIP_LEVELS), field(16, 0), field(0, VK_REMAINING_ARRAY_LAYERS) };
+    }
 
-	void CTX::resizeTextureImpl(TextureHandle handle, Dimensions newDimensions) {
-		MYTH_PROFILER_FUNCTION();
-		AllocatedTexture* image = _texturePool.get(handle);
-		if (!image) {
-			LOG_SYSTEM(LogType::Warning, "'resizeTexture' called on invalid handle!");
-			return;
-		}
-		// copies destroy for Texture logic
-		deferTask(std::packaged_task<void()>([device = _vkDevice, imageView = image->_vkImageView]() { vkDestroyImageView(device, imageView, nullptr); }));
-		if (image->_vkImageViewStorage) {
-			deferTask(std::packaged_task<void()>([device = _vkDevice, imageView = image->_vkImageViewStorage]() { vkDestroyImageView(device, imageView, nullptr); }));
-		}
-		if (image->_isOwning) {
-			if (image->_mappedPtr) {
-				vmaUnmapMemory(_vmaAllocator, image->_vmaAllocation);
-			}
-			deferTask(std::packaged_task<void()>([vma = _vmaAllocator, image = image->_vkImage, allocation = image->_vmaAllocation]() { vmaDestroyImage(vma, image, allocation); }));
-		}
+    void CTX::resizeTextureImpl(TextureHandle handle, Dimensions newDimensions) {
+        MYTH_PROFILER_FUNCTION();
+        AllocatedTexture* image = _texturePool.get(handle);
+        if (!image) {
+            LOG_SYSTEM(LogType::Warning, "'resizeTexture' called on invalid handle!");
+            return;
+        }
+        // copies destroy for Texture logic
+        deferTask(std::packaged_task<void()>([device = _vkDevice, imageView = image->_vkImageView]() {
+            vkDestroyImageView(device, imageView, nullptr);
+        }));
+        if (image->_vkImageViewStorage) {
+            deferTask(std::packaged_task<void()>([device = _vkDevice, imageView = image->_vkImageViewStorage]() {
+                vkDestroyImageView(device, imageView, nullptr);
+            }));
+        }
+        if (image->_isOwning) {
+            if (image->_mappedPtr) {
+                vmaUnmapMemory(_vmaAllocator, image->_vmaAllocation);
+            }
+            deferTask(std::packaged_task<void()>([vma = _vmaAllocator, image = image->_vkImage, allocation = image->_vmaAllocation]() {
+                vmaDestroyImage(vma, image, allocation);
+            }));
+        }
 
-		VkImageCreateFlags createFlags = 0;
-		// resolve createFlags without having it stored
-		if (image->_vkImageViewType == VK_IMAGE_VIEW_TYPE_CUBE || image->_vkImageViewType == VK_IMAGE_VIEW_TYPE_CUBE_ARRAY) {
-			createFlags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
-		}
+        VkImageCreateFlags createFlags = 0;
+        // resolve createFlags without having it stored
+        if (image->_vkImageViewType == VK_IMAGE_VIEW_TYPE_CUBE || image->_vkImageViewType == VK_IMAGE_VIEW_TYPE_CUBE_ARRAY) {
+            createFlags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
+        }
 
-		const VkExtent3D extent3D = {newDimensions.width, newDimensions.height, newDimensions.depth};
-		AllocatedTexture newImage = this->createTextureImpl(
-			image->_vkUsageFlags,
-			image->_vkMemoryPropertyFlags,
-			extent3D,
-			image->_vkFormat,
-			image->_vkImageType,
-			image->_vkImageViewType,
-			image->_numLevels,
-			image->_numLayers,
-			image->getVkSampleCountBits(),
-			image->_vkComponentMappings,
-			createFlags,
-			image->_concurrent);
-		vmaSetAllocationName(_vmaAllocator, newImage._vmaAllocation, newImage._debugName);
-		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_IMAGE, reinterpret_cast<uint64_t>(newImage._vkImage), image->getDebugName().data());
+        const VkExtent3D extent3D = { newDimensions.width, newDimensions.height, newDimensions.depth };
+        AllocatedTexture newImage = this->createTextureImpl(
+            image->_vkUsageFlags,
+            image->_vkMemoryPropertyFlags,
+            extent3D,
+            image->_vkFormat,
+            image->_vkImageType,
+            image->_vkImageViewType,
+            image->_numLevels,
+            image->_numLayers,
+            image->getVkSampleCountBits(),
+            image->_vkComponentMappings,
+            createFlags,
+            image->_concurrent);
+        vmaSetAllocationName(_vmaAllocator, newImage._vmaAllocation, newImage._debugName);
+        vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_IMAGE, reinterpret_cast<uint64_t>(newImage._vkImage), image->getDebugName().data());
 #ifdef MYTH_ENABLED_IMGUI
-		if (_imguiPlugin.isEnabled()) {
-			_imguiPlugin.removeImageDescriptor(handle);
-		}
+        if (_imguiPlugin.isEnabled()) {
+            _imguiPlugin.removeImageDescriptor(handle);
+        }
 #endif
 
-		// update extent!
-		image->_vkExtent = extent3D;
+        // update extent!
+        image->_vkExtent = extent3D;
 
-		// new opaque objects
-		image->_vkImage = newImage._vkImage;
-		image->_vkImageView = newImage._vkImageView;
-		image->_vkImageViewStorage = newImage._vkImageViewStorage;
-		image->_vmaAllocation = newImage._vmaAllocation;
-		// reset of state
-		image->setLayout(image->getWholeRange(), VK_IMAGE_LAYOUT_UNDEFINED);
-		image->_mappedPtr = newImage._mappedPtr;
-		// the slot is rewritten in place, pending frames may still read the old view through it
-		_immGraphics->wait(_immGraphics->getLastSubmitHandle());
-		writeTextureDescriptorsImpl(handle.index(), 1);
-		rebuildTextureViewsImpl(*image);
-	}
+        // new opaque objects
+        image->_vkImage = newImage._vkImage;
+        image->_vkImageView = newImage._vkImageView;
+        image->_vkImageViewStorage = newImage._vkImageViewStorage;
+        image->_vmaAllocation = newImage._vmaAllocation;
+        // reset of state
+        image->setLayout(image->getWholeRange(), VK_IMAGE_LAYOUT_UNDEFINED);
+        image->_mappedPtr = newImage._mappedPtr;
+        // the slot is rewritten in place, pending frames may still read the old view through it
+        _immGraphics->wait(_immGraphics->getLastSubmitHandle());
+        writeTextureDescriptorsImpl(handle.index(), 1);
+        rebuildTextureViewsImpl(*image);
+    }
 
-	void CTX::rebuildTextureViewsImpl(const AllocatedTexture& image) {
-		for (const auto& [key, viewHandle]: image._additionalViews) {
-			AllocatedTexture* view = _texturePool.get(viewHandle);
-			deferTask(std::packaged_task<void()>([device = _vkDevice, imageView = view->_vkImageView]() { vkDestroyImageView(device, imageView, nullptr); }));
-			if (view->_vkImageViewStorage)
-				deferTask(std::packaged_task<void()>([device = _vkDevice, imageView = view->_vkImageViewStorage]() { vkDestroyImageView(device, imageView, nullptr); }));
+    void CTX::rebuildTextureViewsImpl(const AllocatedTexture& image) {
+        for (const auto& [key, viewHandle]: image._additionalViews) {
+            AllocatedTexture* view = _texturePool.get(viewHandle);
+            deferTask(std::packaged_task<void()>([device = _vkDevice, imageView = view->_vkImageView]() {
+                vkDestroyImageView(device, imageView, nullptr);
+            }));
+            if (view->_vkImageViewStorage)
+                deferTask(std::packaged_task<void()>([device = _vkDevice, imageView = view->_vkImageViewStorage]() {
+                    vkDestroyImageView(device, imageView, nullptr);
+                }));
 #ifdef MYTH_ENABLED_IMGUI
-			if (_imguiPlugin.isEnabled())
-				_imguiPlugin.removeImageDescriptor(viewHandle);
+            if (_imguiPlugin.isEnabled())
+                _imguiPlugin.removeImageDescriptor(viewHandle);
 #endif
-			view->_vkImage = image._vkImage;
-			view->_vkExtent = image._vkExtent;
-			view->_vkImageViewStorage = VK_NULL_HANDLE;
-			view->setLayout(view->getWholeRange(), VK_IMAGE_LAYOUT_UNDEFINED);
-			createTextureViewObjectsImpl(*view, ViewRangeOf(key, view->getImageAspectFlags()));
-			writeTextureDescriptorsImpl(viewHandle.index(), 1);
-		}
-	}
+            view->_vkImage = image._vkImage;
+            view->_vkExtent = image._vkExtent;
+            view->_vkImageViewStorage = VK_NULL_HANDLE;
+            view->setLayout(view->getWholeRange(), VK_IMAGE_LAYOUT_UNDEFINED);
+            createTextureViewObjectsImpl(*view, ViewRangeOf(key, view->getImageAspectFlags()));
+            writeTextureDescriptorsImpl(viewHandle.index(), 1);
+        }
+    }
 
-	Texture CTX::createTexture(TextureSpec spec) {
-		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_CREATE);
-		ASSERT_MSG(spec.usage, "The usage field for TextureSpec is required, however '{}' was not given one!", spec.debugName);
-		ASSERT_MSG(!(spec.generateMipmaps && spec.initialData.bytes.empty()), "'generateMipMaps' can only be true when 'initialData' is non-null!");
-		ASSERT_MSG(!(spec.usage & TextureUsageBits_Sampled) || !vkutil::IsFormatDepthAndStencil(spec.format), "VkFormat cannot have both depth & stencil components and be used for sampling! Occurs because of texture '{}'", spec.debugName);
-		ASSERT_MSG(!(spec.usage & TextureUsageBits_Storage) || spec.samples == SampleCount::X1, "Storage images cannot be multisampled!");
-		const VkImageUsageFlags usage_flags = vkutil::ToVkImageUsage(spec.usage, spec.storage, spec.format);
-		if (spec.numMipLevels < 1) {
-			LOG_SYSTEM(LogType::Warning, "The number of mip levels specified must be greater than 0!");
-			spec.numMipLevels = 1;
-		}
-		const uint32_t _numLevels = spec.numMipLevels;
-		ASSERT_MSG(usage_flags != 0, "Invalid usage flags for texture creation!");
-		ASSERT_MSG(spec.type == TextureType::Type_2D || spec.type == TextureType::Type_3D || spec.type == TextureType::Type_Cube, "Only 2D, 3D and Cube textures are supported.");
+    Texture CTX::createTexture(TextureSpec spec) {
+        MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_CREATE);
+        ASSERT_MSG(spec.usage, "The usage field for TextureSpec is required, however '{}' was not given one!", spec.debugName);
+        ASSERT_MSG(!(spec.generateMipmaps && spec.initialData.bytes.empty()), "'generateMipMaps' can only be true when 'initialData' is non-null!");
+        ASSERT_MSG(!(spec.usage & TextureUsageBits_Sampled) || !vkutil::IsFormatDepthAndStencil(spec.format), "VkFormat cannot have both depth & stencil components and be used for sampling! Occurs because of texture '{}'", spec.debugName);
+        ASSERT_MSG(!(spec.usage & TextureUsageBits_Storage) || spec.samples == SampleCount::X1, "Storage images cannot be multisampled!");
+        const VkImageUsageFlags usage_flags = vkutil::ToVkImageUsage(spec.usage, spec.storage, spec.format);
+        if (spec.numMipLevels < 1) {
+            LOG_SYSTEM(LogType::Warning, "The number of mip levels specified must be greater than 0!");
+            spec.numMipLevels = 1;
+        }
+        const uint32_t _numLevels = spec.numMipLevels;
+        ASSERT_MSG(usage_flags != 0, "Invalid usage flags for texture creation!");
+        ASSERT_MSG(spec.type == TextureType::Type_2D || spec.type == TextureType::Type_3D || spec.type == TextureType::Type_Cube, "Only 2D, 3D and Cube textures are supported.");
 
-		// resolve sample count
-		const VkSampleCountFlagBits sample_bits = toVulkan(spec.samples);
-		// resolve memory flags
-		const VkMemoryPropertyFlags mem_flags = StorageTypeToVkMemoryPropertyFlags(spec.storage);
-		// resolve extent3D
-		const VkExtent3D extent3D = {spec.dimension.width, spec.dimension.height, spec.dimension.depth};
+        // resolve sample count
+        const VkSampleCountFlagBits sample_bits = toVulkan(spec.samples);
+        // resolve memory flags
+        const VkMemoryPropertyFlags mem_flags = StorageTypeToVkMemoryPropertyFlags(spec.storage);
+        // resolve extent3D
+        const VkExtent3D extent3D = { spec.dimension.width, spec.dimension.height, spec.dimension.depth };
 
-		// resolve actions based on texture type
-		uint32_t _numLayers = spec.numLayers;
-		VkImageType _imagetype;
-		VkImageViewType _imageviewtype;
-		VkImageCreateFlags _imageCreateFlags = 0;
-		switch (spec.type) {
-			case TextureType::Type_2D:
-				_imagetype = VK_IMAGE_TYPE_2D;
-				_imageviewtype = (_numLayers > 1) ? VK_IMAGE_VIEW_TYPE_2D_ARRAY : VK_IMAGE_VIEW_TYPE_2D;
-				break;
-			case TextureType::Type_3D:
-				_imagetype = VK_IMAGE_TYPE_3D;
-				_imageviewtype = VK_IMAGE_VIEW_TYPE_3D;
-				break;
-			case TextureType::Type_Cube:
-				_imagetype = VK_IMAGE_TYPE_2D;
-				_imageviewtype = _numLayers > 1 ? VK_IMAGE_VIEW_TYPE_CUBE_ARRAY : VK_IMAGE_VIEW_TYPE_CUBE;
-				_numLayers *= 6;
-				_imageCreateFlags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
-				break;
-			default:
-				assert(false);
-		}
-		const VkComponentMapping component_mappings = spec.components.toVkComponentMapping();
-		AllocatedTexture obj = createTextureImpl(usage_flags, mem_flags, extent3D, spec.format, _imagetype, _imageviewtype, _numLevels, _numLayers, sample_bits, component_mappings, _imageCreateFlags, spec.concurrent);
-		// members that are only needed for recreation
-		obj._vkMemoryPropertyFlags = mem_flags;
-		obj._vkImageViewType = _imageviewtype;
-		snprintf(obj._debugName, sizeof(obj._debugName), "%s", spec.debugName);
-		vmaSetAllocationName(_vmaAllocator, obj._vmaAllocation, obj._debugName);
-		if (mem_flags & VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT) {
-			VmaAllocationInfo alloc_info;
-			vmaGetAllocationInfo(_vmaAllocator, obj._vmaAllocation, &alloc_info);
-			VkMemoryPropertyFlags granted;
-			vmaGetMemoryTypeProperties(_vmaAllocator, alloc_info.memoryType, &granted);
-			if (!(granted & VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT)) {
-				LOG_SYSTEM(LogType::Warning, "Memoryless texture '{}' fell back to regular device memory, no lazily allocated memory type on this device.", spec.debugName);
-			}
-		}
-		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_IMAGE, reinterpret_cast<uint64_t>(obj._vkImage), obj.getDebugName().data());
-		char d[32];
-		snprintf(d, sizeof(d), "%s - Default View", spec.debugName);
-		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_IMAGE_VIEW, reinterpret_cast<uint64_t>(obj._vkImageView), d);
-		TextureHandle handle = _texturePool.create(std::move(obj));
-		writeTextureDescriptorsImpl(handle.index(), 1);
-		// if we have some data we want to upload, do that
-		if (!spec.initialData.bytes.empty()) {
-			// enforces that the number of miplevels we want to upload will be accomadated by the texture
-			ASSERT_MSG(spec.dataNumMipLevels <= spec.numMipLevels, "dataNumMipLevels must not exceed numMipLevels!");
-			ASSERT_MSG(spec.type == TextureType::Type_2D || spec.type == TextureType::Type_Cube, "Initial texture data is only supported for 2D and Cube textures!");
-			const TexRange range = {.dimensions = extent3D, .numLayers = static_cast<uint32_t>((spec.type == TextureType::Type_Cube) ? 6 : 1), .numMipLevels = spec.dataNumMipLevels};
-			this->upload(handle, spec.initialData, range);
-			if (spec.generateMipmaps) {
-				this->generateMipmaps(handle);
-			}
-		}
-		return {this, handle};
-	}
-	// todo: review this, as it seems alot of the data can simply be read straight from the copy instead of being resolved again
-	// https://github.com/corporateshark/lightweightvk/blob/master/lvk/vulkan/VulkanClasses.cpp#L4351
-	TextureHandle CTX::createTextureViewImpl(TextureHandle handle, TextureViewSpec spec) {
-		if (!handle.valid()) {
-			LOG_SYSTEM(LogType::Warning, "Texture handle is empty!");
-			return {};
-		}
-		// make a copy of the allocated texture object
-		AllocatedTexture copied_obj = *this->_texturePool.get(handle);
-		// view is its own resource, don't inherit the parent's cached views
-		copied_obj._additionalViews.clear();
-		ASSERT_MSG(copied_obj._numLevels > spec.mipLevel, "baseMipLevel must be less then mipLevels of the original texture!");
-		if (spec.numMipLevels != VK_REMAINING_MIP_LEVELS) {
-			ASSERT_MSG(copied_obj._numLevels >= (spec.mipLevel + spec.numMipLevels), "Requested mipLevel+numMipLevels exceeds the number of mipLevels of the original texture!");
-		}
-		// very important!
-		copied_obj._isOwning = false;
-		const VkImageAspectFlags texture_aspect_flags = copied_obj.getImageAspectFlags();
-		// lose all data associated with original image
-		memset(&copied_obj._vkImageViewStorage, 0, sizeof(copied_obj._vkImageViewStorage));
-		ASSERT_MSG(vkutil::GetNumImagePlanes(copied_obj._vkFormat) == 1, "Unsupported multiplanar image.");
+        // resolve actions based on texture type
+        uint32_t _numLayers = spec.numLayers;
+        VkImageType _imagetype;
+        VkImageViewType _imageviewtype;
+        VkImageCreateFlags _imageCreateFlags = 0;
+        switch (spec.type) {
+            case TextureType::Type_2D:
+                _imagetype = VK_IMAGE_TYPE_2D;
+                _imageviewtype = (_numLayers > 1) ? VK_IMAGE_VIEW_TYPE_2D_ARRAY : VK_IMAGE_VIEW_TYPE_2D;
+                break;
+            case TextureType::Type_3D:
+                _imagetype = VK_IMAGE_TYPE_3D;
+                _imageviewtype = VK_IMAGE_VIEW_TYPE_3D;
+                break;
+            case TextureType::Type_Cube:
+                _imagetype = VK_IMAGE_TYPE_2D;
+                _imageviewtype = _numLayers > 1 ? VK_IMAGE_VIEW_TYPE_CUBE_ARRAY : VK_IMAGE_VIEW_TYPE_CUBE;
+                _numLayers *= 6;
+                _imageCreateFlags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
+                break;
+            default:
+                assert(false);
+        }
+        const VkComponentMapping component_mappings = spec.components.toVkComponentMapping();
+        AllocatedTexture obj = createTextureImpl(usage_flags, mem_flags, extent3D, spec.format, _imagetype, _imageviewtype, _numLevels, _numLayers, sample_bits, component_mappings, _imageCreateFlags, spec.concurrent);
+        // members that are only needed for recreation
+        obj._vkMemoryPropertyFlags = mem_flags;
+        obj._vkImageViewType = _imageviewtype;
+        snprintf(obj._debugName, sizeof(obj._debugName), "%s", spec.debugName);
+        vmaSetAllocationName(_vmaAllocator, obj._vmaAllocation, obj._debugName);
+        if (mem_flags & VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT) {
+            VmaAllocationInfo alloc_info;
+            vmaGetAllocationInfo(_vmaAllocator, obj._vmaAllocation, &alloc_info);
+            VkMemoryPropertyFlags granted;
+            vmaGetMemoryTypeProperties(_vmaAllocator, alloc_info.memoryType, &granted);
+            if (!(granted & VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT)) {
+                LOG_SYSTEM(LogType::Warning, "Memoryless texture '{}' fell back to regular device memory, no lazily allocated memory type on this device.", spec.debugName);
+            }
+        }
+        vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_IMAGE, reinterpret_cast<uint64_t>(obj._vkImage), obj.getDebugName().data());
+        char d[32];
+        snprintf(d, sizeof(d), "%s - Default View", spec.debugName);
+        vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_IMAGE_VIEW, reinterpret_cast<uint64_t>(obj._vkImageView), d);
+        TextureHandle handle = _texturePool.create(std::move(obj));
+        writeTextureDescriptorsImpl(handle.index(), 1);
+        // if we have some data we want to upload, do that
+        if (!spec.initialData.bytes.empty()) {
+            // enforces that the number of miplevels we want to upload will be accomadated by the texture
+            ASSERT_MSG(spec.dataNumMipLevels <= spec.numMipLevels, "dataNumMipLevels must not exceed numMipLevels!");
+            ASSERT_MSG(spec.type == TextureType::Type_2D || spec.type == TextureType::Type_Cube, "Initial texture data is only supported for 2D and Cube textures!");
+            const TexRange range = { .dimensions = extent3D, .numLayers = static_cast<uint32_t>((spec.type == TextureType::Type_Cube) ? 6 : 1), .numMipLevels = spec.dataNumMipLevels };
+            this->upload(handle, spec.initialData, range);
+            if (spec.generateMipmaps) {
+                this->generateMipmaps(handle);
+            }
+        }
+        return { this, handle };
+    }
+    // todo: review this, as it seems alot of the data can simply be read straight from the copy instead of being resolved again
+    // https://github.com/corporateshark/lightweightvk/blob/master/lvk/vulkan/VulkanClasses.cpp#L4351
+    TextureHandle CTX::createTextureViewImpl(TextureHandle handle, TextureViewSpec spec) {
+        if (!handle.valid()) {
+            LOG_SYSTEM(LogType::Warning, "Texture handle is empty!");
+            return {};
+        }
+        // make a copy of the allocated texture object
+        AllocatedTexture copied_obj = *this->_texturePool.get(handle);
+        // view is its own resource, don't inherit the parent's cached views
+        copied_obj._additionalViews.clear();
+        ASSERT_MSG(copied_obj._numLevels > spec.mipLevel, "baseMipLevel must be less then mipLevels of the original texture!");
+        if (spec.numMipLevels != VK_REMAINING_MIP_LEVELS) {
+            ASSERT_MSG(copied_obj._numLevels >= (spec.mipLevel + spec.numMipLevels), "Requested mipLevel+numMipLevels exceeds the number of mipLevels of the original texture!");
+        }
+        // very important!
+        copied_obj._isOwning = false;
+        const VkImageAspectFlags texture_aspect_flags = copied_obj.getImageAspectFlags();
+        // lose all data associated with original image
+        memset(&copied_obj._vkImageViewStorage, 0, sizeof(copied_obj._vkImageViewStorage));
+        ASSERT_MSG(vkutil::GetNumImagePlanes(copied_obj._vkFormat) == 1, "Unsupported multiplanar image.");
 
-		if (spec.type != VK_IMAGE_VIEW_TYPE_MAX_ENUM)
-			copied_obj._vkImageViewType = spec.type;
-		copied_obj._vkComponentMappings = spec.components.toVkComponentMapping();
-		snprintf(copied_obj._debugName, sizeof(copied_obj._debugName), "%s", spec.debugName);
-		createTextureViewObjectsImpl(copied_obj, {.aspectMask = texture_aspect_flags, .baseMipLevel = spec.mipLevel, .levelCount = spec.numMipLevels, .baseArrayLayer = spec.layer, .layerCount = spec.numLayers});
-		TextureHandle new_handle = this->_texturePool.create(std::move(copied_obj));
-		writeTextureDescriptorsImpl(new_handle.index(), 1);
-		return {new_handle};
-	}
-	void CTX::createTextureViewObjectsImpl(AllocatedTexture& view, const VkImageSubresourceRange& range) {
-		VkImageViewCreateInfo image_view_ci = {
-			.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-			.pNext = nullptr,
-			.image = view._vkImage,
-			.viewType = view._vkImageViewType,
-			.format = view._vkFormat,
-			.components = view._vkComponentMappings,
-			.subresourceRange = range,
-		};
-		VK_CHECK(vkCreateImageView(_vkDevice, &image_view_ci, nullptr, &view._vkImageView));
-		if (view._vkUsageFlags & VK_IMAGE_USAGE_STORAGE_BIT && !vkutil::IsComponentMappingAnIdentity(view._vkComponentMappings)) {
-			image_view_ci.components = {};
-			VK_CHECK(vkCreateImageView(_vkDevice, &image_view_ci, nullptr, &view._vkImageViewStorage));
-		}
-		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_IMAGE_VIEW, reinterpret_cast<uint64_t>(view._vkImageView), view.getDebugName().data());
-	}
-	AllocatedTexture CTX::createTextureImpl(
-		VkImageUsageFlags usageFlags,
-		VkMemoryPropertyFlags memFlags,
-		VkExtent3D extent3D,
-		VkFormat format,
-		VkImageType imageType,
-		VkImageViewType imageViewType,
-		uint32_t numLevels,
-		uint32_t numLayers,
-		VkSampleCountFlagBits sampleCountFlagBits,
-		VkComponentMapping componentMapping,
-		VkImageCreateFlags createFlags,
-		const bool requestConcurrent) {
-		ASSERT_MSG(numLevels > 0, "The texture must contain at least one mip-level!");
-		ASSERT_MSG(numLayers > 0, "The texture must contain at least one layer!");
-		ASSERT_MSG(extent3D.width > 0, "The texture must have a width greater than 0!");
-		ASSERT_MSG(extent3D.height > 0, "The texture must have a height greater than 0!");
-		ASSERT_MSG(extent3D.depth > 0, "The texture must have a depth greater than 0!");
-
-
-		const QueueFamilies families = queueFamiliesInUse();
-		const bool concurrent = families.count > 1 && (requestConcurrent || !NeedsOwnershipTransfer(usageFlags));
-		VkImageCreateInfo image_ci = {
-			.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-			.pNext = nullptr,
-
-			.flags = createFlags,
-			.imageType = imageType,
-			.format = format,
-			.extent = extent3D,
-			.mipLevels = numLevels,
-			.arrayLayers = numLayers,
-			.samples = sampleCountFlagBits,
-			.tiling = VK_IMAGE_TILING_OPTIMAL,
-			.usage = usageFlags,
-			.sharingMode = concurrent ? VK_SHARING_MODE_CONCURRENT : VK_SHARING_MODE_EXCLUSIVE,
-			.queueFamilyIndexCount = concurrent ? families.count : 0,
-			.pQueueFamilyIndices = concurrent ? families.indices.data() : nullptr,
-			.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-		};
-
-		VmaAllocationCreateInfo allocation_ci = {};
-		allocation_ci.usage = (memFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) ? VMA_MEMORY_USAGE_CPU_TO_GPU : VMA_MEMORY_USAGE_AUTO;
-		const bool wantsLazy = memFlags & VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT;
-		if (wantsLazy) {
-			// VMA only forces dedicated for lazy memory under GPU_LAZILY_ALLOCATED usage, which has no fallback
-			allocation_ci.preferredFlags = VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT;
-			allocation_ci.flags |= VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
-		}
-
-		AllocatedTexture obj = {};
-		VK_CHECK(vmaCreateImage(_vmaAllocator, &image_ci, &allocation_ci, &obj._vkImage, &obj._vmaAllocation, nullptr));
-		obj._vkExtent = extent3D;
-		obj._vkUsageFlags = usageFlags;
-		obj._concurrent = concurrent;
-		obj._sampleCount = sampleCountFlagBits;
-		obj._vkImageType = imageType;
-		obj._vkImageViewType = imageViewType;
-		obj._vkFormat = format;
-		obj._numLevels = numLevels;
-		obj._numLayers = numLayers;
-		obj._recordedLayout = SubresourceMap<VkImageLayout>{numLevels, numLayers, VK_IMAGE_LAYOUT_UNDEFINED};
-		VkFormatProperties2 format_props2 = {.sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2};
-		vkGetPhysicalDeviceFormatProperties2(_vkPhysicalDevice, obj._vkFormat, &format_props2);
-		obj._vkFormatProperties = format_props2.formatProperties;
-
-		const VkPhysicalDeviceImageFormatInfo2 info = {
-			.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_FORMAT_INFO_2, .format = obj.getFormat(), .type = obj.getType(), .usage = obj._vkUsageFlags, .flags = createFlags};
-		VkImageFormatProperties2 props = {
-			.sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2,
-		};
-		VK_CHECK(vkGetPhysicalDeviceImageFormatProperties2(_vkPhysicalDevice, &info, &props));
-		ASSERT_MSG(
-			props.imageFormatProperties.maxMipLevels >= obj._numLevels,
-			"Requested image exceeds maxMipLevels, requested '{}', cannot be greater than '{}'",
-			obj._numLevels,
-			props.imageFormatProperties.maxMipLevels);
+        if (spec.type != VK_IMAGE_VIEW_TYPE_MAX_ENUM)
+            copied_obj._vkImageViewType = spec.type;
+        copied_obj._vkComponentMappings = spec.components.toVkComponentMapping();
+        snprintf(copied_obj._debugName, sizeof(copied_obj._debugName), "%s", spec.debugName);
+        createTextureViewObjectsImpl(copied_obj, { .aspectMask = texture_aspect_flags, .baseMipLevel = spec.mipLevel, .levelCount = spec.numMipLevels, .baseArrayLayer = spec.layer, .layerCount = spec.numLayers });
+        TextureHandle new_handle = this->_texturePool.create(std::move(copied_obj));
+        writeTextureDescriptorsImpl(new_handle.index(), 1);
+        return { new_handle };
+    }
+    void CTX::createTextureViewObjectsImpl(AllocatedTexture& view, const VkImageSubresourceRange& range) {
+        VkImageViewCreateInfo image_view_ci = {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+            .pNext = nullptr,
+            .image = view._vkImage,
+            .viewType = view._vkImageViewType,
+            .format = view._vkFormat,
+            .components = view._vkComponentMappings,
+            .subresourceRange = range,
+        };
+        VK_CHECK(vkCreateImageView(_vkDevice, &image_view_ci, nullptr, &view._vkImageView));
+        if (view._vkUsageFlags & VK_IMAGE_USAGE_STORAGE_BIT && !vkutil::IsComponentMappingAnIdentity(view._vkComponentMappings)) {
+            image_view_ci.components = {};
+            VK_CHECK(vkCreateImageView(_vkDevice, &image_view_ci, nullptr, &view._vkImageViewStorage));
+        }
+        vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_IMAGE_VIEW, reinterpret_cast<uint64_t>(view._vkImageView), view.getDebugName().data());
+    }
+    AllocatedTexture CTX::createTextureImpl(
+        VkImageUsageFlags usageFlags,
+        VkMemoryPropertyFlags memFlags,
+        VkExtent3D extent3D,
+        VkFormat format,
+        VkImageType imageType,
+        VkImageViewType imageViewType,
+        uint32_t numLevels,
+        uint32_t numLayers,
+        VkSampleCountFlagBits sampleCountFlagBits,
+        VkComponentMapping componentMapping,
+        VkImageCreateFlags createFlags,
+        const bool requestConcurrent) {
+        ASSERT_MSG(numLevels > 0, "The texture must contain at least one mip-level!");
+        ASSERT_MSG(numLayers > 0, "The texture must contain at least one layer!");
+        ASSERT_MSG(extent3D.width > 0, "The texture must have a width greater than 0!");
+        ASSERT_MSG(extent3D.height > 0, "The texture must have a height greater than 0!");
+        ASSERT_MSG(extent3D.depth > 0, "The texture must have a depth greater than 0!");
 
 
-		// if memory is manually managed on host
-		if (memFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
-			VK_CHECK(vmaMapMemory(_vmaAllocator, obj._vmaAllocation, &obj._mappedPtr));
-		}
-		// create image views
-		const VkImageAspectFlags aspectMask = vkutil::AspectMaskFromFormat(obj._vkFormat);
-		VkImageViewCreateInfo image_view_ci = {
-			.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-			.flags = 0,
-			.image = obj._vkImage,
-			.viewType = obj._vkImageViewType,
-			.format = format,
-			.components = componentMapping,
-			.subresourceRange = {.aspectMask = aspectMask, .baseMipLevel = 0, .levelCount = numLevels, .baseArrayLayer = 0, .layerCount = numLayers},
-		};
-		VK_CHECK(vkCreateImageView(_vkDevice, &image_view_ci, nullptr, &obj._vkImageView));
-		if (obj._vkUsageFlags & VK_IMAGE_USAGE_STORAGE_BIT) {
-			if (!vkutil::IsComponentMappingAnIdentity(componentMapping)) {
-				image_view_ci.components = {};
-				VK_CHECK(vkCreateImageView(_vkDevice, &image_view_ci, nullptr, &obj._vkImageViewStorage));
-			}
-		}
-		return obj;
-	}
+        const QueueFamilies families = queueFamiliesInUse();
+        const bool concurrent = families.count > 1 && (requestConcurrent || !NeedsOwnershipTransfer(usageFlags));
+        VkImageCreateInfo image_ci = {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+            .pNext = nullptr,
 
-	GraphicsPipeline CTX::createGraphicsPipeline(const GraphicsPipelineSpec& spec) {
-		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_CREATE);
-		// all creating a pipeline does is assign the spec to it
-		// actual construction is done upon first bind (lazily)
-		AllocatedGraphicsPipeline obj = {};
-		obj._spec = spec;
-		snprintf(obj._shared.debugName, sizeof(obj._shared.debugName), "%s", spec.debugName);
-		GraphicsPipelineHandle handle = _graphicsPipelinePool.create(std::move(obj));
-		return {this, handle};
-	}
-	ComputePipeline CTX::createComputePipeline(const ComputePipelineSpec& spec) {
-		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_CREATE);
-		AllocatedComputePipeline obj = {};
-		obj._spec = spec;
-		snprintf(obj._shared.debugName, sizeof(obj._shared.debugName), "%s", spec.debugName);
-		ComputePipelineHandle handle = _computePipelinePool.create(std::move(obj));
-		return {this, handle};
-	}
-	// fixme: ensure correctness
-	RayTracingPipeline CTX::createRayTracingPipeline(const RayTracingPipelineSpec& spec) {
-		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_CREATE);
-		AllocatedRayTracingPipeline obj = {};
-		obj._spec = spec;
-		snprintf(obj._shared.debugName, sizeof(obj._shared.debugName), "%s", spec.debugName);
-		RayTracingPipelineHandle handle = _rayTracingPipelinePool.create(std::move(obj));
-		return {this, handle};
-	}
+            .flags = createFlags,
+            .imageType = imageType,
+            .format = format,
+            .extent = extent3D,
+            .mipLevels = numLevels,
+            .arrayLayers = numLayers,
+            .samples = sampleCountFlagBits,
+            .tiling = VK_IMAGE_TILING_OPTIMAL,
+            .usage = usageFlags,
+            .sharingMode = concurrent ? VK_SHARING_MODE_CONCURRENT : VK_SHARING_MODE_EXCLUSIVE,
+            .queueFamilyIndexCount = concurrent ? families.count : 0,
+            .pQueueFamilyIndices = concurrent ? families.indices.data() : nullptr,
+            .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+        };
 
-	// ReSharper disable once CppNotAllPathsReturnValue
-	VkGeometryTypeKHR GeometryTypeToVk(AccelerationStructureSpec::GeometryType geomType) {
-		switch (geomType) {
-			case AccelerationStructureSpec::GeometryType::Triangle:
-				return VK_GEOMETRY_TYPE_TRIANGLES_KHR;
-			case AccelerationStructureSpec::GeometryType::AABB:
-				return VK_GEOMETRY_TYPE_AABBS_KHR;
-			case AccelerationStructureSpec::GeometryType::Instances:
-				return VK_GEOMETRY_TYPE_INSTANCES_KHR;
-			case AccelerationStructureSpec::GeometryType::INVALID:
-				break;
-		}
-		UNREACHABLE("You passed in AccelerationStructureSpec::GeometryType::INVALID, whice is, per the name, INVALID, please pick an actual geometry type.");
-	}
-	void CTX::getBLASBuildInfo(const BottomLevelBuildDesc& desc,
-		VkAccelerationStructureBuildSizesInfoKHR& outBuildSizesInfo,
-		VkAccelerationStructureGeometryKHR& outGeometry) {
+        VmaAllocationCreateInfo allocation_ci = {};
+        allocation_ci.usage = (memFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) ? VMA_MEMORY_USAGE_CPU_TO_GPU : VMA_MEMORY_USAGE_AUTO;
+        const bool wantsLazy = memFlags & VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT;
+        if (wantsLazy) {
+            // VMA only forces dedicated for lazy memory under GPU_LAZILY_ALLOCATED usage, which has no fallback
+            allocation_ci.preferredFlags = VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT;
+            allocation_ci.flags |= VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
+        }
 
-		outGeometry = {
-			.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR,
-			.geometryType = VK_GEOMETRY_TYPE_TRIANGLES_KHR,
-			.geometry = {
-				.triangles = {
-					VkAccelerationStructureGeometryTrianglesDataKHR{
-						.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR,
-						.vertexFormat = desc.geometry.vertexFormat,
-						.vertexData = {.deviceAddress = gpuAddress(desc.geometry.vertexBuffer)},
-						.vertexStride = desc.geometry.vertexStride,
-						.maxVertex = desc.geometry.numVertices,
-						.indexType = desc.geometry.indexType,
-						.indexData = {.deviceAddress = gpuAddress(desc.geometry.indexBuffer)},
-						.transformData = {.deviceAddress = desc.geometry.transformBuffer.has_value() ? gpuAddress(desc.geometry.transformBuffer.value()).value : 0}}}},
-			.flags = desc.geometryFlags};
-		const VkAccelerationStructureBuildGeometryInfoKHR buildGeometryInfo = {
-			.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR,
-			.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR,
-			.flags = desc.buildFlags,
-			.geometryCount = 1,
-			.pGeometries = &outGeometry,
-		};
-		outBuildSizesInfo = {
-			.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR,
-			.pNext = nullptr};
-		vkGetAccelerationStructureBuildSizesKHR(_vkDevice, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildGeometryInfo, &desc.maxPrimitiveCount, &outBuildSizesInfo);
-		const uint32_t alignment = _accelerationStructureProperties.minAccelerationStructureScratchOffsetAlignment;
-		outBuildSizesInfo.accelerationStructureSize += alignment;
-		outBuildSizesInfo.updateScratchSize += alignment;
-		outBuildSizesInfo.buildScratchSize += alignment;
-	}
-	void CTX::getTLASBuildInfo(const TopLevelBuildDesc& desc,
-		VkAccelerationStructureBuildSizesInfoKHR& outBuildSizesInfo,
-		VkAccelerationStructureGeometryKHR& outGeometry) {
+        AllocatedTexture obj = {};
+        VK_CHECK(vmaCreateImage(_vmaAllocator, &image_ci, &allocation_ci, &obj._vkImage, &obj._vmaAllocation, nullptr));
+        obj._vkExtent = extent3D;
+        obj._vkUsageFlags = usageFlags;
+        obj._concurrent = concurrent;
+        obj._sampleCount = sampleCountFlagBits;
+        obj._vkImageType = imageType;
+        obj._vkImageViewType = imageViewType;
+        obj._vkFormat = format;
+        obj._numLevels = numLevels;
+        obj._numLayers = numLayers;
+        obj._recordedLayout = SubresourceMap<VkImageLayout>{ numLevels, numLayers, VK_IMAGE_LAYOUT_UNDEFINED };
+        VkFormatProperties2 format_props2 = { .sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2 };
+        vkGetPhysicalDeviceFormatProperties2(_vkPhysicalDevice, obj._vkFormat, &format_props2);
+        obj._vkFormatProperties = format_props2.formatProperties;
 
-		outGeometry = {
-			.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR,
-			.geometryType = VK_GEOMETRY_TYPE_INSTANCES_KHR,
-			.geometry = {
-				.instances = {
-					.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR,
-					.arrayOfPointers = VK_FALSE,
-					.data = {
-						.deviceAddress = _bufferPool.get(desc.instancesBuffer)->_vkDeviceAddress}}},
-			.flags = desc.geometryFlags,
-		};
-		const VkAccelerationStructureBuildGeometryInfoKHR buildGeometryInfo = {
-			.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR,
-			.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR,
-			.flags = desc.buildFlags,
-			.geometryCount = 1,
-			.pGeometries = &outGeometry,
-		};
-
-		outBuildSizesInfo = {
-			.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR,
-			.pNext = nullptr};
-		vkGetAccelerationStructureBuildSizesKHR(_vkDevice, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildGeometryInfo, &desc.maxPrimitiveCount, &outBuildSizesInfo);
-		const uint32_t alignment = _accelerationStructureProperties.minAccelerationStructureScratchOffsetAlignment;
-		outBuildSizesInfo.accelerationStructureSize += alignment;
-		outBuildSizesInfo.updateScratchSize += alignment;
-		outBuildSizesInfo.buildScratchSize += alignment;
-	}
+        const VkPhysicalDeviceImageFormatInfo2 info = {
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_FORMAT_INFO_2, .format = obj.getFormat(), .type = obj.getType(), .usage = obj._vkUsageFlags, .flags = createFlags
+        };
+        VkImageFormatProperties2 props = {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2,
+        };
+        VK_CHECK(vkGetPhysicalDeviceImageFormatProperties2(_vkPhysicalDevice, &info, &props));
+        ASSERT_MSG(
+            props.imageFormatProperties.maxMipLevels >= obj._numLevels,
+            "Requested image exceeds maxMipLevels, requested '{}', cannot be greater than '{}'",
+            obj._numLevels,
+            props.imageFormatProperties.maxMipLevels);
 
 
-	void CTX::recordAccelerationStructureBuild(VkCommandBuffer cmd, const AllocatedAccelerationStructure& structure, const bool update) const {
-		const VkAccelerationStructureBuildGeometryInfoKHR buildGeometryInfo = {
-			.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR,
-			.type = structure._isTLAS ? VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR : VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR,
-			.flags = structure._spec.buildFlags,
-			.mode = update ? VK_BUILD_ACCELERATION_STRUCTURE_MODE_UPDATE_KHR : VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR,
-			.srcAccelerationStructure = update ? structure._vkAccelerationStructure : VK_NULL_HANDLE,
-			.dstAccelerationStructure = structure._vkAccelerationStructure,
-			.geometryCount = 1,
-			.pGeometries = &structure._geometry,
-			.scratchData = {.deviceAddress =
-								getAlignedAddress(gpuAddress(structure._scratchBuffer.handle()), _accelerationStructureProperties.minAccelerationStructureScratchOffsetAlignment)}};
-		const AccelerationStructureSpec::BuildRange& range = structure._spec.buildRange;
-		const VkAccelerationStructureBuildRangeInfoKHR rangeInfo = {
-			.primitiveCount = range.primitiveCount,
-			.primitiveOffset = range.primitiveOffset,
-			.firstVertex = range.firstVertex,
-			.transformOffset = range.transformOffset};
-		const VkAccelerationStructureBuildRangeInfoKHR* rangeInfos = &rangeInfo;
-		vkCmdBuildAccelerationStructuresKHR(cmd, 1, &buildGeometryInfo, &rangeInfos);
-	}
+        // if memory is manually managed on host
+        if (memFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
+            VK_CHECK(vmaMapMemory(_vmaAllocator, obj._vmaAllocation, &obj._mappedPtr));
+        }
+        // create image views
+        const VkImageAspectFlags aspectMask = vkutil::AspectMaskFromFormat(obj._vkFormat);
+        VkImageViewCreateInfo image_view_ci = {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+            .flags = 0,
+            .image = obj._vkImage,
+            .viewType = obj._vkImageViewType,
+            .format = format,
+            .components = componentMapping,
+            .subresourceRange = { .aspectMask = aspectMask, .baseMipLevel = 0, .levelCount = numLevels, .baseArrayLayer = 0, .layerCount = numLayers },
+        };
+        VK_CHECK(vkCreateImageView(_vkDevice, &image_view_ci, nullptr, &obj._vkImageView));
+        if (obj._vkUsageFlags & VK_IMAGE_USAGE_STORAGE_BIT) {
+            if (!vkutil::IsComponentMappingAnIdentity(componentMapping)) {
+                image_view_ci.components = {};
+                VK_CHECK(vkCreateImageView(_vkDevice, &image_view_ci, nullptr, &obj._vkImageViewStorage));
+            }
+        }
+        return obj;
+    }
 
-	AccelerationStructure CTX::createAccelerationStructure(const AccelerationStructureSpec& spec) {
-		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_CREATE);
+    GraphicsPipeline CTX::createGraphicsPipeline(const GraphicsPipelineSpec& spec) {
+        MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_CREATE);
+        // all creating a pipeline does is assign the spec to it
+        // actual construction is done upon first bind (lazily)
+        AllocatedGraphicsPipeline obj = {};
+        obj._spec = spec;
+        snprintf(obj._shared.debugName, sizeof(obj._shared.debugName), "%s", spec.debugName);
+        GraphicsPipelineHandle handle = _graphicsPipelinePool.create(std::move(obj));
+        return { this, handle };
+    }
+    ComputePipeline CTX::createComputePipeline(const ComputePipelineSpec& spec) {
+        MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_CREATE);
+        AllocatedComputePipeline obj = {};
+        obj._spec = spec;
+        snprintf(obj._shared.debugName, sizeof(obj._shared.debugName), "%s", spec.debugName);
+        ComputePipelineHandle handle = _computePipelinePool.create(std::move(obj));
+        return { this, handle };
+    }
+    // fixme: ensure correctness
+    RayTracingPipeline CTX::createRayTracingPipeline(const RayTracingPipelineSpec& spec) {
+        MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_CREATE);
+        AllocatedRayTracingPipeline obj = {};
+        obj._spec = spec;
+        snprintf(obj._shared.debugName, sizeof(obj._shared.debugName), "%s", spec.debugName);
+        RayTracingPipelineHandle handle = _rayTracingPipelinePool.create(std::move(obj));
+        return { this, handle };
+    }
 
-		ASSERT_MSG(isExtensionEnabled(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME), "VK_KHR_acceleration_structure is not enabled!");
-		ASSERT_MSG(spec.indexType == VK_INDEX_TYPE_UINT16 || spec.indexType == VK_INDEX_TYPE_UINT32 || spec.indexType == VK_INDEX_TYPE_NONE_KHR, "Invalid indexType attribute, must be VK_INDEX_TYPE_UINT16, VK_INDEX_TYPE_UINT32, or VK_INDEX_TYPE_NONE_KHR.");
+    // ReSharper disable once CppNotAllPathsReturnValue
+    VkGeometryTypeKHR GeometryTypeToVk(AccelerationStructureSpec::GeometryType geomType) {
+        switch (geomType) {
+            case AccelerationStructureSpec::GeometryType::Triangle:
+                return VK_GEOMETRY_TYPE_TRIANGLES_KHR;
+            case AccelerationStructureSpec::GeometryType::AABB:
+                return VK_GEOMETRY_TYPE_AABBS_KHR;
+            case AccelerationStructureSpec::GeometryType::Instances:
+                return VK_GEOMETRY_TYPE_INSTANCES_KHR;
+            case AccelerationStructureSpec::GeometryType::INVALID:
+                break;
+        }
+        UNREACHABLE("You passed in AccelerationStructureSpec::GeometryType::INVALID, whice is, per the name, INVALID, please pick an actual geometry type.");
+    }
+    void CTX::getBLASBuildInfo(const BottomLevelBuildDesc& desc,
+        VkAccelerationStructureBuildSizesInfoKHR& outBuildSizesInfo,
+        VkAccelerationStructureGeometryKHR& outGeometry) {
 
-		AllocatedAccelerationStructure obj{};
-		VkAccelerationStructureBuildSizesInfoKHR sizes;
-		switch (spec.type) {
-			case AccelerationStructureSpec::Type::TLAS:
-				ASSERT_MSG(spec.instancesBuffer.valid(), "TLAS spec needs a valid instancesBuffer!");
-				ASSERT_MSG(spec.buildRange.primitiveCount, "TLAS spec buildRange.primitiveCount must be greater than 0!");
-				ASSERT_MSG(spec.geometryType == AccelerationStructureSpec::GeometryType::Instances, "TLAS spec geometryType must be Instances!");
-				obj._isTLAS = true;
-				getTLASBuildInfo({.instancesBuffer = spec.instancesBuffer, .geometryFlags = spec.geometryFlags, .maxPrimitiveCount = spec.buildRange.primitiveCount, .buildFlags = spec.buildFlags}, sizes, obj._geometry);
-				break;
-			case AccelerationStructureSpec::Type::BLAS:
-				ASSERT_MSG(spec.geometryType == AccelerationStructureSpec::GeometryType::Triangle, "BLAS spec geometryType must be Triangle!");
-				getBLASBuildInfo({
-									 .geometryType = GeometryTypeToVk(spec.geometryType),
-									 .geometry = AccelerationStructureGeometry{
-										 .vertexBuffer = spec.vertexBuffer,
-										 .vertexStride = spec.vertexStride,
-										 .vertexFormat = spec.vertexFormat,
-										 .numVertices = spec.numVertices,
-										 .indexBuffer = spec.indexBuffer,
-										 .indexType = spec.indexType,
-										 .transformBuffer = spec.transformBuffer,
-									 },
-									 .geometryFlags = spec.geometryFlags,
-									 .maxPrimitiveCount = spec.buildRange.primitiveCount,
-									 .buildFlags = spec.buildFlags,
-								 },
-					sizes, obj._geometry);
-				break;
-			default:
-				UNREACHABLE("Invalid acceleration structure type choosen!");
-		}
+        outGeometry = {
+            .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR,
+            .geometryType = VK_GEOMETRY_TYPE_TRIANGLES_KHR,
+            .geometry = {
+                .triangles = {
+                    VkAccelerationStructureGeometryTrianglesDataKHR{
+                        .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR,
+                        .vertexFormat = desc.geometry.vertexFormat,
+                        .vertexData = { .deviceAddress = gpuAddress(desc.geometry.vertexBuffer) },
+                        .vertexStride = desc.geometry.vertexStride,
+                        .maxVertex = desc.geometry.numVertices,
+                        .indexType = desc.geometry.indexType,
+                        .indexData = { .deviceAddress = gpuAddress(desc.geometry.indexBuffer) },
+                        .transformData = { .deviceAddress = desc.geometry.transformBuffer.has_value() ? gpuAddress(desc.geometry.transformBuffer.value()).value : 0 } } } },
+            .flags = desc.geometryFlags
+        };
+        const VkAccelerationStructureBuildGeometryInfoKHR buildGeometryInfo = {
+            .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR,
+            .type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR,
+            .flags = desc.buildFlags,
+            .geometryCount = 1,
+            .pGeometries = &outGeometry,
+        };
+        outBuildSizesInfo = {
+            .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR,
+            .pNext = nullptr
+        };
+        vkGetAccelerationStructureBuildSizesKHR(_vkDevice, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildGeometryInfo, &desc.maxPrimitiveCount, &outBuildSizesInfo);
+        const uint32_t alignment = _accelerationStructureProperties.minAccelerationStructureScratchOffsetAlignment;
+        outBuildSizesInfo.accelerationStructureSize += alignment;
+        outBuildSizesInfo.updateScratchSize += alignment;
+        outBuildSizesInfo.buildScratchSize += alignment;
+    }
+    void CTX::getTLASBuildInfo(const TopLevelBuildDesc& desc,
+        VkAccelerationStructureBuildSizesInfoKHR& outBuildSizesInfo,
+        VkAccelerationStructureGeometryKHR& outGeometry) {
 
-		char bufferName[128];
-		snprintf(bufferName, sizeof(bufferName), "Buffer - %s", spec.debugName);
-		obj._buffer = createBuffer({.size = sizes.accelerationStructureSize, .usage = BufferUsageBits_AccelerationStructureStorage, .storage = StorageType::Device, .debugName = bufferName});
-		snprintf(bufferName, sizeof(bufferName), "Scratch Buffer - %s", spec.debugName);
-		obj._scratchBuffer = createBuffer({.size = std::max(sizes.buildScratchSize, sizes.updateScratchSize), .usage = BufferUsageBits_Storage, .storage = StorageType::Device, .debugName = bufferName});
-		const VkAccelerationStructureCreateInfoKHR createInfo = {
-			.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR,
-			.buffer = _bufferPool.get(obj._buffer.handle())->_vkBuffer,
-			.size = sizes.accelerationStructureSize,
-			.type = obj._isTLAS ? VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR : VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR,
-		};
-		VK_CHECK(vkCreateAccelerationStructureKHR(_vkDevice, &createInfo, nullptr, &obj._vkAccelerationStructure));
+        outGeometry = {
+            .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR,
+            .geometryType = VK_GEOMETRY_TYPE_INSTANCES_KHR,
+            .geometry = {
+                .instances = {
+                    .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR,
+                    .arrayOfPointers = VK_FALSE,
+                    .data = {
+                        .deviceAddress = _bufferPool.get(desc.instancesBuffer)->_vkDeviceAddress } } },
+            .flags = desc.geometryFlags,
+        };
+        const VkAccelerationStructureBuildGeometryInfoKHR buildGeometryInfo = {
+            .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR,
+            .type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR,
+            .flags = desc.buildFlags,
+            .geometryCount = 1,
+            .pGeometries = &outGeometry,
+        };
 
-		obj._spec = spec;
-		obj._spec.debugName = nullptr;
-		const detail::CommandBufferWrapper& wrapper = _immGraphics->acquire();
-		recordAccelerationStructureBuild(wrapper._cmdBuf, obj, false);
-		_immGraphics->wait(_immGraphics->submit(wrapper));
+        outBuildSizesInfo = {
+            .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR,
+            .pNext = nullptr
+        };
+        vkGetAccelerationStructureBuildSizesKHR(_vkDevice, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildGeometryInfo, &desc.maxPrimitiveCount, &outBuildSizesInfo);
+        const uint32_t alignment = _accelerationStructureProperties.minAccelerationStructureScratchOffsetAlignment;
+        outBuildSizesInfo.accelerationStructureSize += alignment;
+        outBuildSizesInfo.updateScratchSize += alignment;
+        outBuildSizesInfo.buildScratchSize += alignment;
+    }
 
-		const VkAccelerationStructureDeviceAddressInfoKHR addressInfo = {.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR, .accelerationStructure = obj._vkAccelerationStructure};
-		obj._vkDeviceAddress = vkGetAccelerationStructureDeviceAddressKHR(_vkDevice, &addressInfo);
-		snprintf(obj._debugName, sizeof(obj._debugName), "%s", spec.debugName);
 
-		vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR, reinterpret_cast<uint64_t>(obj._vkAccelerationStructure), obj.getDebugName().data());
-		const AccelerationStructureHandle handle = _accelerationStructurePool.create(std::move(obj));
-		return {this, handle};
-	}
+    void CTX::recordAccelerationStructureBuild(VkCommandBuffer cmd, const AllocatedAccelerationStructure& structure, const bool update) const {
+        const VkAccelerationStructureBuildGeometryInfoKHR buildGeometryInfo = {
+            .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR,
+            .type = structure._isTLAS ? VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR : VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR,
+            .flags = structure._spec.buildFlags,
+            .mode = update ? VK_BUILD_ACCELERATION_STRUCTURE_MODE_UPDATE_KHR : VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR,
+            .srcAccelerationStructure = update ? structure._vkAccelerationStructure : VK_NULL_HANDLE,
+            .dstAccelerationStructure = structure._vkAccelerationStructure,
+            .geometryCount = 1,
+            .pGeometries = &structure._geometry,
+            .scratchData = { .deviceAddress =
+                                 getAlignedAddress(gpuAddress(structure._scratchBuffer.handle()), _accelerationStructureProperties.minAccelerationStructureScratchOffsetAlignment) }
+        };
+        const AccelerationStructureSpec::BuildRange& range = structure._spec.buildRange;
+        const VkAccelerationStructureBuildRangeInfoKHR rangeInfo = {
+            .primitiveCount = range.primitiveCount,
+            .primitiveOffset = range.primitiveOffset,
+            .firstVertex = range.firstVertex,
+            .transformOffset = range.transformOffset
+        };
+        const VkAccelerationStructureBuildRangeInfoKHR* rangeInfos = &rangeInfo;
+        vkCmdBuildAccelerationStructuresKHR(cmd, 1, &buildGeometryInfo, &rangeInfos);
+    }
 
-	// functions that wrap around existing functions for AllocatedObjects
-	void CTX::generateMipmaps(TextureHandle handle) {
-		ASSERT_MSG(!_currentCommandBuffer._ctx, "Cannot generate mipmaps immediately while a CommandBuffer is open, use TransferBuilder::generateMipmaps instead.");
-		if (handle.empty()) {
-			LOG_SYSTEM(LogType::Warning, "Generate mipmap with empty handle!");
-			return;
-		}
-		AllocatedTexture* image = _texturePool.get(handle);
-		if (image->_numLevels <= 1) {
-			LOG_SYSTEM(LogType::Warning, "Generate mipmap request of texture with less then 2 levels, returning early.");
-			return;
-		}
-		const detail::CommandBufferWrapper& wrapper = _immGraphics->acquire();
-		image->generateMipmap(wrapper._cmdBuf);
-		_immGraphics->submit(wrapper);
-	}
-	void CTX::uploadEXT(BufferHandle handle, const void* data, size_t size, size_t offset) {
-		MYTH_PROFILER_FUNCTION();
-		if (!data) {
-			LOG_SYSTEM(LogType::Warning, "Attempting to upload data which is null!");
-			return;
-		}
-		ASSERT_MSG(size > 0, "Size must be greater than 0!");
-		ASSERT_MSG(handle.valid(), "CTX::upload called with an invalid BufferHandle.");
+    AccelerationStructure CTX::createAccelerationStructure(const AccelerationStructureSpec& spec) {
+        MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_CREATE);
 
-		AllocatedBuffer* buffer = _bufferPool.get(handle);
-		ASSERT_MSG(buffer, "CTX::upload: handle does not resolve to a live buffer.");
-		ASSERT_MSG(offset + size <= buffer->_bufferSize, "CTX::upload: offset + size ({}) exceeds buffer '{}' size ({}).", offset + size, buffer->_debugName, buffer->_bufferSize);
-		ASSERT_MSG(buffer->isMapped() || (buffer->_vkUsageFlags & VK_BUFFER_USAGE_TRANSFER_DST_BIT), "CTX::upload: device buffer '{}' was not created with TRANSFER_DST usage.", buffer->_debugName);
-		if (buffer->isMapped())
-			waitForGraphUse(*buffer);
-		_staging->bufferSubData(*buffer, offset, size, data);
-	}
-	void CTX::waitForGraphUse(const AllocatedBuffer& buffer) const {
-		// a value above the frame number belongs to a frame that compiled but never submitted, nothing on the GPU uses it yet
-		const uint64_t value = buffer._graphTimelineValue;
-		if (value == 0 || value > _currentFrameNumber)
-			return;
-		const VkSemaphoreWaitInfo waitInfo = {
-			.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
-			.semaphoreCount = 1,
-			.pSemaphores = &_timelineSemaphore,
-			.pValues = &value,
-		};
-		VK_CHECK(vkWaitSemaphores(_vkDevice, &waitInfo, UINT64_MAX));
-	}
-	void CTX::downloadEXT(BufferHandle handle, void* data, size_t size, size_t offset) {
-		MYTH_PROFILER_FUNCTION();
-		if (!data) {
-			LOG_SYSTEM(LogType::Warning, "Data is null");
-			return;
-		}
-		AllocatedBuffer* buffer = _bufferPool.get(handle);
+        ASSERT_MSG(isExtensionEnabled(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME), "VK_KHR_acceleration_structure is not enabled!");
+        ASSERT_MSG(spec.indexType == VK_INDEX_TYPE_UINT16 || spec.indexType == VK_INDEX_TYPE_UINT32 || spec.indexType == VK_INDEX_TYPE_NONE_KHR, "Invalid indexType attribute, must be VK_INDEX_TYPE_UINT16, VK_INDEX_TYPE_UINT32, or VK_INDEX_TYPE_NONE_KHR.");
 
-		if (!buffer) {
-			LOG_SYSTEM(LogType::Error, "Retrieved buffer is null, handle must have been invalid!");
-			return;
-		}
-		if (offset + size > buffer->_bufferSize) {
-			LOG_SYSTEM(LogType::Error, "Buffer request to download is out of range!");
-			return;
-		}
-		if (buffer->isMapped())
-			waitForGraphUse(*buffer);
-		buffer->getBufferSubData(*this, offset, size, data);
-	}
-	void CTX::upload(TextureHandle handle, HostBytes data, const TexRange& range) {
-		MYTH_PROFILER_FUNCTION();
-		ASSERT_MSG(!_currentCommandBuffer._ctx, "Cannot upload a texture while a CommandBuffer is open, the immediate submit would run before it.");
-		ASSERT_MSG(handle.valid(), "CTX::upload called with an invalid TextureHandle.");
-		if (data.bytes.empty()) {
-			LOG_SYSTEM(LogType::Warning, "Attempting to upload data which is null!");
-			return;
-		}
-		AllocatedTexture* image = _texturePool.get(handle);
-		ASSERT_MSG(image, "Attempting to use texture via invalid handle!");
-		ASSERT_MSG(image->_vkUsageFlags & VK_IMAGE_USAGE_TRANSFER_DST_BIT, "CTX::upload: texture '{}' was not created with TRANSFER_DST usage.", image->_debugName);
-		ASSERT_MSG(ValidateRange(image->_vkExtent, image->_numLevels, range), "CTX::upload: TexRange is out of bounds for texture '{}'.", image->_debugName);
-		// why is this here
-		if (image->_vkImageType == VK_IMAGE_TYPE_3D) {
-			_staging->imageData3D(
-				*image, VkOffset3D{range.offset.x, range.offset.y, range.offset.z}, VkExtent3D{range.dimensions.width, range.dimensions.height, range.dimensions.depth}, image->_vkFormat, data.bytes);
-		} else {
-			const VkRect2D image_region = {
-				.offset = {.x = range.offset.x, .y = range.offset.y},
-				.extent = {.width = range.dimensions.width, .height = range.dimensions.height},
-			};
-			_staging->imageData2D(*image, image_region, range.mipLevel, range.numMipLevels, range.layer, range.numLayers, image->_vkFormat, data.bytes);
-		}
-	}
-	void CTX::download(TextureHandle handle, std::span<std::byte> data, const TexRange& range) {
-		MYTH_PROFILER_FUNCTION();
-		ASSERT_MSG(!_currentCommandBuffer._ctx, "Cannot download a texture while a CommandBuffer is open, the immediate submit would run before it.");
-		if (data.empty()) {
-			LOG_SYSTEM(LogType::Warning, "Data is null.");
-			return;
-		}
-		AllocatedTexture* image = _texturePool.get(handle);
-		if (!image) {
-			LOG_SYSTEM(LogType::Error, "Retrieved image is null, handle must have been invalid!");
-			return;
-		}
-		if (!ValidateRange(image->_vkExtent, image->_numLevels, range)) {
-			LOG_SYSTEM(LogType::Warning, "Image validation failed!");
-			return;
-		}
-		_staging->getImageData(
-			*image,
-			VkOffset3D{range.offset.x, range.offset.y, range.offset.z},
-			VkExtent3D{range.dimensions.width, range.dimensions.height, range.dimensions.depth},
-			VkImageSubresourceRange{
-				.aspectMask = vkutil::AspectMaskFromFormat(image->_vkFormat),
-				.baseMipLevel = range.mipLevel,
-				.levelCount = range.numMipLevels,
-				.baseArrayLayer = range.layer,
-				.layerCount = range.numLayers,
-			},
-			image->_vkFormat,
-			data);
-	}
+        AllocatedAccelerationStructure obj{};
+        VkAccelerationStructureBuildSizesInfoKHR sizes;
+        switch (spec.type) {
+            case AccelerationStructureSpec::Type::TLAS:
+                ASSERT_MSG(spec.instancesBuffer.valid(), "TLAS spec needs a valid instancesBuffer!");
+                ASSERT_MSG(spec.buildRange.primitiveCount, "TLAS spec buildRange.primitiveCount must be greater than 0!");
+                ASSERT_MSG(spec.geometryType == AccelerationStructureSpec::GeometryType::Instances, "TLAS spec geometryType must be Instances!");
+                obj._isTLAS = true;
+                getTLASBuildInfo({ .instancesBuffer = spec.instancesBuffer, .geometryFlags = spec.geometryFlags, .maxPrimitiveCount = spec.buildRange.primitiveCount, .buildFlags = spec.buildFlags }, sizes, obj._geometry);
+                break;
+            case AccelerationStructureSpec::Type::BLAS:
+                ASSERT_MSG(spec.geometryType == AccelerationStructureSpec::GeometryType::Triangle, "BLAS spec geometryType must be Triangle!");
+                getBLASBuildInfo({
+                                     .geometryType = GeometryTypeToVk(spec.geometryType),
+                                     .geometry = AccelerationStructureGeometry{
+                                         .vertexBuffer = spec.vertexBuffer,
+                                         .vertexStride = spec.vertexStride,
+                                         .vertexFormat = spec.vertexFormat,
+                                         .numVertices = spec.numVertices,
+                                         .indexBuffer = spec.indexBuffer,
+                                         .indexType = spec.indexType,
+                                         .transformBuffer = spec.transformBuffer,
+                                     },
+                                     .geometryFlags = spec.geometryFlags,
+                                     .maxPrimitiveCount = spec.buildRange.primitiveCount,
+                                     .buildFlags = spec.buildFlags,
+                                 },
+                    sizes, obj._geometry);
+                break;
+            default:
+                UNREACHABLE("Invalid acceleration structure type choosen!");
+        }
 
-	CommandBuffer* CTX::acquireCommand(const bool presents) {
-		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_ACQUIRE);
-		ASSERT_MSG(!_currentCommandBuffer._ctx, "Cannot open more than 1 CommandBuffer on the same thread simultaneously!");
-		// frame N signals N + 1, so this waits for frame N - kNUM_FRAMES_IN_FLIGHT
-		if (_currentFrameNumber >= kNUM_FRAMES_IN_FLIGHT) {
-			const uint64_t waitValue = _currentFrameNumber + 1 - kNUM_FRAMES_IN_FLIGHT;
-			const VkSemaphoreWaitInfo waitInfo = {
-				.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
-				.semaphoreCount = 1,
-				.pSemaphores = &_timelineSemaphore,
-				.pValues = &waitValue,
-			};
-			VK_CHECK(vkWaitSemaphores(_vkDevice, &waitInfo, UINT64_MAX));
-		}
-		if (presents) {
-			ASSERT_MSG(_swapchain, "RenderGraph::backBuffer() needs a swapchain.");
-			VkSemaphore acquireSemaphore = _swapchain->acquire();
-			if (acquireSemaphore == VK_NULL_HANDLE)
-				return nullptr;
-			_immGraphics->waitSemaphore(acquireSemaphore);
-		}
-		_staging->resetPending();
-		_currentCommandBuffer = CommandBuffer(this);
-		return &_currentCommandBuffer;
-	}
-	SubmitHandle CTX::submitCommand(CommandBuffer& cmd, const bool presents) {
-		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_SUBMIT);
-		ASSERT(cmd._ctx);
-		ASSERT(cmd._wrapper);
+        char bufferName[128];
+        snprintf(bufferName, sizeof(bufferName), "Buffer - %s", spec.debugName);
+        obj._buffer = createBuffer({ .size = sizes.accelerationStructureSize, .usage = BufferUsageBits_AccelerationStructureStorage, .storage = StorageType::Device, .debugName = bufferName });
+        snprintf(bufferName, sizeof(bufferName), "Scratch Buffer - %s", spec.debugName);
+        obj._scratchBuffer = createBuffer({ .size = std::max(sizes.buildScratchSize, sizes.updateScratchSize), .usage = BufferUsageBits_Storage, .storage = StorageType::Device, .debugName = bufferName });
+        const VkAccelerationStructureCreateInfoKHR createInfo = {
+            .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR,
+            .buffer = _bufferPool.get(obj._buffer.handle())->_vkBuffer,
+            .size = sizes.accelerationStructureSize,
+            .type = obj._isTLAS ? VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR : VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR,
+        };
+        VK_CHECK(vkCreateAccelerationStructureKHR(_vkDevice, &createInfo, nullptr, &obj._vkAccelerationStructure));
+
+        obj._spec = spec;
+        obj._spec.debugName = nullptr;
+        const detail::CommandBufferWrapper& wrapper = _immGraphics->acquire();
+        recordAccelerationStructureBuild(wrapper._cmdBuf, obj, false);
+        _immGraphics->wait(_immGraphics->submit(wrapper));
+
+        const VkAccelerationStructureDeviceAddressInfoKHR addressInfo = { .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR, .accelerationStructure = obj._vkAccelerationStructure };
+        obj._vkDeviceAddress = vkGetAccelerationStructureDeviceAddressKHR(_vkDevice, &addressInfo);
+        snprintf(obj._debugName, sizeof(obj._debugName), "%s", spec.debugName);
+
+        vkutil::SetObjectDebugName(_vkDevice, VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR, reinterpret_cast<uint64_t>(obj._vkAccelerationStructure), obj.getDebugName().data());
+        const AccelerationStructureHandle handle = _accelerationStructurePool.create(std::move(obj));
+        return { this, handle };
+    }
+
+    // functions that wrap around existing functions for AllocatedObjects
+    void CTX::generateMipmaps(TextureHandle handle) {
+        ASSERT_MSG(!_currentCommandBuffer._ctx, "Cannot generate mipmaps immediately while a CommandBuffer is open, use TransferBuilder::generateMipmaps instead.");
+        if (handle.empty()) {
+            LOG_SYSTEM(LogType::Warning, "Generate mipmap with empty handle!");
+            return;
+        }
+        AllocatedTexture* image = _texturePool.get(handle);
+        if (image->_numLevels <= 1) {
+            LOG_SYSTEM(LogType::Warning, "Generate mipmap request of texture with less then 2 levels, returning early.");
+            return;
+        }
+        const detail::CommandBufferWrapper& wrapper = _immGraphics->acquire();
+        image->generateMipmap(wrapper._cmdBuf);
+        _immGraphics->submit(wrapper);
+    }
+    void CTX::uploadEXT(BufferHandle handle, const void* data, size_t size, size_t offset) {
+        MYTH_PROFILER_FUNCTION();
+        if (!data) {
+            LOG_SYSTEM(LogType::Warning, "Attempting to upload data which is null!");
+            return;
+        }
+        ASSERT_MSG(size > 0, "Size must be greater than 0!");
+        ASSERT_MSG(handle.valid(), "CTX::upload called with an invalid BufferHandle.");
+
+        AllocatedBuffer* buffer = _bufferPool.get(handle);
+        ASSERT_MSG(buffer, "CTX::upload: handle does not resolve to a live buffer.");
+        ASSERT_MSG(offset + size <= buffer->_bufferSize, "CTX::upload: offset + size ({}) exceeds buffer '{}' size ({}).", offset + size, buffer->_debugName, buffer->_bufferSize);
+        ASSERT_MSG(buffer->isMapped() || (buffer->_vkUsageFlags & VK_BUFFER_USAGE_TRANSFER_DST_BIT), "CTX::upload: device buffer '{}' was not created with TRANSFER_DST usage.", buffer->_debugName);
+        if (buffer->isMapped())
+            waitForGraphUse(*buffer);
+        _staging->bufferSubData(*buffer, offset, size, data);
+    }
+    void CTX::waitForGraphUse(const AllocatedBuffer& buffer) const {
+        // a value above the frame number belongs to a frame that compiled but never submitted, nothing on the GPU uses it yet
+        const uint64_t value = buffer._graphTimelineValue;
+        if (value == 0 || value > _currentFrameNumber)
+            return;
+        const VkSemaphoreWaitInfo waitInfo = {
+            .sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
+            .semaphoreCount = 1,
+            .pSemaphores = &_timelineSemaphore,
+            .pValues = &value,
+        };
+        VK_CHECK(vkWaitSemaphores(_vkDevice, &waitInfo, UINT64_MAX));
+    }
+    void CTX::downloadEXT(BufferHandle handle, void* data, size_t size, size_t offset) {
+        MYTH_PROFILER_FUNCTION();
+        if (!data) {
+            LOG_SYSTEM(LogType::Warning, "Data is null");
+            return;
+        }
+        AllocatedBuffer* buffer = _bufferPool.get(handle);
+
+        if (!buffer) {
+            LOG_SYSTEM(LogType::Error, "Retrieved buffer is null, handle must have been invalid!");
+            return;
+        }
+        if (offset + size > buffer->_bufferSize) {
+            LOG_SYSTEM(LogType::Error, "Buffer request to download is out of range!");
+            return;
+        }
+        if (buffer->isMapped())
+            waitForGraphUse(*buffer);
+        buffer->getBufferSubData(*this, offset, size, data);
+    }
+    void CTX::upload(TextureHandle handle, HostBytes data, const TexRange& range) {
+        MYTH_PROFILER_FUNCTION();
+        ASSERT_MSG(!_currentCommandBuffer._ctx, "Cannot upload a texture while a CommandBuffer is open, the immediate submit would run before it.");
+        ASSERT_MSG(handle.valid(), "CTX::upload called with an invalid TextureHandle.");
+        if (data.bytes.empty()) {
+            LOG_SYSTEM(LogType::Warning, "Attempting to upload data which is null!");
+            return;
+        }
+        AllocatedTexture* image = _texturePool.get(handle);
+        ASSERT_MSG(image, "Attempting to use texture via invalid handle!");
+        ASSERT_MSG(image->_vkUsageFlags & VK_IMAGE_USAGE_TRANSFER_DST_BIT, "CTX::upload: texture '{}' was not created with TRANSFER_DST usage.", image->_debugName);
+        ASSERT_MSG(ValidateRange(image->_vkExtent, image->_numLevels, range), "CTX::upload: TexRange is out of bounds for texture '{}'.", image->_debugName);
+        // why is this here
+        if (image->_vkImageType == VK_IMAGE_TYPE_3D) {
+            _staging->imageData3D(
+                *image, VkOffset3D{ range.offset.x, range.offset.y, range.offset.z }, VkExtent3D{ range.dimensions.width, range.dimensions.height, range.dimensions.depth }, image->_vkFormat, data.bytes);
+        } else {
+            const VkRect2D image_region = {
+                .offset = { .x = range.offset.x, .y = range.offset.y },
+                .extent = { .width = range.dimensions.width, .height = range.dimensions.height },
+            };
+            _staging->imageData2D(*image, image_region, range.mipLevel, range.numMipLevels, range.layer, range.numLayers, image->_vkFormat, data.bytes);
+        }
+    }
+    void CTX::download(TextureHandle handle, std::span<std::byte> data, const TexRange& range) {
+        MYTH_PROFILER_FUNCTION();
+        ASSERT_MSG(!_currentCommandBuffer._ctx, "Cannot download a texture while a CommandBuffer is open, the immediate submit would run before it.");
+        if (data.empty()) {
+            LOG_SYSTEM(LogType::Warning, "Data is null.");
+            return;
+        }
+        AllocatedTexture* image = _texturePool.get(handle);
+        if (!image) {
+            LOG_SYSTEM(LogType::Error, "Retrieved image is null, handle must have been invalid!");
+            return;
+        }
+        if (!ValidateRange(image->_vkExtent, image->_numLevels, range)) {
+            LOG_SYSTEM(LogType::Warning, "Image validation failed!");
+            return;
+        }
+        _staging->getImageData(
+            *image,
+            VkOffset3D{ range.offset.x, range.offset.y, range.offset.z },
+            VkExtent3D{ range.dimensions.width, range.dimensions.height, range.dimensions.depth },
+            VkImageSubresourceRange{
+                .aspectMask = vkutil::AspectMaskFromFormat(image->_vkFormat),
+                .baseMipLevel = range.mipLevel,
+                .levelCount = range.numMipLevels,
+                .baseArrayLayer = range.layer,
+                .layerCount = range.numLayers,
+            },
+            image->_vkFormat,
+            data);
+    }
+
+    CommandBuffer* CTX::acquireCommand(const bool presents) {
+        MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_ACQUIRE);
+        ASSERT_MSG(!_currentCommandBuffer._ctx, "Cannot open more than 1 CommandBuffer on the same thread simultaneously!");
+        // frame N signals N + 1, so this waits for frame N - kNUM_FRAMES_IN_FLIGHT
+        if (_currentFrameNumber >= kNUM_FRAMES_IN_FLIGHT) {
+            const uint64_t waitValue = _currentFrameNumber + 1 - kNUM_FRAMES_IN_FLIGHT;
+            const VkSemaphoreWaitInfo waitInfo = {
+                .sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
+                .semaphoreCount = 1,
+                .pSemaphores = &_timelineSemaphore,
+                .pValues = &waitValue,
+            };
+            VK_CHECK(vkWaitSemaphores(_vkDevice, &waitInfo, UINT64_MAX));
+        }
+        if (presents) {
+            ASSERT_MSG(_swapchain, "RenderGraph::backBuffer() needs a swapchain.");
+            VkSemaphore acquireSemaphore = _swapchain->acquire();
+            if (acquireSemaphore == VK_NULL_HANDLE)
+                return nullptr;
+            _immGraphics->waitSemaphore(acquireSemaphore);
+        }
+        _staging->resetPending();
+        _currentCommandBuffer = CommandBuffer(this);
+        return &_currentCommandBuffer;
+    }
+    SubmitHandle CTX::submitCommand(CommandBuffer& cmd, const bool presents) {
+        MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_SUBMIT);
+        ASSERT(cmd._ctx);
+        ASSERT(cmd._wrapper);
 #ifdef MYTH_ENABLED_TRACY_GPU
-		TracyVkCollect(_tracyPlugin.getTracyVkCtx(), cmd._wrapper->_cmdBuf);
+        TracyVkCollect(_tracyPlugin.getTracyVkCtx(), cmd._wrapper->_cmdBuf);
 #endif
-		_immGraphics->signalSemaphore(_timelineSemaphore, _currentFrameNumber + 1);
-		cmd._lastSubmitHandle = _immGraphics->submit(*cmd._wrapper);
-		_staging->onGraphSubmit(cmd._lastSubmitHandle);
-		if (presents) {
-			const AllocatedTexture* backBuffer = _texturePool.get(_swapchain->getCurrentSwapchainTextureHandle());
-			ASSERT(backBuffer->getImageLayout(backBuffer->getWholeRange()) == VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
-			_swapchain->present(_immGraphics->acquireLastSubmitSemaphore());
-		}
-		_currentFrameNumber++;
-		vmaSetCurrentFrameIndex(_vmaAllocator, static_cast<uint32_t>(_currentFrameNumber));
-		processDeferredTasks();
-		const SubmitHandle handle = cmd._lastSubmitHandle;
-		_currentCommandBuffer = {};
-		return handle;
-	}
-	void CTX::deferTask(std::packaged_task<void()>&& task, SubmitHandle handle) const {
-		if (handle.empty()) {
-			handle = _immGraphics->getNextSubmitHandle();
-		}
-		_deferredTasks.emplace_back(std::move(task), handle, _currentFrameNumber);
-	}
-	// void CTX::processDeferredTasks() {
-	// 	auto it = _deferredTasks.begin();
-	// 	while (it != _deferredTasks.end() && _imm->isReady(it->_handle, true)) {
-	// 		(it++)->_task();
-	// 	}
-	// 	_deferredTasks.erase(_deferredTasks.begin(), it);
-	// }
-	//
-	void CTX::processDeferredTasks() {
-		if (isHeadless()) {
-			auto it = _deferredTasks.begin();
-			while (it != _deferredTasks.end()) {
-				if (!_immGraphics->isReady(it->_handle, false))
-					break;
-				(it++)->_task();
-			}
-			_deferredTasks.erase(_deferredTasks.begin(), it);
-			return;
-		}
-		const uint64_t numFramesToWait = _swapchain->getNumOfSwapchainImages();
-		const uint64_t safeFrameThreshold = _currentFrameNumber > numFramesToWait ? _currentFrameNumber - numFramesToWait : 0;
+        _immGraphics->signalSemaphore(_timelineSemaphore, _currentFrameNumber + 1);
+        cmd._lastSubmitHandle = _immGraphics->submit(*cmd._wrapper);
+        _staging->onGraphSubmit(cmd._lastSubmitHandle);
+        if (presents) {
+            const AllocatedTexture* backBuffer = _texturePool.get(_swapchain->getCurrentSwapchainTextureHandle());
+            ASSERT(backBuffer->getImageLayout(backBuffer->getWholeRange()) == VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+            _swapchain->present(_immGraphics->acquireLastSubmitSemaphore());
+        }
+        _currentFrameNumber++;
+        vmaSetCurrentFrameIndex(_vmaAllocator, static_cast<uint32_t>(_currentFrameNumber));
+        processDeferredTasks();
+        const SubmitHandle handle = cmd._lastSubmitHandle;
+        _currentCommandBuffer = {};
+        return handle;
+    }
+    void CTX::deferTask(std::packaged_task<void()>&& task, SubmitHandle handle) const {
+        if (handle.empty()) {
+            handle = _immGraphics->getNextSubmitHandle();
+        }
+        _deferredTasks.emplace_back(std::move(task), handle, _currentFrameNumber);
+    }
+    // void CTX::processDeferredTasks() {
+    // 	auto it = _deferredTasks.begin();
+    // 	while (it != _deferredTasks.end() && _imm->isReady(it->_handle, true)) {
+    // 		(it++)->_task();
+    // 	}
+    // 	_deferredTasks.erase(_deferredTasks.begin(), it);
+    // }
+    //
+    void CTX::processDeferredTasks() {
+        if (isHeadless()) {
+            auto it = _deferredTasks.begin();
+            while (it != _deferredTasks.end()) {
+                if (!_immGraphics->isReady(it->_handle, false))
+                    break;
+                (it++)->_task();
+            }
+            _deferredTasks.erase(_deferredTasks.begin(), it);
+            return;
+        }
+        const uint64_t numFramesToWait = _swapchain->getNumOfSwapchainImages();
+        const uint64_t safeFrameThreshold = _currentFrameNumber > numFramesToWait ? _currentFrameNumber - numFramesToWait : 0;
 
-		auto it = _deferredTasks.begin();
-		while (it != _deferredTasks.end() && it->_frameNumber < safeFrameThreshold) {
-			if (!_immGraphics->isReady(it->_handle, false)) {
-				break;
-			}
-			(it++)->_task();
-		}
-		_deferredTasks.erase(_deferredTasks.begin(), it);
-	}
-	void CTX::waitDeferredTasks() {
-		for (auto& task: _deferredTasks) {
-			_immGraphics->wait(task._handle);
-			task._task();
-		}
-		_deferredTasks.clear();
-	}
+        auto it = _deferredTasks.begin();
+        while (it != _deferredTasks.end() && it->_frameNumber < safeFrameThreshold) {
+            if (!_immGraphics->isReady(it->_handle, false)) {
+                break;
+            }
+            (it++)->_task();
+        }
+        _deferredTasks.erase(_deferredTasks.begin(), it);
+    }
+    void CTX::waitDeferredTasks() {
+        for (auto& task: _deferredTasks) {
+            _immGraphics->wait(task._handle);
+            task._task();
+        }
+        _deferredTasks.clear();
+    }
 
-	void CTX::waitIdle() const {
-		vkDeviceWaitIdle(_vkDevice);
-	}
+    void CTX::waitIdle() const {
+        vkDeviceWaitIdle(_vkDevice);
+    }
 
-	// 	SubmitHandle CTX::submitCommand(CommandBuffer& cmd) {
-	// 		ASSERT(cmd._ctx);
-	// 		ASSERT(cmd._wrapper);
-	// #ifdef MYTH_ENABLED_TRACY_GPU
-	// 		if (_tracyPlugin.isEnabled())
-	// 			TracyVkCollect(_tracyPlugin.getTracyVkCtx(), cmd._wrapper->_cmdBuf);
-	// #endif
-	// 		const bool isPresenting = cmd._cmdType == CommandBuffer::Type::Graphics;
-	// 		if (isPresenting) {
-	// 			const uint64_t signalValue = _swapchain->_currentFrameNum + _swapchain->getNumOfSwapchainImages();
-	// 			_swapchain->_timelineWaitValues[_swapchain->_currentImageIndex] = signalValue;
-	// 			_imm->signalSemaphore(_timelineSemaphore, signalValue);
-	// 		}
-	//
-	// 		cmd._lastSubmitHandle = _imm->submit(*cmd._wrapper);
-	// 		if (isPresenting) {
-	// 			ASSERT(_texturePool.get(_swapchain->getCurrentSwapchainTextureHandle())->getImageLayout() == VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
-	// 			_swapchain->present();
-	// 		}
-	// 		processDeferredTasks();
-	// 		SubmitHandle handle = cmd._lastSubmitHandle;
-	// 		// reset
-	// 		_currentCommandBuffer = {};
-	// 		// might return the submit handle no clue
-	// 		return handle;
-	// 	}
+    // 	SubmitHandle CTX::submitCommand(CommandBuffer& cmd) {
+    // 		ASSERT(cmd._ctx);
+    // 		ASSERT(cmd._wrapper);
+    // #ifdef MYTH_ENABLED_TRACY_GPU
+    // 		if (_tracyPlugin.isEnabled())
+    // 			TracyVkCollect(_tracyPlugin.getTracyVkCtx(), cmd._wrapper->_cmdBuf);
+    // #endif
+    // 		const bool isPresenting = cmd._cmdType == CommandBuffer::Type::Graphics;
+    // 		if (isPresenting) {
+    // 			const uint64_t signalValue = _swapchain->_currentFrameNum + _swapchain->getNumOfSwapchainImages();
+    // 			_swapchain->_timelineWaitValues[_swapchain->_currentImageIndex] = signalValue;
+    // 			_imm->signalSemaphore(_timelineSemaphore, signalValue);
+    // 		}
+    //
+    // 		cmd._lastSubmitHandle = _imm->submit(*cmd._wrapper);
+    // 		if (isPresenting) {
+    // 			ASSERT(_texturePool.get(_swapchain->getCurrentSwapchainTextureHandle())->getImageLayout() == VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+    // 			_swapchain->present();
+    // 		}
+    // 		processDeferredTasks();
+    // 		SubmitHandle handle = cmd._lastSubmitHandle;
+    // 		// reset
+    // 		_currentCommandBuffer = {};
+    // 		// might return the submit handle no clue
+    // 		return handle;
+    // 	}
 
 
-	// come back here for reference
-	// VkAccelerationStructureBuildSizesInfoKHR CTX::getBLASBuildInfo(const BottomLevelBuildDesc& desc) {
-	//	if (!this->isExtensionEnabled(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME))
-	//		LOG_SYSTEM(LogType::Warning, "VK_KHR_ACCELERATION_STRUCTURE is not an enabled extension, why are you calling 'getBLASBuildInfo()' then.");
-	//
-	//	VkAccelerationStructureGeometryDataKHR geometryData;
-	//	switch (desc.geometryType) {
-	//		case VK_GEOMETRY_TYPE_TRIANGLES_KHR: {
-	//			VkAccelerationStructureGeometryTrianglesDataKHR geometry_triangles = {
-	//				.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR,
-	//				.vertexFormat = desc.geometry.vertexFormat,
-	//				.vertexData = { .deviceAddress = this->gpuAddress(desc.geometry.vertexBuffer) },
-	//				.vertexStride = desc.geometry.vertexStride,
-	//				.maxVertex = desc.geometry.numVertices,
-	//				.indexType = desc.geometry.indexType,
-	//				.indexData = { .deviceAddress = this->gpuAddress(desc.geometry.indexBuffer) }
-	//			};
-	//			geometryData = VkAccelerationStructureGeometryDataKHR(geometry_triangles);
-	//		} break;
-	//		case VK_GEOMETRY_TYPE_AABBS_KHR:
-	//		case VK_GEOMETRY_TYPE_INSTANCES_KHR:
-	//		default:
-	//			ASSERT_MSG(false, "Geometry type not supported yet!");
-	//	}
-	//
-	//	VkAccelerationStructureGeometryKHR geometry = {
-	//		.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR,
-	//		.geometryType = desc.geometryType,
-	//		.geometry = geometryData,
-	//		.flags = desc.geometryFlags,
-	//	};
-	//	VkAccelerationStructureBuildGeometryInfoKHR buildGeometryInfo = {
-	//		.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR,
-	//		.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR,
-	//		.flags = 0,
-	//		.geometryCount = 1, // not sure yet
-	//		.pGeometries = &geometry,
-	//	};
-	//
-	//	VkAccelerationStructureBuildSizesInfoKHR outbuildSizes = {
-	//		.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR
-	//	};
-	//	vkGetAccelerationStructureBuildSizesKHR(_vkDevice, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildGeometryInfo, &buildGeometryInfo.geometryCount, &outbuildSizes);
-	//	return outbuildSizes;
-	//}
+    // come back here for reference
+    // VkAccelerationStructureBuildSizesInfoKHR CTX::getBLASBuildInfo(const BottomLevelBuildDesc& desc) {
+    //	if (!this->isExtensionEnabled(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME))
+    //		LOG_SYSTEM(LogType::Warning, "VK_KHR_ACCELERATION_STRUCTURE is not an enabled extension, why are you calling 'getBLASBuildInfo()' then.");
+    //
+    //	VkAccelerationStructureGeometryDataKHR geometryData;
+    //	switch (desc.geometryType) {
+    //		case VK_GEOMETRY_TYPE_TRIANGLES_KHR: {
+    //			VkAccelerationStructureGeometryTrianglesDataKHR geometry_triangles = {
+    //				.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR,
+    //				.vertexFormat = desc.geometry.vertexFormat,
+    //				.vertexData = { .deviceAddress = this->gpuAddress(desc.geometry.vertexBuffer) },
+    //				.vertexStride = desc.geometry.vertexStride,
+    //				.maxVertex = desc.geometry.numVertices,
+    //				.indexType = desc.geometry.indexType,
+    //				.indexData = { .deviceAddress = this->gpuAddress(desc.geometry.indexBuffer) }
+    //			};
+    //			geometryData = VkAccelerationStructureGeometryDataKHR(geometry_triangles);
+    //		} break;
+    //		case VK_GEOMETRY_TYPE_AABBS_KHR:
+    //		case VK_GEOMETRY_TYPE_INSTANCES_KHR:
+    //		default:
+    //			ASSERT_MSG(false, "Geometry type not supported yet!");
+    //	}
+    //
+    //	VkAccelerationStructureGeometryKHR geometry = {
+    //		.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR,
+    //		.geometryType = desc.geometryType,
+    //		.geometry = geometryData,
+    //		.flags = desc.geometryFlags,
+    //	};
+    //	VkAccelerationStructureBuildGeometryInfoKHR buildGeometryInfo = {
+    //		.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR,
+    //		.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR,
+    //		.flags = 0,
+    //		.geometryCount = 1, // not sure yet
+    //		.pGeometries = &geometry,
+    //	};
+    //
+    //	VkAccelerationStructureBuildSizesInfoKHR outbuildSizes = {
+    //		.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR
+    //	};
+    //	vkGetAccelerationStructureBuildSizesKHR(_vkDevice, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildGeometryInfo, &buildGeometryInfo.geometryCount, &outbuildSizes);
+    //	return outbuildSizes;
+    //}
 
-	void CTX::destroy(BufferHandle handle) {
-		AllocatedBuffer* buf = _bufferPool.get(handle);
-		if (!buf) {
-			return;
-		}
-		deferTask(std::packaged_task<void()>([vma = _vmaAllocator, buffer = buf->_vkBuffer, allocation = buf->_vmaAllocation]() { vmaDestroyBuffer(vma, buffer, allocation); }));
-		_bufferPool.destroy(handle);
-	}
-	void CTX::destroy(TextureHandle handle) {
-		AllocatedTexture* image = _texturePool.get(handle);
-		if (!image)
-			return;
+    void CTX::destroy(BufferHandle handle) {
+        AllocatedBuffer* buf = _bufferPool.get(handle);
+        if (!buf) {
+            return;
+        }
+        deferTask(std::packaged_task<void()>([vma = _vmaAllocator, buffer = buf->_vkBuffer, allocation = buf->_vmaAllocation]() {
+            vmaDestroyBuffer(vma, buffer, allocation);
+        }));
+        _bufferPool.destroy(handle);
+    }
+    void CTX::destroy(TextureHandle handle) {
+        AllocatedTexture* image = _texturePool.get(handle);
+        if (!image)
+            return;
 #ifdef MYTH_ENABLED_IMGUI
-		if (_imguiPlugin.isEnabled()) {
-			_imguiPlugin.removeImageDescriptor(handle);
-		}
+        if (_imguiPlugin.isEnabled()) {
+            _imguiPlugin.removeImageDescriptor(handle);
+        }
 #endif
-		deferTask(std::packaged_task<void()>([this, index = handle.index()]() {
-			writeTextureDescriptorsImpl(index, 1);
-			_texturePool.release(index);
-		}));
-		for (const auto& viewHandle: image->_additionalViews | std::views::values) {
-			destroy(viewHandle);
-		}
-		image->_additionalViews.clear();
-		deferTask(std::packaged_task<void()>([device = _vkDevice, imageView = image->_vkImageView]() { vkDestroyImageView(device, imageView, nullptr); }));
-		if (image->_vkImageViewStorage) {
-			deferTask(std::packaged_task<void()>([device = _vkDevice, imageView = image->_vkImageViewStorage]() { vkDestroyImageView(device, imageView, nullptr); }));
-		}
-		// necessary for swapchain imges which swapchain is created from
-		if (image->_isOwning) {
-			if (image->_mappedPtr) {
-				vmaUnmapMemory(_vmaAllocator, image->_vmaAllocation);
-			}
-			deferTask(std::packaged_task<void()>([vma = _vmaAllocator, image = image->_vkImage, allocation = image->_vmaAllocation]() { vmaDestroyImage(vma, image, allocation); }));
-		}
-		_texturePool.retire(handle);
-	}
-	void CTX::destroy(SamplerHandle handle) {
-		AllocatedSampler* sampler = _samplerPool.get(handle);
-		if (!sampler)
-			return;
+        deferTask(std::packaged_task<void()>([this, index = handle.index()]() {
+            writeTextureDescriptorsImpl(index, 1);
+            _texturePool.release(index);
+        }));
+        for (const auto& viewHandle: image->_additionalViews | std::views::values) {
+            destroy(viewHandle);
+        }
+        image->_additionalViews.clear();
+        deferTask(std::packaged_task<void()>([device = _vkDevice, imageView = image->_vkImageView]() {
+            vkDestroyImageView(device, imageView, nullptr);
+        }));
+        if (image->_vkImageViewStorage) {
+            deferTask(std::packaged_task<void()>([device = _vkDevice, imageView = image->_vkImageViewStorage]() {
+                vkDestroyImageView(device, imageView, nullptr);
+            }));
+        }
+        // necessary for swapchain imges which swapchain is created from
+        if (image->_isOwning) {
+            if (image->_mappedPtr) {
+                vmaUnmapMemory(_vmaAllocator, image->_vmaAllocation);
+            }
+            deferTask(std::packaged_task<void()>([vma = _vmaAllocator, image = image->_vkImage, allocation = image->_vmaAllocation]() {
+                vmaDestroyImage(vma, image, allocation);
+            }));
+        }
+        _texturePool.retire(handle);
+    }
+    void CTX::destroy(SamplerHandle handle) {
+        AllocatedSampler* sampler = _samplerPool.get(handle);
+        if (!sampler)
+            return;
 #ifdef MYTH_ENABLED_IMGUI
-		if (_imguiPlugin.isEnabled()) {
-			_imguiPlugin.removeImageDescriptors(handle);
-		}
+        if (_imguiPlugin.isEnabled()) {
+            _imguiPlugin.removeImageDescriptors(handle);
+        }
 #endif
-		deferTask(std::packaged_task<void()>([this, index = handle.index()]() {
-			writeSamplerDescriptorsImpl(index, 1);
-			_samplerPool.release(index);
-		}));
-		deferTask(std::packaged_task<void()>([device = _vkDevice, sampler = sampler->_vkSampler]() { vkDestroySampler(device, sampler, nullptr); }));
-		_samplerPool.retire(handle);
-	}
-	void CTX::destroy(QueryPoolHandle handle) {
-		AllocatedQueryPool* pool = _queryPoolPool.get(handle);
-		if (!pool)
-			return;
-		deferTask(std::packaged_task<void()>([device = _vkDevice, queryPool = pool->_vkQueryPool]() { vkDestroyQueryPool(device, queryPool, nullptr); }));
-		_queryPoolPool.destroy(handle);
-	}
-	void CTX::destroy(ShaderHandle handle) {
-		AllocatedShader* shader = _shaderPool.get(handle);
-		if (!shader)
-			return;
-		deferTask(std::packaged_task<void()>([device = _vkDevice, module = shader->_vkShaderModule]() { vkDestroyShaderModule(device, module, nullptr); }));
-		_shaderPool.destroy(handle);
-	}
+        deferTask(std::packaged_task<void()>([this, index = handle.index()]() {
+            writeSamplerDescriptorsImpl(index, 1);
+            _samplerPool.release(index);
+        }));
+        deferTask(std::packaged_task<void()>([device = _vkDevice, sampler = sampler->_vkSampler]() {
+            vkDestroySampler(device, sampler, nullptr);
+        }));
+        _samplerPool.retire(handle);
+    }
+    void CTX::destroy(QueryPoolHandle handle) {
+        AllocatedQueryPool* pool = _queryPoolPool.get(handle);
+        if (!pool)
+            return;
+        deferTask(std::packaged_task<void()>([device = _vkDevice, queryPool = pool->_vkQueryPool]() {
+            vkDestroyQueryPool(device, queryPool, nullptr);
+        }));
+        _queryPoolPool.destroy(handle);
+    }
+    void CTX::destroy(ShaderHandle handle) {
+        AllocatedShader* shader = _shaderPool.get(handle);
+        if (!shader)
+            return;
+        deferTask(std::packaged_task<void()>([device = _vkDevice, module = shader->_vkShaderModule]() {
+            vkDestroyShaderModule(device, module, nullptr);
+        }));
+        _shaderPool.destroy(handle);
+    }
 
-	void CTX::destroy(GraphicsPipelineHandle handle) {
-		AllocatedGraphicsPipeline* graphics_pipeline = _graphicsPipelinePool.get(handle);
-		if (!graphics_pipeline)
-			return;
-		PipelineCoreData& core = graphics_pipeline->_shared.core;
-		// The bindless descriptor set layout is owned by CTX and shared across all pipelines, so dont delete it!
-		deferTask(std::packaged_task<void()>([device = _vkDevice, pipeline = core._vkPipeline]() { vkDestroyPipeline(device, pipeline, nullptr); }));
-		deferTask(std::packaged_task<void()>([device = _vkDevice, layout = core._vkPipelineLayout]() { vkDestroyPipelineLayout(device, layout, nullptr); }));
-		_graphicsPipelinePool.destroy(handle);
-	}
-	void CTX::destroy(ComputePipelineHandle handle) {
-		AllocatedComputePipeline* compute_pipeline = _computePipelinePool.get(handle);
-		if (!compute_pipeline)
-			return;
-		PipelineCoreData& core = compute_pipeline->_shared.core;
-		deferTask(std::packaged_task<void()>([device = _vkDevice, pipeline = core._vkPipeline]() { vkDestroyPipeline(device, pipeline, nullptr); }));
-		deferTask(std::packaged_task<void()>([device = _vkDevice, layout = core._vkPipelineLayout]() { vkDestroyPipelineLayout(device, layout, nullptr); }));
-		_computePipelinePool.destroy(handle);
-	}
-	void CTX::destroy(RayTracingPipelineHandle handle) {
-		AllocatedRayTracingPipeline* raytracing_pipeline = _rayTracingPipelinePool.get(handle);
-		if (!raytracing_pipeline)
-			return;
-		PipelineCoreData& core = raytracing_pipeline->_shared.core;
-		deferTask(std::packaged_task<void()>([device = _vkDevice, pipeline = core._vkPipeline]() { vkDestroyPipeline(device, pipeline, nullptr); }));
-		deferTask(std::packaged_task<void()>([device = _vkDevice, layout = core._vkPipelineLayout]() { vkDestroyPipelineLayout(device, layout, nullptr); }));
-		_rayTracingPipelinePool.destroy(handle);
-	}
-	void CTX::destroy(AccelerationStructureHandle handle) {
-		AllocatedAccelerationStructure* acceleration_structure = _accelerationStructurePool.get(handle);
-		if (!acceleration_structure)
-			return;
+    void CTX::destroy(GraphicsPipelineHandle handle) {
+        AllocatedGraphicsPipeline* graphics_pipeline = _graphicsPipelinePool.get(handle);
+        if (!graphics_pipeline)
+            return;
+        PipelineCoreData& core = graphics_pipeline->_shared.core;
+        // The bindless descriptor set layout is owned by CTX and shared across all pipelines, so dont delete it!
+        deferTask(std::packaged_task<void()>([device = _vkDevice, pipeline = core._vkPipeline]() {
+            vkDestroyPipeline(device, pipeline, nullptr);
+        }));
+        deferTask(std::packaged_task<void()>([device = _vkDevice, layout = core._vkPipelineLayout]() {
+            vkDestroyPipelineLayout(device, layout, nullptr);
+        }));
+        _graphicsPipelinePool.destroy(handle);
+    }
+    void CTX::destroy(ComputePipelineHandle handle) {
+        AllocatedComputePipeline* compute_pipeline = _computePipelinePool.get(handle);
+        if (!compute_pipeline)
+            return;
+        PipelineCoreData& core = compute_pipeline->_shared.core;
+        deferTask(std::packaged_task<void()>([device = _vkDevice, pipeline = core._vkPipeline]() {
+            vkDestroyPipeline(device, pipeline, nullptr);
+        }));
+        deferTask(std::packaged_task<void()>([device = _vkDevice, layout = core._vkPipelineLayout]() {
+            vkDestroyPipelineLayout(device, layout, nullptr);
+        }));
+        _computePipelinePool.destroy(handle);
+    }
+    void CTX::destroy(RayTracingPipelineHandle handle) {
+        AllocatedRayTracingPipeline* raytracing_pipeline = _rayTracingPipelinePool.get(handle);
+        if (!raytracing_pipeline)
+            return;
+        PipelineCoreData& core = raytracing_pipeline->_shared.core;
+        deferTask(std::packaged_task<void()>([device = _vkDevice, pipeline = core._vkPipeline]() {
+            vkDestroyPipeline(device, pipeline, nullptr);
+        }));
+        deferTask(std::packaged_task<void()>([device = _vkDevice, layout = core._vkPipelineLayout]() {
+            vkDestroyPipelineLayout(device, layout, nullptr);
+        }));
+        _rayTracingPipelinePool.destroy(handle);
+    }
+    void CTX::destroy(AccelerationStructureHandle handle) {
+        AllocatedAccelerationStructure* acceleration_structure = _accelerationStructurePool.get(handle);
+        if (!acceleration_structure)
+            return;
 
-		deferTask(std::packaged_task<void()>([this, index = handle.index()]() { _accelerationStructurePool.release(index); }));
-		deferTask(std::packaged_task<void()>([device = _vkDevice, accel_struct = acceleration_structure->_vkAccelerationStructure]() { vkDestroyAccelerationStructureKHR(device, accel_struct, nullptr); }));
-		_accelerationStructurePool.retire(handle);
-	}
+        deferTask(std::packaged_task<void()>([this, index = handle.index()]() {
+            _accelerationStructurePool.release(index);
+        }));
+        deferTask(std::packaged_task<void()>([device = _vkDevice, accel_struct = acceleration_structure->_vkAccelerationStructure]() {
+            vkDestroyAccelerationStructureKHR(device, accel_struct, nullptr);
+        }));
+        _accelerationStructurePool.retire(handle);
+    }
 
-	// ---- texture subresource views ----
-	Dimensions CTX::getTextureDimensions(TextureHandle handle) const {
-		return view(handle).getDimensions();
-	}
-	TextureViewKey CTX::createTextureView(TextureHandle handle, const TextureViewSpec& spec) {
-		const TextureViewKey key = detail::packTextureViewKey(spec.mipLevel, spec.numMipLevels, spec.layer, spec.numLayers);
-		AllocatedTexture& tex = access(handle);
-		if (tex._additionalViews.contains(key)) {
-			return key; // already cached
-		}
-		VkImageViewType viewType = spec.type != VK_IMAGE_VIEW_TYPE_MAX_ENUM ? spec.type : tex.getViewType();
-		if (spec.numLayers == 1 && viewType == VK_IMAGE_VIEW_TYPE_CUBE) {
-			viewType = VK_IMAGE_VIEW_TYPE_2D;
-		}
-		char data[kMaxDebugNameLength];
-		snprintf(data, sizeof(data), "%s - View (Mip: %d, NumMips: %d, Layer: %d, NumLayers: %d)", tex.getDebugName().data(), spec.mipLevel, spec.numMipLevels, spec.layer, spec.numLayers);
-		TextureViewSpec resolvedSpec = spec;
-		resolvedSpec.type = viewType;
-		resolvedSpec.debugName = data;
-		const TextureHandle newView = createTextureViewImpl(handle, resolvedSpec);
-		access(handle)._additionalViews.emplace(key, newView);
-		return key;
-	}
-	VkImageView CTX::getTextureView(TextureHandle handle, TextureViewKey key) const {
-		const AllocatedTexture& tex = view(handle);
-		auto it = tex._additionalViews.find(key);
-		ASSERT_MSG(it != tex._additionalViews.end(), "TextureViewKey not found in texture!");
-		return view(it->second).getImageView();
-	}
-	TextureHandle CTX::getTextureViewHandle(TextureHandle handle, TextureViewKey key) const {
-		const AllocatedTexture& tex = view(handle);
-		auto it = tex._additionalViews.find(key);
-		ASSERT_MSG(it != tex._additionalViews.end(), "TextureViewKey not found in texture!");
-		return it->second;
-	}
+    // ---- texture subresource views ----
+    Dimensions CTX::getTextureDimensions(TextureHandle handle) const {
+        return view(handle).getDimensions();
+    }
+    TextureViewKey CTX::createTextureView(TextureHandle handle, const TextureViewSpec& spec) {
+        const TextureViewKey key = detail::packTextureViewKey(spec.mipLevel, spec.numMipLevels, spec.layer, spec.numLayers);
+        AllocatedTexture& tex = access(handle);
+        if (tex._additionalViews.contains(key)) {
+            return key; // already cached
+        }
+        VkImageViewType viewType = spec.type != VK_IMAGE_VIEW_TYPE_MAX_ENUM ? spec.type : tex.getViewType();
+        if (spec.numLayers == 1 && viewType == VK_IMAGE_VIEW_TYPE_CUBE) {
+            viewType = VK_IMAGE_VIEW_TYPE_2D;
+        }
+        char data[kMaxDebugNameLength];
+        snprintf(data, sizeof(data), "%s - View (Mip: %d, NumMips: %d, Layer: %d, NumLayers: %d)", tex.getDebugName().data(), spec.mipLevel, spec.numMipLevels, spec.layer, spec.numLayers);
+        TextureViewSpec resolvedSpec = spec;
+        resolvedSpec.type = viewType;
+        resolvedSpec.debugName = data;
+        const TextureHandle newView = createTextureViewImpl(handle, resolvedSpec);
+        access(handle)._additionalViews.emplace(key, newView);
+        return key;
+    }
+    VkImageView CTX::getTextureView(TextureHandle handle, TextureViewKey key) const {
+        const AllocatedTexture& tex = view(handle);
+        auto it = tex._additionalViews.find(key);
+        ASSERT_MSG(it != tex._additionalViews.end(), "TextureViewKey not found in texture!");
+        return view(it->second).getImageView();
+    }
+    TextureHandle CTX::getTextureViewHandle(TextureHandle handle, TextureViewKey key) const {
+        const AllocatedTexture& tex = view(handle);
+        auto it = tex._additionalViews.find(key);
+        ASSERT_MSG(it != tex._additionalViews.end(), "TextureViewKey not found in texture!");
+        return it->second;
+    }
 } // namespace mythril
