@@ -8,16 +8,16 @@
 #include "mythril/ShaderTypes.h"
 
 namespace shaders {
-    struct SpecPush;
+	struct SpecPush;
 
-    struct SpecPush {
-        ::mythril::DevicePtr<float> o;
+	struct SpecPush {
+		::mythril::DevicePtr<float> o;
 
-        static constexpr uint64_t kLayoutHash = 0xad193906c79a0a5cull;
+		static constexpr uint64_t kLayoutHash = 0xad193906c79a0a5cull;
 #ifdef DEBUG
-        static constexpr const char* kLayout = "{o@0:*4:f32;}";
+		static constexpr const char* kLayout = "{o@0:*4:f32;}";
 #endif
-    };
-    static_assert(offsetof(SpecPush, o) == 0, "SpecPush::o is not at Slang offset 0, check the types header");
-    static_assert(sizeof(SpecPush) == 8 && alignof(SpecPush) == 8, "SpecPush is not 8 bytes aligned to 8 as in Slang, check the types header");
+	};
+	static_assert(offsetof(SpecPush, o) == 0, "SpecPush::o is not at Slang offset 0, check the types header");
+	static_assert(sizeof(SpecPush) == 8 && alignof(SpecPush) == 8, "SpecPush is not 8 bytes aligned to 8 as in Slang, check the types header");
 } // namespace shaders

@@ -1,0 +1,3 @@
+# generated goldens are compared byte for byte with mythril-reflect output, never format them
+DisableFormat: true
+SortIncludes: Never

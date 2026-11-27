@@ -8,22 +8,22 @@
 #include "mythril/ShaderTypes.h"
 
 namespace shaders {
-    struct AccelPush;
+	struct AccelPush;
 
-    struct AccelPush {
-        ::mythril::AccelerationStructureSlot tlas;
-        uint32_t mask;
-        float tMax;
-        ::mythril::DevicePtr<float> out;
+	struct AccelPush {
+		::mythril::AccelerationStructureSlot tlas;
+		uint32_t mask;
+		float tMax;
+		::mythril::DevicePtr<float> out;
 
-        static constexpr uint64_t kLayoutHash = 0x3ddbd913d2f04c8dull;
+		static constexpr uint64_t kLayoutHash = 0x3ddbd913d2f04c8dull;
 #ifdef DEBUG
-        static constexpr const char* kLayout = "{tlas@0:u32x2;mask@8:u32;tMax@12:f32;out@16:*4:f32;}";
+		static constexpr const char* kLayout = "{tlas@0:u32x2;mask@8:u32;tMax@12:f32;out@16:*4:f32;}";
 #endif
-    };
-    static_assert(offsetof(AccelPush, tlas) == 0, "AccelPush::tlas is not at Slang offset 0, check the types header");
-    static_assert(offsetof(AccelPush, mask) == 8, "AccelPush::mask is not at Slang offset 8, check the types header");
-    static_assert(offsetof(AccelPush, tMax) == 12, "AccelPush::tMax is not at Slang offset 12, check the types header");
-    static_assert(offsetof(AccelPush, out) == 16, "AccelPush::out is not at Slang offset 16, check the types header");
-    static_assert(sizeof(AccelPush) == 24 && alignof(AccelPush) == 8, "AccelPush is not 24 bytes aligned to 8 as in Slang, check the types header");
+	};
+	static_assert(offsetof(AccelPush, tlas) == 0, "AccelPush::tlas is not at Slang offset 0, check the types header");
+	static_assert(offsetof(AccelPush, mask) == 8, "AccelPush::mask is not at Slang offset 8, check the types header");
+	static_assert(offsetof(AccelPush, tMax) == 12, "AccelPush::tMax is not at Slang offset 12, check the types header");
+	static_assert(offsetof(AccelPush, out) == 16, "AccelPush::out is not at Slang offset 16, check the types header");
+	static_assert(sizeof(AccelPush) == 24 && alignof(AccelPush) == 8, "AccelPush is not 24 bytes aligned to 8 as in Slang, check the types header");
 } // namespace shaders
