@@ -85,6 +85,7 @@ namespace mythril {
         void cmdDrawIndexed(uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex, int32_t vertexOffset, uint32_t baseInstance);
         void cmdDrawIndirect(const Buffer& indirectBuffer, VkDeviceSize offset, uint32_t drawCount, uint32_t stride);
         void cmdDrawIndexedIndirect(const Buffer& indirectBuffer, VkDeviceSize offset, uint32_t drawCount, uint32_t stride);
+        void cmdDrawIndirectCount(const Buffer& indirectBuffer, VkDeviceSize offset, const Buffer& countBuffer, VkDeviceSize countOffset, uint32_t maxDrawCount, uint32_t stride);
         void cmdDrawIndexedIndirectCount(const Buffer& indirectBuffer, VkDeviceSize offset, const Buffer& countBuffer, VkDeviceSize countOffset, uint32_t maxDrawCount, uint32_t stride);
 
         void cmdWriteTimestamp(QueryPoolHandle pool, uint32_t query);
@@ -222,6 +223,9 @@ namespace mythril {
         void cmdDrawIndexed(uint32_t indexCount, uint32_t instanceCount = 1, uint32_t firstIndex = 0, int32_t vertexOffset = 0, uint32_t baseInstance = 0) { _cmd.cmdDrawIndexed(indexCount, instanceCount, firstIndex, vertexOffset, baseInstance); }
         void cmdDrawIndirect(const Buffer& indirectBuffer, VkDeviceSize offset, uint32_t drawCount, uint32_t stride = 0) { _cmd.cmdDrawIndirect(indirectBuffer, offset, drawCount, stride); }
         void cmdDrawIndexedIndirect(const Buffer& indirectBuffer, VkDeviceSize offset, uint32_t drawCount, uint32_t stride = 0) { _cmd.cmdDrawIndexedIndirect(indirectBuffer, offset, drawCount, stride); }
+        void cmdDrawIndirectCount(const Buffer& indirectBuffer, VkDeviceSize offset, const Buffer& countBuffer, VkDeviceSize countOffset, uint32_t maxDrawCount, uint32_t stride = 0) {
+            _cmd.cmdDrawIndirectCount(indirectBuffer, offset, countBuffer, countOffset, maxDrawCount, stride);
+        }
         void cmdDrawIndexedIndirectCount(const Buffer& indirectBuffer, VkDeviceSize offset, const Buffer& countBuffer, VkDeviceSize countOffset, uint32_t maxDrawCount, uint32_t stride = 0) {
             _cmd.cmdDrawIndexedIndirectCount(indirectBuffer, offset, countBuffer, countOffset, maxDrawCount, stride);
         }

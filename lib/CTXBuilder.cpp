@@ -371,6 +371,7 @@ namespace mythril {
         VkPhysicalDeviceFeatures requiredfeatures10 = {
             .robustBufferAccess = VK_FALSE,
             .multiDrawIndirect = VK_TRUE,
+            .drawIndirectFirstInstance = supportedfeatures10.features.drawIndirectFirstInstance,
             .depthBiasClamp = supportedfeatures10.features.depthBiasClamp,
             .samplerAnisotropy = supportedfeatures10.features.samplerAnisotropy,
             .fragmentStoresAndAtomics = supportedfeatures10.features.fragmentStoresAndAtomics,
@@ -392,6 +393,7 @@ namespace mythril {
         VkPhysicalDeviceVulkan12Features requiredfeatures12 = {
             .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
             .pNext = &requiredfeatures11,
+            .drawIndirectCount = supportedfeatures12.drawIndirectCount,
             .shaderFloat16 = supportedfeatures12.shaderFloat16,
             .descriptorIndexing = VK_TRUE,
             .descriptorBindingSampledImageUpdateAfterBind = VK_TRUE,
