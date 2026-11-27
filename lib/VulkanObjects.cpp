@@ -13,193 +13,217 @@
 #include <optional>
 
 namespace mythril::detail {
-	void AllocatedBuffer::bufferSubData(const CTX& ctx, size_t offset, size_t size, const void* data) {
-		// only host-visible buffers can be uploaded this way
-		if (!_mappedPtr) {
-			return;
-		}
-		ASSERT_MSG(offset + size <= _bufferSize, "Buffer write of offset + size exceeds the buffer size!");
-		if (data) {
-			memcpy((uint8_t*)_mappedPtr + offset, data, size);
-		} else {
-			memset((uint8_t*)_mappedPtr + offset, 0, size);
-		}
+    void AllocatedBuffer::bufferSubData(const CTX& ctx, size_t offset, size_t size, const void* data) {
+        // only host-visible buffers can be uploaded this way
+        if (!_mappedPtr) {
+            return;
+        }
+        ASSERT_MSG(offset + size <= _bufferSize, "Buffer write of offset + size exceeds the buffer size!");
+        if (data) {
+            memcpy((uint8_t*)_mappedPtr + offset, data, size);
+        } else {
+            memset((uint8_t*)_mappedPtr + offset, 0, size);
+        }
 
-		if (!_isCoherentMemory) {
-			flushMappedMemory(ctx, offset, size);
-		}
-	}
-	void AllocatedBuffer::getBufferSubData(const CTX& ctx, size_t offset, size_t size, void* data) {
-		// only host-visible buffers can be downloaded this way
-		if (!_mappedPtr) {
-			return;
-		}
-		ASSERT_MSG(offset + size <= _bufferSize, "Buffer read of offset + size exceeds the buffer size!");
-		if (!_isCoherentMemory) {
-			invalidateMappedMemory(ctx, offset, size);
-		}
-		memcpy(data, (const uint8_t*)_mappedPtr + offset, size);
-	}
-	void AllocatedBuffer::flushMappedMemory(const CTX& ctx, VkDeviceSize offset, VkDeviceSize size) const {
-		if (!isMapped()) {
-			return;
-		}
-		vmaFlushAllocation(ctx._vmaAllocator, _vmaAllocation, offset, size);
-	}
-	void AllocatedBuffer::invalidateMappedMemory(const CTX& ctx, VkDeviceSize offset, VkDeviceSize size) const {
-		if (!isMapped()) {
-			return;
-		}
-		vmaInvalidateAllocation(ctx._vmaAllocator, _vmaAllocation, offset, size);
-	}
+        if (!_isCoherentMemory) {
+            flushMappedMemory(ctx, offset, size);
+        }
+    }
+    void AllocatedBuffer::getBufferSubData(const CTX& ctx, size_t offset, size_t size, void* data) {
+        // only host-visible buffers can be downloaded this way
+        if (!_mappedPtr) {
+            return;
+        }
+        ASSERT_MSG(offset + size <= _bufferSize, "Buffer read of offset + size exceeds the buffer size!");
+        if (!_isCoherentMemory) {
+            invalidateMappedMemory(ctx, offset, size);
+        }
+        memcpy(data, (const uint8_t*)_mappedPtr + offset, size);
+    }
+    void AllocatedBuffer::flushMappedMemory(const CTX& ctx, VkDeviceSize offset, VkDeviceSize size) const {
+        if (!isMapped()) {
+            return;
+        }
+        vmaFlushAllocation(ctx._vmaAllocator, _vmaAllocation, offset, size);
+    }
+    void AllocatedBuffer::invalidateMappedMemory(const CTX& ctx, VkDeviceSize offset, VkDeviceSize size) const {
+        if (!isMapped()) {
+            return;
+        }
+        vmaInvalidateAllocation(ctx._vmaAllocator, _vmaAllocation, offset, size);
+    }
 
-	VkImageLayout AllocatedTexture::getImageLayout(const SubresourceRange& range) const {
-		std::optional<VkImageLayout> layout;
-		bool uniform = true;
-		_recordedLayout.forEachOverlapping(range, [&](const SubresourceRange&, VkImageLayout value) {
-			if (layout && *layout != value) uniform = false;
-			layout = value;
-		});
-		ASSERT_MSG(layout.has_value(), "Texture '{}' was queried for a subresource range outside the image.", getDebugName());
-		ASSERT_MSG(uniform, "Texture '{}' has different layouts across the queried subresource range, query each subresource instead.", getDebugName());
-		return *layout;
-	}
-	void AllocatedTexture::setLayout(const SubresourceRange& range, VkImageLayout layout) {
-		if (layout == VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL) {
-			layout = isDepthAttachment() ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-		}
-		_recordedLayout.set(range, layout);
-		++_layoutVersion;
-	}
-	void AllocatedTexture::transitionLayout(VkCommandBuffer cmd, VkImageLayout newImageLayout, const SubresourceRange& range) {
-		if (newImageLayout == VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL) {
-			newImageLayout = isDepthAttachment() ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-		}
-		_recordedLayout.forEachOverlapping(range, [&](const SubresourceRange& subRange, VkImageLayout oldImageLayout) {
-			vkutil::StageAccess src = vkutil::GetPipelineStageAccess(oldImageLayout);
-			vkutil::StageAccess dst = vkutil::GetPipelineStageAccess(newImageLayout);
-			if (_isSwapchainImage) {
-				src = {.stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, .access = VK_ACCESS_2_MEMORY_WRITE_BIT};
-				dst = {.stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, .access = VK_ACCESS_2_MEMORY_WRITE_BIT | VK_ACCESS_2_MEMORY_READ_BIT};
-			}
-			// no longer necessary thanks to rendergraph
-			// if (isDepthAttachment() && _isResolveAttachment) {
-			//	// https://registry.khronos.org/vulkan/specs/latest/html/vkspec.html#renderpass-resolve-operations
-			//	src.stage |= VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
-			//	dst.stage |= VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
-			//	src.access |= VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
-			//	dst.access |= VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
-			//}
-			const VkImageSubresourceRange vkRange = {getImageAspectFlags(), subRange.baseMip, subRange.numMips, subRange.baseLayer, subRange.numLayers};
-			vkutil::ImageMemoryBarrier2(cmd, _vkImage, src, dst, oldImageLayout, newImageLayout, vkRange);
-		});
-		setLayout(range, newImageLayout);
-	}
-	// this will only do LINEAR or NEAREST filtering, hence why we do this manually for advanced techniques like our bloom
-	// https://docs.vulkan.org/samples/latest/samples/api/texture_mipmap_generation/README.html#:~:text=%2C%0A%20%20%20%20%26image_blit%2C%0A%20%20%20%20VK_FILTER_LINEAR)%3B-,vkCmdBlitImage,-does%20the%20down
-	void AllocatedTexture::generateMipmap(VkCommandBuffer cmd) {
-		// Check if device supports downscaling for color or depth/stencil buffer based on image format
-		{
-			constexpr uint32_t formatFeatureMask = (VK_FORMAT_FEATURE_BLIT_SRC_BIT | VK_FORMAT_FEATURE_BLIT_DST_BIT);
-			const bool hardwareDownscalingSupported = (_vkFormatProperties.optimalTilingFeatures & formatFeatureMask) == formatFeatureMask;
+    VkImageLayout AllocatedTexture::getImageLayout(const SubresourceRange& range) const {
+        std::optional<VkImageLayout> layout;
+        bool uniform = true;
+        _recordedLayout.forEachOverlapping(range, [&](const SubresourceRange&, VkImageLayout value) {
+            if (layout && *layout != value) uniform = false;
+            layout = value;
+        });
+        ASSERT_MSG(layout.has_value(), "Texture '{}' was queried for a subresource range outside the image.", getDebugName());
+        ASSERT_MSG(uniform, "Texture '{}' has different layouts across the queried subresource range, query each subresource instead.", getDebugName());
+        return *layout;
+    }
+    void AllocatedTexture::setLayout(const SubresourceRange& range, VkImageLayout layout) {
+        if (layout == VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL) {
+            layout = isDepthAttachment() ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        }
+        _recordedLayout.set(range, layout);
+        ++_layoutVersion;
+    }
+    void AllocatedTexture::transitionLayout(VkCommandBuffer cmd, VkImageLayout newImageLayout, const SubresourceRange& range) {
+        if (newImageLayout == VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL) {
+            newImageLayout = isDepthAttachment() ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        }
+        _recordedLayout.forEachOverlapping(range, [&](const SubresourceRange& subRange, VkImageLayout oldImageLayout) {
+            vkutil::StageAccess src = vkutil::GetPipelineStageAccess(oldImageLayout);
+            vkutil::StageAccess dst = vkutil::GetPipelineStageAccess(newImageLayout);
+            if (_isSwapchainImage) {
+                src = {
+                    .stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+                    .access = VK_ACCESS_2_MEMORY_WRITE_BIT,
+                };
+                dst = {
+                    .stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+                    .access = VK_ACCESS_2_MEMORY_WRITE_BIT | VK_ACCESS_2_MEMORY_READ_BIT,
+                };
+            }
+            // no longer necessary thanks to rendergraph
+            // if (isDepthAttachment() && _isResolveAttachment) {
+            //	// https://registry.khronos.org/vulkan/specs/latest/html/vkspec.html#renderpass-resolve-operations
+            //	src.stage |= VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+            //	dst.stage |= VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+            //	src.access |= VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+            //	dst.access |= VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+            //}
+            const VkImageSubresourceRange vkRange = { getImageAspectFlags(), subRange.baseMip, subRange.numMips, subRange.baseLayer, subRange.numLayers };
+            vkutil::ImageMemoryBarrier2(cmd, _vkImage, src, dst, oldImageLayout, newImageLayout, vkRange);
+        });
+        setLayout(range, newImageLayout);
+    }
+    // this will only do LINEAR or NEAREST filtering, hence why we do this manually for advanced techniques like our bloom
+    // https://docs.vulkan.org/samples/latest/samples/api/texture_mipmap_generation/README.html#:~:text=%2C%0A%20%20%20%20%26image_blit%2C%0A%20%20%20%20VK_FILTER_LINEAR)%3B-,vkCmdBlitImage,-does%20the%20down
+    void AllocatedTexture::generateMipmap(VkCommandBuffer cmd) {
+        // Check if device supports downscaling for color or depth/stencil buffer based on image format
+        {
+            constexpr uint32_t formatFeatureMask = (VK_FORMAT_FEATURE_BLIT_SRC_BIT | VK_FORMAT_FEATURE_BLIT_DST_BIT);
+            const bool hardwareDownscalingSupported = (_vkFormatProperties.optimalTilingFeatures & formatFeatureMask) == formatFeatureMask;
 
-			if (!hardwareDownscalingSupported) {
-				LOG_SYSTEM(LogType::Warning, "Doesn't support hardware downscaling of image format: {}", string_VkFormat(_vkFormat));
-				return;
-			}
-		}
-		const VkFilter blitFilter = [](bool isDepthOrStencilFormat, bool imageFilterLinear) {
-			if (isDepthOrStencilFormat) {
-				return VK_FILTER_NEAREST;
-			}
-			if (imageFilterLinear) {
-				return VK_FILTER_LINEAR;
-			}
-			return VK_FILTER_NEAREST;
-		}(vkutil::IsFormatDepthOrStencil(_vkFormat), _vkFormatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT);
+            if (!hardwareDownscalingSupported) {
+                LOG_SYSTEM(LogType::Warning, "Doesn't support hardware downscaling of image format: {}", string_VkFormat(_vkFormat));
+                return;
+            }
+        }
+        const VkFilter blitFilter = [](bool isDepthOrStencilFormat, bool imageFilterLinear) {
+            if (isDepthOrStencilFormat) {
+                return VK_FILTER_NEAREST;
+            }
+            if (imageFilterLinear) {
+                return VK_FILTER_LINEAR;
+            }
+            return VK_FILTER_NEAREST;
+        }(vkutil::IsFormatDepthOrStencil(_vkFormat), _vkFormatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT);
 
-		const VkImageAspectFlags imageAspectFlags = vkutil::AspectMaskFromFormat(_vkFormat);
-		const SubresourceRange baseMip = {0, 1, 0, _numLayers};
-		const VkImageLayout originalImageLayout = getImageLayout(baseMip);
-		ASSERT_MSG(originalImageLayout != VK_IMAGE_LAYOUT_UNDEFINED, "Cannot generate mipmaps from a texture whose base level layout is undefined!");
-		// transfer base image to be ready for blitting
-		this->transitionLayout(cmd, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, baseMip);
+        const VkImageAspectFlags imageAspectFlags = vkutil::AspectMaskFromFormat(_vkFormat);
+        const SubresourceRange baseMip = { 0, 1, 0, _numLayers };
+        const VkImageLayout originalImageLayout = getImageLayout(baseMip);
+        ASSERT_MSG(originalImageLayout != VK_IMAGE_LAYOUT_UNDEFINED, "Cannot generate mipmaps from a texture whose base level layout is undefined!");
+        // transfer base image to be ready for blitting
+        this->transitionLayout(cmd, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, baseMip);
 
-		// now make the mipmaps
-		for (uint32_t layer = 0; layer < _numLayers; ++layer) {
-			auto mipWidth = static_cast<int32_t>(_vkExtent.width);
-			auto mipHeight = static_cast<int32_t>(_vkExtent.height);
+        // now make the mipmaps
+        for (uint32_t layer = 0; layer < _numLayers; ++layer) {
+            auto mipWidth = static_cast<int32_t>(_vkExtent.width);
+            auto mipHeight = static_cast<int32_t>(_vkExtent.height);
 
-			for (uint32_t i = 1; i < _numLevels; ++i) {
-				// 1: Transition the i-th level to VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL; it will be copied into from the (i-1)-th layer
-				vkutil::ImageMemoryBarrier2(
-					cmd,
-					_vkImage,
-					vkutil::StageAccess{.stage = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT, .access = VK_ACCESS_2_NONE},
-					vkutil::StageAccess{.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = VK_ACCESS_2_TRANSFER_WRITE_BIT},
-					VK_IMAGE_LAYOUT_UNDEFINED,
-					VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-					VkImageSubresourceRange{imageAspectFlags, i, 1, layer, 1});
+            for (uint32_t i = 1; i < _numLevels; ++i) {
+                // 1: Transition the i-th level to VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL; it will be copied into from the (i-1)-th layer
+                vkutil::ImageMemoryBarrier2(
+                    cmd,
+                    _vkImage,
+                    vkutil::StageAccess{
+                        .stage = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT,
+                        .access = VK_ACCESS_2_NONE,
+                    },
+                    vkutil::StageAccess{
+                        .stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+                        .access = VK_ACCESS_2_TRANSFER_WRITE_BIT,
+                    },
+                    VK_IMAGE_LAYOUT_UNDEFINED,
+                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                    VkImageSubresourceRange{ imageAspectFlags, i, 1, layer, 1 });
 
-				const int32_t nextLevelWidth = (mipWidth > 1) ? (mipWidth / 2) : 1;
-				const int32_t nextLevelHeight = (mipHeight > 1) ? (mipHeight / 2) : 1;
+                const int32_t nextLevelWidth = (mipWidth > 1) ? (mipWidth / 2) : 1;
+                const int32_t nextLevelHeight = (mipHeight > 1) ? (mipHeight / 2) : 1;
 
-				const VkOffset3D srcOffsets[2] = {
-					VkOffset3D{0, 0, 0},
-					VkOffset3D{mipWidth, mipHeight, 1},
-				};
-				const VkOffset3D dstOffsets[2] = {
-					VkOffset3D{0, 0, 0},
-					VkOffset3D{nextLevelWidth, nextLevelHeight, 1},
-				};
-				const VkImageBlit blit = {
-					.srcSubresource = VkImageSubresourceLayers{imageAspectFlags, i - 1, layer, 1},
-					.srcOffsets = {srcOffsets[0], srcOffsets[1]},
-					.dstSubresource = VkImageSubresourceLayers{imageAspectFlags, i, layer, 1},
-					.dstOffsets = {dstOffsets[0], dstOffsets[1]},
-				};
-				vkCmdBlitImage(cmd, _vkImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, _vkImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, blitFilter);
-				// 3: Transition i-th level to VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL as it will be read from in the next iteration
-				vkutil::ImageMemoryBarrier2(
-					cmd,
-					_vkImage,
-					vkutil::StageAccess{.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = VK_ACCESS_2_TRANSFER_WRITE_BIT},
-					vkutil::StageAccess{.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = VK_ACCESS_2_TRANSFER_READ_BIT},
-					VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-					VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-					VkImageSubresourceRange{imageAspectFlags, i, 1, layer, 1});
+                const VkOffset3D srcOffsets[2] = {
+                    VkOffset3D{ 0, 0, 0 },
+                    VkOffset3D{ mipWidth, mipHeight, 1 },
+                };
+                const VkOffset3D dstOffsets[2] = {
+                    VkOffset3D{ 0, 0, 0 },
+                    VkOffset3D{ nextLevelWidth, nextLevelHeight, 1 },
+                };
+                const VkImageBlit blit = {
+                    .srcSubresource = VkImageSubresourceLayers{ imageAspectFlags, i - 1, layer, 1 },
+                    .srcOffsets = { srcOffsets[0], srcOffsets[1] },
+                    .dstSubresource = VkImageSubresourceLayers{ imageAspectFlags, i, layer, 1 },
+                    .dstOffsets = { dstOffsets[0], dstOffsets[1] },
+                };
+                vkCmdBlitImage(cmd, _vkImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, _vkImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, blitFilter);
+                // 3: Transition i-th level to VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL as it will be read from in the next iteration
+                vkutil::ImageMemoryBarrier2(
+                    cmd,
+                    _vkImage,
+                    vkutil::StageAccess{
+                        .stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+                        .access = VK_ACCESS_2_TRANSFER_WRITE_BIT,
+                    },
+                    vkutil::StageAccess{
+                        .stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+                        .access = VK_ACCESS_2_TRANSFER_READ_BIT,
+                    },
+                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                    VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                    VkImageSubresourceRange{ imageAspectFlags, i, 1, layer, 1 });
 
-				mipWidth = nextLevelWidth;
-				mipHeight = nextLevelHeight;
-			}
-		}
-		// transition it back to original
-		vkutil::ImageMemoryBarrier2(
-			cmd,
-			_vkImage,
-			vkutil::StageAccess{.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = VK_ACCESS_2_TRANSFER_READ_BIT},
-			vkutil::StageAccess{.stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, .access = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT},
-			VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-			originalImageLayout,
-			VkImageSubresourceRange{imageAspectFlags, 0, _numLevels, 0, _numLayers});
-		setLayout(getWholeRange(), originalImageLayout);
-	}
+                mipWidth = nextLevelWidth;
+                mipHeight = nextLevelHeight;
+            }
+        }
+        // transition it back to original
+        vkutil::ImageMemoryBarrier2(
+            cmd,
+            _vkImage,
+            vkutil::StageAccess{
+                .stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+                .access = VK_ACCESS_2_TRANSFER_READ_BIT,
+            },
+            vkutil::StageAccess{
+                .stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+                .access = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT,
+            },
+            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            originalImageLayout,
+            VkImageSubresourceRange{ imageAspectFlags, 0, _numLevels, 0, _numLayers });
+        setLayout(getWholeRange(), originalImageLayout);
+    }
 
-	VkImageView AllocatedTexture::createTextureView(
-		VkDevice vk_device, VkImageViewType type, VkFormat format, uint32_t baseLevel, uint32_t numLevels, uint32_t baseLayer, uint32_t numLayers, const VkComponentMapping componentMapping) {
-		const VkImageViewCreateInfo ci = {
-			.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-			.pNext = nullptr,
-			.flags = 0,
-			.image = this->_vkImage,
-			.viewType = type,
-			.format = format,
-			.components = componentMapping,
-			.subresourceRange = VkImageSubresourceRange{vkutil::AspectMaskFromFormat(format), baseLevel, numLevels, baseLayer, numLayers},
-		};
-		VkImageView image_view = VK_NULL_HANDLE;
-		VK_CHECK(vkCreateImageView(vk_device, &ci, nullptr, &image_view));
-		ASSERT(image_view != VK_NULL_HANDLE);
-		return image_view;
-	}
+    VkImageView AllocatedTexture::createTextureView(
+        VkDevice vk_device, VkImageViewType type, VkFormat format, uint32_t baseLevel, uint32_t numLevels, uint32_t baseLayer, uint32_t numLayers, const VkComponentMapping componentMapping) {
+        const VkImageViewCreateInfo ci = {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+            .pNext = nullptr,
+            .flags = 0,
+            .image = this->_vkImage,
+            .viewType = type,
+            .format = format,
+            .components = componentMapping,
+            .subresourceRange = VkImageSubresourceRange{ vkutil::AspectMaskFromFormat(format), baseLevel, numLevels, baseLayer, numLayers },
+        };
+        VkImageView image_view = VK_NULL_HANDLE;
+        VK_CHECK(vkCreateImageView(vk_device, &ci, nullptr, &image_view));
+        ASSERT(image_view != VK_NULL_HANDLE);
+        return image_view;
+    }
 } // namespace mythril::detail

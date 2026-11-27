@@ -8,14 +8,14 @@
 #include <iostream>
 
 namespace mythril {
-	enum class LogType : uint8_t {
-		Info = 0,
-		Warning,
-		Error,
-		FatalError,
-		Suggestion
-	};
-	// clang-format off
+    enum class LogType : uint8_t {
+        Info = 0,
+        Warning,
+        Error,
+        FatalError,
+        Suggestion
+    };
+    // clang-format off
 	constexpr const char* level_strings[] = {
 		"Info",
 		"Warning",
@@ -30,27 +30,27 @@ namespace mythril {
 		0xcf80ff,
 		static_cast<uint32_t>(fmt::color::cadet_blue)
 	};
-	// clang-format on
-	inline FILE* level_channels[] = {
-		stdout,
-		stdout,
-		stderr,
-		stderr,
-		stdout,
-	};
-	constexpr const char* GetLogLevelAsString(LogType level) { return level_strings[(int)level]; }
-	constexpr uint32_t GetLogLevelAsColor(LogType level) { return level_colors[(int)level]; }
-	constexpr FILE* GetLogLevelAsFile(LogType level) { return level_channels[(int)level]; }
+    // clang-format on
+    inline FILE* level_channels[] = {
+        stdout,
+        stdout,
+        stderr,
+        stderr,
+        stdout,
+    };
+    constexpr const char* GetLogLevelAsString(LogType level) { return level_strings[(int)level]; }
+    constexpr uint32_t GetLogLevelAsColor(LogType level) { return level_colors[(int)level]; }
+    constexpr FILE* GetLogLevelAsFile(LogType level) { return level_channels[(int)level]; }
 
-	// way to get namespaces and class prefixes without other stuff
-	constexpr std::string_view StripPrettyFunction(std::string_view pretty) {
-		const auto lparen = pretty.find('(');
-		if (lparen == std::string_view::npos)
-			return pretty;
-		auto start = pretty.rfind(' ', lparen);
-		start = (start == std::string_view::npos) ? 0 : start + 1;
-		return pretty.substr(start, lparen - start);
-	}
+    // way to get namespaces and class prefixes without other stuff
+    constexpr std::string_view StripPrettyFunction(std::string_view pretty) {
+        const auto lparen = pretty.find('(');
+        if (lparen == std::string_view::npos)
+            return pretty;
+        auto start = pretty.rfind(' ', lparen);
+        start = (start == std::string_view::npos) ? 0 : start + 1;
+        return pretty.substr(start, lparen - start);
+    }
 #if defined(__clang__) || defined(__GNUC__)
 #define EXPANDED_FUNCTION mythril::StripPrettyFunction(__PRETTY_FUNCTION__)
 #elif defined(_MSC_VER)

@@ -7,61 +7,61 @@
 #include <glm/glm.hpp>
 
 namespace Helpers {
-	static glm::vec3 RGBtoHSV(glm::vec3 rgb) {
-		float r = rgb.r, g = rgb.g, b = rgb.b;
-		float maxC = glm::max(glm::max(r, g), b);
-		float minC = glm::min(glm::min(r, g), b);
-		float delta = maxC - minC;
+    static glm::vec3 RGBtoHSV(glm::vec3 rgb) {
+        float r = rgb.r, g = rgb.g, b = rgb.b;
+        float maxC = glm::max(glm::max(r, g), b);
+        float minC = glm::min(glm::min(r, g), b);
+        float delta = maxC - minC;
 
-		glm::vec3 hsv;
-		hsv.z = maxC; // Value
+        glm::vec3 hsv;
+        hsv.z = maxC; // Value
 
-		if (maxC == 0.0f) {
-			hsv.y = 0.0f; // Saturation
-			hsv.x = 0.0f; // Hue
-			return hsv;
-		}
+        if (maxC == 0.0f) {
+            hsv.y = 0.0f; // Saturation
+            hsv.x = 0.0f; // Hue
+            return hsv;
+        }
 
-		hsv.y = delta / maxC; // Saturation
+        hsv.y = delta / maxC; // Saturation
 
-		if (delta == 0.0f) {
-			hsv.x = 0.0f; // Hue
-		} else {
-			if (r == maxC) {
-				hsv.x = (g - b) / delta;
-			} else if (g == maxC) {
-				hsv.x = 2.0f + (b - r) / delta;
-			} else {
-				hsv.x = 4.0f + (r - g) / delta;
-			}
-			hsv.x *= 60.0f;
-			if (hsv.x < 0.0f) hsv.x += 360.0f;
-		}
+        if (delta == 0.0f) {
+            hsv.x = 0.0f; // Hue
+        } else {
+            if (r == maxC) {
+                hsv.x = (g - b) / delta;
+            } else if (g == maxC) {
+                hsv.x = 2.0f + (b - r) / delta;
+            } else {
+                hsv.x = 4.0f + (r - g) / delta;
+            }
+            hsv.x *= 60.0f;
+            if (hsv.x < 0.0f) hsv.x += 360.0f;
+        }
 
-		return hsv;
-	}
+        return hsv;
+    }
 
-	static glm::vec3 HSVtoRGB(glm::vec3 hsv) {
-		float h = hsv.x, s = hsv.y, v = hsv.z;
+    static glm::vec3 HSVtoRGB(glm::vec3 hsv) {
+        float h = hsv.x, s = hsv.y, v = hsv.z;
 
-		if (s == 0.0f) {
-			return { v, v, v };
-		}
+        if (s == 0.0f) {
+            return { v, v, v };
+        }
 
-		h = fmod(h, 360.0f) / 60.0f;
-		int i = static_cast<int>(floor(h));
-		float f = h - i;
-		float p = v * (1.0f - s);
-		float q = v * (1.0f - s * f);
-		float t = v * (1.0f - s * (1.0f - f));
+        h = fmod(h, 360.0f) / 60.0f;
+        int i = static_cast<int>(floor(h));
+        float f = h - i;
+        float p = v * (1.0f - s);
+        float q = v * (1.0f - s * f);
+        float t = v * (1.0f - s * (1.0f - f));
 
-		switch (i) {
-			case 0: return { v, t, p };
-			case 1: return { q, v, p };
-			case 2: return { p, v, t };
-			case 3: return { p, q, v };
-			case 4: return { t, p, v };
-			default: return { v, p, q };
-		}
-	}
+        switch (i) {
+            case 0: return { v, t, p };
+            case 1: return { q, v, p };
+            case 2: return { p, v, t };
+            case 3: return { p, q, v };
+            case 4: return { t, p, v };
+            default: return { v, p, q };
+        }
+    }
 }

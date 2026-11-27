@@ -148,19 +148,23 @@ namespace mythril {
             // now take the pattern and create the first texture
             // fallback texture, index 0
             this->_dummyTexture = this->createTexture(
-                { .dimension = { texWidth, texHeight },
+                {
+                    .dimension = { texWidth, texHeight },
                     .format = VK_FORMAT_R8G8B8A8_UNORM,
                     .usage = TextureUsageBits::TextureUsageBits_Sampled | TextureUsageBits::TextureUsageBits_Storage,
                     .initialData = pixels,
-                    .debugName = "Internal_Dummy_Texture" });
+                    .debugName = "Internal_Dummy_Texture",
+                });
             // fallback sampler, index 0
             this->_dummyLinearSampler = this->createSampler(
-                { .magFilter = SamplerFilter::Linear,
+                {
+                    .magFilter = SamplerFilter::Linear,
                     .minFilter = SamplerFilter::Linear,
                     .wrapU = SamplerWrap::ClampEdge,
                     .wrapV = SamplerWrap::ClampEdge,
                     .wrapW = SamplerWrap::ClampEdge,
-                    .debugName = "Internal_Linear_Sampler" });
+                    .debugName = "Internal_Linear_Sampler",
+                });
             // initial descriptor pool creation
             this->growBindlessDescriptorPoolImpl(this->_currentMaxSamplerCount, this->_currentMaxTextureCount);
         }
@@ -407,7 +411,11 @@ namespace mythril {
         infos.reserve(count);
         for (uint32_t i = first; i < first + count; ++i) {
             VkSampler sampler = _samplerPool._objects[i]._obj._vkSampler;
-            infos.push_back({ .sampler = sampler ? sampler : linearSampler, .imageView = VK_NULL_HANDLE, .imageLayout = VK_IMAGE_LAYOUT_UNDEFINED });
+            infos.push_back({
+                .sampler = sampler ? sampler : linearSampler,
+                .imageView = VK_NULL_HANDLE,
+                .imageLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+            });
         }
         const VkWriteDescriptorSet write = {
             .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
@@ -673,7 +681,13 @@ namespace mythril {
             .pName = kComputeEntryPoint,
             .pSpecializationInfo = spec_constants_bundle ? &spec_constants_bundle->vkInfo : nullptr,
         };
-        VkComputePipelineCreateInfo pipeline_ci = { .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO, .pNext = nullptr, .flags = 0, .stage = shader_stage_ci, .layout = layout };
+        VkComputePipelineCreateInfo pipeline_ci = {
+            .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
+            .pNext = nullptr,
+            .flags = 0,
+            .stage = shader_stage_ci,
+            .layout = layout,
+        };
 
         VkPipeline vk_pipeline = VK_NULL_HANDLE;
         VK_CHECK(vkCreateComputePipelines(_vkDevice, nullptr, 1, &pipeline_ci, nullptr, &vk_pipeline));
@@ -724,7 +738,7 @@ namespace mythril {
                 .stage = stageFlag,
                 .module = shader->_vkShaderModule,
                 .pName = shaderStage.entryPoint,
-                .pSpecializationInfo = bundle ? &bundle->vkInfo : nullptr
+                .pSpecializationInfo = bundle ? &bundle->vkInfo : nullptr,
             };
             return numShaderStages++;
         };
@@ -746,7 +760,7 @@ namespace mythril {
                     .generalShader = addStage(VK_SHADER_STAGE_RAYGEN_BIT_KHR, raygenShader),
                     .closestHitShader = VK_SHADER_UNUSED_KHR,
                     .anyHitShader = VK_SHADER_UNUSED_KHR,
-                    .intersectionShader = VK_SHADER_UNUSED_KHR
+                    .intersectionShader = VK_SHADER_UNUSED_KHR,
                 };
             }
         }
@@ -759,7 +773,7 @@ namespace mythril {
                     .generalShader = addStage(VK_SHADER_STAGE_MISS_BIT_KHR, missShader),
                     .closestHitShader = VK_SHADER_UNUSED_KHR,
                     .anyHitShader = VK_SHADER_UNUSED_KHR,
-                    .intersectionShader = VK_SHADER_UNUSED_KHR
+                    .intersectionShader = VK_SHADER_UNUSED_KHR,
                 };
             }
         }
@@ -772,7 +786,7 @@ namespace mythril {
                     .generalShader = VK_SHADER_UNUSED_KHR,
                     .closestHitShader = addStage(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, closestHitShader),
                     .anyHitShader = VK_SHADER_UNUSED_KHR,
-                    .intersectionShader = VK_SHADER_UNUSED_KHR
+                    .intersectionShader = VK_SHADER_UNUSED_KHR,
                 };
             }
         }
@@ -785,7 +799,7 @@ namespace mythril {
                     .generalShader = addStage(VK_SHADER_STAGE_CALLABLE_BIT_KHR, callableShader),
                     .closestHitShader = VK_SHADER_UNUSED_KHR,
                     .anyHitShader = VK_SHADER_UNUSED_KHR,
-                    .intersectionShader = VK_SHADER_UNUSED_KHR
+                    .intersectionShader = VK_SHADER_UNUSED_KHR,
                 };
             }
         }
@@ -797,7 +811,7 @@ namespace mythril {
         const VkPipelineDynamicStateCreateInfo ciDynamicState = {
             .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
             .dynamicStateCount = 1,
-            .pDynamicStates = &dynamicState
+            .pDynamicStates = &dynamicState,
         };
         const VkRayTracingPipelineCreateInfoKHR pipeline_ci = {
             .sType = VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR,
@@ -809,7 +823,7 @@ namespace mythril {
             .pGroups = shaderGroups.data(),
             .maxPipelineRayRecursionDepth = depth ? std::min(depth, maxDepth) : maxDepth,
             .pDynamicState = spec.stackSize ? &ciDynamicState : nullptr,
-            .layout = layout
+            .layout = layout,
         };
         VkPipeline vk_pipeline = VK_NULL_HANDLE;
         VK_CHECK(vkCreateRayTracingPipelinesKHR(_vkDevice, nullptr, nullptr, 1, &pipeline_ci, nullptr, &vk_pipeline));
@@ -920,10 +934,12 @@ namespace mythril {
         std::vector<uint8_t> table(raygenSize + missSize + hitSize + callableSize + baseAlignment, 0);
         char buffer_name[128];
         snprintf(buffer_name, sizeof(buffer_name), "SBT - %s", spec.debugName);
-        pipeline._sbtBuffer = this->createBuffer({ .size = table.size(),
+        pipeline._sbtBuffer = this->createBuffer({
+            .size = table.size(),
             .usage = BufferUsageBits_ShaderBindingTable,
             .storage = StorageType::HostVisible,
-            .debugName = buffer_name });
+            .debugName = buffer_name,
+        });
         const VkDeviceAddress bufferAddress = gpuAddress(pipeline._sbtBuffer.handle());
         const VkDeviceAddress raygenAddress = getAlignedAddress(bufferAddress, baseAlignment);
         const VkDeviceSize baseOffset = raygenAddress - bufferAddress;
@@ -941,10 +957,29 @@ namespace mythril {
         writeRegion(raygenSize + missSize + hitSize, numCallable);
         upload(pipeline._sbtBuffer.handle(), table);
 
-        pipeline._sbtEntryRayGen = VkStridedDeviceAddressRegionKHR{ .deviceAddress = raygenAddress, .stride = raygenSize, .size = raygenSize };
-        pipeline._sbtEntryMiss = numMiss ? VkStridedDeviceAddressRegionKHR{ .deviceAddress = raygenAddress + raygenSize, .stride = handleStride, .size = missSize } : VkStridedDeviceAddressRegionKHR{};
-        pipeline._sbtEntryHit = numHit ? VkStridedDeviceAddressRegionKHR{ .deviceAddress = raygenAddress + raygenSize + missSize, .stride = handleStride, .size = hitSize } : VkStridedDeviceAddressRegionKHR{};
-        pipeline._sbtEntryCallable = numCallable ? VkStridedDeviceAddressRegionKHR{ .deviceAddress = raygenAddress + raygenSize + missSize + hitSize, .stride = handleStride, .size = callableSize } : VkStridedDeviceAddressRegionKHR{};
+        pipeline._sbtEntryRayGen = VkStridedDeviceAddressRegionKHR{
+            .deviceAddress = raygenAddress,
+            .stride = raygenSize,
+            .size = raygenSize,
+        };
+        pipeline._sbtEntryMiss = numMiss ? VkStridedDeviceAddressRegionKHR{
+            .deviceAddress = raygenAddress + raygenSize,
+            .stride = handleStride,
+            .size = missSize,
+        }
+                                         : VkStridedDeviceAddressRegionKHR{};
+        pipeline._sbtEntryHit = numHit ? VkStridedDeviceAddressRegionKHR{
+            .deviceAddress = raygenAddress + raygenSize + missSize,
+            .stride = handleStride,
+            .size = hitSize,
+        }
+                                       : VkStridedDeviceAddressRegionKHR{};
+        pipeline._sbtEntryCallable = numCallable ? VkStridedDeviceAddressRegionKHR{
+            .deviceAddress = raygenAddress + raygenSize + missSize + hitSize,
+            .stride = handleStride,
+            .size = callableSize,
+        }
+                                                 : VkStridedDeviceAddressRegionKHR{};
     }
 
     void CTX::resolveGraphicsPipelineImpl(AllocatedGraphicsPipeline& pipeline, uint32_t viewMask) {
@@ -1047,7 +1082,7 @@ namespace mythril {
             reduction_ci = {
                 .sType = VK_STRUCTURE_TYPE_SAMPLER_REDUCTION_MODE_CREATE_INFO,
                 .pNext = nullptr,
-                .reductionMode = toVulkan(spec.reduction)
+                .reductionMode = toVulkan(spec.reduction),
             };
         }
         VkSamplerCreateInfo ci = {
@@ -1422,7 +1457,11 @@ namespace mythril {
             // enforces that the number of miplevels we want to upload will be accomadated by the texture
             ASSERT_MSG(spec.dataNumMipLevels <= spec.numMipLevels, "dataNumMipLevels must not exceed numMipLevels!");
             ASSERT_MSG(spec.type == TextureType::Type_2D || spec.type == TextureType::Type_Cube, "Initial texture data is only supported for 2D and Cube textures!");
-            const TexRange range = { .dimensions = extent3D, .numLayers = static_cast<uint32_t>((spec.type == TextureType::Type_Cube) ? 6 : 1), .numMipLevels = spec.dataNumMipLevels };
+            const TexRange range = {
+                .dimensions = extent3D,
+                .numLayers = static_cast<uint32_t>((spec.type == TextureType::Type_Cube) ? 6 : 1),
+                .numMipLevels = spec.dataNumMipLevels,
+            };
             this->upload(handle, spec.initialData, range);
             if (spec.generateMipmaps) {
                 this->generateMipmaps(handle);
@@ -1456,7 +1495,13 @@ namespace mythril {
             copied_obj._vkImageViewType = spec.type;
         copied_obj._vkComponentMappings = spec.components.toVkComponentMapping();
         snprintf(copied_obj._debugName, sizeof(copied_obj._debugName), "%s", spec.debugName);
-        createTextureViewObjectsImpl(copied_obj, { .aspectMask = texture_aspect_flags, .baseMipLevel = spec.mipLevel, .levelCount = spec.numMipLevels, .baseArrayLayer = spec.layer, .layerCount = spec.numLayers });
+        createTextureViewObjectsImpl(copied_obj, {
+                                                     .aspectMask = texture_aspect_flags,
+                                                     .baseMipLevel = spec.mipLevel,
+                                                     .levelCount = spec.numMipLevels,
+                                                     .baseArrayLayer = spec.layer,
+                                                     .layerCount = spec.numLayers,
+                                                 });
         TextureHandle new_handle = this->_texturePool.create(std::move(copied_obj));
         writeTextureDescriptorsImpl(new_handle.index(), 1);
         return { new_handle };
@@ -1540,12 +1585,18 @@ namespace mythril {
         obj._numLevels = numLevels;
         obj._numLayers = numLayers;
         obj._recordedLayout = SubresourceMap<VkImageLayout>{ numLevels, numLayers, VK_IMAGE_LAYOUT_UNDEFINED };
-        VkFormatProperties2 format_props2 = { .sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2 };
+        VkFormatProperties2 format_props2 = {
+            .sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2,
+        };
         vkGetPhysicalDeviceFormatProperties2(_vkPhysicalDevice, obj._vkFormat, &format_props2);
         obj._vkFormatProperties = format_props2.formatProperties;
 
         const VkPhysicalDeviceImageFormatInfo2 info = {
-            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_FORMAT_INFO_2, .format = obj.getFormat(), .type = obj.getType(), .usage = obj._vkUsageFlags, .flags = createFlags
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_FORMAT_INFO_2,
+            .format = obj.getFormat(),
+            .type = obj.getType(),
+            .usage = obj._vkUsageFlags,
+            .flags = createFlags,
         };
         VkImageFormatProperties2 props = {
             .sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2,
@@ -1571,7 +1622,13 @@ namespace mythril {
             .viewType = obj._vkImageViewType,
             .format = format,
             .components = componentMapping,
-            .subresourceRange = { .aspectMask = aspectMask, .baseMipLevel = 0, .levelCount = numLevels, .baseArrayLayer = 0, .layerCount = numLayers },
+            .subresourceRange = {
+                .aspectMask = aspectMask,
+                .baseMipLevel = 0,
+                .levelCount = numLevels,
+                .baseArrayLayer = 0,
+                .layerCount = numLayers,
+            },
         };
         VK_CHECK(vkCreateImageView(_vkDevice, &image_view_ci, nullptr, &obj._vkImageView));
         if (obj._vkUsageFlags & VK_IMAGE_USAGE_STORAGE_BIT) {
@@ -1637,13 +1694,21 @@ namespace mythril {
                     VkAccelerationStructureGeometryTrianglesDataKHR{
                         .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR,
                         .vertexFormat = desc.geometry.vertexFormat,
-                        .vertexData = { .deviceAddress = gpuAddress(desc.geometry.vertexBuffer) },
+                        .vertexData = {
+                            .deviceAddress = gpuAddress(desc.geometry.vertexBuffer),
+                        },
                         .vertexStride = desc.geometry.vertexStride,
                         .maxVertex = desc.geometry.numVertices,
                         .indexType = desc.geometry.indexType,
-                        .indexData = { .deviceAddress = gpuAddress(desc.geometry.indexBuffer) },
-                        .transformData = { .deviceAddress = desc.geometry.transformBuffer.has_value() ? gpuAddress(desc.geometry.transformBuffer.value()).value : 0 } } } },
-            .flags = desc.geometryFlags
+                        .indexData = {
+                            .deviceAddress = gpuAddress(desc.geometry.indexBuffer),
+                        },
+                        .transformData = {
+                            .deviceAddress = desc.geometry.transformBuffer.has_value() ? gpuAddress(desc.geometry.transformBuffer.value()).value : 0,
+                        },
+                    } },
+            },
+            .flags = desc.geometryFlags,
         };
         const VkAccelerationStructureBuildGeometryInfoKHR buildGeometryInfo = {
             .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR,
@@ -1654,7 +1719,7 @@ namespace mythril {
         };
         outBuildSizesInfo = {
             .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR,
-            .pNext = nullptr
+            .pNext = nullptr,
         };
         vkGetAccelerationStructureBuildSizesKHR(_vkDevice, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildGeometryInfo, &desc.maxPrimitiveCount, &outBuildSizesInfo);
         const uint32_t alignment = _accelerationStructureProperties.minAccelerationStructureScratchOffsetAlignment;
@@ -1674,7 +1739,10 @@ namespace mythril {
                     .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR,
                     .arrayOfPointers = VK_FALSE,
                     .data = {
-                        .deviceAddress = _bufferPool.get(desc.instancesBuffer)->_vkDeviceAddress } } },
+                        .deviceAddress = _bufferPool.get(desc.instancesBuffer)->_vkDeviceAddress,
+                    },
+                },
+            },
             .flags = desc.geometryFlags,
         };
         const VkAccelerationStructureBuildGeometryInfoKHR buildGeometryInfo = {
@@ -1687,7 +1755,7 @@ namespace mythril {
 
         outBuildSizesInfo = {
             .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR,
-            .pNext = nullptr
+            .pNext = nullptr,
         };
         vkGetAccelerationStructureBuildSizesKHR(_vkDevice, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildGeometryInfo, &desc.maxPrimitiveCount, &outBuildSizesInfo);
         const uint32_t alignment = _accelerationStructureProperties.minAccelerationStructureScratchOffsetAlignment;
@@ -1707,15 +1775,17 @@ namespace mythril {
             .dstAccelerationStructure = structure._vkAccelerationStructure,
             .geometryCount = 1,
             .pGeometries = &structure._geometry,
-            .scratchData = { .deviceAddress =
-                                 getAlignedAddress(gpuAddress(structure._scratchBuffer.handle()), _accelerationStructureProperties.minAccelerationStructureScratchOffsetAlignment) }
+            .scratchData = {
+                .deviceAddress =
+                    getAlignedAddress(gpuAddress(structure._scratchBuffer.handle()), _accelerationStructureProperties.minAccelerationStructureScratchOffsetAlignment),
+            },
         };
         const AccelerationStructureSpec::BuildRange& range = structure._spec.buildRange;
         const VkAccelerationStructureBuildRangeInfoKHR rangeInfo = {
             .primitiveCount = range.primitiveCount,
             .primitiveOffset = range.primitiveOffset,
             .firstVertex = range.firstVertex,
-            .transformOffset = range.transformOffset
+            .transformOffset = range.transformOffset,
         };
         const VkAccelerationStructureBuildRangeInfoKHR* rangeInfos = &rangeInfo;
         vkCmdBuildAccelerationStructuresKHR(cmd, 1, &buildGeometryInfo, &rangeInfos);
@@ -1735,7 +1805,13 @@ namespace mythril {
                 ASSERT_MSG(spec.buildRange.primitiveCount, "TLAS spec buildRange.primitiveCount must be greater than 0!");
                 ASSERT_MSG(spec.geometryType == AccelerationStructureSpec::GeometryType::Instances, "TLAS spec geometryType must be Instances!");
                 obj._isTLAS = true;
-                getTLASBuildInfo({ .instancesBuffer = spec.instancesBuffer, .geometryFlags = spec.geometryFlags, .maxPrimitiveCount = spec.buildRange.primitiveCount, .buildFlags = spec.buildFlags }, sizes, obj._geometry);
+                getTLASBuildInfo({
+                                     .instancesBuffer = spec.instancesBuffer,
+                                     .geometryFlags = spec.geometryFlags,
+                                     .maxPrimitiveCount = spec.buildRange.primitiveCount,
+                                     .buildFlags = spec.buildFlags,
+                                 },
+                    sizes, obj._geometry);
                 break;
             case AccelerationStructureSpec::Type::BLAS:
                 ASSERT_MSG(spec.geometryType == AccelerationStructureSpec::GeometryType::Triangle, "BLAS spec geometryType must be Triangle!");
@@ -1762,9 +1838,19 @@ namespace mythril {
 
         char bufferName[128];
         snprintf(bufferName, sizeof(bufferName), "Buffer - %s", spec.debugName);
-        obj._buffer = createBuffer({ .size = sizes.accelerationStructureSize, .usage = BufferUsageBits_AccelerationStructureStorage, .storage = StorageType::Device, .debugName = bufferName });
+        obj._buffer = createBuffer({
+            .size = sizes.accelerationStructureSize,
+            .usage = BufferUsageBits_AccelerationStructureStorage,
+            .storage = StorageType::Device,
+            .debugName = bufferName,
+        });
         snprintf(bufferName, sizeof(bufferName), "Scratch Buffer - %s", spec.debugName);
-        obj._scratchBuffer = createBuffer({ .size = std::max(sizes.buildScratchSize, sizes.updateScratchSize), .usage = BufferUsageBits_Storage, .storage = StorageType::Device, .debugName = bufferName });
+        obj._scratchBuffer = createBuffer({
+            .size = std::max(sizes.buildScratchSize, sizes.updateScratchSize),
+            .usage = BufferUsageBits_Storage,
+            .storage = StorageType::Device,
+            .debugName = bufferName,
+        });
         const VkAccelerationStructureCreateInfoKHR createInfo = {
             .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR,
             .buffer = _bufferPool.get(obj._buffer.handle())->_vkBuffer,
@@ -1779,7 +1865,10 @@ namespace mythril {
         recordAccelerationStructureBuild(wrapper._cmdBuf, obj, false);
         _immGraphics->wait(_immGraphics->submit(wrapper));
 
-        const VkAccelerationStructureDeviceAddressInfoKHR addressInfo = { .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR, .accelerationStructure = obj._vkAccelerationStructure };
+        const VkAccelerationStructureDeviceAddressInfoKHR addressInfo = {
+            .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR,
+            .accelerationStructure = obj._vkAccelerationStructure,
+        };
         obj._vkDeviceAddress = vkGetAccelerationStructureDeviceAddressKHR(_vkDevice, &addressInfo);
         snprintf(obj._debugName, sizeof(obj._debugName), "%s", spec.debugName);
 
@@ -1872,8 +1961,14 @@ namespace mythril {
                 *image, VkOffset3D{ range.offset.x, range.offset.y, range.offset.z }, VkExtent3D{ range.dimensions.width, range.dimensions.height, range.dimensions.depth }, image->_vkFormat, data.bytes);
         } else {
             const VkRect2D image_region = {
-                .offset = { .x = range.offset.x, .y = range.offset.y },
-                .extent = { .width = range.dimensions.width, .height = range.dimensions.height },
+                .offset = {
+                    .x = range.offset.x,
+                    .y = range.offset.y,
+                },
+                .extent = {
+                    .width = range.dimensions.width,
+                    .height = range.dimensions.height,
+                },
             };
             _staging->imageData2D(*image, image_region, range.mipLevel, range.numMipLevels, range.layer, range.numLayers, image->_vkFormat, data.bytes);
         }

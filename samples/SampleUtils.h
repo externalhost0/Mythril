@@ -9,34 +9,34 @@
 
 #ifdef DEBUG
 #define SAMPLE_ASSERT(COND) \
-	do { \
-		if (!static_cast<bool>(COND)) [[unlikely]] { \
-			std::fputs(std::format("[SAMPLE_ASSERT] | {}:{} -> {} -> Expression: " #COND "\n", __FILE__, __LINE__, __func__).c_str(), stderr); \
-			std::raise(SIGABRT); \
-		} \
-	} while (0)
+    do { \
+        if (!static_cast<bool>(COND)) [[unlikely]] { \
+            std::fputs(std::format("[SAMPLE_ASSERT] | {}:{} -> {} -> Expression: " #COND "\n", __FILE__, __LINE__, __func__).c_str(), stderr); \
+            std::raise(SIGABRT); \
+        } \
+    } while (0)
 
 #define SAMPLE_ASSERT_MSG(COND, FORMAT, ...) \
-	do { \
-		if (!static_cast<bool>(COND)) [[unlikely]] { \
-			std::fputs(std::format("[SAMPLE_ASSERT_MSG] | {}:{} -> {} -> MSG:\n" FORMAT "\n", __FILE__, __LINE__, __func__ __VA_OPT__(, ) __VA_ARGS__).c_str(), stderr); \
-			std::raise(SIGABRT); \
-		} \
-	} while (0)
+    do { \
+        if (!static_cast<bool>(COND)) [[unlikely]] { \
+            std::fputs(std::format("[SAMPLE_ASSERT_MSG] | {}:{} -> {} -> MSG:\n" FORMAT "\n", __FILE__, __LINE__, __func__ __VA_OPT__(, ) __VA_ARGS__).c_str(), stderr); \
+            std::raise(SIGABRT); \
+        } \
+    } while (0)
 #else
 #define SAMPLE_ASSERT(COND) ((void)0)
 #define SAMPLE_ASSERT_MSG(COND, FORMAT, ...) ((void)0)
 #endif
 
 namespace sample {
-	// the thread groups that cover every thread, groupSize is a generated kThreadGroupSize
-	constexpr mythril::Dimensions GroupsFor(const mythril::Dimensions threads, const uint32_t (&groupSize)[3]) {
-		return {(threads.width + groupSize[0] - 1) / groupSize[0], (threads.height + groupSize[1] - 1) / groupSize[1], (threads.depth + groupSize[2] - 1) / groupSize[2]};
-	}
-	constexpr uint32_t CalcNumMipLevels(uint32_t width, uint32_t height) {
-		uint32_t levels = 1;
-		while ((width | height) >> levels)
-			levels++;
-		return levels;
-	}
+    // the thread groups that cover every thread, groupSize is a generated kThreadGroupSize
+    constexpr mythril::Dimensions GroupsFor(const mythril::Dimensions threads, const uint32_t (&groupSize)[3]) {
+        return { (threads.width + groupSize[0] - 1) / groupSize[0], (threads.height + groupSize[1] - 1) / groupSize[1], (threads.depth + groupSize[2] - 1) / groupSize[2] };
+    }
+    constexpr uint32_t CalcNumMipLevels(uint32_t width, uint32_t height) {
+        uint32_t levels = 1;
+        while ((width | height) >> levels)
+            levels++;
+        return levels;
+    }
 } // namespace sample

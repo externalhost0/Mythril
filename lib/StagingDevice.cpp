@@ -10,522 +10,572 @@
 #include "vkutil.h"
 
 namespace mythril {
-	using namespace detail;
-	StagingDevice::StagingDevice(CTX& ctx) :
-		_ctx(ctx) {
-		const VkPhysicalDeviceLimits& limits = _ctx.getPhysicalDeviceProperties10().limits;
-		// use default value of 128Mb clamped to the max limits
-		_maxBufferSize = std::min(limits.maxStorageBufferRange, 128u * 1024u * 1024u);
-		ASSERT_MSG(_minBufferSize <= _maxBufferSize, "Min buffer size MUST BE smaller than or equal to max buffer size!");
-	}
-	static constexpr vkutil::StageAccess kPriorAccesses = {.stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, .access = VK_ACCESS_2_MEMORY_WRITE_BIT};
-
-	void StagingDevice::bufferSubData(AllocatedBuffer& buffer, size_t dstOffset, size_t size, const void* data) {
-		if (buffer.isMapped()) {
-			buffer.bufferSubData(_ctx, dstOffset, size, data);
-			return;
-		}
-		AllocatedBuffer* stagingBuffer = _ctx._bufferPool.get(_stagingBuffer);
-		ASSERT(stagingBuffer);
-		const vkutil::BufferSyncFeatures features = {
-			.accelerationStructure = _ctx.isExtensionEnabled(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME),
-			.rayTracingPipeline = _ctx.isExtensionEnabled(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME),
-		};
-		const vkutil::UpdateBufferBarriers barriers = vkutil::GetUploadBufferBarriers(buffer._vkUsageFlags, features);
-
-		while (size) {
-			// get next staging buffer free offset
-			MemoryRegionDesc desc = getNextFreeOffset((uint32_t)size);
-			const uint32_t chunkSize = std::min((uint32_t)size, desc.size_);
-
-			// copy data into staging buffer
-			stagingBuffer->bufferSubData(_ctx, desc.offset_, chunkSize, data);
-
-			// do the transfer
-			const VkBufferCopy copy = {
-				.srcOffset = desc.offset_,
-				.dstOffset = dstOffset,
-				.size = chunkSize,
-			};
-
-			const detail::CommandBufferWrapper& wrapper = _ctx._immGraphics->acquire();
-			// present consumes the semaphore that chains submits, so the copy must wait on earlier graph accesses itself
-			vkutil::BufferMemoryBarrier2(wrapper._cmdBuf, buffer._vkBuffer, barriers.before.src, barriers.before.dst, dstOffset, chunkSize);
-			vkCmdCopyBuffer(wrapper._cmdBuf, stagingBuffer->_vkBuffer, buffer._vkBuffer, 1, &copy);
-			vkutil::BufferMemoryBarrier2(wrapper._cmdBuf, buffer._vkBuffer, barriers.after.src, barriers.after.dst, dstOffset, chunkSize);
-			desc.handle_ = _ctx._immGraphics->submit(wrapper);
-			desc.state_ = MemoryRegionDesc::State::Busy;
-			_regions.push_back(desc);
-
-			size -= chunkSize;
-			data = (uint8_t*)data + chunkSize;
-			dstOffset += chunkSize;
-		}
-	}
-	std::vector<StagingDevice::StagedBufferCopy> StagingDevice::stageBufferCopy(AllocatedBuffer& buffer, const void* data, size_t size, size_t dstOffset) {
-		ASSERT_MSG(data, "StagingDevice::stageBufferCopy called with null data.");
-		ASSERT_MSG(size > 0, "StagingDevice::stageBufferCopy size must be greater than 0.");
-		ASSERT_MSG(dstOffset + size <= buffer._bufferSize, "StagingDevice::stageBufferCopy: offset + size exceeds buffer '{}' size.", buffer._debugName);
-		ASSERT_MSG(size <= UINT32_MAX, "StagingDevice::stageBufferCopy size exceeds the staging allocator's uint32 range.");
-		ASSERT_MSG(buffer._vkUsageFlags & VK_BUFFER_USAGE_TRANSFER_DST_BIT, "StagingDevice::stageBufferCopy: buffer '{}' was not created with TRANSFER_DST usage.", buffer._debugName);
-
-		const uint32_t requestedAlignedSize = vkutil::GetAlignedSize(static_cast<uint32_t>(size), kStagingBufferAlignment);
-		ensureStagingBufferSize(requestedAlignedSize);
-		ASSERT_MSG(requestedAlignedSize <= _stagingBufferSize, "StagingDevice::stageBufferCopy upload is larger than the staging buffer maximum.");
-
-		uint32_t totalFree = 0;
-		for (const MemoryRegionDesc& region: _regions) {
-			if (isRegionFree(region))
-				totalFree += region.size_;
-		}
-		if (totalFree < requestedAlignedSize) {
-			waitAndReset();
-		}
-
-		AllocatedBuffer* stagingBuffer = _ctx._bufferPool.get(_stagingBuffer);
-		ASSERT(stagingBuffer);
-
-		std::vector<StagedBufferCopy> copies;
-		while (size) {
-			MemoryRegionDesc desc = getNextFreeOffset(static_cast<uint32_t>(size));
-			ASSERT_MSG(desc.size_ > 0, "StagingDevice::stageBufferCopy could not allocate a staging region.");
-			const uint32_t chunkSize = std::min(static_cast<uint32_t>(size), desc.size_);
-
-			stagingBuffer->bufferSubData(_ctx, desc.offset_, chunkSize, data);
-
-			copies.push_back({.stagingOffset = desc.offset_, .size = chunkSize, .dstBuffer = buffer._vkBuffer, .dstOffset = dstOffset});
-
-			desc.size_ = chunkSize;
-			desc.state_ = MemoryRegionDesc::State::Pending;
-			desc.handle_ = {};
-			_regions.push_back(desc);
-
-			size -= chunkSize;
-			data = static_cast<const uint8_t*>(data) + chunkSize;
-			dstOffset += chunkSize;
-		}
-		return copies;
-	}
-
-	VkDeviceSize StagingDevice::stageContiguous(const void* data, const size_t size) {
-		ASSERT_MSG(size > 0 && size <= UINT32_MAX, "StagingDevice::stageContiguous size must be in (0, UINT32_MAX].");
-		MemoryRegionDesc desc = getNextContiguousOffset(static_cast<uint32_t>(size));
-		_ctx._bufferPool.get(_stagingBuffer)->bufferSubData(_ctx, desc.offset_, size, data);
-		desc.state_ = MemoryRegionDesc::State::Pending;
-		desc.handle_ = {};
-		_regions.push_back(desc);
-		return desc.offset_;
-	}
-	VkBuffer StagingDevice::getStagingVkBuffer() const {
-		return _ctx._bufferPool.get(_stagingBuffer)->_vkBuffer;
-	}
-
-	void StagingDevice::recordBufferCopies(VkCommandBuffer cmd, std::span<const StagedBufferCopy> copies) {
-		if (copies.empty())
-			return;
-		AllocatedBuffer* stagingBuffer = _ctx._bufferPool.get(_stagingBuffer);
-		ASSERT(stagingBuffer);
-
-		std::vector<VkBufferCopy> regions;
-		regions.reserve(copies.size());
-		VkBuffer dstBuffer = copies.front().dstBuffer;
-		for (const StagedBufferCopy& copy: copies) {
-			if (copy.dstBuffer != dstBuffer) {
-				vkCmdCopyBuffer(cmd, stagingBuffer->_vkBuffer, dstBuffer, static_cast<uint32_t>(regions.size()), regions.data());
-				regions.clear();
-				dstBuffer = copy.dstBuffer;
-			}
-			regions.push_back({.srcOffset = copy.stagingOffset, .dstOffset = copy.dstOffset, .size = copy.size});
-		}
-		if (!regions.empty()) {
-			vkCmdCopyBuffer(cmd, stagingBuffer->_vkBuffer, dstBuffer, static_cast<uint32_t>(regions.size()), regions.data());
-		}
-	}
-
-	void StagingDevice::onGraphSubmit(SubmitHandle submit) {
-		ASSERT_MSG(!submit.empty(), "StagingDevice::onGraphSubmit requires a valid submit handle.");
-		for (MemoryRegionDesc& region: _regions) {
-			if (region.state_ != MemoryRegionDesc::State::Pending)
-				continue;
-			region.handle_ = submit;
-			region.state_ = MemoryRegionDesc::State::Busy;
-		}
-	}
-
-	void StagingDevice::resetPending() {
-		for (MemoryRegionDesc& region: _regions) {
-			if (region.state_ != MemoryRegionDesc::State::Pending)
-				continue;
-			region.handle_ = {};
-			region.state_ = MemoryRegionDesc::State::Free;
-		}
-	}
-	void StagingDevice::imageData3D(AllocatedTexture& image, const VkOffset3D& offset, const VkExtent3D& extent, VkFormat format, std::span<const std::byte> data) {
-		ASSERT_MSG(image._numLevels == 1, "Can handle only 3D images with exactly 1 mip-level");
-		ASSERT_MSG((offset.x == 0) && (offset.y == 0) && (offset.z == 0), "Can upload only full-size 3D images");
-		const uint32_t storageSize = extent.width * extent.height * extent.depth * vkutil::GetBytesPerPixel(format);
-		ASSERT_MSG(data.size() == storageSize, "Texture '{}' upload got {} bytes, the range needs {}.", image._debugName, data.size(), storageSize);
-
-		ensureStagingBufferSize(storageSize);
-
-		ASSERT_MSG(storageSize <= _stagingBufferSize, "No support for copying image in multiple smaller chunk sizes");
-
-		MemoryRegionDesc desc = getNextContiguousOffset(storageSize);
-
-		AllocatedBuffer* stagingBuffer = _ctx._bufferPool.get(_stagingBuffer);
-
-		// 1. Copy the pixel data into the host visible staging buffer
-		stagingBuffer->bufferSubData(_ctx, desc.offset_, storageSize, data.data());
-
-		const detail::CommandBufferWrapper& wrapper = _ctx._immGraphics->acquire();
-
-		// 1. Transition initial image layout into TRANSFER_DST_OPTIMAL
-		vkutil::ImageMemoryBarrier2(
-			wrapper._cmdBuf,
-			image._vkImage,
-			kPriorAccesses,
-			vkutil::StageAccess{.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = VK_ACCESS_2_TRANSFER_WRITE_BIT},
-			VK_IMAGE_LAYOUT_UNDEFINED,
-			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-			VkImageSubresourceRange{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1});
-
-		// 2. Copy the pixel data from the staging buffer into the image
-		const VkBufferImageCopy copy = {
-			.bufferOffset = desc.offset_,
-			.bufferRowLength = 0,
-			.bufferImageHeight = 0,
-			.imageSubresource = VkImageSubresourceLayers{VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
-			.imageOffset = offset,
-			.imageExtent = extent,
-		};
-		vkCmdCopyBufferToImage(wrapper._cmdBuf, stagingBuffer->_vkBuffer, image._vkImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
-
-		// 3. Transition TRANSFER_DST_OPTIMAL into SHADER_READ_ONLY_OPTIMAL
-		vkutil::ImageMemoryBarrier2(
-			wrapper._cmdBuf,
-			image._vkImage,
-			vkutil::StageAccess{.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = VK_ACCESS_2_TRANSFER_WRITE_BIT},
-			vkutil::StageAccess{.stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, .access = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT},
-			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-			VkImageSubresourceRange{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1});
-
-		image.setLayout({0, 1, 0, 1}, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-
-		desc.handle_ = _ctx._immGraphics->submit(wrapper);
-		desc.state_ = MemoryRegionDesc::State::Busy;
-		_regions.push_back(desc);
-	}
-	void StagingDevice::imageData2D(
-		AllocatedTexture& image, const VkRect2D& imageRegion, uint32_t baseMipLevel, uint32_t numMipLevels, uint32_t layerCheck, uint32_t numLayers, VkFormat format, std::span<const std::byte> data) {
-		ASSERT_MSG(numMipLevels <= kMaxMipLevels, "StagingDevice::imageData2D numMipLevels exceeds the maximum mip level count.");
-
-		// divide the width and height by 2 until we get to the size of level 'baseMipLevel'
-		uint32_t width = image._vkExtent.width >> baseMipLevel;
-		uint32_t height = image._vkExtent.height >> baseMipLevel;
-
-		// not sure
-		ASSERT_MSG(
-			!imageRegion.offset.x && !imageRegion.offset.y && imageRegion.extent.width == width && imageRegion.extent.height == height,
-			"Uploading mip-levels with an image region that is smaller than the base mip level is not supported!");
-
-		// find the storage size for all mip-levels being uploaded
-		uint32_t layerStorageSize = 0;
-		for (uint32_t i = 0; i < numMipLevels; ++i) {
-			layerStorageSize += vkutil::GetTextureBytesPerLayer(image._vkExtent.width, image._vkExtent.height, format, i);
-			width = std::max(1u, width >> 1);
-			height = std::max(1u, height >> 1);
-			//			width = width <= 1 ? 1 : width >> 1;
-			//			height = height <= 1 ? 1 : height >> 1;
-		}
-		const uint32_t storageSize = layerStorageSize * numLayers;
-		ASSERT_MSG(data.size() == storageSize, "Texture '{}' upload got {} bytes, the range needs {}.", image._debugName, data.size(), storageSize);
-
-		ensureStagingBufferSize(storageSize);
-		ASSERT_MSG(storageSize <= _stagingBufferSize, "StagingDevice::imageData2D upload is larger than the staging buffer maximum.");
-		MemoryRegionDesc desc = getNextContiguousOffset(storageSize);
-
-		const detail::CommandBufferWrapper& wrapper = _ctx._immGraphics->acquire();
-
-		AllocatedBuffer* stagingBuffer = _ctx._bufferPool.get(_stagingBuffer);
-		stagingBuffer->bufferSubData(_ctx, desc.offset_, storageSize, data.data());
-
-		uint32_t offset = 0;
-		const uint32_t numPlanes = vkutil::GetNumImagePlanes(image._vkFormat);
-		if (numPlanes > 1) {
-			ASSERT_MSG(layerCheck == 0 && baseMipLevel == 0, "Multi-plane image uploads must start at layer 0 and mip level 0.");
-			ASSERT_MSG(numLayers == 1 && numMipLevels == 1, "Multi-plane image uploads support exactly one layer and one mip level.");
-			ASSERT_MSG(imageRegion.offset.x == 0 && imageRegion.offset.y == 0, "Multi-plane image uploads must start at offset (0, 0).");
-			ASSERT_MSG(image._vkImageType == VK_IMAGE_TYPE_2D, "Multi-plane image uploads need a 2D image.");
-			ASSERT_MSG(image._vkExtent.width == imageRegion.extent.width && image._vkExtent.height == imageRegion.extent.height, "Multi-plane image uploads must cover the whole image extent.");
-		}
-		VkImageAspectFlags imageAspect = VK_IMAGE_ASPECT_COLOR_BIT;
-		if (numPlanes == 2) {
-			imageAspect = VK_IMAGE_ASPECT_PLANE_0_BIT | VK_IMAGE_ASPECT_PLANE_1_BIT;
-		}
-		if (numPlanes == 3) {
-			imageAspect = VK_IMAGE_ASPECT_PLANE_0_BIT | VK_IMAGE_ASPECT_PLANE_1_BIT | VK_IMAGE_ASPECT_PLANE_2_BIT;
-		}
-
-		// https://registry.khronos.org/KTX/specs/1.0/ktxspec.v1.html
-		for (uint32_t mipLevel = 0; mipLevel < numMipLevels; mipLevel++) {
-			for (uint32_t layer = 0; layer != numLayers; layer++) {
-				const uint32_t currentMipLevel = baseMipLevel + mipLevel;
-
-				// 1. Transition initial image layout into TRANSFER_DST_OPTIMAL
-				vkutil::ImageMemoryBarrier2(
-					wrapper._cmdBuf,
-					image._vkImage,
-					kPriorAccesses,
-					vkutil::StageAccess{.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = VK_ACCESS_2_TRANSFER_WRITE_BIT},
-					VK_IMAGE_LAYOUT_UNDEFINED,
-					VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-					VkImageSubresourceRange{imageAspect, currentMipLevel, 1, layer, 1});
-
-				// 2. Copy the pixel data from the staging buffer into the image
-				uint32_t planeOffset = 0;
-				for (uint32_t plane = 0; plane != numPlanes; plane++) {
-					const VkExtent2D extent = vkutil::GetImagePlaneExtent(
-						{
-							.width = std::max(1u, imageRegion.extent.width >> mipLevel),
-							.height = std::max(1u, imageRegion.extent.height >> mipLevel),
-						},
-						format,
-						plane);
-					const VkRect2D region = {
-						.offset = {.x = imageRegion.offset.x >> mipLevel, .y = imageRegion.offset.y >> mipLevel},
-						.extent = extent,
-					};
-					const VkBufferImageCopy copy = {
-						// the offset for this level is at the start of all mip-levels plus the size of all previous mip-levels being uploaded
-						.bufferOffset = desc.offset_ + offset + planeOffset,
-						.bufferRowLength = 0,
-						.bufferImageHeight = 0,
-						.imageSubresource = VkImageSubresourceLayers{numPlanes > 1 ? VK_IMAGE_ASPECT_PLANE_0_BIT << plane : imageAspect, currentMipLevel, layer, 1},
-						.imageOffset = {.x = region.offset.x, .y = region.offset.y, .z = 0},
-						.imageExtent = {.width = region.extent.width, .height = region.extent.height, .depth = 1u},
-					};
-					vkCmdCopyBufferToImage(wrapper._cmdBuf, stagingBuffer->_vkBuffer, image._vkImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
-					planeOffset += vkutil::GetTextureBytesPerPlane(imageRegion.extent.width, imageRegion.extent.height, format, plane);
-				}
-
-				// 3. Transition TRANSFER_DST_OPTIMAL into SHADER_READ_ONLY_OPTIMAL
-				vkutil::ImageMemoryBarrier2(
-					wrapper._cmdBuf,
-					image._vkImage,
-					vkutil::StageAccess{.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = VK_ACCESS_2_TRANSFER_WRITE_BIT},
-					vkutil::StageAccess{.stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, .access = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT},
-					VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-					VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-					VkImageSubresourceRange{imageAspect, currentMipLevel, 1, layer, 1});
-
-				offset += vkutil::GetTextureBytesPerLayer(imageRegion.extent.width, imageRegion.extent.height, format, currentMipLevel);
-			}
-		}
-		image.setLayout({baseMipLevel, numMipLevels, 0, numLayers}, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-
-		desc.handle_ = _ctx._immGraphics->submit(wrapper);
-		desc.state_ = MemoryRegionDesc::State::Busy;
-		_regions.push_back(desc);
-	}
-	void StagingDevice::getImageData(AllocatedTexture& image, const VkOffset3D& offset, const VkExtent3D& extent, VkImageSubresourceRange range, VkFormat format, std::span<std::byte> outData) {
-		const VkImageLayout originalLayout = image.getImageLayout(image.toSubresourceRange(range));
-		ASSERT_MSG(originalLayout != VK_IMAGE_LAYOUT_UNDEFINED, "Cannot download from a texture whose layout is undefined.");
-		ASSERT_MSG(range.layerCount == 1, "Texture download supports exactly one layer at a time.");
-
-		const uint32_t storageSize = extent.width * extent.height * extent.depth * vkutil::GetBytesPerPixel(format);
-		ASSERT_MSG(outData.size() == storageSize, "Texture '{}' download got {} bytes, the range needs {}.", image._debugName, outData.size(), storageSize);
-
-		ensureStagingBufferSize(storageSize);
-
-		ASSERT_MSG(storageSize <= _stagingBufferSize, "StagingDevice::getImageData download is larger than the staging buffer maximum.");
-
-		MemoryRegionDesc desc = getNextContiguousOffset(storageSize);
-
-		AllocatedBuffer* stagingBuffer = _ctx._bufferPool.get(_stagingBuffer);
-
-		const detail::CommandBufferWrapper& wrapper1 = _ctx._immGraphics->acquire();
-
-		// 1. Transition to VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL
-		vkutil::ImageMemoryBarrier2(
-			wrapper1._cmdBuf,
-			image._vkImage,
-			kPriorAccesses,
-			vkutil::StageAccess{.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = VK_ACCESS_2_TRANSFER_READ_BIT},
-			originalLayout,
-			VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-			range);
-
-		// 2.  Copy the pixel data from the image into the staging buffer
-		const VkBufferImageCopy copy = {
-			.bufferOffset = desc.offset_,
-			.bufferRowLength = 0,
-			.bufferImageHeight = extent.height,
-			.imageSubresource =
-				VkImageSubresourceLayers{
-					.aspectMask = range.aspectMask,
-					.mipLevel = range.baseMipLevel,
-					.baseArrayLayer = range.baseArrayLayer,
-					.layerCount = range.layerCount,
-				},
-			.imageOffset = offset,
-			.imageExtent = extent,
-		};
-		vkCmdCopyImageToBuffer(wrapper1._cmdBuf, image._vkImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, stagingBuffer->_vkBuffer, 1, &copy);
-
-		desc.handle_ = _ctx._immGraphics->submit(wrapper1);
-		desc.state_ = MemoryRegionDesc::State::Busy;
-		_regions.push_back(desc);
-
-		waitAndReset();
-
-		if (!stagingBuffer->_isCoherentMemory) {
-			stagingBuffer->invalidateMappedMemory(_ctx, desc.offset_, desc.size_);
-		}
-
-		// 3. Copy data from staging buffer into data
-		memcpy(outData.data(), stagingBuffer->getMappedPtr() + desc.offset_, storageSize);
-
-		// 4. Transition back to the initial image layout
-		const detail::CommandBufferWrapper& wrapper2 = _ctx._immGraphics->acquire();
-
-		vkutil::ImageMemoryBarrier2(
-			wrapper2._cmdBuf,
-			image._vkImage,
-			vkutil::StageAccess{.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = VK_ACCESS_2_TRANSFER_READ_BIT},
-			vkutil::StageAccess{.stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, .access = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT},
-			VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-			originalLayout,
-			range);
-
-		_ctx._immGraphics->wait(_ctx._immGraphics->submit(wrapper2));
-	}
-
-	void StagingDevice::ensureStagingBufferSize(uint32_t sizeNeeded) {
-		assert(kStagingBufferAlignment != 0);
-		const uint32_t alignedSize = std::max(vkutil::GetAlignedSize(sizeNeeded, kStagingBufferAlignment), _minBufferSize);
-		sizeNeeded = (alignedSize < _maxBufferSize) ? alignedSize : _maxBufferSize;
-		if (!_stagingBuffer.empty()) {
-			const bool isEnoughSize = sizeNeeded <= _stagingBufferSize;
-			const bool isMaxSize = _stagingBufferSize == _maxBufferSize;
-			if (isEnoughSize || isMaxSize) {
-				return;
-			}
-		}
-
-		// FIXME: buffer allocation with vma warning is from here, no idea how to solve
-		// seems to be gone
-		waitAndReset();
-		// deallocate the previous staging buffer
-		_ctx.destroy(_stagingBuffer);
-		// if the combined size of the new staging buffer and the existing one is larger than the limit imposed by some architectures on buffers
-		// that are device and host visible, we need to wait for the current buffer to be destroyed before we can allocate a new one
-		if ((sizeNeeded + _stagingBufferSize) > _maxBufferSize) {
-			_ctx.waitDeferredTasks();
-		}
-		_stagingBufferSize = sizeNeeded;
-		{
-			AllocatedBuffer obj = _ctx.createBufferImpl(_stagingBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
-			snprintf(obj._debugName, sizeof(obj._debugName) - 1, "staging buffer %u", _stagingBufferCounter++);
-			vmaSetAllocationName(_ctx._vmaAllocator, obj._vmaAllocation, obj._debugName);
-			_stagingBuffer = _ctx._bufferPool.create(std::move(obj));
-		}
-
-		ASSERT(!_stagingBuffer.empty());
-
-		_regions.clear();
-		_regions.push_back({0, _stagingBufferSize, SubmitHandle(), MemoryRegionDesc::State::Free});
-	}
-	bool StagingDevice::isRegionFree(const MemoryRegionDesc& region) const {
-		if (region.state_ == MemoryRegionDesc::State::Free)
-			return true;
-		if (region.state_ == MemoryRegionDesc::State::Busy && _ctx._immGraphics->isReady(region.handle_))
-			return true;
-		return false;
-	}
-
-	StagingDevice::MemoryRegionDesc StagingDevice::getNextFreeOffset(uint32_t size) {
-		const uint32_t requestedAlignedSize = vkutil::GetAlignedSize(size, kStagingBufferAlignment);
-		ensureStagingBufferSize(requestedAlignedSize);
-
-		ASSERT(!_regions.empty());
-
-		// if we can't find an available region that is big enough to store requestedAlignedSize, return whatever we could find, which will be
-		// stored in bestNextIt
-		auto bestNextIt = _regions.begin();
-
-		for (auto it = _regions.begin(); it != _regions.end(); ++it) {
-			if (isRegionFree(*it)) {
-				// This region is free, but is it big enough?
-				if (it->size_ >= requestedAlignedSize) {
-					// It is big enough!
-					const uint32_t unusedSize = it->size_ - requestedAlignedSize;
-					const uint32_t unusedOffset = it->offset_ + requestedAlignedSize;
-
-					// Prepare return value
-					const auto result = MemoryRegionDesc{it->offset_, requestedAlignedSize, SubmitHandle(), MemoryRegionDesc::State::Free};
-
-					// Perform the cleanup that was in SCOPE_EXIT
-					_regions.erase(it);
-					if (unusedSize > 0) {
-						_regions.insert(_regions.begin(), {unusedOffset, unusedSize, SubmitHandle(), MemoryRegionDesc::State::Free});
-					}
-
-					return result;
-				}
-
-				// Cache the largest available region that isn't as big as the one we're looking for
-				if (it->size_ > bestNextIt->size_) {
-					bestNextIt = it;
-				}
-			}
-		}
-		// we found a region that is available that is smaller than the requested size. It's the best we can do
-		if (bestNextIt != _regions.end() && isRegionFree(*bestNextIt)) {
-			const auto result = MemoryRegionDesc{bestNextIt->offset_, bestNextIt->size_, SubmitHandle(), MemoryRegionDesc::State::Free};
-			// Perform the cleanup that was in SCOPE_EXIT
-			_regions.erase(bestNextIt);
-			return result;
-		}
-		// nothing was available. Let's wait for the entire staging buffer to become free
-		waitAndReset();
-
-		// waitAndReset() adds a region that spans the entire buffer. Since we'll be using part of it, we need to replace it with a used block and
-		// an unused portion
-		_regions.clear();
-		// store the unused size in the deque first...
-		const uint32_t unusedSize = _stagingBufferSize > requestedAlignedSize ? _stagingBufferSize - requestedAlignedSize : 0;
-
-		if (unusedSize) {
-			const uint32_t unusedOffset = _stagingBufferSize - unusedSize;
-			_regions.insert(_regions.begin(), {unusedOffset, unusedSize, SubmitHandle(), MemoryRegionDesc::State::Free});
-		}
-		// ...and then return the smallest free region that can hold the requested size
-		return {
-			.offset_ = 0,
-			.size_ = _stagingBufferSize - unusedSize,
-			.handle_ = SubmitHandle(),
-			.state_ = MemoryRegionDesc::State::Free,
-		};
-	}
-	StagingDevice::MemoryRegionDesc StagingDevice::getNextContiguousOffset(uint32_t size) {
-		MemoryRegionDesc desc = getNextFreeOffset(size);
-		if (desc.size_ < size) {
-			waitAndReset();
-			desc = getNextFreeOffset(size);
-		}
-		ASSERT_MSG(desc.size_ >= size, "StagingDevice could not allocate a contiguous staging region of {} bytes.", size);
-		return desc;
-	}
-	void StagingDevice::waitAndReset() {
-		for (const MemoryRegionDesc& r: _regions) {
-			ASSERT_MSG(r.state_ != MemoryRegionDesc::State::Pending, "Cannot reset the staging ring while graph upload regions are pending. Submit or abandon the command buffer first.");
-			if (r.state_ == MemoryRegionDesc::State::Busy) {
-				_ctx._immGraphics->wait(r.handle_);
-			}
-		}
-		_regions.clear();
-		_regions.push_back({0, _stagingBufferSize, SubmitHandle(), MemoryRegionDesc::State::Free});
-	}
+    using namespace detail;
+    StagingDevice::StagingDevice(CTX& ctx) :
+        _ctx(ctx) {
+        const VkPhysicalDeviceLimits& limits = _ctx.getPhysicalDeviceProperties10().limits;
+        // use default value of 128Mb clamped to the max limits
+        _maxBufferSize = std::min(limits.maxStorageBufferRange, 128u * 1024u * 1024u);
+        ASSERT_MSG(_minBufferSize <= _maxBufferSize, "Min buffer size MUST BE smaller than or equal to max buffer size!");
+    }
+    static constexpr vkutil::StageAccess kPriorAccesses = {
+        .stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+        .access = VK_ACCESS_2_MEMORY_WRITE_BIT,
+    };
+
+    void StagingDevice::bufferSubData(AllocatedBuffer& buffer, size_t dstOffset, size_t size, const void* data) {
+        if (buffer.isMapped()) {
+            buffer.bufferSubData(_ctx, dstOffset, size, data);
+            return;
+        }
+        AllocatedBuffer* stagingBuffer = _ctx._bufferPool.get(_stagingBuffer);
+        ASSERT(stagingBuffer);
+        const vkutil::BufferSyncFeatures features = {
+            .accelerationStructure = _ctx.isExtensionEnabled(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME),
+            .rayTracingPipeline = _ctx.isExtensionEnabled(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME),
+        };
+        const vkutil::UpdateBufferBarriers barriers = vkutil::GetUploadBufferBarriers(buffer._vkUsageFlags, features);
+
+        while (size) {
+            // get next staging buffer free offset
+            MemoryRegionDesc desc = getNextFreeOffset((uint32_t)size);
+            const uint32_t chunkSize = std::min((uint32_t)size, desc.size_);
+
+            // copy data into staging buffer
+            stagingBuffer->bufferSubData(_ctx, desc.offset_, chunkSize, data);
+
+            // do the transfer
+            const VkBufferCopy copy = {
+                .srcOffset = desc.offset_,
+                .dstOffset = dstOffset,
+                .size = chunkSize,
+            };
+
+            const detail::CommandBufferWrapper& wrapper = _ctx._immGraphics->acquire();
+            // present consumes the semaphore that chains submits, so the copy must wait on earlier graph accesses itself
+            vkutil::BufferMemoryBarrier2(wrapper._cmdBuf, buffer._vkBuffer, barriers.before.src, barriers.before.dst, dstOffset, chunkSize);
+            vkCmdCopyBuffer(wrapper._cmdBuf, stagingBuffer->_vkBuffer, buffer._vkBuffer, 1, &copy);
+            vkutil::BufferMemoryBarrier2(wrapper._cmdBuf, buffer._vkBuffer, barriers.after.src, barriers.after.dst, dstOffset, chunkSize);
+            desc.handle_ = _ctx._immGraphics->submit(wrapper);
+            desc.state_ = MemoryRegionDesc::State::Busy;
+            _regions.push_back(desc);
+
+            size -= chunkSize;
+            data = (uint8_t*)data + chunkSize;
+            dstOffset += chunkSize;
+        }
+    }
+    std::vector<StagingDevice::StagedBufferCopy> StagingDevice::stageBufferCopy(AllocatedBuffer& buffer, const void* data, size_t size, size_t dstOffset) {
+        ASSERT_MSG(data, "StagingDevice::stageBufferCopy called with null data.");
+        ASSERT_MSG(size > 0, "StagingDevice::stageBufferCopy size must be greater than 0.");
+        ASSERT_MSG(dstOffset + size <= buffer._bufferSize, "StagingDevice::stageBufferCopy: offset + size exceeds buffer '{}' size.", buffer._debugName);
+        ASSERT_MSG(size <= UINT32_MAX, "StagingDevice::stageBufferCopy size exceeds the staging allocator's uint32 range.");
+        ASSERT_MSG(buffer._vkUsageFlags & VK_BUFFER_USAGE_TRANSFER_DST_BIT, "StagingDevice::stageBufferCopy: buffer '{}' was not created with TRANSFER_DST usage.", buffer._debugName);
+
+        const uint32_t requestedAlignedSize = vkutil::GetAlignedSize(static_cast<uint32_t>(size), kStagingBufferAlignment);
+        ensureStagingBufferSize(requestedAlignedSize);
+        ASSERT_MSG(requestedAlignedSize <= _stagingBufferSize, "StagingDevice::stageBufferCopy upload is larger than the staging buffer maximum.");
+
+        uint32_t totalFree = 0;
+        for (const MemoryRegionDesc& region: _regions) {
+            if (isRegionFree(region))
+                totalFree += region.size_;
+        }
+        if (totalFree < requestedAlignedSize) {
+            waitAndReset();
+        }
+
+        AllocatedBuffer* stagingBuffer = _ctx._bufferPool.get(_stagingBuffer);
+        ASSERT(stagingBuffer);
+
+        std::vector<StagedBufferCopy> copies;
+        while (size) {
+            MemoryRegionDesc desc = getNextFreeOffset(static_cast<uint32_t>(size));
+            ASSERT_MSG(desc.size_ > 0, "StagingDevice::stageBufferCopy could not allocate a staging region.");
+            const uint32_t chunkSize = std::min(static_cast<uint32_t>(size), desc.size_);
+
+            stagingBuffer->bufferSubData(_ctx, desc.offset_, chunkSize, data);
+
+            copies.push_back({
+                .stagingOffset = desc.offset_,
+                .size = chunkSize,
+                .dstBuffer = buffer._vkBuffer,
+                .dstOffset = dstOffset,
+            });
+
+            desc.size_ = chunkSize;
+            desc.state_ = MemoryRegionDesc::State::Pending;
+            desc.handle_ = {};
+            _regions.push_back(desc);
+
+            size -= chunkSize;
+            data = static_cast<const uint8_t*>(data) + chunkSize;
+            dstOffset += chunkSize;
+        }
+        return copies;
+    }
+
+    VkDeviceSize StagingDevice::stageContiguous(const void* data, const size_t size) {
+        ASSERT_MSG(size > 0 && size <= UINT32_MAX, "StagingDevice::stageContiguous size must be in (0, UINT32_MAX].");
+        MemoryRegionDesc desc = getNextContiguousOffset(static_cast<uint32_t>(size));
+        _ctx._bufferPool.get(_stagingBuffer)->bufferSubData(_ctx, desc.offset_, size, data);
+        desc.state_ = MemoryRegionDesc::State::Pending;
+        desc.handle_ = {};
+        _regions.push_back(desc);
+        return desc.offset_;
+    }
+    VkBuffer StagingDevice::getStagingVkBuffer() const {
+        return _ctx._bufferPool.get(_stagingBuffer)->_vkBuffer;
+    }
+
+    void StagingDevice::recordBufferCopies(VkCommandBuffer cmd, std::span<const StagedBufferCopy> copies) {
+        if (copies.empty())
+            return;
+        AllocatedBuffer* stagingBuffer = _ctx._bufferPool.get(_stagingBuffer);
+        ASSERT(stagingBuffer);
+
+        std::vector<VkBufferCopy> regions;
+        regions.reserve(copies.size());
+        VkBuffer dstBuffer = copies.front().dstBuffer;
+        for (const StagedBufferCopy& copy: copies) {
+            if (copy.dstBuffer != dstBuffer) {
+                vkCmdCopyBuffer(cmd, stagingBuffer->_vkBuffer, dstBuffer, static_cast<uint32_t>(regions.size()), regions.data());
+                regions.clear();
+                dstBuffer = copy.dstBuffer;
+            }
+            regions.push_back({
+                .srcOffset = copy.stagingOffset,
+                .dstOffset = copy.dstOffset,
+                .size = copy.size,
+            });
+        }
+        if (!regions.empty()) {
+            vkCmdCopyBuffer(cmd, stagingBuffer->_vkBuffer, dstBuffer, static_cast<uint32_t>(regions.size()), regions.data());
+        }
+    }
+
+    void StagingDevice::onGraphSubmit(SubmitHandle submit) {
+        ASSERT_MSG(!submit.empty(), "StagingDevice::onGraphSubmit requires a valid submit handle.");
+        for (MemoryRegionDesc& region: _regions) {
+            if (region.state_ != MemoryRegionDesc::State::Pending)
+                continue;
+            region.handle_ = submit;
+            region.state_ = MemoryRegionDesc::State::Busy;
+        }
+    }
+
+    void StagingDevice::resetPending() {
+        for (MemoryRegionDesc& region: _regions) {
+            if (region.state_ != MemoryRegionDesc::State::Pending)
+                continue;
+            region.handle_ = {};
+            region.state_ = MemoryRegionDesc::State::Free;
+        }
+    }
+    void StagingDevice::imageData3D(AllocatedTexture& image, const VkOffset3D& offset, const VkExtent3D& extent, VkFormat format, std::span<const std::byte> data) {
+        ASSERT_MSG(image._numLevels == 1, "Can handle only 3D images with exactly 1 mip-level");
+        ASSERT_MSG((offset.x == 0) && (offset.y == 0) && (offset.z == 0), "Can upload only full-size 3D images");
+        const uint32_t storageSize = extent.width * extent.height * extent.depth * vkutil::GetBytesPerPixel(format);
+        ASSERT_MSG(data.size() == storageSize, "Texture '{}' upload got {} bytes, the range needs {}.", image._debugName, data.size(), storageSize);
+
+        ensureStagingBufferSize(storageSize);
+
+        ASSERT_MSG(storageSize <= _stagingBufferSize, "No support for copying image in multiple smaller chunk sizes");
+
+        MemoryRegionDesc desc = getNextContiguousOffset(storageSize);
+
+        AllocatedBuffer* stagingBuffer = _ctx._bufferPool.get(_stagingBuffer);
+
+        // 1. Copy the pixel data into the host visible staging buffer
+        stagingBuffer->bufferSubData(_ctx, desc.offset_, storageSize, data.data());
+
+        const detail::CommandBufferWrapper& wrapper = _ctx._immGraphics->acquire();
+
+        // 1. Transition initial image layout into TRANSFER_DST_OPTIMAL
+        vkutil::ImageMemoryBarrier2(
+            wrapper._cmdBuf,
+            image._vkImage,
+            kPriorAccesses,
+            vkutil::StageAccess{
+                .stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+                .access = VK_ACCESS_2_TRANSFER_WRITE_BIT,
+            },
+            VK_IMAGE_LAYOUT_UNDEFINED,
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            VkImageSubresourceRange{ VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 });
+
+        // 2. Copy the pixel data from the staging buffer into the image
+        const VkBufferImageCopy copy = {
+            .bufferOffset = desc.offset_,
+            .bufferRowLength = 0,
+            .bufferImageHeight = 0,
+            .imageSubresource = VkImageSubresourceLayers{ VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 },
+            .imageOffset = offset,
+            .imageExtent = extent,
+        };
+        vkCmdCopyBufferToImage(wrapper._cmdBuf, stagingBuffer->_vkBuffer, image._vkImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
+
+        // 3. Transition TRANSFER_DST_OPTIMAL into SHADER_READ_ONLY_OPTIMAL
+        vkutil::ImageMemoryBarrier2(
+            wrapper._cmdBuf,
+            image._vkImage,
+            vkutil::StageAccess{
+                .stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+                .access = VK_ACCESS_2_TRANSFER_WRITE_BIT,
+            },
+            vkutil::StageAccess{
+                .stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+                .access = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT,
+            },
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            VkImageSubresourceRange{ VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 });
+
+        image.setLayout({ 0, 1, 0, 1 }, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+        desc.handle_ = _ctx._immGraphics->submit(wrapper);
+        desc.state_ = MemoryRegionDesc::State::Busy;
+        _regions.push_back(desc);
+    }
+    void StagingDevice::imageData2D(
+        AllocatedTexture& image, const VkRect2D& imageRegion, uint32_t baseMipLevel, uint32_t numMipLevels, uint32_t layerCheck, uint32_t numLayers, VkFormat format, std::span<const std::byte> data) {
+        ASSERT_MSG(numMipLevels <= kMaxMipLevels, "StagingDevice::imageData2D numMipLevels exceeds the maximum mip level count.");
+
+        // divide the width and height by 2 until we get to the size of level 'baseMipLevel'
+        uint32_t width = image._vkExtent.width >> baseMipLevel;
+        uint32_t height = image._vkExtent.height >> baseMipLevel;
+
+        // not sure
+        ASSERT_MSG(
+            !imageRegion.offset.x && !imageRegion.offset.y && imageRegion.extent.width == width && imageRegion.extent.height == height,
+            "Uploading mip-levels with an image region that is smaller than the base mip level is not supported!");
+
+        // find the storage size for all mip-levels being uploaded
+        uint32_t layerStorageSize = 0;
+        for (uint32_t i = 0; i < numMipLevels; ++i) {
+            layerStorageSize += vkutil::GetTextureBytesPerLayer(image._vkExtent.width, image._vkExtent.height, format, i);
+            width = std::max(1u, width >> 1);
+            height = std::max(1u, height >> 1);
+            //			width = width <= 1 ? 1 : width >> 1;
+            //			height = height <= 1 ? 1 : height >> 1;
+        }
+        const uint32_t storageSize = layerStorageSize * numLayers;
+        ASSERT_MSG(data.size() == storageSize, "Texture '{}' upload got {} bytes, the range needs {}.", image._debugName, data.size(), storageSize);
+
+        ensureStagingBufferSize(storageSize);
+        ASSERT_MSG(storageSize <= _stagingBufferSize, "StagingDevice::imageData2D upload is larger than the staging buffer maximum.");
+        MemoryRegionDesc desc = getNextContiguousOffset(storageSize);
+
+        const detail::CommandBufferWrapper& wrapper = _ctx._immGraphics->acquire();
+
+        AllocatedBuffer* stagingBuffer = _ctx._bufferPool.get(_stagingBuffer);
+        stagingBuffer->bufferSubData(_ctx, desc.offset_, storageSize, data.data());
+
+        uint32_t offset = 0;
+        const uint32_t numPlanes = vkutil::GetNumImagePlanes(image._vkFormat);
+        if (numPlanes > 1) {
+            ASSERT_MSG(layerCheck == 0 && baseMipLevel == 0, "Multi-plane image uploads must start at layer 0 and mip level 0.");
+            ASSERT_MSG(numLayers == 1 && numMipLevels == 1, "Multi-plane image uploads support exactly one layer and one mip level.");
+            ASSERT_MSG(imageRegion.offset.x == 0 && imageRegion.offset.y == 0, "Multi-plane image uploads must start at offset (0, 0).");
+            ASSERT_MSG(image._vkImageType == VK_IMAGE_TYPE_2D, "Multi-plane image uploads need a 2D image.");
+            ASSERT_MSG(image._vkExtent.width == imageRegion.extent.width && image._vkExtent.height == imageRegion.extent.height, "Multi-plane image uploads must cover the whole image extent.");
+        }
+        VkImageAspectFlags imageAspect = VK_IMAGE_ASPECT_COLOR_BIT;
+        if (numPlanes == 2) {
+            imageAspect = VK_IMAGE_ASPECT_PLANE_0_BIT | VK_IMAGE_ASPECT_PLANE_1_BIT;
+        }
+        if (numPlanes == 3) {
+            imageAspect = VK_IMAGE_ASPECT_PLANE_0_BIT | VK_IMAGE_ASPECT_PLANE_1_BIT | VK_IMAGE_ASPECT_PLANE_2_BIT;
+        }
+
+        // https://registry.khronos.org/KTX/specs/1.0/ktxspec.v1.html
+        for (uint32_t mipLevel = 0; mipLevel < numMipLevels; mipLevel++) {
+            for (uint32_t layer = 0; layer != numLayers; layer++) {
+                const uint32_t currentMipLevel = baseMipLevel + mipLevel;
+
+                // 1. Transition initial image layout into TRANSFER_DST_OPTIMAL
+                vkutil::ImageMemoryBarrier2(
+                    wrapper._cmdBuf,
+                    image._vkImage,
+                    kPriorAccesses,
+                    vkutil::StageAccess{
+                        .stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+                        .access = VK_ACCESS_2_TRANSFER_WRITE_BIT,
+                    },
+                    VK_IMAGE_LAYOUT_UNDEFINED,
+                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                    VkImageSubresourceRange{ imageAspect, currentMipLevel, 1, layer, 1 });
+
+                // 2. Copy the pixel data from the staging buffer into the image
+                uint32_t planeOffset = 0;
+                for (uint32_t plane = 0; plane != numPlanes; plane++) {
+                    const VkExtent2D extent = vkutil::GetImagePlaneExtent(
+                        {
+                            .width = std::max(1u, imageRegion.extent.width >> mipLevel),
+                            .height = std::max(1u, imageRegion.extent.height >> mipLevel),
+                        },
+                        format,
+                        plane);
+                    const VkRect2D region = {
+                        .offset = {
+                            .x = imageRegion.offset.x >> mipLevel,
+                            .y = imageRegion.offset.y >> mipLevel,
+                        },
+                        .extent = extent,
+                    };
+                    const VkBufferImageCopy copy = {
+                        // the offset for this level is at the start of all mip-levels plus the size of all previous mip-levels being uploaded
+                        .bufferOffset = desc.offset_ + offset + planeOffset,
+                        .bufferRowLength = 0,
+                        .bufferImageHeight = 0,
+                        .imageSubresource = VkImageSubresourceLayers{ numPlanes > 1 ? VK_IMAGE_ASPECT_PLANE_0_BIT << plane : imageAspect, currentMipLevel, layer, 1 },
+                        .imageOffset = {
+                            .x = region.offset.x,
+                            .y = region.offset.y,
+                            .z = 0,
+                        },
+                        .imageExtent = {
+                            .width = region.extent.width,
+                            .height = region.extent.height,
+                            .depth = 1u,
+                        },
+                    };
+                    vkCmdCopyBufferToImage(wrapper._cmdBuf, stagingBuffer->_vkBuffer, image._vkImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
+                    planeOffset += vkutil::GetTextureBytesPerPlane(imageRegion.extent.width, imageRegion.extent.height, format, plane);
+                }
+
+                // 3. Transition TRANSFER_DST_OPTIMAL into SHADER_READ_ONLY_OPTIMAL
+                vkutil::ImageMemoryBarrier2(
+                    wrapper._cmdBuf,
+                    image._vkImage,
+                    vkutil::StageAccess{
+                        .stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+                        .access = VK_ACCESS_2_TRANSFER_WRITE_BIT,
+                    },
+                    vkutil::StageAccess{
+                        .stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+                        .access = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT,
+                    },
+                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                    VkImageSubresourceRange{ imageAspect, currentMipLevel, 1, layer, 1 });
+
+                offset += vkutil::GetTextureBytesPerLayer(imageRegion.extent.width, imageRegion.extent.height, format, currentMipLevel);
+            }
+        }
+        image.setLayout({ baseMipLevel, numMipLevels, 0, numLayers }, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+        desc.handle_ = _ctx._immGraphics->submit(wrapper);
+        desc.state_ = MemoryRegionDesc::State::Busy;
+        _regions.push_back(desc);
+    }
+    void StagingDevice::getImageData(AllocatedTexture& image, const VkOffset3D& offset, const VkExtent3D& extent, VkImageSubresourceRange range, VkFormat format, std::span<std::byte> outData) {
+        const VkImageLayout originalLayout = image.getImageLayout(image.toSubresourceRange(range));
+        ASSERT_MSG(originalLayout != VK_IMAGE_LAYOUT_UNDEFINED, "Cannot download from a texture whose layout is undefined.");
+        ASSERT_MSG(range.layerCount == 1, "Texture download supports exactly one layer at a time.");
+
+        const uint32_t storageSize = extent.width * extent.height * extent.depth * vkutil::GetBytesPerPixel(format);
+        ASSERT_MSG(outData.size() == storageSize, "Texture '{}' download got {} bytes, the range needs {}.", image._debugName, outData.size(), storageSize);
+
+        ensureStagingBufferSize(storageSize);
+
+        ASSERT_MSG(storageSize <= _stagingBufferSize, "StagingDevice::getImageData download is larger than the staging buffer maximum.");
+
+        MemoryRegionDesc desc = getNextContiguousOffset(storageSize);
+
+        AllocatedBuffer* stagingBuffer = _ctx._bufferPool.get(_stagingBuffer);
+
+        const detail::CommandBufferWrapper& wrapper1 = _ctx._immGraphics->acquire();
+
+        // 1. Transition to VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL
+        vkutil::ImageMemoryBarrier2(
+            wrapper1._cmdBuf,
+            image._vkImage,
+            kPriorAccesses,
+            vkutil::StageAccess{
+                .stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+                .access = VK_ACCESS_2_TRANSFER_READ_BIT,
+            },
+            originalLayout,
+            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            range);
+
+        // 2.  Copy the pixel data from the image into the staging buffer
+        const VkBufferImageCopy copy = {
+            .bufferOffset = desc.offset_,
+            .bufferRowLength = 0,
+            .bufferImageHeight = extent.height,
+            .imageSubresource =
+                VkImageSubresourceLayers{
+                    .aspectMask = range.aspectMask,
+                    .mipLevel = range.baseMipLevel,
+                    .baseArrayLayer = range.baseArrayLayer,
+                    .layerCount = range.layerCount,
+                },
+            .imageOffset = offset,
+            .imageExtent = extent,
+        };
+        vkCmdCopyImageToBuffer(wrapper1._cmdBuf, image._vkImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, stagingBuffer->_vkBuffer, 1, &copy);
+
+        desc.handle_ = _ctx._immGraphics->submit(wrapper1);
+        desc.state_ = MemoryRegionDesc::State::Busy;
+        _regions.push_back(desc);
+
+        waitAndReset();
+
+        if (!stagingBuffer->_isCoherentMemory) {
+            stagingBuffer->invalidateMappedMemory(_ctx, desc.offset_, desc.size_);
+        }
+
+        // 3. Copy data from staging buffer into data
+        memcpy(outData.data(), stagingBuffer->getMappedPtr() + desc.offset_, storageSize);
+
+        // 4. Transition back to the initial image layout
+        const detail::CommandBufferWrapper& wrapper2 = _ctx._immGraphics->acquire();
+
+        vkutil::ImageMemoryBarrier2(
+            wrapper2._cmdBuf,
+            image._vkImage,
+            vkutil::StageAccess{
+                .stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+                .access = VK_ACCESS_2_TRANSFER_READ_BIT,
+            },
+            vkutil::StageAccess{
+                .stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+                .access = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT,
+            },
+            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            originalLayout,
+            range);
+
+        _ctx._immGraphics->wait(_ctx._immGraphics->submit(wrapper2));
+    }
+
+    void StagingDevice::ensureStagingBufferSize(uint32_t sizeNeeded) {
+        assert(kStagingBufferAlignment != 0);
+        const uint32_t alignedSize = std::max(vkutil::GetAlignedSize(sizeNeeded, kStagingBufferAlignment), _minBufferSize);
+        sizeNeeded = (alignedSize < _maxBufferSize) ? alignedSize : _maxBufferSize;
+        if (!_stagingBuffer.empty()) {
+            const bool isEnoughSize = sizeNeeded <= _stagingBufferSize;
+            const bool isMaxSize = _stagingBufferSize == _maxBufferSize;
+            if (isEnoughSize || isMaxSize) {
+                return;
+            }
+        }
+
+        // FIXME: buffer allocation with vma warning is from here, no idea how to solve
+        // seems to be gone
+        waitAndReset();
+        // deallocate the previous staging buffer
+        _ctx.destroy(_stagingBuffer);
+        // if the combined size of the new staging buffer and the existing one is larger than the limit imposed by some architectures on buffers
+        // that are device and host visible, we need to wait for the current buffer to be destroyed before we can allocate a new one
+        if ((sizeNeeded + _stagingBufferSize) > _maxBufferSize) {
+            _ctx.waitDeferredTasks();
+        }
+        _stagingBufferSize = sizeNeeded;
+        {
+            AllocatedBuffer obj = _ctx.createBufferImpl(_stagingBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
+            snprintf(obj._debugName, sizeof(obj._debugName) - 1, "staging buffer %u", _stagingBufferCounter++);
+            vmaSetAllocationName(_ctx._vmaAllocator, obj._vmaAllocation, obj._debugName);
+            _stagingBuffer = _ctx._bufferPool.create(std::move(obj));
+        }
+
+        ASSERT(!_stagingBuffer.empty());
+
+        _regions.clear();
+        _regions.push_back({ 0, _stagingBufferSize, SubmitHandle(), MemoryRegionDesc::State::Free });
+    }
+    bool StagingDevice::isRegionFree(const MemoryRegionDesc& region) const {
+        if (region.state_ == MemoryRegionDesc::State::Free)
+            return true;
+        if (region.state_ == MemoryRegionDesc::State::Busy && _ctx._immGraphics->isReady(region.handle_))
+            return true;
+        return false;
+    }
+
+    StagingDevice::MemoryRegionDesc StagingDevice::getNextFreeOffset(uint32_t size) {
+        const uint32_t requestedAlignedSize = vkutil::GetAlignedSize(size, kStagingBufferAlignment);
+        ensureStagingBufferSize(requestedAlignedSize);
+
+        ASSERT(!_regions.empty());
+
+        // if we can't find an available region that is big enough to store requestedAlignedSize, return whatever we could find, which will be
+        // stored in bestNextIt
+        auto bestNextIt = _regions.begin();
+
+        for (auto it = _regions.begin(); it != _regions.end(); ++it) {
+            if (isRegionFree(*it)) {
+                // This region is free, but is it big enough?
+                if (it->size_ >= requestedAlignedSize) {
+                    // It is big enough!
+                    const uint32_t unusedSize = it->size_ - requestedAlignedSize;
+                    const uint32_t unusedOffset = it->offset_ + requestedAlignedSize;
+
+                    // Prepare return value
+                    const auto result = MemoryRegionDesc{ it->offset_, requestedAlignedSize, SubmitHandle(), MemoryRegionDesc::State::Free };
+
+                    // Perform the cleanup that was in SCOPE_EXIT
+                    _regions.erase(it);
+                    if (unusedSize > 0) {
+                        _regions.insert(_regions.begin(), { unusedOffset, unusedSize, SubmitHandle(), MemoryRegionDesc::State::Free });
+                    }
+
+                    return result;
+                }
+
+                // Cache the largest available region that isn't as big as the one we're looking for
+                if (it->size_ > bestNextIt->size_) {
+                    bestNextIt = it;
+                }
+            }
+        }
+        // we found a region that is available that is smaller than the requested size. It's the best we can do
+        if (bestNextIt != _regions.end() && isRegionFree(*bestNextIt)) {
+            const auto result = MemoryRegionDesc{ bestNextIt->offset_, bestNextIt->size_, SubmitHandle(), MemoryRegionDesc::State::Free };
+            // Perform the cleanup that was in SCOPE_EXIT
+            _regions.erase(bestNextIt);
+            return result;
+        }
+        // nothing was available. Let's wait for the entire staging buffer to become free
+        waitAndReset();
+
+        // waitAndReset() adds a region that spans the entire buffer. Since we'll be using part of it, we need to replace it with a used block and
+        // an unused portion
+        _regions.clear();
+        // store the unused size in the deque first...
+        const uint32_t unusedSize = _stagingBufferSize > requestedAlignedSize ? _stagingBufferSize - requestedAlignedSize : 0;
+
+        if (unusedSize) {
+            const uint32_t unusedOffset = _stagingBufferSize - unusedSize;
+            _regions.insert(_regions.begin(), { unusedOffset, unusedSize, SubmitHandle(), MemoryRegionDesc::State::Free });
+        }
+        // ...and then return the smallest free region that can hold the requested size
+        return {
+            .offset_ = 0,
+            .size_ = _stagingBufferSize - unusedSize,
+            .handle_ = SubmitHandle(),
+            .state_ = MemoryRegionDesc::State::Free,
+        };
+    }
+    StagingDevice::MemoryRegionDesc StagingDevice::getNextContiguousOffset(uint32_t size) {
+        MemoryRegionDesc desc = getNextFreeOffset(size);
+        if (desc.size_ < size) {
+            waitAndReset();
+            desc = getNextFreeOffset(size);
+        }
+        ASSERT_MSG(desc.size_ >= size, "StagingDevice could not allocate a contiguous staging region of {} bytes.", size);
+        return desc;
+    }
+    void StagingDevice::waitAndReset() {
+        for (const MemoryRegionDesc& r: _regions) {
+            ASSERT_MSG(r.state_ != MemoryRegionDesc::State::Pending, "Cannot reset the staging ring while graph upload regions are pending. Submit or abandon the command buffer first.");
+            if (r.state_ == MemoryRegionDesc::State::Busy) {
+                _ctx._immGraphics->wait(r.handle_);
+            }
+        }
+        _regions.clear();
+        _regions.push_back({ 0, _stagingBufferSize, SubmitHandle(), MemoryRegionDesc::State::Free });
+    }
 
 } // namespace mythril

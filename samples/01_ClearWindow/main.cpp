@@ -12,49 +12,64 @@
 #include "../SDL3Usage.h"
 
 int main() {
-	SDL_Window* sdlWindow = BuildSDLWindow(false);
-	const auto [width, height] = GetSDLWindowFramebufferSize(sdlWindow);
-	{
-		Uint32 sdlExtensionCount = 0;
-		const char* const* sdlExtensions = SDL_Vulkan_GetInstanceExtensions(&sdlExtensionCount);
-		const auto ctx = mythril::CTXBuilder{}
-		                     .set_vulkan_cfg({.app_name = "Cool App Name",
-								 .engine_name = "Cool Engine Name"})
-		                     .set_window_surface({.instanceExtensions = std::span(sdlExtensions, sdlExtensionCount),
-								 .createFunc = [sdlWindow](VkInstance instance) {
-				VkSurfaceKHR surface;
-				SDL_Vulkan_CreateSurface(sdlWindow, instance, nullptr, &surface);
-				return surface; },
-								 .destroyFunc = [](VkInstance instance, VkSurfaceKHR surface) { SDL_Vulkan_DestroySurface(instance, surface, nullptr); }})
-		                     .with_default_swapchain({.width = width,
-								 .height = height,
-								 .presentMode = VK_PRESENT_MODE_IMMEDIATE_KHR})
-		                     .build();
+    SDL_Window* sdlWindow = BuildSDLWindow(false);
+    const auto [width, height] = GetSDLWindowFramebufferSize(sdlWindow);
+    {
+        Uint32 sdlExtensionCount = 0;
+        const char* const* sdlExtensions = SDL_Vulkan_GetInstanceExtensions(&sdlExtensionCount);
+        const auto ctx =
+            mythril::CTXBuilder{}
+                .set_vulkan_cfg({
+                    .app_name = "Cool App Name",
+                    .engine_name = "Cool Engine Name",
+                })
+                .set_window_surface({
+                    .instanceExtensions = std::span(sdlExtensions, sdlExtensionCount),
+                    .createFunc = [sdlWindow](VkInstance instance) {
+                        VkSurfaceKHR surface;
+                        SDL_Vulkan_CreateSurface(sdlWindow, instance, nullptr, &surface);
+                        return surface;
+                    },
+                    .destroyFunc = [](VkInstance instance, VkSurfaceKHR surface) {
+                        SDL_Vulkan_DestroySurface(instance, surface, nullptr);
+                    },
+                })
+                .with_default_swapchain({
+                    .width = width,
+                    .height = height,
+                    .presentMode = VK_PRESENT_MODE_IMMEDIATE_KHR,
+                })
+                .build();
 
 
-		mythril::RenderGraph graph;
-		const auto buildGraph = [&] {
-			graph.addGraphicsPass("main", [&](mythril::GraphicsPassBuilder& b, mythril::NoPassData&) { b.attachment({.texDesc = graph.backBuffer(),
-																										   .clearValue = mythril::ClearValue::color(1.f, 0.f, 0.f, 1.f),
-																										   .loadOp = mythril::LoadOp::CLEAR,
-																										   .storeOp = mythril::StoreOp::STORE}); }, [](const mythril::NoPassData&, mythril::GraphicsCmd&) {
-				// do absolutely nothing, just begin and end a pass
-			});
-		};
+        mythril::RenderGraph graph;
+        const auto buildGraph = [&] {
+            graph.addGraphicsPass("main", [&](mythril::GraphicsPassBuilder& b, mythril::NoPassData&) {
+                b.attachment({
+                    .texDesc = graph.backBuffer(),
+                    .clearValue = mythril::ClearValue::color(1.f, 0.f, 0.f, 1.f),
+                    .loadOp = mythril::LoadOp::CLEAR,
+                    .storeOp = mythril::StoreOp::STORE,
+                });
+            },
+                [](const mythril::NoPassData&, mythril::GraphicsCmd&) {
+                    // do absolutely nothing, just begin and end a pass
+                });
+        };
 
-		bool quit = false;
-		while (!quit) {
-			SDL_Event e;
-			while (SDL_PollEvent(&e)) {
-				if (e.type == SDL_EVENT_QUIT) quit = true;
-			}
+        bool quit = false;
+        while (!quit) {
+            SDL_Event e;
+            while (SDL_PollEvent(&e)) {
+                if (e.type == SDL_EVENT_QUIT) quit = true;
+            }
 
-			graph.reset();
-			buildGraph();
-			graph.compile(*ctx);
-			graph.execute(*ctx);
-		}
-	}
-	DestroySDLWindow(sdlWindow);
-	return 0;
+            graph.reset();
+            buildGraph();
+            graph.compile(*ctx);
+            graph.execute(*ctx);
+        }
+    }
+    DestroySDLWindow(sdlWindow);
+    return 0;
 }

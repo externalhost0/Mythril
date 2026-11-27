@@ -10,247 +10,266 @@
 #include "mythril/CPUProfiler.h"
 
 namespace mythril {
-	ImmediateCommands::ImmediateCommands(VkDevice device, uint32_t queueFamilyIndex, VkQueue vk_queue) :
-		_vkDevice(device),
-		_queueFamilyIndex(queueFamilyIndex) {
-		// just use the family index to get our queue vulkan object
-		if (!vk_queue)
-			vkGetDeviceQueue(device, queueFamilyIndex, 0, &_vkQueue);
-		else
-			_vkQueue = vk_queue;
+    ImmediateCommands::ImmediateCommands(VkDevice device, uint32_t queueFamilyIndex, VkQueue vk_queue) :
+        _vkDevice(device),
+        _queueFamilyIndex(queueFamilyIndex) {
+        // just use the family index to get our queue vulkan object
+        if (!vk_queue)
+            vkGetDeviceQueue(device, queueFamilyIndex, 0, &_vkQueue);
+        else
+            _vkQueue = vk_queue;
 
-		// create command pool
-		const VkCommandPoolCreateInfo command_pool_ci = {
-			.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
-			.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT | VK_COMMAND_POOL_CREATE_TRANSIENT_BIT,
-			.queueFamilyIndex = queueFamilyIndex,
-		};
-		VK_CHECK(vkCreateCommandPool(device, &command_pool_ci, nullptr, &_vkCommandPool));
-		_timeline = vkutil::CreateTimelineSemaphore(device, 0);
+        // create command pool
+        const VkCommandPoolCreateInfo command_pool_ci = {
+            .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+            .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT | VK_COMMAND_POOL_CREATE_TRANSIENT_BIT,
+            .queueFamilyIndex = queueFamilyIndex,
+        };
+        VK_CHECK(vkCreateCommandPool(device, &command_pool_ci, nullptr, &_vkCommandPool));
+        _timeline = vkutil::CreateTimelineSemaphore(device, 0);
 
-		// create command buffers
-		const VkCommandBufferAllocateInfo command_buffer_ai = {
-			.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-			.commandPool = _vkCommandPool,
-			.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-			.commandBufferCount = 1,
-		};
+        // create command buffers
+        const VkCommandBufferAllocateInfo command_buffer_ai = {
+            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+            .commandPool = _vkCommandPool,
+            .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+            .commandBufferCount = 1,
+        };
 
-		for (uint32_t i = 0; i != kMaxCommandBuffers; i++) {
-			detail::CommandBufferWrapper& buf = _buffers[i];
+        for (uint32_t i = 0; i != kMaxCommandBuffers; i++) {
+            detail::CommandBufferWrapper& buf = _buffers[i];
 
-			// make semaphore
-			const VkSemaphoreCreateInfo semaphore_ci = vkinfo::CreateSemaphoreInfo();
-			VkSemaphore semaphore = VK_NULL_HANDLE;
-			VK_CHECK(vkCreateSemaphore(_vkDevice, &semaphore_ci, nullptr, &semaphore));
-			buf._semaphore = semaphore;
-			// make fence
-			const VkFenceCreateInfo fence_ci = vkinfo::CreateFenceInfo();
-			VkFence fence = VK_NULL_HANDLE;
-			VK_CHECK(vkCreateFence(_vkDevice, &fence_ci, nullptr, &fence));
-			buf._fence = fence;
+            // make semaphore
+            const VkSemaphoreCreateInfo semaphore_ci = vkinfo::CreateSemaphoreInfo();
+            VkSemaphore semaphore = VK_NULL_HANDLE;
+            VK_CHECK(vkCreateSemaphore(_vkDevice, &semaphore_ci, nullptr, &semaphore));
+            buf._semaphore = semaphore;
+            // make fence
+            const VkFenceCreateInfo fence_ci = vkinfo::CreateFenceInfo();
+            VkFence fence = VK_NULL_HANDLE;
+            VK_CHECK(vkCreateFence(_vkDevice, &fence_ci, nullptr, &fence));
+            buf._fence = fence;
 
-			VK_CHECK(vkAllocateCommandBuffers(device, &command_buffer_ai, &buf._cmdBufAllocated));
-			_buffers[i]._handle.bufferIndex_ = i;
-		}
-	}
-	ImmediateCommands::~ImmediateCommands() {
-		waitAll();
-		for (detail::CommandBufferWrapper& buf: _buffers) {
-			// lifetimes of all VkFence objects are managed explicitly we do not use deferredTask() for them
-			vkDestroyFence(_vkDevice, buf._fence, nullptr);
-			vkDestroySemaphore(_vkDevice, buf._semaphore, nullptr);
-		}
-		vkDestroyCommandPool(_vkDevice, _vkCommandPool, nullptr);
-		vkDestroySemaphore(_vkDevice, _timeline, nullptr);
-	}
-	const detail::CommandBufferWrapper& ImmediateCommands::acquire() {
-		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_ACQUIRE);
-		if (!_numAvailableCommandBuffers) {
-			_purge();
-		}
-		while (!_numAvailableCommandBuffers) {
-			LOG_SYSTEM(LogType::Warning, "Waiting for command buffers..");
-			_purge();
-		}
-		detail::CommandBufferWrapper* current = nullptr;
-		// we are ok with any available buffer
-		for (detail::CommandBufferWrapper& buf: _buffers) {
-			if (buf._cmdBuf == VK_NULL_HANDLE) {
-				current = &buf;
-				break;
-			}
-		}
-		ASSERT_MSG(_numAvailableCommandBuffers, "No available command buffers");
-		ASSERT_MSG(current, "No available command buffers");
-		ASSERT_MSG(current->_cmdBufAllocated != VK_NULL_HANDLE, "Command buffer allocated is NULL_HANDLE");
+            VK_CHECK(vkAllocateCommandBuffers(device, &command_buffer_ai, &buf._cmdBufAllocated));
+            _buffers[i]._handle.bufferIndex_ = i;
+        }
+    }
+    ImmediateCommands::~ImmediateCommands() {
+        waitAll();
+        for (detail::CommandBufferWrapper& buf: _buffers) {
+            // lifetimes of all VkFence objects are managed explicitly we do not use deferredTask() for them
+            vkDestroyFence(_vkDevice, buf._fence, nullptr);
+            vkDestroySemaphore(_vkDevice, buf._semaphore, nullptr);
+        }
+        vkDestroyCommandPool(_vkDevice, _vkCommandPool, nullptr);
+        vkDestroySemaphore(_vkDevice, _timeline, nullptr);
+    }
+    const detail::CommandBufferWrapper& ImmediateCommands::acquire() {
+        MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_ACQUIRE);
+        if (!_numAvailableCommandBuffers) {
+            _purge();
+        }
+        while (!_numAvailableCommandBuffers) {
+            LOG_SYSTEM(LogType::Warning, "Waiting for command buffers..");
+            _purge();
+        }
+        detail::CommandBufferWrapper* current = nullptr;
+        // we are ok with any available buffer
+        for (detail::CommandBufferWrapper& buf: _buffers) {
+            if (buf._cmdBuf == VK_NULL_HANDLE) {
+                current = &buf;
+                break;
+            }
+        }
+        ASSERT_MSG(_numAvailableCommandBuffers, "No available command buffers");
+        ASSERT_MSG(current, "No available command buffers");
+        ASSERT_MSG(current->_cmdBufAllocated != VK_NULL_HANDLE, "Command buffer allocated is NULL_HANDLE");
 
-		current->_handle.submitId_ = _submitCounter;
-		_numAvailableCommandBuffers--;
+        current->_handle.submitId_ = _submitCounter;
+        _numAvailableCommandBuffers--;
 
-		current->_cmdBuf = current->_cmdBufAllocated;
-		current->_isEncoding = true;
-		const VkCommandBufferBeginInfo bi = {
-			.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-			.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
-		};
-		VK_CHECK(vkBeginCommandBuffer(current->_cmdBuf, &bi));
-		_nextSubmitHandle = current->_handle;
-		return *current;
-	}
+        current->_cmdBuf = current->_cmdBufAllocated;
+        current->_isEncoding = true;
+        const VkCommandBufferBeginInfo bi = {
+            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+            .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+        };
+        VK_CHECK(vkBeginCommandBuffer(current->_cmdBuf, &bi));
+        _nextSubmitHandle = current->_handle;
+        return *current;
+    }
 
-	void ImmediateCommands::wait(SubmitHandle handle) {
-		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_WAIT);
-		if (handle.empty()) {
-			LOG_SYSTEM(LogType::Warning, "A vkDeviceWaitIdle is running...");
-			vkDeviceWaitIdle(_vkDevice);
-			return;
-		}
-		if (isReady(handle)) {
-			return;
-		}
-		if (_buffers[handle.bufferIndex_]._isEncoding) {
-			// we are waiting for a buffer which has not been submitted
-			// this is probably a logic error somewhere in the calling code
-			return;
-		}
-		VK_CHECK(vkWaitForFences(_vkDevice, 1, &_buffers[handle.bufferIndex_]._fence, VK_TRUE, UINT64_MAX));
-		_purge();
-	}
-	void ImmediateCommands::waitAll() {
-		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_WAIT);
-		VkFence fences[kMaxCommandBuffers];
-		uint32_t numFences = 0;
-		for (const detail::CommandBufferWrapper& buf: _buffers) {
-			if (buf._cmdBuf != VK_NULL_HANDLE && !buf._isEncoding) {
-				fences[numFences++] = buf._fence;
-			}
-		}
-		if (numFences) {
-			VK_CHECK(vkWaitForFences(_vkDevice, numFences, fences, VK_TRUE, UINT64_MAX));
-		}
-		_purge();
-	}
+    void ImmediateCommands::wait(SubmitHandle handle) {
+        MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_WAIT);
+        if (handle.empty()) {
+            LOG_SYSTEM(LogType::Warning, "A vkDeviceWaitIdle is running...");
+            vkDeviceWaitIdle(_vkDevice);
+            return;
+        }
+        if (isReady(handle)) {
+            return;
+        }
+        if (_buffers[handle.bufferIndex_]._isEncoding) {
+            // we are waiting for a buffer which has not been submitted
+            // this is probably a logic error somewhere in the calling code
+            return;
+        }
+        VK_CHECK(vkWaitForFences(_vkDevice, 1, &_buffers[handle.bufferIndex_]._fence, VK_TRUE, UINT64_MAX));
+        _purge();
+    }
+    void ImmediateCommands::waitAll() {
+        MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_WAIT);
+        VkFence fences[kMaxCommandBuffers];
+        uint32_t numFences = 0;
+        for (const detail::CommandBufferWrapper& buf: _buffers) {
+            if (buf._cmdBuf != VK_NULL_HANDLE && !buf._isEncoding) {
+                fences[numFences++] = buf._fence;
+            }
+        }
+        if (numFences) {
+            VK_CHECK(vkWaitForFences(_vkDevice, numFences, fences, VK_TRUE, UINT64_MAX));
+        }
+        _purge();
+    }
 
-	void ImmediateCommands::_purge() {
-		constexpr uint32_t numBuffers = kMaxCommandBuffers;
+    void ImmediateCommands::_purge() {
+        constexpr uint32_t numBuffers = kMaxCommandBuffers;
 
-		for (uint32_t i = 0; i != numBuffers; i++) {
-			// always start checking with the oldest submitted buffer, then wrap around
-			detail::CommandBufferWrapper& buf = _buffers[(i + _lastSubmitHandle.bufferIndex_ + 1) % numBuffers];
-			if (buf._cmdBuf == VK_NULL_HANDLE || buf._isEncoding) {
-				continue;
-			}
-			const VkResult result = vkWaitForFences(_vkDevice, 1, &buf._fence, VK_TRUE, 0);
-			if (result == VK_SUCCESS) {
-				VK_CHECK(vkResetCommandBuffer(buf._cmdBuf, VkCommandBufferResetFlags{0}));
-				VK_CHECK(vkResetFences(_vkDevice, 1, &buf._fence));
-				buf._cmdBuf = VK_NULL_HANDLE;
-				_numAvailableCommandBuffers++;
-			}
-			ASSERT_MSG(result == VK_SUCCESS || result == VK_TIMEOUT, "vkWaitForFences failed while purging command buffers.");
-		}
-	}
-	bool ImmediateCommands::isReady(const SubmitHandle handle, const bool fastCheckNoVulkan) const {
-		ASSERT_MSG(handle.bufferIndex_ < kMaxCommandBuffers, "Submit handle buffer index is out of range.");
+        for (uint32_t i = 0; i != numBuffers; i++) {
+            // always start checking with the oldest submitted buffer, then wrap around
+            detail::CommandBufferWrapper& buf = _buffers[(i + _lastSubmitHandle.bufferIndex_ + 1) % numBuffers];
+            if (buf._cmdBuf == VK_NULL_HANDLE || buf._isEncoding) {
+                continue;
+            }
+            const VkResult result = vkWaitForFences(_vkDevice, 1, &buf._fence, VK_TRUE, 0);
+            if (result == VK_SUCCESS) {
+                VK_CHECK(vkResetCommandBuffer(buf._cmdBuf, VkCommandBufferResetFlags{ 0 }));
+                VK_CHECK(vkResetFences(_vkDevice, 1, &buf._fence));
+                buf._cmdBuf = VK_NULL_HANDLE;
+                _numAvailableCommandBuffers++;
+            }
+            ASSERT_MSG(result == VK_SUCCESS || result == VK_TIMEOUT, "vkWaitForFences failed while purging command buffers.");
+        }
+    }
+    bool ImmediateCommands::isReady(const SubmitHandle handle, const bool fastCheckNoVulkan) const {
+        ASSERT_MSG(handle.bufferIndex_ < kMaxCommandBuffers, "Submit handle buffer index is out of range.");
 
-		if (handle.empty()) {
-			// a null handle
-			return true;
-		}
-		const detail::CommandBufferWrapper& buf = _buffers[handle.bufferIndex_];
-		if (buf._cmdBuf == VK_NULL_HANDLE) {
-			// already recycled and not yet reused
-			return true;
-		}
-		if (buf._handle.submitId_ != handle.submitId_) {
-			// already recycled and reused by another command buffer
-			return true;
-		}
-		if (fastCheckNoVulkan) {
-			// do not ask the Vulkan API about it, just let it retire naturally (when submitId for this bufferIndex gets incremented)
-			return false;
-		}
-		return vkWaitForFences(_vkDevice, 1, &buf._fence, VK_TRUE, 0) == VK_SUCCESS;
-	}
-	SubmitHandle ImmediateCommands::submit(const detail::CommandBufferWrapper& wrapper) {
-		MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_SUBMIT);
-		ASSERT_MSG(wrapper._isEncoding, "Command buffer must be encoding!");
-		VK_CHECK(vkEndCommandBuffer(wrapper._cmdBuf));
+        if (handle.empty()) {
+            // a null handle
+            return true;
+        }
+        const detail::CommandBufferWrapper& buf = _buffers[handle.bufferIndex_];
+        if (buf._cmdBuf == VK_NULL_HANDLE) {
+            // already recycled and not yet reused
+            return true;
+        }
+        if (buf._handle.submitId_ != handle.submitId_) {
+            // already recycled and reused by another command buffer
+            return true;
+        }
+        if (fastCheckNoVulkan) {
+            // do not ask the Vulkan API about it, just let it retire naturally (when submitId for this bufferIndex gets incremented)
+            return false;
+        }
+        return vkWaitForFences(_vkDevice, 1, &buf._fence, VK_TRUE, 0) == VK_SUCCESS;
+    }
+    SubmitHandle ImmediateCommands::submit(const detail::CommandBufferWrapper& wrapper) {
+        MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_SUBMIT);
+        ASSERT_MSG(wrapper._isEncoding, "Command buffer must be encoding!");
+        VK_CHECK(vkEndCommandBuffer(wrapper._cmdBuf));
 
-		std::array<VkSemaphoreSubmitInfo, 2 + std::tuple_size_v<decltype(_timelineWaits)>> waitSemaphores{};
-		uint32_t numWaitSemaphores = 0;
-		for (uint32_t i = 0; i < _numTimelineWaits; ++i)
-			waitSemaphores[numWaitSemaphores++] = _timelineWaits[i];
-		if (_waitSemaphore.semaphore) {
-			waitSemaphores[numWaitSemaphores++] = _waitSemaphore;
-		}
-		if (_lastSubmitSemaphore.semaphore) {
-			waitSemaphores[numWaitSemaphores++] = _lastSubmitSemaphore;
-		}
-		std::array<VkSemaphoreSubmitInfo, 2 + std::tuple_size_v<decltype(_signals)>> signalSemaphores = {
-			VkSemaphoreSubmitInfo{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO, .semaphore = wrapper._semaphore, .stageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT},
-			VkSemaphoreSubmitInfo{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO, .semaphore = _timeline, .value = _timelineValue + 1, .stageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT},
-		};
-		uint32_t numSignalSemaphores = 2;
-		for (uint32_t i = 0; i < _numSignals; ++i)
-			signalSemaphores[numSignalSemaphores++] = _signals[i];
+        std::array<VkSemaphoreSubmitInfo, 2 + std::tuple_size_v<decltype(_timelineWaits)>> waitSemaphores{};
+        uint32_t numWaitSemaphores = 0;
+        for (uint32_t i = 0; i < _numTimelineWaits; ++i)
+            waitSemaphores[numWaitSemaphores++] = _timelineWaits[i];
+        if (_waitSemaphore.semaphore) {
+            waitSemaphores[numWaitSemaphores++] = _waitSemaphore;
+        }
+        if (_lastSubmitSemaphore.semaphore) {
+            waitSemaphores[numWaitSemaphores++] = _lastSubmitSemaphore;
+        }
+        std::array<VkSemaphoreSubmitInfo, 2 + std::tuple_size_v<decltype(_signals)>> signalSemaphores = {
+            VkSemaphoreSubmitInfo{
+                .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+                .semaphore = wrapper._semaphore,
+                .stageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+            },
+            VkSemaphoreSubmitInfo{
+                .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+                .semaphore = _timeline,
+                .value = _timelineValue + 1,
+                .stageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+            },
+        };
+        uint32_t numSignalSemaphores = 2;
+        for (uint32_t i = 0; i < _numSignals; ++i)
+            signalSemaphores[numSignalSemaphores++] = _signals[i];
 
-		const VkCommandBufferSubmitInfo command_buffer_si = {
-			.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
-			.commandBuffer = wrapper._cmdBuf,
-		};
-		const VkSubmitInfo2 si = {
-			.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
-			.waitSemaphoreInfoCount = numWaitSemaphores,
-			.pWaitSemaphoreInfos = waitSemaphores.data(),
-			.commandBufferInfoCount = 1u,
-			.pCommandBufferInfos = &command_buffer_si,
-			.signalSemaphoreInfoCount = numSignalSemaphores,
-			.pSignalSemaphoreInfos = signalSemaphores.data(),
-		};
-		VK_CHECK(vkQueueSubmit2(_vkQueue, 1u, &si, wrapper._fence));
+        const VkCommandBufferSubmitInfo command_buffer_si = {
+            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
+            .commandBuffer = wrapper._cmdBuf,
+        };
+        const VkSubmitInfo2 si = {
+            .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
+            .waitSemaphoreInfoCount = numWaitSemaphores,
+            .pWaitSemaphoreInfos = waitSemaphores.data(),
+            .commandBufferInfoCount = 1u,
+            .pCommandBufferInfos = &command_buffer_si,
+            .signalSemaphoreInfoCount = numSignalSemaphores,
+            .pSignalSemaphoreInfos = signalSemaphores.data(),
+        };
+        VK_CHECK(vkQueueSubmit2(_vkQueue, 1u, &si, wrapper._fence));
 
-		++_timelineValue;
-		_numTimelineWaits = 0;
-		_lastSubmitSemaphore.semaphore = wrapper._semaphore;
-		_lastSubmitHandle = wrapper._handle;
-		_waitSemaphore.semaphore = VK_NULL_HANDLE;
-		_numSignals = 0;
+        ++_timelineValue;
+        _numTimelineWaits = 0;
+        _lastSubmitSemaphore.semaphore = wrapper._semaphore;
+        _lastSubmitHandle = wrapper._handle;
+        _waitSemaphore.semaphore = VK_NULL_HANDLE;
+        _numSignals = 0;
 
-		// reset
-		const_cast<detail::CommandBufferWrapper&>(wrapper)._isEncoding = false;
-		_submitCounter++;
+        // reset
+        const_cast<detail::CommandBufferWrapper&>(wrapper)._isEncoding = false;
+        _submitCounter++;
 
-		if (!_submitCounter) {
-			// skip the 0 value - when uint32_t wraps around (null SubmitHandle)
-			_submitCounter++;
-		}
-		return _lastSubmitHandle;
-	}
-	void ImmediateCommands::waitSemaphore(VkSemaphore semaphore) {
-		ASSERT_MSG(_waitSemaphore.semaphore == VK_NULL_HANDLE, "Wait semaphore has already been set!");
-		_waitSemaphore.semaphore = semaphore;
-	}
-	void ImmediateCommands::signalSemaphore(VkSemaphore semaphore, uint64_t signalValue) {
-		ASSERT_MSG(_numSignals < _signals.size(), "Too many signal semaphores on one submit.");
-		_signals[_numSignals++] = {.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO, .semaphore = semaphore, .value = signalValue, .stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT};
-	}
-	void ImmediateCommands::waitTimeline(VkSemaphore semaphore, const uint64_t value, const VkPipelineStageFlags2 stageMask) {
-		for (uint32_t i = 0; i < _numTimelineWaits; ++i) {
-			if (_timelineWaits[i].semaphore == semaphore) {
-				_timelineWaits[i].value = std::max(_timelineWaits[i].value, value);
-				_timelineWaits[i].stageMask |= stageMask;
-				return;
-			}
-		}
-		ASSERT_MSG(_numTimelineWaits < _timelineWaits.size(), "Too many timeline waits on one submit.");
-		_timelineWaits[_numTimelineWaits++] = {.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO, .semaphore = semaphore, .value = value, .stageMask = stageMask};
-	}
-	VkFence ImmediateCommands::getVkFence(SubmitHandle handle) const {
-		if (handle.empty()) {
-			return VK_NULL_HANDLE;
-		}
-		return _buffers[handle.bufferIndex_]._fence;
-	}
+        if (!_submitCounter) {
+            // skip the 0 value - when uint32_t wraps around (null SubmitHandle)
+            _submitCounter++;
+        }
+        return _lastSubmitHandle;
+    }
+    void ImmediateCommands::waitSemaphore(VkSemaphore semaphore) {
+        ASSERT_MSG(_waitSemaphore.semaphore == VK_NULL_HANDLE, "Wait semaphore has already been set!");
+        _waitSemaphore.semaphore = semaphore;
+    }
+    void ImmediateCommands::signalSemaphore(VkSemaphore semaphore, uint64_t signalValue) {
+        ASSERT_MSG(_numSignals < _signals.size(), "Too many signal semaphores on one submit.");
+        _signals[_numSignals++] = {
+            .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+            .semaphore = semaphore,
+            .value = signalValue,
+            .stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+        };
+    }
+    void ImmediateCommands::waitTimeline(VkSemaphore semaphore, const uint64_t value, const VkPipelineStageFlags2 stageMask) {
+        for (uint32_t i = 0; i < _numTimelineWaits; ++i) {
+            if (_timelineWaits[i].semaphore == semaphore) {
+                _timelineWaits[i].value = std::max(_timelineWaits[i].value, value);
+                _timelineWaits[i].stageMask |= stageMask;
+                return;
+            }
+        }
+        ASSERT_MSG(_numTimelineWaits < _timelineWaits.size(), "Too many timeline waits on one submit.");
+        _timelineWaits[_numTimelineWaits++] = {
+            .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+            .semaphore = semaphore,
+            .value = value,
+            .stageMask = stageMask,
+        };
+    }
+    VkFence ImmediateCommands::getVkFence(SubmitHandle handle) const {
+        if (handle.empty()) {
+            return VK_NULL_HANDLE;
+        }
+        return _buffers[handle.bufferIndex_]._fence;
+    }
 } // namespace mythril

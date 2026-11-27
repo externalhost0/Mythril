@@ -14,197 +14,214 @@
 #include <volk.h>
 
 namespace mythril {
-	// https://github.com/corporateshark/lightweightvk/blob/f5598737c2179e329e519e1fe094ade1cafbc97c/lvk/LVK.h#L315
-	struct Dimensions {
-		uint32_t width = 1;
-		uint32_t height = 1;
-		uint32_t depth = 1;
+    // https://github.com/corporateshark/lightweightvk/blob/f5598737c2179e329e519e1fe094ade1cafbc97c/lvk/LVK.h#L315
+    struct Dimensions {
+        uint32_t width = 1;
+        uint32_t height = 1;
+        uint32_t depth = 1;
 
-		constexpr Dimensions divide1D(const uint32_t v) const { return {.width = width / v, .height = height, .depth = depth}; }
-		constexpr Dimensions divide2D(const uint32_t v) const { return {.width = width / v, .height = height / v, .depth = depth}; }
-		constexpr Dimensions divide3D(const uint32_t v) const { return {.width = width / v, .height = height / v, .depth = depth / v}; }
-		constexpr bool operator==(const Dimensions& other) const { return width == other.width && height == other.height && depth == other.depth; }
-		constexpr bool operator!=(const Dimensions& other) const { return !(*this == other); }
-	};
+        constexpr Dimensions divide1D(const uint32_t v) const { return {
+            .width = width / v,
+            .height = height,
+            .depth = depth,
+        }; }
+        constexpr Dimensions divide2D(const uint32_t v) const { return {
+            .width = width / v,
+            .height = height / v,
+            .depth = depth,
+        }; }
+        constexpr Dimensions divide3D(const uint32_t v) const { return {
+            .width = width / v,
+            .height = height / v,
+            .depth = depth / v,
+        }; }
+        constexpr bool operator==(const Dimensions& other) const { return width == other.width && height == other.height && depth == other.depth; }
+        constexpr bool operator!=(const Dimensions& other) const { return !(*this == other); }
+    };
 
-	// bits need to be uint8_t underlying type
-	enum BufferUsageBits : uint8_t {
-		BufferUsageBits_Index = 1 << 0,
-		BufferUsageBits_Storage = 1 << 1,
-		BufferUsageBits_Indirect = 1 << 2,
-		// for ray tracing exclusively
-		BufferUsageBits_AccelerationStructureInputReadOnly = 1 << 3,
-		BufferUsageBits_AccelerationStructureStorage = 1 << 4,
-		BufferUsageBits_ShaderBindingTable = 1 << 5,
-	};
-	enum TextureUsageBits : uint8_t {
-		TextureUsageBits_Sampled = 1 << 0,
-		TextureUsageBits_Storage = 1 << 1,
-		TextureUsageBits_Attachment = 1 << 2,
-	};
-	// just so you can do everything as expected with C enum
-	constexpr BufferUsageBits operator|(BufferUsageBits a, BufferUsageBits b) {
-		return static_cast<BufferUsageBits>(static_cast<uint8_t>(a) | static_cast<uint8_t>(b));
-	}
-	constexpr TextureUsageBits operator|(TextureUsageBits a, TextureUsageBits b) {
-		return static_cast<TextureUsageBits>(static_cast<uint8_t>(a) | static_cast<uint8_t>(b));
-	}
-	constexpr BufferUsageBits& operator|=(BufferUsageBits& a, BufferUsageBits b) {
-		return a = a | b;
-	}
-	constexpr TextureUsageBits& operator|=(TextureUsageBits& a, TextureUsageBits b) {
-		return a = a | b;
-	}
-	constexpr BufferUsageBits operator&(BufferUsageBits a, BufferUsageBits b) {
-		return static_cast<BufferUsageBits>(static_cast<uint8_t>(a) & static_cast<uint8_t>(b));
-	}
-	constexpr TextureUsageBits operator&(TextureUsageBits a, TextureUsageBits b) {
-		return static_cast<TextureUsageBits>(static_cast<uint8_t>(a) & static_cast<uint8_t>(b));
-	}
-	constexpr BufferUsageBits& operator&=(BufferUsageBits& a, BufferUsageBits b) {
-		return a = a & b;
-	}
-	constexpr TextureUsageBits& operator&=(TextureUsageBits& a, TextureUsageBits b) {
-		return a = a & b;
-	}
-	constexpr BufferUsageBits operator~(BufferUsageBits a) {
-		return static_cast<BufferUsageBits>(~static_cast<uint8_t>(a));
-	}
-	constexpr TextureUsageBits operator~(TextureUsageBits a) {
-		return static_cast<TextureUsageBits>(~static_cast<uint8_t>(a));
-	}
+    // bits need to be uint8_t underlying type
+    enum BufferUsageBits : uint8_t {
+        BufferUsageBits_Index = 1 << 0,
+        BufferUsageBits_Storage = 1 << 1,
+        BufferUsageBits_Indirect = 1 << 2,
+        // for ray tracing exclusively
+        BufferUsageBits_AccelerationStructureInputReadOnly = 1 << 3,
+        BufferUsageBits_AccelerationStructureStorage = 1 << 4,
+        BufferUsageBits_ShaderBindingTable = 1 << 5,
+    };
+    enum TextureUsageBits : uint8_t {
+        TextureUsageBits_Sampled = 1 << 0,
+        TextureUsageBits_Storage = 1 << 1,
+        TextureUsageBits_Attachment = 1 << 2,
+    };
+    // just so you can do everything as expected with C enum
+    constexpr BufferUsageBits operator|(BufferUsageBits a, BufferUsageBits b) {
+        return static_cast<BufferUsageBits>(static_cast<uint8_t>(a) | static_cast<uint8_t>(b));
+    }
+    constexpr TextureUsageBits operator|(TextureUsageBits a, TextureUsageBits b) {
+        return static_cast<TextureUsageBits>(static_cast<uint8_t>(a) | static_cast<uint8_t>(b));
+    }
+    constexpr BufferUsageBits& operator|=(BufferUsageBits& a, BufferUsageBits b) {
+        return a = a | b;
+    }
+    constexpr TextureUsageBits& operator|=(TextureUsageBits& a, TextureUsageBits b) {
+        return a = a | b;
+    }
+    constexpr BufferUsageBits operator&(BufferUsageBits a, BufferUsageBits b) {
+        return static_cast<BufferUsageBits>(static_cast<uint8_t>(a) & static_cast<uint8_t>(b));
+    }
+    constexpr TextureUsageBits operator&(TextureUsageBits a, TextureUsageBits b) {
+        return static_cast<TextureUsageBits>(static_cast<uint8_t>(a) & static_cast<uint8_t>(b));
+    }
+    constexpr BufferUsageBits& operator&=(BufferUsageBits& a, BufferUsageBits b) {
+        return a = a & b;
+    }
+    constexpr TextureUsageBits& operator&=(TextureUsageBits& a, TextureUsageBits b) {
+        return a = a & b;
+    }
+    constexpr BufferUsageBits operator~(BufferUsageBits a) {
+        return static_cast<BufferUsageBits>(~static_cast<uint8_t>(a));
+    }
+    constexpr TextureUsageBits operator~(TextureUsageBits a) {
+        return static_cast<TextureUsageBits>(~static_cast<uint8_t>(a));
+    }
 
-	// strict enums can be whatever
-	enum class StorageType : uint8_t {
-		Device,
-		HostVisible,
-		Memoryless
-	};
+    // strict enums can be whatever
+    enum class StorageType : uint8_t {
+        Device,
+        HostVisible,
+        Memoryless
+    };
 
-	enum class TextureType : uint8_t {
-		Type_2D,
-		Type_3D,
-		Type_Cube
-	};
-	enum Swizzle : uint8_t {
-		Swizzle_Default = 0,
-		Swizzle_0,
-		Swizzle_1,
-		Swizzle_R,
-		Swizzle_G,
-		Swizzle_B,
-		Swizzle_A,
-	};
+    enum class TextureType : uint8_t {
+        Type_2D,
+        Type_3D,
+        Type_Cube
+    };
+    enum Swizzle : uint8_t {
+        Swizzle_Default = 0,
+        Swizzle_0,
+        Swizzle_1,
+        Swizzle_R,
+        Swizzle_G,
+        Swizzle_B,
+        Swizzle_A,
+    };
 
-	struct TexRange {
-		VkOffset3D offset = {};
-		VkExtent3D dimensions = {1, 1, 1};
+    struct TexRange {
+        VkOffset3D offset = {};
+        VkExtent3D dimensions = { 1, 1, 1 };
 
-		uint32_t layer = 0;
-		uint32_t numLayers = 1;
-		uint32_t mipLevel = 0;
-		uint32_t numMipLevels = 1;
-	};
-	struct ComponentMapping {
-		Swizzle r = Swizzle_Default;
-		Swizzle g = Swizzle_Default;
-		Swizzle b = Swizzle_Default;
-		Swizzle a = Swizzle_Default;
-		bool operator==(const ComponentMapping&) const = default;
-		bool identity() const { return r == Swizzle_Default && g == Swizzle_Default && b == Swizzle_Default && a == Swizzle_Default; }
-		VkComponentMapping toVkComponentMapping() const {
-			return {.r = static_cast<VkComponentSwizzle>(r), .g = static_cast<VkComponentSwizzle>(g), .b = static_cast<VkComponentSwizzle>(b), .a = static_cast<VkComponentSwizzle>(a)};
-		}
-	};
-	static_assert(Swizzle::Swizzle_Default == (uint32_t)VK_COMPONENT_SWIZZLE_IDENTITY);
-	static_assert(Swizzle::Swizzle_0 == (uint32_t)VK_COMPONENT_SWIZZLE_ZERO);
-	static_assert(Swizzle::Swizzle_1 == (uint32_t)VK_COMPONENT_SWIZZLE_ONE);
-	static_assert(Swizzle::Swizzle_R == (uint32_t)VK_COMPONENT_SWIZZLE_R);
-	static_assert(Swizzle::Swizzle_G == (uint32_t)VK_COMPONENT_SWIZZLE_G);
-	static_assert(Swizzle::Swizzle_B == (uint32_t)VK_COMPONENT_SWIZZLE_B);
-	static_assert(Swizzle::Swizzle_A == (uint32_t)VK_COMPONENT_SWIZZLE_A);
+        uint32_t layer = 0;
+        uint32_t numLayers = 1;
+        uint32_t mipLevel = 0;
+        uint32_t numMipLevels = 1;
+    };
+    struct ComponentMapping {
+        Swizzle r = Swizzle_Default;
+        Swizzle g = Swizzle_Default;
+        Swizzle b = Swizzle_Default;
+        Swizzle a = Swizzle_Default;
+        bool operator==(const ComponentMapping&) const = default;
+        bool identity() const { return r == Swizzle_Default && g == Swizzle_Default && b == Swizzle_Default && a == Swizzle_Default; }
+        VkComponentMapping toVkComponentMapping() const {
+            return {
+                .r = static_cast<VkComponentSwizzle>(r),
+                .g = static_cast<VkComponentSwizzle>(g),
+                .b = static_cast<VkComponentSwizzle>(b),
+                .a = static_cast<VkComponentSwizzle>(a),
+            };
+        }
+    };
+    static_assert(Swizzle::Swizzle_Default == (uint32_t)VK_COMPONENT_SWIZZLE_IDENTITY);
+    static_assert(Swizzle::Swizzle_0 == (uint32_t)VK_COMPONENT_SWIZZLE_ZERO);
+    static_assert(Swizzle::Swizzle_1 == (uint32_t)VK_COMPONENT_SWIZZLE_ONE);
+    static_assert(Swizzle::Swizzle_R == (uint32_t)VK_COMPONENT_SWIZZLE_R);
+    static_assert(Swizzle::Swizzle_G == (uint32_t)VK_COMPONENT_SWIZZLE_G);
+    static_assert(Swizzle::Swizzle_B == (uint32_t)VK_COMPONENT_SWIZZLE_B);
+    static_assert(Swizzle::Swizzle_A == (uint32_t)VK_COMPONENT_SWIZZLE_A);
 
 
-	// Specs should be low level but still a thin wrapper around the info creation processes need
-	// User arguements will be even more abstract as they will not need to implement it via code
-	struct SamplerSpec {
-		SamplerFilter magFilter = SamplerFilter::Linear;
-		SamplerFilter minFilter = SamplerFilter::Linear;
-		SamplerMipMap mipMap = SamplerMipMap::Disabled;
-		SamplerWrap wrapU = SamplerWrap::Repeat;
-		SamplerWrap wrapV = SamplerWrap::Repeat;
-		SamplerWrap wrapW = SamplerWrap::Repeat;
+    // Specs should be low level but still a thin wrapper around the info creation processes need
+    // User arguements will be even more abstract as they will not need to implement it via code
+    struct SamplerSpec {
+        SamplerFilter magFilter = SamplerFilter::Linear;
+        SamplerFilter minFilter = SamplerFilter::Linear;
+        SamplerMipMap mipMap = SamplerMipMap::Disabled;
+        SamplerWrap wrapU = SamplerWrap::Repeat;
+        SamplerWrap wrapV = SamplerWrap::Repeat;
+        SamplerWrap wrapW = SamplerWrap::Repeat;
 
-		bool depthCompareEnabled = false;
-		CompareOp depthCompareOp = CompareOp::LessEqual;
+        bool depthCompareEnabled = false;
+        CompareOp depthCompareOp = CompareOp::LessEqual;
 
-		uint8_t mipLodMin = 0;
-		uint8_t mipLodMax = 15;
+        uint8_t mipLodMin = 0;
+        uint8_t mipLodMax = 15;
 
-		bool anisotropic = false;
-		uint8_t maxAnisotropic = 1;
+        bool anisotropic = false;
+        uint8_t maxAnisotropic = 1;
 
-		SamplerReduction reduction = SamplerReduction::WeightedAverage;
-		const char* debugName = "Unnamed Sampler";
-	};
-	struct QueryPoolSpec {
-		uint32_t count = 0;
-		const char* debugName = "";
-	};
-	// no raw pointers, so the size always matches the data
-	struct HostBytes {
-		std::span<const std::byte> bytes;
+        SamplerReduction reduction = SamplerReduction::WeightedAverage;
+        const char* debugName = "Unnamed Sampler";
+    };
+    struct QueryPoolSpec {
+        uint32_t count = 0;
+        const char* debugName = "";
+    };
+    // no raw pointers, so the size always matches the data
+    struct HostBytes {
+        std::span<const std::byte> bytes;
 
-		HostBytes() = default;
-		HostBytes(std::nullptr_t) {}
-		template<std::ranges::contiguous_range Range> requires std::is_trivially_copyable_v<std::ranges::range_value_t<Range>>
-		HostBytes(const Range& range) :
-			bytes(std::as_bytes(std::span(range))) {}
-		template<typename T> requires (std::is_trivially_copyable_v<T> && !std::ranges::range<T> && !std::is_pointer_v<T>)
-		HostBytes(const T& value) :
-			bytes(std::as_bytes(std::span(&value, 1))) {}
-	};
-	struct BufferSpec {
-		size_t size = 0;
-		BufferUsageBits usage = {};
-		StorageType storage = StorageType::HostVisible;
-		// size 0 takes the size of initialData
-		HostBytes initialData = {};
-		const char* debugName = "Unnamed Buffer";
-	};
-	struct TextureSpec {
-		Dimensions dimension = {};
-		TextureType type = TextureType::Type_2D;
-		VkFormat format = VK_FORMAT_UNDEFINED;
-		SampleCount samples = SampleCount::X1;
-		TextureUsageBits usage = {};
-		StorageType storage = StorageType::Device;
+        HostBytes() = default;
+        HostBytes(std::nullptr_t) {}
+        template<std::ranges::contiguous_range Range> requires std::is_trivially_copyable_v<std::ranges::range_value_t<Range>>
+        HostBytes(const Range& range) :
+            bytes(std::as_bytes(std::span(range))) {}
+        template<typename T> requires (std::is_trivially_copyable_v<T> && !std::ranges::range<T> && !std::is_pointer_v<T>)
+        HostBytes(const T& value) :
+            bytes(std::as_bytes(std::span(&value, 1))) {}
+    };
+    struct BufferSpec {
+        size_t size = 0;
+        BufferUsageBits usage = {};
+        StorageType storage = StorageType::HostVisible;
+        // size 0 takes the size of initialData
+        HostBytes initialData = {};
+        const char* debugName = "Unnamed Buffer";
+    };
+    struct TextureSpec {
+        Dimensions dimension = {};
+        TextureType type = TextureType::Type_2D;
+        VkFormat format = VK_FORMAT_UNDEFINED;
+        SampleCount samples = SampleCount::X1;
+        TextureUsageBits usage = {};
+        StorageType storage = StorageType::Device;
 
-		uint32_t numMipLevels = 1;
-		uint32_t numLayers = 1;
-		ComponentMapping components = {};
+        uint32_t numMipLevels = 1;
+        uint32_t numLayers = 1;
+        ComponentMapping components = {};
 
-		HostBytes initialData = {};
-		uint32_t dataNumMipLevels = 1; // how many mip-levels we want to create & fill in when uploading data
-		bool generateMipmaps = false; // works only if initialData is not nulll
-		// readable by every queue family in use at once with no ownership transfer, can cost compression on AMD
-		bool concurrent = false;
-		const char* debugName = "Unnamed Texture";
-	};
+        HostBytes initialData = {};
+        uint32_t dataNumMipLevels = 1; // how many mip-levels we want to create & fill in when uploading data
+        bool generateMipmaps = false; // works only if initialData is not nulll
+        // readable by every queue family in use at once with no ownership transfer, can cost compression on AMD
+        bool concurrent = false;
+        const char* debugName = "Unnamed Texture";
+    };
 
-	struct TextureViewSpec {
-		VkImageViewType type = VK_IMAGE_VIEW_TYPE_MAX_ENUM;
-		uint32_t mipLevel = 0;
-		uint32_t numMipLevels = 1;
-		uint32_t layer = 0;
-		uint32_t numLayers = 1;
-		ComponentMapping components = {};
-		const char* debugName = "Unnamed Texture View";
-	};
-	struct ShaderSpec {
-		// a .spv written by mythril_reflect_shaders, join your data dir with the header's kSpirvFile
-		std::filesystem::path path;
-		const char* debugName = "Unnamed Shader";
-	};
+    struct TextureViewSpec {
+        VkImageViewType type = VK_IMAGE_VIEW_TYPE_MAX_ENUM;
+        uint32_t mipLevel = 0;
+        uint32_t numMipLevels = 1;
+        uint32_t layer = 0;
+        uint32_t numLayers = 1;
+        ComponentMapping components = {};
+        const char* debugName = "Unnamed Texture View";
+    };
+    struct ShaderSpec {
+        // a .spv written by mythril_reflect_shaders, join your data dir with the header's kSpirvFile
+        std::filesystem::path path;
+        const char* debugName = "Unnamed Shader";
+    };
 
 } // namespace mythril

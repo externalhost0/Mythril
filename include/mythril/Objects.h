@@ -14,92 +14,92 @@
 #include <unordered_map>
 
 namespace mythril {
-	struct TextureViewSpec;
-	class CTX;
+    struct TextureViewSpec;
+    class CTX;
 
-	// cached texture subresource view key
-	using TextureViewKey = uint64_t;
+    // cached texture subresource view key
+    using TextureViewKey = uint64_t;
 
-	namespace detail {
-		// pack a subresource range into a view key
-		constexpr TextureViewKey packTextureViewKey(uint32_t baseMip, uint32_t numMips, uint32_t baseLayer, uint32_t numLayers) {
-			return (static_cast<uint64_t>(baseMip & 0xFFFF) << 48) |
-			       (static_cast<uint64_t>(numMips & 0xFFFF) << 32) |
-			       (static_cast<uint64_t>(baseLayer & 0xFFFF) << 16) |
-			       (static_cast<uint64_t>(numLayers & 0xFFFF));
-		}
+    namespace detail {
+        // pack a subresource range into a view key
+        constexpr TextureViewKey packTextureViewKey(uint32_t baseMip, uint32_t numMips, uint32_t baseLayer, uint32_t numLayers) {
+            return (static_cast<uint64_t>(baseMip & 0xFFFF) << 48) |
+                   (static_cast<uint64_t>(numMips & 0xFFFF) << 32) |
+                   (static_cast<uint64_t>(baseLayer & 0xFFFF) << 16) |
+                   (static_cast<uint64_t>(numLayers & 0xFFFF));
+        }
 
-		class AllocatedTexture;
-		class AllocatedBuffer;
-		class AllocatedSampler;
-		class AllocatedQueryPool;
-		class AllocatedShader;
-		class AllocatedGraphicsPipeline;
-		class AllocatedComputePipeline;
-		class AllocatedRayTracingPipeline;
-		class AllocatedAccelerationStructure;
+        class AllocatedTexture;
+        class AllocatedBuffer;
+        class AllocatedSampler;
+        class AllocatedQueryPool;
+        class AllocatedShader;
+        class AllocatedGraphicsPipeline;
+        class AllocatedComputePipeline;
+        class AllocatedRayTracingPipeline;
+        class AllocatedAccelerationStructure;
 
 
-		// discarding a returned holder destroys the resource at once
-		template<typename InternalHandle>
-		class [[nodiscard]] Holder {
-			friend class ::mythril::CTX;
-		public:
-			Holder() = default;
-			Holder(CTX* ctx, InternalHandle handle) :
-				_handle(handle),
-				_pCtx(ctx) {}
-			~Holder();
-			Holder(const Holder&) = delete;
-			Holder(Holder&& other) noexcept :
-				_handle(other._handle),
-				_pCtx(other._pCtx) {
-				other._pCtx = nullptr;
-				other._handle = InternalHandle{};
-			}
-			Holder& operator=(const Holder&) = delete;
-			Holder& operator=(Holder&& other) noexcept {
-				std::swap(_pCtx, other._pCtx);
-				std::swap(_handle, other._handle);
-				return *this;
-			}
-			Holder& operator=(std::nullptr_t) {
-				this->reset();
-				return *this;
-			}
-		public:
-			InternalHandle handle() const { return _handle; }
-			// resolve the handle without threading a CTX* for every call
-			CTX* getContext() const { return _pCtx; }
+        // discarding a returned holder destroys the resource at once
+        template<typename InternalHandle>
+        class [[nodiscard]] Holder {
+            friend class ::mythril::CTX;
+        public:
+            Holder() = default;
+            Holder(CTX* ctx, InternalHandle handle) :
+                _handle(handle),
+                _pCtx(ctx) {}
+            ~Holder();
+            Holder(const Holder&) = delete;
+            Holder(Holder&& other) noexcept :
+                _handle(other._handle),
+                _pCtx(other._pCtx) {
+                other._pCtx = nullptr;
+                other._handle = InternalHandle{};
+            }
+            Holder& operator=(const Holder&) = delete;
+            Holder& operator=(Holder&& other) noexcept {
+                std::swap(_pCtx, other._pCtx);
+                std::swap(_handle, other._handle);
+                return *this;
+            }
+            Holder& operator=(std::nullptr_t) {
+                this->reset();
+                return *this;
+            }
+        public:
+            InternalHandle handle() const { return _handle; }
+            // resolve the handle without threading a CTX* for every call
+            CTX* getContext() const { return _pCtx; }
 
-			// functionality from handle
-			bool valid() const { return _handle.valid(); }
-			bool empty() const { return _handle.empty(); }
-			uint32_t gen() const { return _handle.gen(); }
-			uint32_t index() const { return _handle.index(); }
+            // functionality from handle
+            bool valid() const { return _handle.valid(); }
+            bool empty() const { return _handle.empty(); }
+            uint32_t gen() const { return _handle.gen(); }
+            uint32_t index() const { return _handle.index(); }
 
-			// wrapper functionality
-			void reset();
-			// releases handle from being automatically cleaned, allows manual management
-			[[nodiscard]] InternalHandle release() {
-				_pCtx = nullptr;
-				return std::exchange(_handle, InternalHandle{});
-			}
-		protected:
-			InternalHandle _handle = {};
-			CTX* _pCtx = nullptr;
-		};
-	}
+            // wrapper functionality
+            void reset();
+            // releases handle from being automatically cleaned, allows manual management
+            [[nodiscard]] InternalHandle release() {
+                _pCtx = nullptr;
+                return std::exchange(_handle, InternalHandle{});
+            }
+        protected:
+            InternalHandle _handle = {};
+            CTX* _pCtx = nullptr;
+        };
+    }
 
-	// public resource wrappers
-	// ref: detail::Allocated*
-	using Sampler = detail::Holder<SamplerHandle>;
-	using QueryPool = detail::Holder<QueryPoolHandle>;
-	using Buffer = detail::Holder<BufferHandle>;
-	using Texture = detail::Holder<TextureHandle>;
-	using Shader = detail::Holder<ShaderHandle>;
-	using GraphicsPipeline = detail::Holder<GraphicsPipelineHandle>;
-	using ComputePipeline = detail::Holder<ComputePipelineHandle>;
-	using RayTracingPipeline = detail::Holder<RayTracingPipelineHandle>;
-	using AccelerationStructure = detail::Holder<AccelerationStructureHandle>;
+    // public resource wrappers
+    // ref: detail::Allocated*
+    using Sampler = detail::Holder<SamplerHandle>;
+    using QueryPool = detail::Holder<QueryPoolHandle>;
+    using Buffer = detail::Holder<BufferHandle>;
+    using Texture = detail::Holder<TextureHandle>;
+    using Shader = detail::Holder<ShaderHandle>;
+    using GraphicsPipeline = detail::Holder<GraphicsPipelineHandle>;
+    using ComputePipeline = detail::Holder<ComputePipelineHandle>;
+    using RayTracingPipeline = detail::Holder<RayTracingPipelineHandle>;
+    using AccelerationStructure = detail::Holder<AccelerationStructureHandle>;
 }

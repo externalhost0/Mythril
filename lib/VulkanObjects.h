@@ -17,175 +17,175 @@
 #include <unordered_map>
 
 namespace mythril {
-	class CTX;
-	class CommandBuffer;
-	class Swapchain;
-	class StagingDevice;
-	class RenderGraph;
-	class TransferBuilder;
+    class CTX;
+    class CommandBuffer;
+    class Swapchain;
+    class StagingDevice;
+    class RenderGraph;
+    class TransferBuilder;
 
-	namespace detail {
+    namespace detail {
 
-		class AllocatedSampler {
-		public:
-			[[nodiscard]] inline VkSampler getSampler() const { return _vkSampler; }
-			[[nodiscard]] std::string_view getDebugName() const { return _debugName; }
+        class AllocatedSampler {
+        public:
+            [[nodiscard]] inline VkSampler getSampler() const { return _vkSampler; }
+            [[nodiscard]] std::string_view getDebugName() const { return _debugName; }
 
-		private:
-			VkSampler _vkSampler = VK_NULL_HANDLE;
-			char _debugName[kMaxDebugNameLength] = {0};
+        private:
+            VkSampler _vkSampler = VK_NULL_HANDLE;
+            char _debugName[kMaxDebugNameLength] = { 0 };
 
-			friend class ::mythril::CTX;
-		};
+            friend class ::mythril::CTX;
+        };
 
-		class AllocatedQueryPool {
-		public:
-			[[nodiscard]] VkQueryPool getQueryPool() const { return _vkQueryPool; }
-			[[nodiscard]] uint32_t getCount() const { return _count; }
+        class AllocatedQueryPool {
+        public:
+            [[nodiscard]] VkQueryPool getQueryPool() const { return _vkQueryPool; }
+            [[nodiscard]] uint32_t getCount() const { return _count; }
 
-		private:
-			VkQueryPool _vkQueryPool = VK_NULL_HANDLE;
-			uint32_t _count = 0;
-			uint64_t _validBitsMask = 0;
+        private:
+            VkQueryPool _vkQueryPool = VK_NULL_HANDLE;
+            uint32_t _count = 0;
+            uint64_t _validBitsMask = 0;
 
-			friend class ::mythril::CTX;
-		};
+            friend class ::mythril::CTX;
+        };
 
-		class AllocatedTexture {
-		public:
-			[[nodiscard]] bool isSampledImage() const { return (_vkUsageFlags & VK_IMAGE_USAGE_SAMPLED_BIT) > 0; }
-			[[nodiscard]] bool isStorageImage() const { return (_vkUsageFlags & VK_IMAGE_USAGE_STORAGE_BIT) > 0; }
-			[[nodiscard]] bool isColorAttachment() const { return (_vkUsageFlags & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) > 0; }
-			[[nodiscard]] bool isAttachment() const { return (_vkUsageFlags & (VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)) > 0; }
-			[[nodiscard]] bool isDepthAttachment() const { return (_vkUsageFlags & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) > 0; }
-			[[nodiscard]] bool isSwapchainImage() const { return _isSwapchainImage; }
+        class AllocatedTexture {
+        public:
+            [[nodiscard]] bool isSampledImage() const { return (_vkUsageFlags & VK_IMAGE_USAGE_SAMPLED_BIT) > 0; }
+            [[nodiscard]] bool isStorageImage() const { return (_vkUsageFlags & VK_IMAGE_USAGE_STORAGE_BIT) > 0; }
+            [[nodiscard]] bool isColorAttachment() const { return (_vkUsageFlags & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) > 0; }
+            [[nodiscard]] bool isAttachment() const { return (_vkUsageFlags & (VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)) > 0; }
+            [[nodiscard]] bool isDepthAttachment() const { return (_vkUsageFlags & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) > 0; }
+            [[nodiscard]] bool isSwapchainImage() const { return _isSwapchainImage; }
 
-			[[nodiscard]] bool hasMipmaps() const { return _numLevels > 1; }
-			[[nodiscard]] uint32_t getNumMips() const { return _numLevels; }
-			[[nodiscard]] uint32_t getNumLayers() const { return _numLayers; }
+            [[nodiscard]] bool hasMipmaps() const { return _numLevels > 1; }
+            [[nodiscard]] uint32_t getNumMips() const { return _numLevels; }
+            [[nodiscard]] uint32_t getNumLayers() const { return _numLayers; }
 
-			[[nodiscard]] uint8_t getSampleCount() const { return _sampleCount; }
-			[[nodiscard]] VkImageType getType() const { return _vkImageType; }
-			[[nodiscard]] VkImageViewType getViewType() const { return _vkImageViewType; }
-			[[nodiscard]] VkImageLayout getImageLayout(const SubresourceRange& range) const;
-			[[nodiscard]] SubresourceRange getWholeRange() const { return {0, _numLevels, 0, _numLayers}; }
-			[[nodiscard]] uint32_t getLayoutVersion() const { return _layoutVersion; }
-			[[nodiscard]] Dimensions getDimensions() const { return {_vkExtent.width, _vkExtent.height, _vkExtent.depth}; }
-			[[nodiscard]] VkImageAspectFlags getImageAspectFlags() const { return vkutil::AspectMaskFromFormat(_vkFormat); }
+            [[nodiscard]] uint8_t getSampleCount() const { return _sampleCount; }
+            [[nodiscard]] VkImageType getType() const { return _vkImageType; }
+            [[nodiscard]] VkImageViewType getViewType() const { return _vkImageViewType; }
+            [[nodiscard]] VkImageLayout getImageLayout(const SubresourceRange& range) const;
+            [[nodiscard]] SubresourceRange getWholeRange() const { return { 0, _numLevels, 0, _numLayers }; }
+            [[nodiscard]] uint32_t getLayoutVersion() const { return _layoutVersion; }
+            [[nodiscard]] Dimensions getDimensions() const { return { _vkExtent.width, _vkExtent.height, _vkExtent.depth }; }
+            [[nodiscard]] VkImageAspectFlags getImageAspectFlags() const { return vkutil::AspectMaskFromFormat(_vkFormat); }
 
-			// FIXME: check this and above at getSampler() as really const
-			[[nodiscard]] VkImage getImage() const { return _vkImage; }
-			[[nodiscard]] VkImageView getImageView() const { return _vkImageView; }
-			[[nodiscard]] VkFormat getFormat() const { return _vkFormat; }
-			[[nodiscard]] bool isMemoryless() const { return _vkMemoryPropertyFlags & VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT; }
+            // FIXME: check this and above at getSampler() as really const
+            [[nodiscard]] VkImage getImage() const { return _vkImage; }
+            [[nodiscard]] VkImageView getImageView() const { return _vkImageView; }
+            [[nodiscard]] VkFormat getFormat() const { return _vkFormat; }
+            [[nodiscard]] bool isMemoryless() const { return _vkMemoryPropertyFlags & VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT; }
 
-			[[nodiscard]] std::string_view getDebugName() const { return _debugName; }
+            [[nodiscard]] std::string_view getDebugName() const { return _debugName; }
 
-		private:
-			// general helper functions
+        private:
+            // general helper functions
 
-			VkExtent2D getExtentAs2D() const { return {_vkExtent.width, _vkExtent.height}; }
-			VkImageView createTextureView(
-				VkDevice vk_device, VkImageViewType type, VkFormat format, uint32_t baseLevel, uint32_t numLevels, uint32_t baseLayer, uint32_t numLayers, VkComponentMapping componentMapping);
+            VkExtent2D getExtentAs2D() const { return { _vkExtent.width, _vkExtent.height }; }
+            VkImageView createTextureView(
+                VkDevice vk_device, VkImageViewType type, VkFormat format, uint32_t baseLevel, uint32_t numLevels, uint32_t baseLayer, uint32_t numLayers, VkComponentMapping componentMapping);
 
-			void generateMipmap(VkCommandBuffer cmd);
-			void transitionLayout(VkCommandBuffer cmd, VkImageLayout newImageLayout, const SubresourceRange& range);
-			void setLayout(const SubresourceRange& range, VkImageLayout layout);
-			SubresourceRange toSubresourceRange(const VkImageSubresourceRange& range) const {
-				const uint32_t numMips = range.levelCount == VK_REMAINING_MIP_LEVELS ? _numLevels - range.baseMipLevel : range.levelCount;
-				const uint32_t numLayers = range.layerCount == VK_REMAINING_ARRAY_LAYERS ? _numLayers - range.baseArrayLayer : range.layerCount;
-				return {range.baseMipLevel, numMips, range.baseArrayLayer, numLayers};
-			}
+            void generateMipmap(VkCommandBuffer cmd);
+            void transitionLayout(VkCommandBuffer cmd, VkImageLayout newImageLayout, const SubresourceRange& range);
+            void setLayout(const SubresourceRange& range, VkImageLayout layout);
+            SubresourceRange toSubresourceRange(const VkImageSubresourceRange& range) const {
+                const uint32_t numMips = range.levelCount == VK_REMAINING_MIP_LEVELS ? _numLevels - range.baseMipLevel : range.levelCount;
+                const uint32_t numLayers = range.layerCount == VK_REMAINING_ARRAY_LAYERS ? _numLayers - range.baseArrayLayer : range.layerCount;
+                return { range.baseMipLevel, numMips, range.baseArrayLayer, numLayers };
+            }
 
-			constexpr VkSampleCountFlagBits getVkSampleCountBits() const {
-				switch (_sampleCount) {
-					case 1: return VK_SAMPLE_COUNT_1_BIT;
-					case 2: return VK_SAMPLE_COUNT_2_BIT;
-					case 4: return VK_SAMPLE_COUNT_4_BIT;
-					case 8: return VK_SAMPLE_COUNT_8_BIT;
-					case 16: return VK_SAMPLE_COUNT_16_BIT;
-					case 32: return VK_SAMPLE_COUNT_32_BIT;
-					case 64: return VK_SAMPLE_COUNT_64_BIT;
-					default:
-						UNREACHABLE("Something went horribly wrong! The _sampleCount of texture '{}' is not 2^n where n is in the range of integars 1-6, its '{}'.", getDebugName(), _sampleCount);
-				}
-			}
+            constexpr VkSampleCountFlagBits getVkSampleCountBits() const {
+                switch (_sampleCount) {
+                    case 1: return VK_SAMPLE_COUNT_1_BIT;
+                    case 2: return VK_SAMPLE_COUNT_2_BIT;
+                    case 4: return VK_SAMPLE_COUNT_4_BIT;
+                    case 8: return VK_SAMPLE_COUNT_8_BIT;
+                    case 16: return VK_SAMPLE_COUNT_16_BIT;
+                    case 32: return VK_SAMPLE_COUNT_32_BIT;
+                    case 64: return VK_SAMPLE_COUNT_64_BIT;
+                    default:
+                        UNREACHABLE("Something went horribly wrong! The _sampleCount of texture '{}' is not 2^n where n is in the range of integars 1-6, its '{}'.", getDebugName(), _sampleCount);
+                }
+            }
 
-		private:
-			VkImage _vkImage = VK_NULL_HANDLE;
-			VkImageView _vkImageView = VK_NULL_HANDLE;
-			VkImageView _vkImageViewStorage = VK_NULL_HANDLE;
+        private:
+            VkImage _vkImage = VK_NULL_HANDLE;
+            VkImageView _vkImageView = VK_NULL_HANDLE;
+            VkImageView _vkImageViewStorage = VK_NULL_HANDLE;
 
-			VkExtent3D _vkExtent = {};
-			VkFormat _vkFormat = VK_FORMAT_UNDEFINED;
-			VkFormatProperties _vkFormatProperties = {};
-			uint32_t _numLevels = 1u;
-			uint32_t _numLayers = 1u;
-			VkComponentMapping _vkComponentMappings = {};
+            VkExtent3D _vkExtent = {};
+            VkFormat _vkFormat = VK_FORMAT_UNDEFINED;
+            VkFormatProperties _vkFormatProperties = {};
+            uint32_t _numLevels = 1u;
+            uint32_t _numLayers = 1u;
+            VkComponentMapping _vkComponentMappings = {};
 
-			// layout as of the last recorded command, valid because command buffers are submitted in recording order
-			SubresourceMap<VkImageLayout> _recordedLayout{1, 1, VK_IMAGE_LAYOUT_UNDEFINED};
-			uint32_t _layoutVersion = 0;
-			VkImageType _vkImageType = VK_IMAGE_TYPE_MAX_ENUM;
-			VkImageViewType _vkImageViewType = VK_IMAGE_VIEW_TYPE_MAX_ENUM;
-			VkImageUsageFlags _vkUsageFlags = 0;
-			uint8_t _sampleCount = 1;
-			VkMemoryPropertyFlags _vkMemoryPropertyFlags = 0;
+            // layout as of the last recorded command, valid because command buffers are submitted in recording order
+            SubresourceMap<VkImageLayout> _recordedLayout{ 1, 1, VK_IMAGE_LAYOUT_UNDEFINED };
+            uint32_t _layoutVersion = 0;
+            VkImageType _vkImageType = VK_IMAGE_TYPE_MAX_ENUM;
+            VkImageViewType _vkImageViewType = VK_IMAGE_VIEW_TYPE_MAX_ENUM;
+            VkImageUsageFlags _vkUsageFlags = 0;
+            uint8_t _sampleCount = 1;
+            VkMemoryPropertyFlags _vkMemoryPropertyFlags = 0;
 
-			VmaAllocation _vmaAllocation = VK_NULL_HANDLE;
+            VmaAllocation _vmaAllocation = VK_NULL_HANDLE;
 
-			void* _mappedPtr = nullptr;
-			bool _isSwapchainImage = false;
-			bool _isOwning = true;
-			bool _concurrent = false;
-			char _debugName[kMaxDebugNameLength] = {0};
+            void* _mappedPtr = nullptr;
+            bool _isSwapchainImage = false;
+            bool _isOwning = true;
+            bool _concurrent = false;
+            char _debugName[kMaxDebugNameLength] = { 0 };
 
-			std::unordered_map<TextureViewKey, TextureHandle> _additionalViews;
+            std::unordered_map<TextureViewKey, TextureHandle> _additionalViews;
 
-			friend class ::mythril::CTX;
-			friend class ::mythril::CommandBuffer;
-			friend class ::mythril::Swapchain;
-			friend class ::mythril::StagingDevice;
-			friend class ::mythril::RenderGraph;
-		};
+            friend class ::mythril::CTX;
+            friend class ::mythril::CommandBuffer;
+            friend class ::mythril::Swapchain;
+            friend class ::mythril::StagingDevice;
+            friend class ::mythril::RenderGraph;
+        };
 
-		class AllocatedBuffer {
-		public:
-			[[nodiscard]] bool isMapped() const { return _mappedPtr != nullptr; }
-			[[nodiscard]] uint8_t* getMappedPtr() const { return static_cast<uint8_t*>(_mappedPtr); }
-			[[nodiscard]] bool isStorageBuffer() const { return (_vkUsageFlags & VK_BUFFER_USAGE_STORAGE_BUFFER_BIT) > 0; }
-			[[nodiscard]] bool isIndirectBuffer() const { return (_vkUsageFlags & VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT) > 0; }
-			[[nodiscard]] bool isIndexBuffer() const { return (_vkUsageFlags & VK_BUFFER_USAGE_INDEX_BUFFER_BIT) > 0; }
+        class AllocatedBuffer {
+        public:
+            [[nodiscard]] bool isMapped() const { return _mappedPtr != nullptr; }
+            [[nodiscard]] uint8_t* getMappedPtr() const { return static_cast<uint8_t*>(_mappedPtr); }
+            [[nodiscard]] bool isStorageBuffer() const { return (_vkUsageFlags & VK_BUFFER_USAGE_STORAGE_BUFFER_BIT) > 0; }
+            [[nodiscard]] bool isIndirectBuffer() const { return (_vkUsageFlags & VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT) > 0; }
+            [[nodiscard]] bool isIndexBuffer() const { return (_vkUsageFlags & VK_BUFFER_USAGE_INDEX_BUFFER_BIT) > 0; }
 
-			[[nodiscard]] std::string_view getDebugName() const { return _debugName; }
+            [[nodiscard]] std::string_view getDebugName() const { return _debugName; }
 
-		private:
-			void bufferSubData(const CTX& ctx, size_t offset, size_t size, const void* data);
-			void getBufferSubData(const CTX& ctx, size_t offset, size_t size, void* data);
-			void flushMappedMemory(const CTX& ctx, VkDeviceSize offset, VkDeviceSize size) const;
-			void invalidateMappedMemory(const CTX& ctx, VkDeviceSize offset, VkDeviceSize size) const;
+        private:
+            void bufferSubData(const CTX& ctx, size_t offset, size_t size, const void* data);
+            void getBufferSubData(const CTX& ctx, size_t offset, size_t size, void* data);
+            void flushMappedMemory(const CTX& ctx, VkDeviceSize offset, VkDeviceSize size) const;
+            void invalidateMappedMemory(const CTX& ctx, VkDeviceSize offset, VkDeviceSize size) const;
 
-			VkBuffer _vkBuffer = VK_NULL_HANDLE;
-			VkDeviceMemory _vkMemory = VK_NULL_HANDLE;
-			VmaAllocation _vmaAllocation = VK_NULL_HANDLE;
+            VkBuffer _vkBuffer = VK_NULL_HANDLE;
+            VkDeviceMemory _vkMemory = VK_NULL_HANDLE;
+            VmaAllocation _vmaAllocation = VK_NULL_HANDLE;
 
-			VkDeviceSize _bufferSize = 0;
-			VkBufferUsageFlags _vkUsageFlags = 0;
-			VkMemoryPropertyFlags _vkMemoryPropertyFlags = 0;
-			VkDeviceAddress _vkDeviceAddress = 0; // optional, for shader access
+            VkDeviceSize _bufferSize = 0;
+            VkBufferUsageFlags _vkUsageFlags = 0;
+            VkMemoryPropertyFlags _vkMemoryPropertyFlags = 0;
+            VkDeviceAddress _vkDeviceAddress = 0; // optional, for shader access
 
-			void* _mappedPtr = nullptr;
-			bool _isCoherentMemory = false;
-			// frame timeline value of the last graph that declared this buffer, host access to a mapped buffer waits on it
-			uint64_t _graphTimelineValue = 0;
-			char _debugName[kMaxDebugNameLength] = {0};
+            void* _mappedPtr = nullptr;
+            bool _isCoherentMemory = false;
+            // frame timeline value of the last graph that declared this buffer, host access to a mapped buffer waits on it
+            uint64_t _graphTimelineValue = 0;
+            char _debugName[kMaxDebugNameLength] = { 0 };
 
-			friend class ::mythril::CTX;
-			friend class ::mythril::CommandBuffer;
-			friend class ::mythril::RenderGraph;
-			friend class ::mythril::TransferBuilder;
-			friend class ::mythril::StagingDevice;
-		};
+            friend class ::mythril::CTX;
+            friend class ::mythril::CommandBuffer;
+            friend class ::mythril::RenderGraph;
+            friend class ::mythril::TransferBuilder;
+            friend class ::mythril::StagingDevice;
+        };
 
-	} // namespace detail
+    } // namespace detail
 } // namespace mythril
