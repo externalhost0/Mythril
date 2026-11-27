@@ -331,12 +331,10 @@ int main() {
                 });
             if (showBounds) {
                 graph.addGraphicsPass<BoundsLinesPass>("draw bounds", [&](mythril::GraphicsPassBuilder& b, BoundsLinesPass& d) {
-                    traced = b.attachment({
-                                              .texDesc = traced,
-                                              .loadOp = mythril::LoadOp::LOAD,
-                                              .storeOp = mythril::StoreOp::STORE,
-                                          })
-                                 .texture;
+                    b.attachment(traced, {
+                        .loadOp = mythril::LoadOp::LOAD,
+                        .storeOp = mythril::StoreOp::STORE,
+                    });
                     b.dependency(bounds, mythril::BufferAccess::ShaderRead);
                     d.distance = b.dependency(distance, mythril::TextureAccess::Sampled);
                     d.pipeline = boundsLinesPipeline.handle();

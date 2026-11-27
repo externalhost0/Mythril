@@ -45,8 +45,8 @@ int main() {
         mythril::RenderGraph graph;
         const auto buildGraph = [&] {
             graph.addGraphicsPass("main", [&](mythril::GraphicsPassBuilder& b, mythril::NoPassData&) {
-                b.attachment({
-                    .texDesc = graph.backBuffer(),
+                mythril::GraphTexture backBuffer = graph.backBuffer();
+                b.attachment(backBuffer, {
                     .clearValue = mythril::ClearValue::color(1.f, 0.f, 0.f, 1.f),
                     .loadOp = mythril::LoadOp::CLEAR,
                     .storeOp = mythril::StoreOp::STORE,

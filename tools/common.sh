@@ -1,4 +1,4 @@
-# shared helpers for tools/clang-*.sh, meant to be sourced. callers set `name` to their script name.
+# shared helpers for tools/format.sh and tools/clang-tidy.sh, meant to be sourced. callers set `name` to their script name.
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 

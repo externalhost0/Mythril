@@ -72,10 +72,10 @@ TEST_CASE("reloadShaderEXT takes a code edit and refuses one the C++ push struct
             b.dependency(rgOut, mythril::BufferAccess::ShaderWrite);
             b.sideEffect();
             d = { pipeline.handle(), {
-                                         .out = ctx->gpuAddress(outBuffer),
-                                         .value = 7,
-                                         .pad = 0,
-                                     } };
+                .out = ctx->gpuAddress(outBuffer),
+                .value = 7,
+                .pad = 0,
+            } };
         },
             [](const ReloadPass& d, mythril::ComputeCmd& cmd) {
                 cmd.cmdBindComputePipeline(d.pipeline);
@@ -185,10 +185,10 @@ TEST_CASE("a shader whose specialization constant size a pipeline does not give 
             b.dependency(rgOut, mythril::BufferAccess::ShaderWrite);
             b.sideEffect();
             d = { pipeline.handle(), {
-                                         .out = ctx->gpuAddress(outBuffer),
-                                         .value = 7,
-                                         .pad = 0,
-                                     } };
+                .out = ctx->gpuAddress(outBuffer),
+                .value = 7,
+                .pad = 0,
+            } };
         },
             [](const ReloadPass& d, mythril::ComputeCmd& cmd) {
                 cmd.cmdBindComputePipeline(d.pipeline);

@@ -144,7 +144,10 @@ namespace mythril {
         GraphAccelerationStructure dependency(GraphAccelerationStructure structure, AccelerationStructureAccess access);
         // asserts the access is a read, a write needs a mutable array to take the new versions
         void readDependencies(std::span<const GraphTexture> textures, TextureAccess access);
-        AttachmentOutput attachment(const AttachmentDesc& desc);
+        // the attachment texture becomes the version this pass writes
+        void attachment(GraphTexture& texture, const AttachmentOptions& options);
+        // texture and resolve both become the versions this pass writes
+        void attachment(GraphTexture& texture, GraphTexture& resolve, const AttachmentOptions& options);
     private:
         GraphBuffer declare(GraphBuffer buffer, BufferAccess access);
         // a read the pass already declared with the same access is not declared again
@@ -162,8 +165,11 @@ namespace mythril {
     public:
         GraphicsPassBuilder() = delete;
 
-        AttachmentOutput attachment(const AttachmentDesc& desc) {
-            return base.attachment(desc);
+        void attachment(GraphTexture& texture, const AttachmentOptions& options) {
+            base.attachment(texture, options);
+        }
+        void attachment(GraphTexture& texture, GraphTexture& resolve, const AttachmentOptions& options) {
+            base.attachment(texture, resolve, options);
         }
         GraphTexture dependency(const TextureDesc& texDesc, const TextureAccess access = TextureAccess::Sampled) {
             return base.dependency(texDesc, access);

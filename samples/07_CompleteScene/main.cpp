@@ -1383,13 +1383,11 @@ int main() {
                 shaders::DepthOnlyPushConstant push;
             };
             graph.addGraphicsPass<DepthPrepassData>("depth_prepass", [&](mythril::GraphicsPassBuilder& b, DepthPrepassData& d) {
-                msaaDepth = b.attachment({
-                                             .texDesc = msaaDepth,
-                                             .clearValue = mythril::ClearValue::depth(kReverseZFarDepth, 0),
-                                             .loadOp = mythril::LoadOp::CLEAR,
-                                             .storeOp = mythril::StoreOp::STORE,
-                                         })
-                                .texture;
+                b.attachment(msaaDepth, {
+                    .clearValue = mythril::ClearValue::depth(kReverseZFarDepth, 0),
+                    .loadOp = mythril::LoadOp::CLEAR,
+                    .storeOp = mythril::StoreOp::STORE,
+                });
                 b.dependency(rgOpaqueSponzaVertices, mythril::BufferAccess::ShaderRead);
                 b.dependency(rgOpaqueSponzaIndices, mythril::BufferAccess::IndexRead);
                 b.dependency(rgOpaqueSponzaIndirect, mythril::BufferAccess::IndirectRead);
@@ -1429,13 +1427,11 @@ int main() {
                 shaders::DepthOnlyPushConstant push;
             };
             graph.addGraphicsPass<ShadowMapData>("shadow_map", [&](mythril::GraphicsPassBuilder& b, ShadowMapData& d) {
-                shadowMap = b.attachment({
-                                             .texDesc = { shadowMap },
-                                             .clearValue = mythril::ClearValue::depth(1.f, 0),
-                                             .loadOp = mythril::LoadOp::CLEAR,
-                                             .storeOp = mythril::StoreOp::STORE,
-                                         })
-                                .texture;
+                b.attachment(shadowMap, {
+                    .clearValue = mythril::ClearValue::depth(1.f, 0),
+                    .loadOp = mythril::LoadOp::CLEAR,
+                    .storeOp = mythril::StoreOp::STORE,
+                });
                 b.dependency(rgOpaqueSponzaVertices, mythril::BufferAccess::ShaderRead);
                 b.dependency(rgOpaqueSponzaIndices, mythril::BufferAccess::IndexRead);
                 b.dependency(rgOpaqueSponzaIndirect, mythril::BufferAccess::IndirectRead);
@@ -1473,13 +1469,11 @@ int main() {
                 if (lightingData.pointLights[i].position == lastFramelightingData.pointLights[i].position)
                     continue;
                 graph.addGraphicsPass<PointShadow>(std::format("pointlight_shadow_{}", i).c_str(), [&](mythril::GraphicsPassBuilder& b, PointShadow& d) {
-                    pointShadowMaps[i] = b.attachment({
-                                                          .texDesc = pointShadowMaps[i],
-                                                          .clearValue = mythril::ClearValue::depth(1.f, 1),
-                                                          .loadOp = mythril::LoadOp::CLEAR,
-                                                          .storeOp = mythril::StoreOp::STORE,
-                                                      })
-                                             .texture;
+                    b.attachment(pointShadowMaps[i], {
+                        .clearValue = mythril::ClearValue::depth(1.f, 1),
+                        .loadOp = mythril::LoadOp::CLEAR,
+                        .storeOp = mythril::StoreOp::STORE,
+                    });
                     b.multiview(6, 0b111111);
                     b.dependency(shadowMatrixBuffer, mythril::BufferAccess::ShaderRead);
                     b.dependency(rgOpaqueSponzaVertices, mythril::BufferAccess::ShaderRead);
@@ -1513,19 +1507,15 @@ int main() {
                 shaders::SkyPushConstants push;
             };
             graph.addGraphicsPass<Sky>("sky", [&](mythril::GraphicsPassBuilder& b, Sky& d) {
-                msaaColor = b.attachment({
-                                             .texDesc = msaaColor,
-                                             .clearValue = mythril::ClearValue::color(0.f, 0.f, 0.f, 1.f),
-                                             .loadOp = mythril::LoadOp::CLEAR,
-                                             .storeOp = mythril::StoreOp::STORE,
-                                         })
-                                .texture;
-                msaaDepth = b.attachment({
-                                             .texDesc = msaaDepth,
-                                             .loadOp = mythril::LoadOp::LOAD,
-                                             .storeOp = mythril::StoreOp::STORE,
-                                         })
-                                .texture;
+                b.attachment(msaaColor, {
+                    .clearValue = mythril::ClearValue::color(0.f, 0.f, 0.f, 1.f),
+                    .loadOp = mythril::LoadOp::CLEAR,
+                    .storeOp = mythril::StoreOp::STORE,
+                });
+                b.attachment(msaaDepth, {
+                    .loadOp = mythril::LoadOp::LOAD,
+                    .storeOp = mythril::StoreOp::STORE,
+                });
                 b.dependency(frameBuffer, mythril::BufferAccess::ShaderRead);
                 d.pipeline = skyPipeline.handle();
                 d.push = {
@@ -1542,18 +1532,14 @@ int main() {
                 });
             const auto sponzaPass = [&](const char* name, const mythril::GraphicsPipeline& pipeline, bool transparent) {
                 graph.addGraphicsPass<SponzaDraw>(name, [&](mythril::GraphicsPassBuilder& b, SponzaDraw& d) {
-                    msaaColor = b.attachment({
-                                                 .texDesc = msaaColor,
-                                                 .loadOp = mythril::LoadOp::LOAD,
-                                                 .storeOp = mythril::StoreOp::STORE,
-                                             })
-                                    .texture;
-                    msaaDepth = b.attachment({
-                                                 .texDesc = msaaDepth,
-                                                 .loadOp = mythril::LoadOp::LOAD,
-                                                 .storeOp = mythril::StoreOp::STORE,
-                                             })
-                                    .texture;
+                    b.attachment(msaaColor, {
+                        .loadOp = mythril::LoadOp::LOAD,
+                        .storeOp = mythril::StoreOp::STORE,
+                    });
+                    b.attachment(msaaDepth, {
+                        .loadOp = mythril::LoadOp::LOAD,
+                        .storeOp = mythril::StoreOp::STORE,
+                    });
                     b.dependency(shadowMap, mythril::TextureAccess::Sampled);
                     for (const mythril::GraphTexture tex: pointShadowMaps)
                         b.dependency(tex, mythril::TextureAccess::Sampled);
@@ -1574,22 +1560,14 @@ int main() {
                 shaders::ParticlePushConstant push;
             };
             graph.addGraphicsPass<Particles>("Ambient Particles", [&](mythril::GraphicsPassBuilder& b, Particles& d) {
-                const mythril::AttachmentOutput color = b.attachment({
-                    .texDesc = msaaColor,
+                b.attachment(msaaColor, offscreenColor, {
                     .loadOp = mythril::LoadOp::LOAD,
                     .storeOp = mythril::StoreOp::DONT_CARE,
-                    .resolveTexDesc = offscreenColor,
                 });
-                const mythril::AttachmentOutput depth = b.attachment({
-                    .texDesc = msaaDepth,
+                b.attachment(msaaDepth, depthResolve, {
                     .loadOp = mythril::LoadOp::LOAD,
                     .storeOp = mythril::StoreOp::DONT_CARE,
-                    .resolveTexDesc = depthResolve,
                 });
-                msaaColor = color.texture;
-                offscreenColor = color.resolve;
-                msaaDepth = depth.texture;
-                depthResolve = depth.resolve;
                 b.dependency(particleBuffer, mythril::BufferAccess::ShaderRead);
                 b.dependency(frameBuffer, mythril::BufferAccess::ShaderRead);
                 b.dependency(rgParticleVertices, mythril::BufferAccess::ShaderRead);
@@ -1724,13 +1702,11 @@ int main() {
                 shaders::FullscreenPushConstant push;
             };
             graph.addGraphicsPass<Composite>("composite", [&](mythril::GraphicsPassBuilder& builder, Composite& d) {
-                finalColor = builder.attachment({
-                                                    .texDesc = finalColor,
-                                                    .clearValue = mythril::ClearValue::color(0.f, 0.f, 0.f, 1.f),
-                                                    .loadOp = mythril::LoadOp::CLEAR,
-                                                    .storeOp = mythril::StoreOp::STORE,
-                                                })
-                                 .texture;
+                builder.attachment(finalColor, {
+                    .clearValue = mythril::ClearValue::color(0.f, 0.f, 0.f, 1.f),
+                    .loadOp = mythril::LoadOp::CLEAR,
+                    .storeOp = mythril::StoreOp::STORE,
+                });
                 builder.dependency(offscreenColor, mythril::TextureAccess::Sampled);
                 builder.dependency(bloomMips[0], mythril::TextureAccess::Sampled);
                 builder.dependency(adaptedLuminance, mythril::TextureAccess::Sampled);
@@ -1773,12 +1749,10 @@ int main() {
                 mythril::DeviceAddress frame;
             };
             graph.addGraphicsPass<ShadowPosDebug>("shadow_pos_debug", [&](mythril::GraphicsPassBuilder& b, ShadowPosDebug& d) {
-                finalColor = b.attachment({
-                                              .texDesc = finalColor,
-                                              .loadOp = mythril::LoadOp::LOAD,
-                                              .storeOp = mythril::StoreOp::STORE,
-                                          })
-                                 .texture;
+                b.attachment(finalColor, {
+                    .loadOp = mythril::LoadOp::LOAD,
+                    .storeOp = mythril::StoreOp::STORE,
+                });
                 b.dependency(frameBuffer, mythril::BufferAccess::ShaderRead);
                 glm::mat4 model = glm::translate(glm::mat4(1.0), scene_center);
                 model = model * glm::mat4_cast(sun_quaternion);
@@ -1806,12 +1780,10 @@ int main() {
                     }
                 });
             graph.addGraphicsPass("gui", [&](mythril::GraphicsPassBuilder& b, mythril::NoPassData&) {
-                finalColor = b.attachment({
-                                              .texDesc = finalColor,
-                                              .loadOp = mythril::LoadOp::LOAD,
-                                              .storeOp = mythril::StoreOp::STORE,
-                                          })
-                                 .texture;
+                b.attachment(finalColor, {
+                    .loadOp = mythril::LoadOp::LOAD,
+                    .storeOp = mythril::StoreOp::STORE,
+                });
                 b.dependency(adaptedLuminance, mythril::TextureAccess::Sampled);
                 b.dependency(bloomMips, mythril::TextureAccess::Sampled);
                 b.dependency(shadowMap, mythril::TextureAccess::Sampled);
@@ -1824,11 +1796,11 @@ int main() {
             });
         };
         FlyCamera camera(sdlWindow, { 0.f, 5.f, 0.f }, {
-                                                           .yaw = 0.f,
-                                                           .pitch = 0.f,
-                                                           .speed = 8.f,
-                                                           .farPlane = 200.f,
-                                                       });
+            .yaw = 0.f,
+            .pitch = 0.f,
+            .speed = 8.f,
+            .farPlane = 200.f,
+        });
 
         lightingData.environmentLight.color = { 0.25f, 0.30f, 0.35f };
         lightingData.environmentLight.intensity = 0.2f;

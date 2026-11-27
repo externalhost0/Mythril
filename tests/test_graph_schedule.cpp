@@ -183,8 +183,8 @@ TEST_CASE("an async transfer pass that builds a structure runs on async compute"
     CHECK(QueueOf(QueueNeedOf(copy, {}).type, true, kAll) == QueueAffinity::AsyncTransfer);
     CHECK(QueueOf(QueueNeedOf(build, {}).type, true, kAll) == QueueAffinity::AsyncCompute);
     CHECK(QueueOf(QueueNeedOf(build, {}).type, true, {
-                                                         .transfer = true,
-                                                     }) == QueueAffinity::Graphics);
+        .transfer = true,
+    }) == QueueAffinity::Graphics);
 }
 
 namespace {

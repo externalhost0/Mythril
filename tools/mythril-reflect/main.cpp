@@ -215,8 +215,8 @@ namespace {
             };
         for (const std::filesystem::path& module: modules)
             headers.try_emplace(module, Header{
-                                            .sourceName = module.filename().string(),
-                                        });
+                .sourceName = module.filename().string(),
+            });
         for (const auto& [structName, owner]: ownerByStruct)
             if (!headers.contains(owner))
                 return Fail("'{}' declares the generated struct '{}', add it to MODULES in mythril_reflect_shaders so its {} is a build output", owner.string(), structName, HeaderName(owner));

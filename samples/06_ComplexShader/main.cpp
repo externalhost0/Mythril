@@ -374,16 +374,14 @@ int main() {
             });
 
             mythril::GraphTexture color = rgColorTarget;
+            mythril::GraphTexture depth = rgDepthTarget;
             graph.addGraphicsPass<GeometryPass>("geometry", [&](mythril::GraphicsPassBuilder& b, GeometryPass& d) {
-                color = b.attachment({
-                                         .texDesc = color,
-                                         .clearValue = mythril::ClearValue::color(0.2f, 0.2f, 0.2f, 1.f),
-                                         .loadOp = mythril::LoadOp::CLEAR,
-                                         .storeOp = mythril::StoreOp::STORE,
-                                     })
-                            .texture;
-                b.attachment({
-                    .texDesc = rgDepthTarget,
+                b.attachment(color, {
+                    .clearValue = mythril::ClearValue::color(0.2f, 0.2f, 0.2f, 1.f),
+                    .loadOp = mythril::LoadOp::CLEAR,
+                    .storeOp = mythril::StoreOp::STORE,
+                });
+                b.attachment(depth, {
                     .clearValue = mythril::ClearValue::depth(1.f, 0),
                     .loadOp = mythril::LoadOp::CLEAR,
                 });
@@ -417,12 +415,10 @@ int main() {
                 });
 
             graph.addGraphicsPass("gui", [&](mythril::GraphicsPassBuilder& b, mythril::NoPassData&) {
-                color = b.attachment({
-                                         .texDesc = color,
-                                         .loadOp = mythril::LoadOp::LOAD,
-                                         .storeOp = mythril::StoreOp::STORE,
-                                     })
-                            .texture;
+                b.attachment(color, {
+                    .loadOp = mythril::LoadOp::LOAD,
+                    .storeOp = mythril::StoreOp::STORE,
+                });
             },
                 [](const mythril::NoPassData&, mythril::GraphicsCmd& cmd) {
                     cmd.cmdDrawImGui();

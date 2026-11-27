@@ -429,12 +429,11 @@ struct MainPass {
 
 mythril::GraphTexture color = rgColor;
 graph.addGraphicsPass<MainPass>("main", [&](mythril::GraphicsPassBuilder& b, MainPass& d) {
-    color = b.attachment({
-        .texDesc = color,
+    b.attachment(color, {
         .clearValue = mythril::ClearValue::color(0.2f, 0.2f, 0.2f, 1.f),
         .loadOp = mythril::LoadOp::CLEAR,
         .storeOp = mythril::StoreOp::STORE
-    }).texture;
+    });
     b.dependency(rgVertices, mythril::BufferAccess::ShaderRead);
     b.dependency(rgIndices, mythril::BufferAccess::IndexRead);
 
@@ -467,9 +466,9 @@ Each `XxxCmd` only exposes the commands that are valid for its pass, so you can'
 
 ### Versions
 
-A `GraphTexture` or `GraphBuffer` is one *version* of a resource. Any write (an attachment, a write dependency, a transfer op) returns the next version, and later passes should use that returned version. This is how the graph knows the order your passes depend on each other, which is why the example above does `color = b.attachment(...).texture`. Reads return the version they name.
+A `GraphTexture` or `GraphBuffer` is one *version* of a resource. Any write (an attachment, a write dependency, a transfer op) produces the next version, and later passes should use that version. This is how the graph knows the order your passes depend on each other. Reads return the version they name.
 
-`attachment()` returns an `AttachmentOutput` with `.texture` and `.resolve`, `resolve` is only valid when the attachment has a resolve target.
+`attachment(texture, options)` takes the texture by reference and updates it in place to the version the pass writes, so later passes can use `color` directly. `attachment(texture, resolve, options)` does the same for an MSAA texture and its resolve target, and updates both. The texture must be a non-const `GraphTexture`, copy a const handle into a local first.
 
 Dependencies take a `TextureAccess` (`Sampled`, `StorageRead`, `StorageWrite`, `StorageReadWrite`, `TransferRead`, `TransferWrite`) or a `BufferAccess` (`ShaderRead`, `ShaderWrite`, `ShaderReadWrite`, `IndexRead`, `IndirectRead`, `TransferRead`, `TransferWrite`). 
 You can also pass a span of textures to declare many at once, a mutable span is written in place and a const span will only allows reads.
@@ -550,7 +549,8 @@ while (!quit) {
     const mythril::GraphTexture rgVideo = graph.importTexture(videoFrame, videoAccess);
 
     graph.addGraphicsPass<VideoPass>("draw_video", [&](mythril::GraphicsPassBuilder& b, VideoPass& d) {
-        b.attachment({ .texDesc = graph.backBuffer(), .loadOp = mythril::LoadOp::CLEAR, .storeOp = mythril::StoreOp::STORE });
+        mythril::GraphTexture backBuffer = graph.backBuffer();
+        b.attachment(backBuffer, { .loadOp = mythril::LoadOp::CLEAR, .storeOp = mythril::StoreOp::STORE });
         b.dependency(rgVideo, mythril::TextureAccess::Sampled);
         d.video = rgVideo;
         // ...

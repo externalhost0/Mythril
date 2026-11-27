@@ -62,13 +62,11 @@ int main() {
         const auto buildGraph = [&] {
             mythril::GraphTexture color = rgColorTarget;
             graph.addGraphicsPass("main", [&](mythril::GraphicsPassBuilder& b, mythril::NoPassData&) {
-                color = b.attachment({
-                                         .texDesc = color,
-                                         .clearValue = mythril::ClearValue::color(1.f, 0.f, 0.f, 1.f),
-                                         .loadOp = mythril::LoadOp::CLEAR,
-                                         .storeOp = mythril::StoreOp::STORE,
-                                     })
-                            .texture;
+                b.attachment(color, {
+                    .clearValue = mythril::ClearValue::color(1.f, 0.f, 0.f, 1.f),
+                    .loadOp = mythril::LoadOp::CLEAR,
+                    .storeOp = mythril::StoreOp::STORE,
+                });
             },
                 [](const mythril::NoPassData&, mythril::GraphicsCmd& cmd) {
                     cmd.cmdDrawImGui();

@@ -296,43 +296,43 @@ TEST_CASE("push resources passed through helper functions keep their kind and ac
     using Kind = PushField::Kind;
     using Access = PushField::Access;
     CheckPushResources(code, {
-                                 { "tex", 0, Kind::SampledTexture, Access::Read },
-                                 { "img", 8, Kind::StorageTexture, Access::Write },
-                                 { "smp", 16, Kind::Sampler, Access::Read },
-                                 { "out", 24, Kind::Pointer, Access::Write },
-                             });
+        { "tex", 0, Kind::SampledTexture, Access::Read },
+        { "img", 8, Kind::StorageTexture, Access::Write },
+        { "smp", 16, Kind::Sampler, Access::Read },
+        { "out", 24, Kind::Pointer, Access::Write },
+    });
 }
 
 TEST_CASE("push resource handles take the name of the field that holds them") {
     using Kind = PushField::Kind;
     using Access = PushField::Access;
     CheckPushResources(Reflect("handles.slang").spirv, {
-                                                           { "smp", 0, Kind::Sampler, Access::Read },
-                                                           { "arr", 16, Kind::SampledTexture, Access::Read },
-                                                           { "h", 24, Kind::SampledTexture, Access::Read },
-                                                           { "out", 40, Kind::Pointer, Access::Write },
-                                                       });
+        { "smp", 0, Kind::Sampler, Access::Read },
+        { "arr", 16, Kind::SampledTexture, Access::Read },
+        { "h", 24, Kind::SampledTexture, Access::Read },
+        { "out", 40, Kind::Pointer, Access::Write },
+    });
 }
 
 TEST_CASE("push resource acceleration structure handles are found through their 64-bit address") {
     using Kind = PushField::Kind;
     using Access = PushField::Access;
     CheckPushResources(Reflect("accel.slang").spirv, {
-                                                         { "tlas", 0, Kind::AccelerationStructure, Access::Read },
-                                                         { "out", 16, Kind::Pointer, Access::Write },
-                                                     });
+        { "tlas", 0, Kind::AccelerationStructure, Access::Read },
+        { "out", 16, Kind::Pointer, Access::Write },
+    });
 }
 
 TEST_CASE("push resource handles keep their kind through struct copies and locals") {
     using Kind = PushField::Kind;
     using Access = PushField::Access;
     CheckPushResources(Reflect("locals.slang").spirv, {
-                                                          { "tex", 0, Kind::SampledTexture, Access::Read },
-                                                          { "tex", 16, Kind::SampledTexture, Access::Read },
-                                                          { "a", 32, Kind::SampledTexture, Access::Read },
-                                                          { "b", 40, Kind::SampledTexture, Access::Read },
-                                                          { "smp", 48, Kind::Sampler, Access::Read },
-                                                          { "out", 56, Kind::Pointer, Access::Write },
-                                                      });
+        { "tex", 0, Kind::SampledTexture, Access::Read },
+        { "tex", 16, Kind::SampledTexture, Access::Read },
+        { "a", 32, Kind::SampledTexture, Access::Read },
+        { "b", 40, Kind::SampledTexture, Access::Read },
+        { "smp", 48, Kind::Sampler, Access::Read },
+        { "out", 56, Kind::Pointer, Access::Write },
+    });
 }
 #endif

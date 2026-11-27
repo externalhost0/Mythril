@@ -173,16 +173,14 @@ int main() {
         };
         const auto buildGraph = [&] {
             mythril::GraphTexture color = rgColorTarget;
+            mythril::GraphTexture depth = rgDepthTarget;
             graph.addGraphicsPass<MainPass>("main", [&](mythril::GraphicsPassBuilder& b, MainPass& d) {
-                color = b.attachment({
-                                         .texDesc = color,
-                                         .clearValue = mythril::ClearValue::color(0.2f, 0.2f, 0.2f, 1.f),
-                                         .loadOp = mythril::LoadOp::CLEAR,
-                                         .storeOp = mythril::StoreOp::STORE,
-                                     })
-                            .texture;
-                b.attachment({
-                    .texDesc = rgDepthTarget,
+                b.attachment(color, {
+                    .clearValue = mythril::ClearValue::color(0.2f, 0.2f, 0.2f, 1.f),
+                    .loadOp = mythril::LoadOp::CLEAR,
+                    .storeOp = mythril::StoreOp::STORE,
+                });
+                b.attachment(depth, {
                     .clearValue = mythril::ClearValue::depth(1.f, 0),
                     .loadOp = mythril::LoadOp::CLEAR,
                 });

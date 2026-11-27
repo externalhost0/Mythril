@@ -1,9 +1,9 @@
 repos:
   - repo: local
     hooks:
-      - id: clang-format
-        name: clang-format
-        entry: tools/clang-format.sh
+      - id: format
+        name: format
+        entry: tools/format.sh
         language: system
         types_or: [c, c++]
 #      - id: clang-tidy

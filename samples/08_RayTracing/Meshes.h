@@ -241,11 +241,11 @@ inline Mesh buildGroundMesh(const float floorHalfExtent, const float floorHeight
     const float e = floorHalfExtent;
     // same winding as the cube's top face so the floor faces +y
     mesh.vertices.insert(mesh.vertices.end(), {
-                                                  { { e, floorHeight, -e } },
-                                                  { { -e, floorHeight, -e } },
-                                                  { { -e, floorHeight, e } },
-                                                  { { e, floorHeight, e } },
-                                              });
+        { { e, floorHeight, -e } },
+        { { -e, floorHeight, -e } },
+        { { -e, floorHeight, e } },
+        { { e, floorHeight, e } },
+    });
     mesh.indices.insert(mesh.indices.end(), { base + 0, base + 1, base + 2,
                                                 base + 2, base + 3, base + 0 });
     return mesh;

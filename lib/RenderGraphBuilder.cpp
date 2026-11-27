@@ -190,14 +190,25 @@ namespace mythril {
         for (const GraphTexture texture: textures)
             dependency(texture, access);
     }
-    AttachmentOutput BasePassBuilder::attachment(const AttachmentDesc& desc) {
-        _passSource.attachmentOperations.push_back(desc);
-        AttachmentOutput out{
-            .texture = _rGraph.writeVersion(_passSource, desc.texDesc.texture),
-        };
-        if (desc.resolveTexDesc.has_value())
-            out.resolve = _rGraph.writeVersion(_passSource, desc.resolveTexDesc->texture);
-        return out;
+    void BasePassBuilder::attachment(GraphTexture& texture, const AttachmentOptions& options) {
+        _passSource.attachmentOperations.push_back({
+            .texDesc = TextureDesc{ texture },
+            .clearValue = options.clearValue,
+            .loadOp = options.loadOp,
+            .storeOp = options.storeOp,
+        });
+        texture = _rGraph.writeVersion(_passSource, texture);
+    }
+    void BasePassBuilder::attachment(GraphTexture& texture, GraphTexture& resolve, const AttachmentOptions& options) {
+        _passSource.attachmentOperations.push_back({
+            .texDesc = TextureDesc{ texture },
+            .clearValue = options.clearValue,
+            .loadOp = options.loadOp,
+            .storeOp = options.storeOp,
+            .resolveTexDesc = TextureDesc{ resolve },
+        });
+        texture = _rGraph.writeVersion(_passSource, texture);
+        resolve = _rGraph.writeVersion(_passSource, resolve);
     }
 
     GraphTexture RenderGraph::createTexture(GraphTextureSpec spec) {
@@ -794,12 +805,12 @@ namespace mythril {
             if (target.range.numLayers == 1 && viewType == VK_IMAGE_VIEW_TYPE_CUBE)
                 viewType = VK_IMAGE_VIEW_TYPE_2D;
             const TextureViewKey viewKey = rCtx.createTextureView(handle, {
-                                                                              .type = viewType,
-                                                                              .mipLevel = target.range.baseMip,
-                                                                              .numMipLevels = target.range.numMips,
-                                                                              .layer = target.range.baseLayer,
-                                                                              .numLayers = target.range.numLayers,
-                                                                          });
+                .type = viewType,
+                .mipLevel = target.range.baseMip,
+                .numMipLevels = target.range.numMips,
+                .layer = target.range.baseLayer,
+                .numLayers = target.range.numLayers,
+            });
             return rCtx.getTextureView(handle, viewKey);
         };
         const auto bindAttachment = [&](AttachmentInfo& attachment) {
@@ -1520,9 +1531,9 @@ namespace mythril {
         auto [it, inserted] = trackers.try_emplace(handle, TextureAccessCache{ SubresourceMap<StageAccess>{ texture.getNumMips(), texture.getNumLayers() } });
         if (inserted || it->second.layoutVersion != texture.getLayoutVersion())
             it->second.masks.set(it->second.masks.wholeRange(), {
-                                                                    .stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
-                                                                    .access = VK_ACCESS_2_MEMORY_WRITE_BIT,
-                                                                });
+                .stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+                .access = VK_ACCESS_2_MEMORY_WRITE_BIT,
+            });
         return it->second;
     }
 
@@ -1724,9 +1735,9 @@ namespace mythril {
         if (!returns)
             texture.setLayout(transfer.range, target.dstLayout);
         cache.masks.set(transfer.range, {
-                                            .stage = VK_PIPELINE_STAGE_2_NONE,
-                                            .access = VK_ACCESS_2_NONE,
-                                        });
+            .stage = VK_PIPELINE_STAGE_2_NONE,
+            .access = VK_ACCESS_2_NONE,
+        });
         cache.layoutVersion = texture.getLayoutVersion();
     }
 
@@ -1801,9 +1812,9 @@ namespace mythril {
                     if (!req.discardContents && !NeedsBarrier(currentLayout, currentMask, req.dstLayout, req.dstMask)) {
                         // a later write must wait on every reader since the last barrier
                         mergedReads.push_back({ range, {
-                                                           .stage = trackedMask.stage | req.dstMask.stage,
-                                                           .access = trackedMask.access | req.dstMask.access,
-                                                       } });
+                            .stage = trackedMask.stage | req.dstMask.stage,
+                            .access = trackedMask.access | req.dstMask.access,
+                        } });
                         return;
                     }
                     vkImageBarriers.push_back(

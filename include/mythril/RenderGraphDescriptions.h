@@ -176,10 +176,10 @@ namespace mythril {
         StoreOp storeOp = StoreOp::DONT_CARE;
         std::optional<TextureDesc> resolveTexDesc;
     };
-    // the versions an attachment writes, resolve is invalid without a resolve target
-    struct AttachmentOutput {
-        GraphTexture texture;
-        GraphTexture resolve;
+    struct AttachmentOptions {
+        ClearValue clearValue;
+        LoadOp loadOp = LoadOp::DONT_CARE;
+        StoreOp storeOp = StoreOp::DONT_CARE;
     };
     enum class TextureAccess : uint8_t {
         Sampled,

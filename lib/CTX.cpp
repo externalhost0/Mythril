@@ -1496,12 +1496,12 @@ namespace mythril {
         copied_obj._vkComponentMappings = spec.components.toVkComponentMapping();
         snprintf(copied_obj._debugName, sizeof(copied_obj._debugName), "%s", spec.debugName);
         createTextureViewObjectsImpl(copied_obj, {
-                                                     .aspectMask = texture_aspect_flags,
-                                                     .baseMipLevel = spec.mipLevel,
-                                                     .levelCount = spec.numMipLevels,
-                                                     .baseArrayLayer = spec.layer,
-                                                     .layerCount = spec.numLayers,
-                                                 });
+            .aspectMask = texture_aspect_flags,
+            .baseMipLevel = spec.mipLevel,
+            .levelCount = spec.numMipLevels,
+            .baseArrayLayer = spec.layer,
+            .layerCount = spec.numLayers,
+        });
         TextureHandle new_handle = this->_texturePool.create(std::move(copied_obj));
         writeTextureDescriptorsImpl(new_handle.index(), 1);
         return { new_handle };

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# formats the given files in place with clang-format, or every tracked c++ source when none are given.
+# formats the given files in place with clang-format and braced-indent.py, or every tracked c++ source when none are given.
 # --check only lists files that need formatting and exits 1 if any do.
 # env: CLANG_FORMAT (binary).
 set -euo pipefail
 
-name=clang-format.sh
+name=format.sh
 source "$(dirname "$0")/common.sh"
 
 check=0
@@ -21,11 +21,12 @@ if [[ ${#files[@]} -eq 0 ]]; then
 	exit 0
 fi
 
-if ! output=$("$fmt" --style=file --dry-run "${files[@]}" 2>&1); then
-	echo "$output" >&2
-	exit 1
+# clang-format plus a braced list indent pass it cannot express, see braced-indent.py
+args=("$fmt")
+[[ $check -eq 1 ]] && args=(--check "$fmt")
+if ! dirty=$(python3 "$root/tools/braced-indent.py" "${args[@]}" "${files[@]}"); then
+	[[ -n $dirty ]] || exit 1
 fi
-dirty=$(echo "$output" | grep -oE '^[^ :]+:[0-9]+:[0-9]+: (warning|error)' | cut -d: -f1 | sort -u || true)
 
 if [[ -z $dirty ]]; then
 	report_clean ${#files[@]}
@@ -39,6 +40,5 @@ if [[ $check -eq 1 ]]; then
 	exit 1
 fi
 
-echo "$dirty" | xargs "$fmt" --style=file -i
 echo "$name: formatted $count of ${#files[@]} files:"
 echo "$dirty"

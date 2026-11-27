@@ -179,18 +179,16 @@ int main() {
             mythril::DeviceAddress vertices;
         };
         const auto buildGraph = [&] {
-            mythril::GraphTexture resolved;
+            mythril::GraphTexture msaaColor = rgColorTarget;
+            mythril::GraphTexture resolved = rgResolveColorTarget;
+            mythril::GraphTexture depth = rgDepthTarget;
             graph.addGraphicsPass<MainPass>("main", [&](mythril::GraphicsPassBuilder& b, MainPass& d) {
-                resolved = b.attachment({
-                                            .texDesc = rgColorTarget,
-                                            .clearValue = mythril::ClearValue::color(0.2f, 0.2f, 0.2f, 1.f),
-                                            .loadOp = mythril::LoadOp::CLEAR,
-                                            .storeOp = mythril::StoreOp::DONT_CARE,
-                                            .resolveTexDesc = rgResolveColorTarget,
-                                        })
-                               .resolve;
-                b.attachment({
-                    .texDesc = rgDepthTarget,
+                b.attachment(msaaColor, resolved, {
+                    .clearValue = mythril::ClearValue::color(0.2f, 0.2f, 0.2f, 1.f),
+                    .loadOp = mythril::LoadOp::CLEAR,
+                    .storeOp = mythril::StoreOp::DONT_CARE,
+                });
+                b.attachment(depth, {
                     .clearValue = mythril::ClearValue::depth(1.f, 0),
                     .loadOp = mythril::LoadOp::CLEAR,
                 });
