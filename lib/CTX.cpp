@@ -299,12 +299,14 @@ namespace mythril {
             .format = lastSwapchainSpec.format,
             .colorSpace = lastSwapchainSpec.colorSpace,
             .presentMode = lastSwapchainSpec.presentMode,
+            .imageCount = lastSwapchainSpec.imageCount,
         };
         AssignIfValid(new_swapchain_spec.width, spec.width, static_cast<uint32_t>(0));
         AssignIfValid(new_swapchain_spec.height, spec.height, static_cast<uint32_t>(0));
         AssignIfValid(new_swapchain_spec.format, spec.format, VK_FORMAT_MAX_ENUM);
         AssignIfValid(new_swapchain_spec.colorSpace, spec.colorSpace, VK_COLOR_SPACE_MAX_ENUM_KHR);
         AssignIfValid(new_swapchain_spec.presentMode, spec.presentMode, VK_PRESENT_MODE_MAX_ENUM_KHR);
+        AssignIfValid(new_swapchain_spec.imageCount, spec.imageCount, static_cast<uint32_t>(0));
 
         ASSERT_MSG(!_currentCommandBuffer._ctx, "Cannot create a swapchain while a CommandBuffer is open, deferred tasks are flushed here.");
         VK_CHECK(vkDeviceWaitIdle(this->_vkDevice));

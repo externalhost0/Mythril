@@ -14,6 +14,8 @@ namespace mythril {
         VkFormat format = VK_FORMAT_MAX_ENUM;
         VkColorSpaceKHR colorSpace = VK_COLOR_SPACE_MAX_ENUM_KHR;
         VkPresentModeKHR presentMode = VK_PRESENT_MODE_MAX_ENUM_KHR;
+        // requested minimum image count (2 double, 3 triple), 0 keeps the current or default
+        uint32_t imageCount = 0;
     };
 
     // https://docs.vulkan.org/guide/latest/swapchain_semaphore_reuse.html#:~:text=//%20!!-,GOOD,-CODE%20EXAMPLE%20!!

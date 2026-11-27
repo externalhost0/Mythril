@@ -132,9 +132,9 @@ namespace mythril {
             LOG_SYSTEM(LogType::Warning, "Requested swapchain size could not be used! Requested: {} x {} vs Actual: {} x {}", width, height, extent.width, extent.height);
         }
 
-        uint32_t minImageCount = std::max<uint32_t>(kNUM_FRAMES_IN_FLIGHT, caps.minImageCount);
+        uint32_t minImageCount = std::max({ static_cast<uint32_t>(kNUM_FRAMES_IN_FLIGHT), args.imageCount, caps.minImageCount });
         if (caps.maxImageCount != 0 && minImageCount > caps.maxImageCount) {
-            LOG_SYSTEM(LogType::Warning, "Surface max image count ({}) is below frames in flight ({}), clamping!", caps.maxImageCount, (int)kNUM_FRAMES_IN_FLIGHT);
+            LOG_SYSTEM(LogType::Warning, "Surface max image count ({}) is below the requested count ({}), clamping!", caps.maxImageCount, minImageCount);
             minImageCount = caps.maxImageCount;
         }
 
