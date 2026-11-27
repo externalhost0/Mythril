@@ -732,4 +732,31 @@ namespace mythril {
     inline std::string_view PassLogName(const CompiledPass& pass) { return pass.name; }
     inline std::string_view PassLogName(const PassMember& pass) { return pass.name; }
 
+    struct RenderGraph::DebugState {
+        bool hasReportedCompile = false;
+        std::unordered_set<std::string> findings;
+        // keys seen this record and the last one, a key in both happens every frame
+        std::unordered_set<std::string> recordFindings;
+        std::unordered_set<std::string> lastRecordFindings;
+        // a record finding prints once for the life of the graph, ping-pong resources would repeat it every other frame
+        std::unordered_set<std::string> shownRecordFindings;
+        std::unordered_map<uint32_t, uint8_t> observedUses;
+        std::vector<std::pair<BufferHandle, uint8_t>> observedBufferUses;
+        struct ObservedDispatches {
+            // graph textures the pushes since the last dispatch name, the next dispatch uses them
+            std::unordered_map<uint32_t, uint8_t> next;
+            std::unordered_map<uint32_t, uint8_t> earlier;
+            uint32_t count = 0;
+            bool dispatchedSincePush = false;
+            bool dependent = false;
+            // a pointer or a texture outside the graph, the in-order barrier may order it
+            bool untracked = false;
+        };
+        ObservedDispatches observedDispatches;
+        // compiled index of each group whose merge with the next is blocked only by depth, record decides if depth can be added
+        std::vector<uint32_t> depthBlockedMerges;
+        // a pipeline whose formats are set outside the graph (ImGui, raw binds) drew in the pass being recorded
+        bool drewFixedFormats = false;
+    };
+
 } // namespace mythril

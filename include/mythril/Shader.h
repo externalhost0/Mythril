@@ -120,9 +120,8 @@ namespace mythril {
             VkShaderModule _vkShaderModule{};
             PipelineLayoutSignature _pipelineSignature;
             SpecializationInfo _specializationInfo; // holds both info and a map when varName is used to resolve ID
-#ifdef DEBUG
+            // only DEBUG builds of the library fill it, the layout stays the same whatever the consumer defines
             std::vector<ShaderEntryPoint> _entryPoints;
-#endif
 
             char _debugName[kMaxDebugNameLength] = { 0 };
 

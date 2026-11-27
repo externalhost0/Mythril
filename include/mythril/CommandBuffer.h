@@ -76,9 +76,8 @@ namespace mythril {
 
         void cmdBindIndexBuffer(BufferHandle buffer);
         void cmdPushConstants(const void* data, uint32_t size, uint32_t offset, uint32_t alignment);
-#ifdef DEBUG
+        // the inline caller follows the consumer's DEBUG, so a release library still defines it with an empty body
         void checkPushLayout(uint64_t layoutHash, const char* layout) const;
-#endif
         void cmdUpdateBufferEXT(BufferHandle handle, size_t offset, size_t size, const void* data);
 
         void cmdDraw(uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstInstance);
@@ -152,10 +151,6 @@ namespace mythril {
 
         bool _isRendering = false; // cmdBeginRendering
         bool _hasDispatchedInPass = false;
-#ifdef DEBUG
-        // a pipeline whose formats are set outside the graph (ImGui, raw binds) drew in the pass
-        bool _drewFixedFormats = false;
-#endif
 
         SubmitHandle _lastSubmitHandle = {};
         uint32_t _viewMask = 0;

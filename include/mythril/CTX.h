@@ -169,10 +169,8 @@ namespace mythril {
         void waitIdle() const;
 
         const detail::AllocatedShader& inspectShader(ShaderHandle handle) const;
-#ifdef DEBUG
-        // main thread, between frames: swaps the shader's SPIR-V for the .spv at path and rebuilds its pipelines, false keeps the old code
+        // main thread, between frames: swaps the shader's SPIR-V for the .spv at path and rebuilds its pipelines, false keeps the old code (always in a release library)
         bool reloadShaderEXT(const Shader& shader, const std::filesystem::path& path);
-#endif
 
         // for ray tracing ease of use, not clean as of now;
         // we want to reduce the user having to make calls like these since we do so behind the scenes in CTX later anyways

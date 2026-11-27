@@ -247,7 +247,7 @@ You can incorporate `CTX::reloadShaderEXT` if you want hot reloading functionali
 - Keep the `Shader` alive for as long as any pipeline that uses it exists. Destroying the shader while a pipeline still references it is undefined behavior. *(subject to change in the future)*
 - `createShader` stops the program if the `.spv` file is missing or cannot be read, so ship the `SPIRV_DIR` files with your executable.
 - When `SPIRV_DIR` is a plain path, the build writes a deleted `.spv` file again. CMake cannot track files in a path that has a target generator expression, such as `$<TARGET_FILE_DIR:my_app>`. With that kind of path, change a `.slang` file to write the `.spv` files again.
-- `reloadShaderEXT` exists only in debug builds.
+- `reloadShaderEXT` works only in a debug build of mythril. A release build always returns false.
 
 ---
 

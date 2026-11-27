@@ -439,13 +439,16 @@ namespace mythril {
             fmt::format_to(std::back_inserter(shaderLayouts), "\n  {}", block.description);
         ASSERT_MSG(false, "Pushes a struct laid out as\n  {}\non pipeline '{}', whose shaders push{}\nThe struct belongs to another pipeline, or the shader changed after its header was generated.", layout, _currentPipelineInfo->debugName, shaderLayouts.empty() ? " nothing" : shaderLayouts);
     }
+#else
+    void CommandBuffer::checkPushLayout(uint64_t, const char*) const {}
 #endif
 
     VkCommandBuffer PassCmd::vk() {
         // a raw bind would make the typed bind skip as a rebind
         _cmd._lastBoundvkPipeline = VK_NULL_HANDLE;
 #ifdef DEBUG
-        _cmd._drewFixedFormats = true;
+        ASSERT_MSG(_cmd._graph, "PassCmd::vk is only valid inside a render graph callback.");
+        _cmd._graph->_debug->drewFixedFormats = true;
 #endif
         return _cmd._wrapper->_cmdBuf;
     }
@@ -633,7 +636,8 @@ namespace mythril {
         }
         ImGui_ImplVulkan_RenderDrawData(drawData, _wrapper->_cmdBuf);
 #ifdef DEBUG
-        _drewFixedFormats = true;
+        ASSERT_MSG(_graph, "cmdDrawImGui is only valid inside a render graph callback.");
+        _graph->_debug->drewFixedFormats = true;
 #endif
         // ImGui binds its own pipeline, so the rebind skip must not trust the cached one
         _lastBoundvkPipeline = VK_NULL_HANDLE;

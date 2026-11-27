@@ -278,6 +278,8 @@ namespace mythril {
             invalidatePipelineImpl(*shared);
         return true;
     }
+#else
+    bool CTX::reloadShaderEXT(const Shader&, const std::filesystem::path&) { return false; }
 #endif
 
 #ifdef DEBUG

@@ -39,6 +39,9 @@ add_executable(mythril_tests
         test_buffer_tracking.cpp
         test_graph_textures.cpp
         test_graph_schedule.cpp
+        test_layout.cpp
+        layout/layout_debug.cpp
+        layout/layout_release.cpp
         test_push_layout.cpp
         test_texture_usage.cpp
 )

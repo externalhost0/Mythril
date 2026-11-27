@@ -463,7 +463,7 @@ namespace mythril {
         void checkPushResources(const CTX& rCtx, const CompiledPass& pass, const PassMember& member, std::string_view pipeline, std::span<const PushResourceField> fields, const void* data, uint32_t size, uint32_t offset) const;
         void observeDispatch(const CompiledPass& pass, const PassMember& member) const;
         void reportObservedUses(const CompiledPass& pass, const PassMember& member) const;
-        void reportDepthBlockedMerges(size_t passIdx, bool drewFixedFormats) const;
+        void reportDepthBlockedMerges(size_t passIdx) const;
         void reportDeclarations(const std::vector<uint32_t>& culled_order, const std::vector<PassUses>& passUses, std::unordered_set<std::string>& findings) const;
 #endif
         void addTransferDesc(PassDesc&& desc);
@@ -506,9 +506,6 @@ namespace mythril {
         std::vector<CompiledPass> _compiledPasses;
 
         bool _hasCompiled = false;
-#ifdef DEBUG
-        bool _hasReportedCompile = false;
-#endif
 
         std::vector<ScheduledPass> _scheduleView;
         std::vector<OwnershipTransfer> _transfers;
@@ -518,32 +515,13 @@ namespace mythril {
 
         TransientPool _transientPool;
         PassArena _arena;
-#ifdef DEBUG
-        std::unordered_set<std::string> _findings;
-        // keys seen this record and the last one, a key in both happens every frame
-        mutable std::unordered_set<std::string> _recordFindings;
-        std::unordered_set<std::string> _lastRecordFindings;
-        // a record finding prints once for the life of the graph, ping-pong resources would repeat it every other frame
-        mutable std::unordered_set<std::string> _shownRecordFindings;
-        mutable std::unordered_map<uint32_t, uint8_t> _observedUses;
-        mutable std::vector<std::pair<BufferHandle, uint8_t>> _observedBufferUses;
-        struct ObservedDispatches {
-            // graph textures the pushes since the last dispatch name, the next dispatch uses them
-            std::unordered_map<uint32_t, uint8_t> next;
-            std::unordered_map<uint32_t, uint8_t> earlier;
-            uint32_t count = 0;
-            bool dispatchedSincePush = false;
-            bool dependent = false;
-            // a pointer or a texture outside the graph, the in-order barrier may order it
-            bool untracked = false;
-        };
-        mutable ObservedDispatches _observedDispatches;
-        // compiled index of each group whose merge with the next is blocked only by depth, record decides if depth can be added
-        std::vector<uint32_t> _depthBlockedMerges;
-#endif
+        // only DEBUG builds of the library create it, the layout stays the same whatever the consumer defines
+        struct DebugState;
+        std::unique_ptr<DebugState> _debug;
 
         friend struct BasePassBuilder;
         friend class TransferBuilder;
         friend class CommandBuffer;
+        friend class PassCmd;
     };
 }

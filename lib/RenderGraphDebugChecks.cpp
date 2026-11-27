@@ -14,7 +14,7 @@ namespace mythril {
 #ifdef DEBUG
     void RenderGraph::reportDeclarations(const std::vector<uint32_t>& culled_order, const std::vector<PassUses>& passUses, std::unordered_set<std::string>& findings) const {
         const auto isNew = [&](const std::string& key) {
-            return findings.insert(key).second && !_findings.contains(key);
+            return findings.insert(key).second && !_debug->findings.contains(key);
         };
         {
             constexpr Options kDefaults{};
@@ -114,9 +114,9 @@ namespace mythril {
     }
     void RenderGraph::checkPushResources(const CTX& rCtx, const CompiledPass& pass, const PassMember& member, const std::string_view pipeline, const std::span<const PushResourceField> fields, const void* data, const uint32_t size, const uint32_t offset) const {
         const auto isNew = [&](std::string key) {
-            return _shownRecordFindings.insert(std::move(key)).second;
+            return _debug->shownRecordFindings.insert(std::move(key)).second;
         };
-        ObservedDispatches& dispatches = _observedDispatches;
+        DebugState::ObservedDispatches& dispatches = _debug->observedDispatches;
         if (dispatches.dispatchedSincePush) {
             dispatches.next.clear();
             dispatches.dispatchedSincePush = false;
@@ -149,10 +149,10 @@ namespace mythril {
                     const AllocatedBuffer& allocated = rCtx.view(buffer.handle);
                     if (value < allocated._vkDeviceAddress || value >= allocated._vkDeviceAddress + allocated._bufferSize)
                         continue;
-                    if (const auto it = std::ranges::find(_observedBufferUses, buffer.handle, &std::pair<BufferHandle, uint8_t>::first); it != _observedBufferUses.end())
+                    if (const auto it = std::ranges::find(_debug->observedBufferUses, buffer.handle, &std::pair<BufferHandle, uint8_t>::first); it != _debug->observedBufferUses.end())
                         it->second |= UseOf(field);
                     else
-                        _observedBufferUses.emplace_back(buffer.handle, UseOf(field));
+                        _debug->observedBufferUses.emplace_back(buffer.handle, UseOf(field));
                     if (std::ranges::find(member.bufferDependencies, buffer.handle, &BufferDependencyDesc::handle) == member.bufferDependencies.end() && isNew("undeclared buffer " + member.name + " " + buffer.debugName))
                         LOG_PASS(LogType::Warning, pass, "'{}' passes a pointer into buffer '{}' as '{}' of pipeline '{}' without declaring it, so nothing orders it. Declare the buffer.", member.name, buffer.debugName, field.varName, pipeline);
                     break;
@@ -171,7 +171,7 @@ namespace mythril {
                     continue;
                 const GraphTexture texture = GraphTextureAccess::make(id);
                 const uint8_t use = UseOf(field);
-                _observedUses[id] |= use;
+                _debug->observedUses[id] |= use;
                 dispatches.next[id] |= use;
                 if (!std::ranges::binary_search(member.sortedDeclaredTextures, id, {}, IdOf) && isNew("undeclared texture " + member.name + " " + std::string(nameOf(texture))))
                     LOG_PASS(LogType::Warning, pass, "'{}' passes graph texture '{}' as '{}' of pipeline '{}' without declaring it, so nothing orders or transitions it. Declare the texture.", member.name, nameOf(texture), field.varName, pipeline);
@@ -183,9 +183,9 @@ namespace mythril {
     }
     void RenderGraph::observeDispatch(const CompiledPass& pass, const PassMember& member) const {
         const auto isNew = [&](std::string key) {
-            return _shownRecordFindings.insert(std::move(key)).second;
+            return _debug->shownRecordFindings.insert(std::move(key)).second;
         };
-        ObservedDispatches& dispatches = _observedDispatches;
+        DebugState::ObservedDispatches& dispatches = _debug->observedDispatches;
         for (const auto& [id, use]: dispatches.next) {
             const auto it = dispatches.earlier.find(id);
             const uint8_t now = use & (kReadUse | kMayWrite);
@@ -202,26 +202,26 @@ namespace mythril {
         ++dispatches.count;
         dispatches.dispatchedSincePush = true;
     }
-    void RenderGraph::reportDepthBlockedMerges(const size_t passIdx, const bool drewFixedFormats) const {
-        for (const uint32_t g: _depthBlockedMerges) {
+    void RenderGraph::reportDepthBlockedMerges(const size_t passIdx) const {
+        for (const uint32_t g: _debug->depthBlockedMerges) {
             const CompiledPass& group = _compiledPasses[g];
             const CompiledPass& next = _compiledPasses[g + 1];
             const CompiledPass& depthless = group.depthAttachment.has_value() ? next : group;
             // a pipeline with fixed formats cannot draw in a scope with a depth attachment, so the merge is out of reach
-            if (&depthless != &_compiledPasses[passIdx] || drewFixedFormats)
+            if (&depthless != &_compiledPasses[passIdx] || _debug->drewFixedFormats)
                 continue;
             const std::string key = "merge blocked " + group.name + " " + next.name;
-            if (_shownRecordFindings.insert(key).second)
+            if (_debug->shownRecordFindings.insert(key).second)
                 LOG_PASS(LogType::Suggestion, next, "Runs right after '{}' and shares an attachment with it, but cannot share its rendering scope because of {}. Give '{}' the same depth attachment with LoadOp::LOAD to merge them.", group.name, kDepthOnOneBlocker, depthless.name);
         }
     }
     void RenderGraph::reportObservedUses(const CompiledPass& pass, const PassMember& member) const {
         const auto isNew = [&](std::string key) {
-            return _shownRecordFindings.insert(std::move(key)).second;
+            return _debug->shownRecordFindings.insert(std::move(key)).second;
         };
         for (const TextureDependencyDesc& dependency: member.textureDependencies) {
-            const auto it = _observedUses.find(IdOf(dependency.texDesc.texture));
-            if (it == _observedUses.end())
+            const auto it = _debug->observedUses.find(IdOf(dependency.texDesc.texture));
+            if (it == _debug->observedUses.end())
                 continue;
             const std::string_view name = nameOf(dependency.texDesc.texture);
             const std::string key = member.name + " " + std::string(name);
@@ -248,8 +248,8 @@ namespace mythril {
             }
         }
         for (const BufferDependencyDesc& dependency: member.bufferDependencies) {
-            const auto it = std::ranges::find(_observedBufferUses, dependency.handle, &std::pair<BufferHandle, uint8_t>::first);
-            if (it == _observedBufferUses.end())
+            const auto it = std::ranges::find(_debug->observedBufferUses, dependency.handle, &std::pair<BufferHandle, uint8_t>::first);
+            if (it == _debug->observedBufferUses.end())
                 continue;
             const std::string_view name = std::ranges::find(_buffers, dependency.handle, &GraphBufferResource::handle)->debugName;
             const std::string key = member.name + " " + std::string(name);
@@ -271,12 +271,12 @@ namespace mythril {
                     break;
             }
         }
-        const ObservedDispatches& dispatches = _observedDispatches;
+        const DebugState::ObservedDispatches& dispatches = _debug->observedDispatches;
         if (pass.inOrderBarrier && dispatches.count > 0 && !dispatches.dependent && !dispatches.untracked && isNew("needless in order " + member.name))
             LOG_PASS(LogType::Suggestion, pass, "'{}' calls executeCmdsInOrder(), but no dispatch uses a texture that an earlier dispatch may have written, or writes one an earlier dispatch used. Remove executeCmdsInOrder() to skip the barrier between dispatches.", member.name);
-        _observedUses.clear();
-        _observedBufferUses.clear();
-        _observedDispatches = {};
+        _debug->observedUses.clear();
+        _debug->observedBufferUses.clear();
+        _debug->observedDispatches = {};
     }
 #endif
 } // namespace mythril

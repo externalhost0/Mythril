@@ -34,7 +34,12 @@
 
 namespace mythril {
     using namespace detail;
+#ifdef DEBUG
+    RenderGraph::RenderGraph() :
+        _debug(std::make_unique<DebugState>()) {}
+#else
     RenderGraph::RenderGraph() = default;
+#endif
     RenderGraph::~RenderGraph() = default;
     RenderGraph::RenderGraph(RenderGraph&&) noexcept = default;
     RenderGraph& RenderGraph::operator=(RenderGraph&&) noexcept = default;
@@ -755,7 +760,7 @@ namespace mythril {
                     resolve_shape.debugName,
                     string_VkFormat(resolve_shape.format));
 #ifdef DEBUG
-                if (attachment_desc.storeOp == StoreOp::STORE && !_hasReportedCompile)
+                if (attachment_desc.storeOp == StoreOp::STORE && !_debug->hasReportedCompile)
                     LOG_PASS(
                         LogType::Suggestion,
                         pass_desc,
@@ -779,7 +784,7 @@ namespace mythril {
             const uint32_t height = std::max(1u, shape.dimensions.height >> mipLevel);
 
 #ifdef DEBUG
-            if ((max_width != width || max_height != height) && (max_width != 0 || max_height != 0) && !_hasReportedCompile)
+            if ((max_width != width || max_height != height) && (max_width != 0 || max_height != 0) && !_debug->hasReportedCompile)
                 LOG_PASS(LogType::Warning, pass_desc, "You have attachments of different dimensions, this is allowed but experimental.");
 #endif
             max_width = std::max(max_width, width);
@@ -1117,6 +1122,9 @@ namespace mythril {
 
     void RenderGraph::compile(CTX& rCtx) {
         MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_RENDERGRAPH);
+#ifdef DEBUG
+        ASSERT_MSG(_debug, "RenderGraph::compile called on a moved-from graph.");
+#endif
         this->_compiledPasses.clear();
         std::erase_if(_resourceTrackers, [&rCtx](const auto& entry) {
             return rCtx._texturePool.get(entry.first) == nullptr;
@@ -1140,7 +1148,7 @@ namespace mythril {
 #ifdef DEBUG
         std::unordered_set<std::string> findings;
         const auto isNew = [&](const std::string& key) {
-            return findings.insert(key).second && !_findings.contains(key);
+            return findings.insert(key).second && !_debug->findings.contains(key);
         };
         reportDeclarations(culled_order, passUses, findings);
 #endif
@@ -1153,7 +1161,7 @@ namespace mythril {
             .transfer = usable(rCtx._immAsyncTransfer),
         };
 #ifdef DEBUG
-        const bool logRouting = !this->_hasReportedCompile && _options.async;
+        const bool logRouting = !_debug->hasReportedCompile && _options.async;
 #endif
         const auto queueOf = [&](const PassDesc& pass) {
             const QueueNeed need = QueueNeedOf(pass, _textures);
@@ -1234,12 +1242,12 @@ namespace mythril {
         ASSERT_MSG(scheduled.blocked.empty(), "RenderGraph could not schedule every pass.");
 
 #ifdef DEBUG
-        const bool logMerges = !this->_hasReportedCompile;
+        const bool logMerges = !_debug->hasReportedCompile;
 #endif
         std::vector<uint32_t> descToCompiled(this->_passDescriptions.size(), kUnscheduled);
         this->_compiledPasses.reserve(scheduled.groups.size());
 #ifdef DEBUG
-        _depthBlockedMerges.clear();
+        _debug->depthBlockedMerges.clear();
         for (size_t g = 0; g + 1 < scheduled.groups.size() && _options.merge; ++g) {
             const CompilingPass& group = records[scheduled.groups[g].front()];
             const CompilingPass& next = records[scheduled.groups[g + 1].front()];
@@ -1250,7 +1258,7 @@ namespace mythril {
                 continue;
             const char* blocker = MergeBlocker(group, next);
             if (blocker == kDepthOnOneBlocker)
-                _depthBlockedMerges.push_back(static_cast<uint32_t>(g));
+                _debug->depthBlockedMerges.push_back(static_cast<uint32_t>(g));
             else if (blocker && isNew("merge blocked " + group.pass.name + " " + next.pass.name))
                 LOG_PASS(LogType::Suggestion, next.pass, "Runs right after '{}' and shares an attachment with it, but cannot share its rendering scope because of {}.", group.pass.name, blocker);
         }
@@ -1407,8 +1415,8 @@ namespace mythril {
             }
             break;
         }
-        _findings = std::move(findings);
-        this->_hasReportedCompile = true;
+        _debug->findings = std::move(findings);
+        _debug->hasReportedCompile = true;
 #endif
         this->_hasCompiled = true;
     }
@@ -1799,8 +1807,8 @@ namespace mythril {
 #ifdef DEBUG
             if (const auto it = _resourceTrackers.find(activeHandle); !req.isSwapchain && it != _resourceTrackers.end() && it->second.layoutVersion != activeTexture.getLayoutVersion()) {
                 const std::string key = "outside write " + std::string(activeTexture.getDebugName());
-                _recordFindings.insert(key);
-                if (_lastRecordFindings.contains(key) && _shownRecordFindings.insert(key).second)
+                _debug->recordFindings.insert(key);
+                if (_debug->lastRecordFindings.contains(key) && _debug->shownRecordFindings.insert(key).second)
                     LOG_SYSTEM(LogType::Suggestion, "Texture '{}' is changed outside the render graph every frame, so each frame it gets the conservative ALL_COMMANDS barrier. Do that write through the graph (TransferBuilder::upload, or a pass).", activeTexture.getDebugName());
             }
 #endif
@@ -1968,6 +1976,9 @@ namespace mythril {
         MYTH_PROFILER_FUNCTION_COLOR(MYTH_PROFILER_COLOR_RENDERGRAPH);
         ASSERT_MSG(!rCtx._currentCommandBuffer._graph, "You cannot call RenderGraph::execute inside an execution callback!");
         ASSERT_MSG(_hasCompiled, "RenderGraph must be compiled before it can be executed!");
+#ifdef DEBUG
+        ASSERT_MSG(_debug, "RenderGraph::execute called on a moved-from graph.");
+#endif
         const bool presents = std::ranges::any_of(_compiledPasses, UsesBackBuffer);
         CommandBuffer* acquired = rCtx.acquireCommand(presents);
         // out of date, the swapchain is marked dirty and this frame is dropped
@@ -2088,7 +2099,7 @@ namespace mythril {
             if (pass.type == PassDesc::Type::Transfer)
                 RecordTransferOps(cmd, pass);
 #ifdef DEBUG
-            cmd._drewFixedFormats = false;
+            _debug->drewFixedFormats = false;
 #endif
             for (size_t i = 0; i < pass.members.size(); ++i) {
                 if (i > 0)
@@ -2100,7 +2111,7 @@ namespace mythril {
 #endif
             }
 #ifdef DEBUG
-            reportDepthBlockedMerges(passIdx, cmd._drewFixedFormats);
+            reportDepthBlockedMerges(passIdx);
 #endif
             if (isGraphics) cmd.cmdEndRenderingEXT();
             if (stamps) cmd.cmdWriteTimestamp(timestamps, firstQuery + 2 * static_cast<uint32_t>(passIdx) + 1);
@@ -2151,8 +2162,8 @@ namespace mythril {
                 imms[0]->signalSemaphore(use.access.signalSemaphore, use.access.signalValue);
         }
 #ifdef DEBUG
-        _lastRecordFindings = std::move(_recordFindings);
-        _recordFindings.clear();
+        _debug->lastRecordFindings = std::move(_debug->recordFindings);
+        _debug->recordFindings.clear();
 #endif
         return rCtx.submitCommand(*lanes[0], presents);
     }
