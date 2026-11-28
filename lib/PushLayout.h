@@ -64,6 +64,8 @@ namespace mythril {
     // struct name to its layout description and the shader that first declared it, shared by every shader of one run
     using StructRegistry = std::map<std::string, std::pair<std::string, std::string>, std::less<>>;
     void ReflectPushTypes(slang::ProgramLayout* layout, std::string_view origin, StructRegistry& registry, ReflectedTypes& out);
+    // adds the named structs that the push blocks do not reach, returns a message per struct that cannot be generated
+    std::vector<std::string> ReflectDeclaredStructs(slang::ProgramLayout* layout, std::span<const std::string> names, std::string_view origin, StructRegistry& registry, ReflectedTypes& out);
     std::string DescribeStruct(const ReflectedTypes& types, const ReflectedStruct& type);
 
     struct HeaderOptions {

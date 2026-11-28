@@ -264,6 +264,33 @@ namespace mythril {
         return errors;
     }
 
+    std::vector<std::string> ReflectDeclaredStructs(slang::ProgramLayout* layout, const std::span<const std::string> names, const std::string_view origin, StructRegistry& registry, ReflectedTypes& out) {
+        std::vector<std::string> skipped;
+        for (const std::string& name: names) {
+            if (out.find(name))
+                continue;
+            slang::TypeReflection* type = layout->findTypeByName(name.c_str());
+            if (!type || type->getKind() != slang::TypeReflection::Kind::Struct)
+                continue;
+            slang::TypeLayoutReflection* typeLayout = layout->getTypeLayout(type);
+            if (!typeLayout || typeLayout->getKind() != slang::TypeReflection::Kind::Struct)
+                continue;
+            // walk into scratch state so a struct that cannot be generated leaves no half-added nested structs behind
+            StructRegistry scratchRegistry = registry;
+            ReflectedTypes scratch;
+            TypeWalker{ origin, scratchRegistry, scratch }.visitStruct(typeLayout);
+            if (const std::vector<std::string> errors = CheckCodegenRules(scratch); !errors.empty()) {
+                skipped.push_back(fmt::format("struct '{}' is not generated: {}", name, errors.front()));
+                continue;
+            }
+            registry = std::move(scratchRegistry);
+            for (ReflectedStruct& nested: scratch.structs)
+                if (!out.find(nested.name))
+                    out.structs.push_back(std::move(nested));
+        }
+        return skipped;
+    }
+
     namespace {
         class SpirvComparison {
         public:

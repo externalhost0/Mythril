@@ -131,7 +131,7 @@ namespace {
         return name.substr(0, name.find('.'));
     }
 
-    bool CompileShader(SlangCompiler& compiler, const Options::Source& input, const HeaderOptions& options, StructRegistry& structs, PushLayouts& pushLayouts, Compiled& shader) {
+    bool CompileShader(SlangCompiler& compiler, const Options::Source& input, const HeaderOptions& options, const std::vector<std::filesystem::path>& generatedFiles, StructRegistry& structs, PushLayouts& pushLayouts, Compiled& shader) {
         const std::filesystem::path& source = input.path;
         if (!std::filesystem::exists(source))
             return Fail("shader '{}' does not exist", source.string());
@@ -171,6 +171,13 @@ namespace {
             errors.push_back(std::move(error));
         else if (input.typed) {
             ReflectPushTypes(layout, source.string(), structs, shader.types);
+            // only structs from files that get a header, a struct from any other module has nowhere to go
+            std::vector<std::string> declared;
+            for (const auto& [structName, file]: compiler.loadedDeclarations().structs)
+                if (std::ranges::find(generatedFiles, std::filesystem::weakly_canonical(file)) != generatedFiles.end())
+                    declared.push_back(structName);
+            for (const std::string& skipped: ReflectDeclaredStructs(layout, declared, source.string(), structs, shader.types))
+                fmt::print(stderr, "{}: warning: {}\n", source.string(), skipped);
             PushLayouts shaderLayouts;
             errors = CheckHeader(shader.types, spirvLayout, options, shaderLayouts);
             for (auto& [structName, pushLayout]: shaderLayouts)
@@ -312,8 +319,12 @@ namespace {
         std::vector<Compiled> compiled(options.sources.size());
         StructRegistry structs;
         PushLayouts pushLayouts;
+        std::vector<std::filesystem::path> generatedFiles = options.modules;
+        for (const Options::Source& source: options.sources)
+            if (source.typed)
+                generatedFiles.push_back(std::filesystem::weakly_canonical(source.path));
         for (size_t i = 0; i < options.sources.size(); ++i)
-            if (!CompileShader(*compiler, options.sources[i], options.header, structs, pushLayouts, compiled[i]))
+            if (!CompileShader(*compiler, options.sources[i], options.header, generatedFiles, structs, pushLayouts, compiled[i]))
                 return false;
 
         const SlangCompiler::Declarations declarations = compiler->loadedDeclarations();
