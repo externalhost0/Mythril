@@ -110,6 +110,7 @@ if(stb_image_ADDED)
     target_include_directories(stb_image INTERFACE ${stb_image_SOURCE_DIR})
 endif()
 
+# sample 7 and 9 both use it for interaction
 CPMAddPackage(
         NAME imguizmo
         GITHUB_REPOSITORY "CedricGuillemet/ImGuizmo"
