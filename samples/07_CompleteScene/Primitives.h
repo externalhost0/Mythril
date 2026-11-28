@@ -8,7 +8,7 @@
 #include <vector>
 
 namespace Primitives {
-    const std::vector<shaders::Vertex> kCubeVertices = {
+    const std::vector<shaders::GPUStructs::Vertex> kCubeVertices = {
         // front face
         { { -1.f, -1.f, -1.f } }, // A 0
         { { 1.f, -1.f, -1.f } }, // B 1

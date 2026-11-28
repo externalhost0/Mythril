@@ -1,7 +1,7 @@
-# mythril_reflect_shaders(<target> [SOURCES|UNTYPED_SOURCES|MODULES|SEARCH_PATHS ...] [MATRIX_LAYOUT ROW|COLUMN] [TYPES_HEADER|TYPES_NAMESPACE|NAMESPACE|SPIRV_DIR <value>])
-# writes <shader>.slang.spv to SPIRV_DIR and <shader>.shadergen.h with kSpirvFile in <ns>::<shader>, plus the push structs for SOURCES, structs from an imported module go in <module>.shadergen.h and the module must be in MODULES
+# mythril_reflect_shaders(<target> [SOURCES|UNTYPED_SOURCES|MODULES|SEARCH_PATHS ...] [FILE_NAMESPACES] [MATRIX_LAYOUT ROW|COLUMN] [TYPES_HEADER|TYPES_NAMESPACE|NAMESPACE|SPIRV_DIR <value>])
+# writes <shader>.slang.spv to SPIRV_DIR and <shader>.shadergen.h with kSpirvFile in <ns>::<shader>, plus the push structs for SOURCES, structs from an imported module go in <module>.shadergen.h and the module must be in MODULES, FILE_NAMESPACES generates each file's structs in <ns>::<file stem>, build <target>_shaders to run only this step
 function(mythril_reflect_shaders target)
-    cmake_parse_arguments(ARG "" "MATRIX_LAYOUT;TYPES_HEADER;TYPES_NAMESPACE;NAMESPACE;SPIRV_DIR" "SOURCES;UNTYPED_SOURCES;MODULES;SEARCH_PATHS" ${ARGN})
+    cmake_parse_arguments(ARG "FILE_NAMESPACES" "MATRIX_LAYOUT;TYPES_HEADER;TYPES_NAMESPACE;NAMESPACE;SPIRV_DIR" "SOURCES;UNTYPED_SOURCES;MODULES;SEARCH_PATHS" ${ARGN})
     if(NOT ARG_SOURCES AND NOT ARG_UNTYPED_SOURCES)
         message(FATAL_ERROR "mythril_reflect_shaders(${target}) needs SOURCES or UNTYPED_SOURCES")
     endif()
@@ -25,6 +25,9 @@ function(mythril_reflect_shaders target)
         list(APPEND _args --matrix-layout column)
     elseif(ARG_MATRIX_LAYOUT AND NOT ARG_MATRIX_LAYOUT STREQUAL "ROW")
         message(FATAL_ERROR "mythril_reflect_shaders(${target}) MATRIX_LAYOUT is ROW or COLUMN, not ${ARG_MATRIX_LAYOUT}")
+    endif()
+    if(ARG_FILE_NAMESPACES)
+        list(APPEND _args --file-namespaces)
     endif()
     if(ARG_TYPES_HEADER)
         list(APPEND _args --types-header "${ARG_TYPES_HEADER}")
@@ -75,6 +78,7 @@ function(mythril_reflect_shaders target)
             COMMAND_EXPAND_LISTS
             VERBATIM
     )
+    add_custom_target(${target}_shaders DEPENDS "${_stamp}")
     target_sources(${target} PRIVATE "${_stamp}" ${_headers})
     target_include_directories(${target} PRIVATE "${_out_dir}")
 endfunction()

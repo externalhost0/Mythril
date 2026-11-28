@@ -34,6 +34,8 @@ namespace mythril {
         bool unsizedArray = false;
         uint32_t arrayCount = 0;
         uint32_t arrayStride = 0;
+        // namespace the struct lives in under HeaderOptions::fileNamespaces, empty otherwise
+        std::string scope;
     };
     struct ReflectedField {
         std::string name;
@@ -43,6 +45,7 @@ namespace mythril {
     };
     struct ReflectedStruct {
         std::string name;
+        std::string scope;
         uint32_t size;
         uint32_t stride;
         uint32_t alignment;
@@ -61,17 +64,25 @@ namespace mythril {
 
         const ReflectedStruct* find(std::string_view name) const;
     };
-    // struct name to its layout description and the shader that first declared it, shared by every shader of one run
+    // the file stem a struct is generated under, byName maps a struct to its declaring file and fallback covers the rest, both empty when there are no file namespaces
+    struct StructScopes {
+        std::map<std::string, std::string, std::less<>> byName;
+        std::string fallback;
+    };
+    inline std::string QualifiedName(const std::string_view scope, const std::string_view name) { return scope.empty() ? std::string(name) : std::string(scope) + "::" + std::string(name); }
+    // qualified struct name to its layout description and the shader that first declared it, shared by every shader of one run
     using StructRegistry = std::map<std::string, std::pair<std::string, std::string>, std::less<>>;
-    void ReflectPushTypes(slang::ProgramLayout* layout, std::string_view origin, StructRegistry& registry, ReflectedTypes& out);
+    void ReflectPushTypes(slang::ProgramLayout* layout, std::string_view origin, StructRegistry& registry, ReflectedTypes& out, const StructScopes& scopes = {});
     // adds the named structs that the push blocks do not reach, returns a message per struct that cannot be generated
-    std::vector<std::string> ReflectDeclaredStructs(slang::ProgramLayout* layout, std::span<const std::string> names, std::string_view origin, StructRegistry& registry, ReflectedTypes& out);
+    std::vector<std::string> ReflectDeclaredStructs(slang::ProgramLayout* layout, std::span<const std::string> names, std::string_view origin, StructRegistry& registry, ReflectedTypes& out, const StructScopes& scopes = {});
     std::string DescribeStruct(const ReflectedTypes& types, const ReflectedStruct& type);
 
     struct HeaderOptions {
         std::string typesHeader = "mythril/ShaderTypes.h";
         std::string typesNamespace = "mythril::shader";
         std::string ns = "shaders";
+        // generate the structs a file declares in <ns>::<file stem> instead of <ns>, so two files can declare the same name
+        bool fileNamespaces = false;
         SlangMatrixLayoutMode matrixMode = SLANG_MATRIX_LAYOUT_ROW_MAJOR;
     };
     using PushLayouts = std::map<std::string, PushBlockLayout, std::less<>>;

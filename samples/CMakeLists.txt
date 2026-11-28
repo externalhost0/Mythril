@@ -27,7 +27,7 @@ CPMAddPackage(
 get_property(_multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
 # SHADERS, UNTYPED_SHADERS and MODULES are relative to the sample folder
 macro(ADD_SAMPLE sample_name)
-    set(options)
+    set(options FILE_NAMESPACES)
     set(oneValueArgs)
     set(multiValueArgs LIBS SHADERS UNTYPED_SHADERS MODULES)
     cmake_parse_arguments(SAMPLE "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
@@ -80,7 +80,11 @@ macro(ADD_SAMPLE sample_name)
         else()
             set(_spirv_dir "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${sample_name}_data")
         endif()
-        mythril_reflect_shaders(${sample_name} SOURCES ${_sample_SHADERS} UNTYPED_SOURCES ${_sample_UNTYPED_SHADERS} MODULES ${_sample_MODULES} SEARCH_PATHS ${_search_paths}
+        set(_file_namespaces)
+        if(SAMPLE_FILE_NAMESPACES)
+            set(_file_namespaces FILE_NAMESPACES)
+        endif()
+        mythril_reflect_shaders(${sample_name} ${_file_namespaces} SOURCES ${_sample_SHADERS} UNTYPED_SOURCES ${_sample_UNTYPED_SHADERS} MODULES ${_sample_MODULES} SEARCH_PATHS ${_search_paths}
                 MATRIX_LAYOUT COLUMN TYPES_HEADER shader_types.h TYPES_NAMESPACE mythril::GPU SPIRV_DIR "${_spirv_dir}")
     endif()
 endmacro()
@@ -138,10 +142,10 @@ endif()
 set(_sample_args_01_ClearWindow                "")
 set(_sample_args_02_Cube                       LIBS glm SHADERS BasicRed.slang)
 set(_sample_args_03_CubeMSAA                   LIBS glm SHADERS BasicRed.slang)
-set(_sample_args_04_PostProcessingCube         LIBS glm SHADERS BasicRed.slang FullscreenPost.slang)
+set(_sample_args_04_PostProcessingCube         FILE_NAMESPACES LIBS glm SHADERS BasicRed.slang FullscreenPost.slang)
 set(_sample_args_05_ImGui                      LIBS imgui_sdl3_backend)
 set(_sample_args_06_ComplexShader              LIBS glm imgui_sdl3_backend SHADERS Marble.slang)
-set(_sample_args_07_CompleteScene              LIBS glm fastgltf stb_image imguizmo imgui_sdl3_backend
+set(_sample_args_07_CompleteScene              FILE_NAMESPACES LIBS glm fastgltf stb_image imguizmo imgui_sdl3_backend
         SHADERS shaders/DepthOnly.slang shaders/RedDebug.slang shaders/FullscreenComposite.slang shaders/PointShadow.slang shaders/Standard.slang shaders/Sky.slang
         shaders/Particles.slang shaders/Downsample.slang shaders/ConversionLuminance.slang shaders/Upsample.slang shaders/Adaptation.slang
         MODULES shaders/GPUStructs.slang)

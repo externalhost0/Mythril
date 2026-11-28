@@ -181,7 +181,7 @@ struct TextureData {
     uint32_t channels;
 };
 struct PrimitiveData {
-    std::vector<shaders::Vertex> vertexData;
+    std::vector<shaders::GPUStructs::Vertex> vertexData;
     std::vector<uint32_t> indexData;
     int materialIndex;
 };
@@ -289,7 +289,7 @@ static AssetData loadGLTFAsset(const std::filesystem::path& filepath) {
         std::vector<PrimitiveData> primitives = {};
 
         for (const fastgltf::Primitive& primitive: mesh.primitives) {
-            std::vector<shaders::Vertex> vertices;
+            std::vector<shaders::GPUStructs::Vertex> vertices;
             std::vector<uint32_t> indices;
 
             // initial vertex used by both
@@ -310,7 +310,7 @@ static AssetData loadGLTFAsset(const std::filesystem::path& filepath) {
                 // initialize vertex values
                 // load position
                 fastgltf::iterateAccessorWithIndex<glm::vec3>(gltf, posAccessor, [&vertices, initial_vertex](const glm::vec3 v, const size_t index) {
-                    shaders::Vertex vertex{};
+                    shaders::GPUStructs::Vertex vertex{};
                     vertex.position = v;
                     vertex.uv_x = 0;
                     vertex.normal = glm::vec3{ 1, 0, 0 };
@@ -464,7 +464,7 @@ static AssetCompiled compileGLTFAsset(mythril::CTX& ctx, AssetData& data) {
             mesh_compiled.materialIndex = primitive_data.materialIndex;
 
             const mythril::BufferHandle mesh_vertex_buffer = ctx.createBuffer({
-                                                                                  .size = sizeof(shaders::Vertex) * primitive_data.vertexData.size(),
+                                                                                  .size = sizeof(shaders::GPUStructs::Vertex) * primitive_data.vertexData.size(),
                                                                                   .usage = mythril::BufferUsageBits::BufferUsageBits_Storage,
                                                                                   .storage = mythril::StorageType::Device,
                                                                                   .initialData = primitive_data.vertexData,
@@ -669,7 +669,7 @@ void DrawGpuTimeline(GpuTimeline& timeline) {
     ImGui::End();
 }
 
-void DrawLightingUI(shaders::LightingData& lightingData) {
+void DrawLightingUI(shaders::GPUStructs::LightingData& lightingData) {
     if (ImGui::Begin("Lighting")) {
         if (ImGui::CollapsingHeader("Environment Light", ImGuiTreeNodeFlags_DefaultOpen)) {
             ImGui::ColorEdit3("Env Color", &lightingData.environmentLight.color.x);
@@ -700,7 +700,7 @@ void DrawLightingUI(shaders::LightingData& lightingData) {
 }
 
 
-static std::vector<shaders::ParticleData> GenerateParticles(
+static std::vector<shaders::Particles::ParticleData> GenerateParticles(
     size_t count,
     glm::vec3 minPos,
     glm::vec3 maxPos,
@@ -724,11 +724,11 @@ static std::vector<shaders::ParticleData> GenerateParticles(
     std::uniform_real_distribution<float> valDist(-brightnessVariation, brightnessVariation);
 
     std::uniform_real_distribution<float> velDist(-0.05f, 0.05f);
-    std::vector<shaders::ParticleData> particles;
+    std::vector<shaders::Particles::ParticleData> particles;
     particles.reserve(count);
 
     for (size_t i = 0; i < count; ++i) {
-        shaders::ParticleData p{};
+        shaders::Particles::ParticleData p{};
         p.position = glm::vec3(posX(rng), posY(rng), posZ(rng));
         p.size = sizeDist(rng);
 
@@ -745,7 +745,7 @@ static std::vector<shaders::ParticleData> GenerateParticles(
 
     return particles;
 }
-static void UpdateParticles(std::vector<shaders::ParticleData>& particles, float deltaTime, float speed) {
+static void UpdateParticles(std::vector<shaders::Particles::ParticleData>& particles, float deltaTime, float speed) {
     const float dtSpeed = deltaTime * speed;
     for (auto& p: particles) {
         p.position += p.velocity * dtSpeed;
@@ -757,7 +757,7 @@ static void UpdateParticles(std::vector<shaders::ParticleData>& particles, float
 }
 static constexpr uint8_t kNumPointLights = 4;
 static void UpdatePointLightShadowMatrices(
-    const shaders::LightingData& lightingData,
+    const shaders::GPUStructs::LightingData& lightingData,
     float modelScale,
     float nearPlane,
     float farPlane,
@@ -885,7 +885,7 @@ int main() {
         });
 
         mythril::Buffer frameDataHandle = ctx->createBuffer({
-            .size = sizeof(shaders::FrameData),
+            .size = sizeof(shaders::GPUStructs::FrameData),
             .usage = mythril::BufferUsageBits::BufferUsageBits_Storage,
             .storage = mythril::StorageType::Device,
             .debugName = "frameData Buffer",
@@ -942,7 +942,7 @@ int main() {
         {
             const std::vector<MeshData>& sponzaOpaqueOnlyData = sponzaData.getOpaqueMeshData();
             // we are going to make two buffers, one with vertex and another for index that we index into at different points
-            std::vector<shaders::Vertex> allVertexData;
+            std::vector<shaders::GPUStructs::Vertex> allVertexData;
             std::vector<uint32_t> allIndexData;
             int32_t vertexCursor = 0;
             uint32_t indexCursor = 0;
@@ -972,7 +972,7 @@ int main() {
             opaqueDrawCount = indirect_mesh_data.size();
             // once we have contigous data we can put them in a buffer like we normally do
             opaqueSponzaVertexBuf = ctx->createBuffer({
-                .size = allVertexData.size() * sizeof(shaders::Vertex),
+                .size = allVertexData.size() * sizeof(shaders::GPUStructs::Vertex),
                 .usage = mythril::BufferUsageBits::BufferUsageBits_Storage,
                 .storage = mythril::StorageType::Device,
                 .initialData = allVertexData,
@@ -1055,10 +1055,10 @@ int main() {
             graph.importTexture(adaptedLuminanceTextures[1]),
         };
 
-        shaders::LightingData lightingData = {};
+        shaders::GPUStructs::LightingData lightingData = {};
         lightingData.directionalLight.color = { 1.0f, 1.0f, 0.97f };
         lightingData.directionalLight.intensity = 8.0f;
-        shaders::FrameData frameData{};
+        shaders::GPUStructs::FrameData frameData{};
 
         float shadowNear = 1.f, shadowFar = 450.f;
         float depthBiasConstant = 1.25f, depthBiasSlope = 1.75f;
@@ -1127,7 +1127,7 @@ int main() {
         });
 
 
-        shaders::LightingData lastFramelightingData{};
+        shaders::GPUStructs::LightingData lastFramelightingData{};
 
         mythril::Sampler shadowSampler = ctx->createSampler({
             .wrapU = mythril::SamplerWrap::ClampBorder,
@@ -1187,7 +1187,7 @@ int main() {
             0.1f);
 
         mythril::Buffer particles_buffer = ctx->createBuffer({
-            .size = particles.size() * sizeof(shaders::ParticleData),
+            .size = particles.size() * sizeof(shaders::Particles::ParticleData),
             .usage = mythril::BufferUsageBits::BufferUsageBits_Storage,
             .storage = mythril::StorageType::Device,
             .initialData = particles,
@@ -1304,13 +1304,13 @@ int main() {
             bool transparent = false;
             mythril::GraphTexture shadowMap;
             mythril::GraphTexture pointShadowMaps[kNumPointLights];
-            shaders::GeometryPushConstants push{};
+            shaders::GPUStructs::GeometryPushConstants push{};
 
             static void draw(const SponzaDraw& d, mythril::GraphicsCmd& cmd) {
                 cmd.cmdBindGraphicsPipeline(d.pipeline);
                 // opaque depth comes from depth_prepass, so only shade the surface that won
                 cmd.cmdBindDepthState(d.transparent ? mythril::DepthState{ mythril::CompareOp::Greater, true } : mythril::DepthState{ mythril::CompareOp::GreaterEqual, false });
-                shaders::GeometryPushConstants push = d.push;
+                shaders::GPUStructs::GeometryPushConstants push = d.push;
                 push.shadowTexture = cmd.texture(d.shadowMap);
                 for (int i = 0; i < kNumPointLights; i++)
                     push.pointLightCubemaps[i] = cmd.texture(d.pointShadowMaps[i]);
@@ -1380,7 +1380,7 @@ int main() {
 
             struct DepthPrepassData {
                 DepthOnlyDraw draw;
-                shaders::DepthOnlyPushConstant push;
+                shaders::DepthOnly::DepthOnlyPushConstant push;
             };
             graph.addGraphicsPass<DepthPrepassData>("depth_prepass", [&](mythril::GraphicsPassBuilder& b, DepthPrepassData& d) {
                 b.attachment(msaaDepth, {
@@ -1424,7 +1424,7 @@ int main() {
             }
             struct ShadowMapData {
                 DepthOnlyDraw draw;
-                shaders::DepthOnlyPushConstant push;
+                shaders::DepthOnly::DepthOnlyPushConstant push;
             };
             graph.addGraphicsPass<ShadowMapData>("shadow_map", [&](mythril::GraphicsPassBuilder& b, ShadowMapData& d) {
                 b.attachment(shadowMap, {
@@ -1463,7 +1463,7 @@ int main() {
             });
             struct PointShadow {
                 DepthOnlyDraw draw;
-                shaders::PointShadowPushConstant push;
+                shaders::PointShadow::PointShadowPushConstant push;
             };
             for (int i = 0; i < kNumPointLights; i++) {
                 if (lightingData.pointLights[i].position == lastFramelightingData.pointLights[i].position)
@@ -1504,7 +1504,7 @@ int main() {
             }
             struct Sky {
                 mythril::GraphicsPipelineHandle pipeline;
-                shaders::SkyPushConstants push;
+                shaders::Sky::SkyPushConstants push;
             };
             graph.addGraphicsPass<Sky>("sky", [&](mythril::GraphicsPassBuilder& b, Sky& d) {
                 b.attachment(msaaColor, {
@@ -1557,7 +1557,7 @@ int main() {
                 mythril::GraphicsPipelineHandle pipeline;
                 mythril::BufferHandle indexBuffer;
                 uint32_t instanceCount = 0;
-                shaders::ParticlePushConstant push;
+                shaders::Particles::ParticlePushConstant push;
             };
             graph.addGraphicsPass<Particles>("Ambient Particles", [&](mythril::GraphicsPassBuilder& b, Particles& d) {
                 b.attachment(msaaColor, offscreenColor, {
@@ -1612,7 +1612,7 @@ int main() {
                     cmd.cmdBindComputePipeline(d.pipeline);
                     for (int i = 0; i < kNumColorMips; i++) {
                         const mythril::ResolvedTexture out = cmd.texture(d.mips[i]);
-                        const shaders::DownsamplePushConstants push{
+                        const shaders::Downsample::DownsamplePushConstants push{
                             .srcTexture = cmd.texture(i == 0 ? d.source : d.mips[i - 1]),
                             .outTexture = out,
                             .sampler = d.sampler,
@@ -1635,7 +1635,7 @@ int main() {
                 [](const LuminanceConvert& d, mythril::ComputeCmd& cmd) {
                     cmd.cmdBindComputePipeline(d.pipeline);
                     const mythril::ResolvedTexture lowResColor = cmd.texture(d.lowResColor);
-                    const shaders::LuminancePushConstants push{
+                    const shaders::ConversionLuminance::LuminancePushConstants push{
                         .inTex = lowResColor,
                         .outTex = cmd.texture(d.currentLuminance),
                     };
@@ -1655,7 +1655,7 @@ int main() {
                     for (int i = kNumColorMips - 1; i > 0; i--) {
                         const mythril::ResolvedTexture out = cmd.texture(d.mips[i - 1]);
                         const mythril::Dimensions outdims = out.dimensions;
-                        const shaders::UpsamplePushConstants push{
+                        const shaders::Upsample::UpsamplePushConstants push{
                             .inTexture = cmd.texture(d.mips[i]),
                             .outTexture = out,
                             .sampler = d.sampler,
@@ -1685,7 +1685,7 @@ int main() {
             },
                 [](const Adaptation& d, mythril::ComputeCmd& cmd) {
                     cmd.cmdBindComputePipeline(d.pipeline);
-                    const shaders::AdaptationPushConstants push{
+                    const shaders::Adaptation::AdaptationPushConstants push{
                         .currentSceneLumTex = cmd.texture(d.currentLuminance),
                         .prevAdaptedLumTex = cmd.texture(d.prevAdapted),
                         .adaptedOutTex = cmd.texture(d.nextAdapted),
@@ -1699,7 +1699,7 @@ int main() {
                 mythril::GraphTexture color;
                 mythril::GraphTexture avgLuminance;
                 mythril::GraphTexture bloom;
-                shaders::FullscreenPushConstant push;
+                shaders::FullscreenComposite::FullscreenPushConstant push;
             };
             graph.addGraphicsPass<Composite>("composite", [&](mythril::GraphicsPassBuilder& builder, Composite& d) {
                 builder.attachment(finalColor, {
@@ -1735,7 +1735,7 @@ int main() {
             },
                 [](const Composite& d, mythril::GraphicsCmd& cmd) {
                     cmd.cmdBindGraphicsPipeline(d.pipeline);
-                    shaders::FullscreenPushConstant push = d.push;
+                    shaders::FullscreenComposite::FullscreenPushConstant push = d.push;
                     push.colorTexture = cmd.texture(d.color);
                     push.avgLumTexture = cmd.texture(d.avgLuminance);
                     push.bloomTexture = cmd.texture(d.bloom);
@@ -1769,7 +1769,7 @@ int main() {
                     cmd.cmdBindGraphicsPipeline(d.pipeline);
                     cmd.cmdBindDepthState({ mythril::CompareOp::Less, true });
                     for (const auto& mesh: d.arrow->meshes) {
-                        const shaders::RedDebugPushConstant push{
+                        const shaders::RedDebug::RedDebugPushConstant push{
                             .model = d.model,
                             .vba = mesh.vertexAddress,
                             .frame = d.frame,
@@ -1896,7 +1896,7 @@ int main() {
             glm::vec2 ray00 = { view00.x / view00.z, view00.y / view00.z };
             glm::vec2 ray11 = { view11.x / view11.z, view11.y / view11.z };
             projViewFromCamera = reversedCameraProj * cameraView;
-            const shaders::CameraData cameraData = {
+            const shaders::GPUStructs::CameraData cameraData = {
                 .projView = projViewFromCamera,
                 .invProj = invProj,
                 .forward = glm::normalize(-glm::vec3(cameraView[0][2], cameraView[1][2], cameraView[2][2])),
@@ -2081,7 +2081,7 @@ int main() {
             } else {
                 lightingData.directionalLight.direction = sun_quaternion * glm::vec3(0, 0, -1);
             }
-            frameData = shaders::FrameData{
+            frameData = shaders::GPUStructs::FrameData{
                 .camera = cameraData,
                 .lighting = lightingData,
                 .time = elapsedTime,

@@ -81,6 +81,7 @@ struct DirectionalLight : ILight
     }
 }
 
+#if 0
 struct CascadedShadowMap
 {
     DescriptorHandle<Texture2D> shadowTextures[4];
@@ -93,6 +94,7 @@ struct SkyLight
     DirectionalLight directionalLight;
     CascadedShadowMap cascadedMap;
 }
+#endif
 
 struct PointLight : ILight
 {

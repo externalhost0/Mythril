@@ -56,7 +56,13 @@ namespace mythril {
             std::string_view origin;
             StructRegistry& registry;
             ReflectedTypes& out;
+            const StructScopes& scopes;
             std::vector<std::string> visiting = {};
+
+            std::string scopeOf(const std::string_view name) const {
+                const auto it = scopes.byName.find(name);
+                return it == scopes.byName.end() ? scopes.fallback : it->second;
+            }
 
             void visitStruct(slang::TypeLayoutReflection* layout);
             ReflectedType classifyElement(slang::TypeLayoutReflection* layout, slang::TypeReflection* declared);
@@ -103,6 +109,7 @@ namespace mythril {
                 case slang::TypeReflection::Kind::Struct:
                     type.kind = Kind::Struct;
                     type.name = layout->getName();
+                    type.scope = scopeOf(type.name);
                     visitStruct(layout);
                     break;
                 default:
@@ -151,6 +158,7 @@ namespace mythril {
                 return;
             ReflectedStruct type = {
                 .name = name,
+                .scope = scopeOf(name),
                 .size = static_cast<uint32_t>(layout->getSize()),
                 .stride = static_cast<uint32_t>(layout->getStride()),
                 .alignment = static_cast<uint32_t>(layout->getAlignment()),
@@ -167,7 +175,7 @@ namespace mythril {
             }
             visiting.pop_back();
             std::string description = DescribeStruct(out, type);
-            if (const auto [it, inserted] = registry.try_emplace(name, description, origin); !inserted && it->second.first != description)
+            if (const auto [it, inserted] = registry.try_emplace(QualifiedName(type.scope, name), description, origin); !inserted && it->second.first != description)
                 out.conflicts.push_back(fmt::format("two different structs are named '{}', {} in '{}' and {} in '{}'. Rename one, generated structs are named after the Slang struct alone.", name, it->second.first, it->second.second, description, origin));
             if (!out.find(name))
                 out.structs.push_back(std::move(type));
@@ -193,8 +201,8 @@ namespace mythril {
         }
     } // namespace
 
-    void ReflectPushTypes(slang::ProgramLayout* layout, const std::string_view origin, StructRegistry& registry, ReflectedTypes& out) {
-        TypeWalker walker{ origin, registry, out };
+    void ReflectPushTypes(slang::ProgramLayout* layout, const std::string_view origin, StructRegistry& registry, ReflectedTypes& out, const StructScopes& scopes) {
+        TypeWalker walker{ origin, registry, out, scopes };
         for (unsigned i = 0; i < layout->getParameterCount(); ++i) {
             slang::VariableLayoutReflection* parameter = layout->getParameterByIndex(i);
             if (parameter->getCategory() != slang::ParameterCategory::PushConstantBuffer)
@@ -264,7 +272,7 @@ namespace mythril {
         return errors;
     }
 
-    std::vector<std::string> ReflectDeclaredStructs(slang::ProgramLayout* layout, const std::span<const std::string> names, const std::string_view origin, StructRegistry& registry, ReflectedTypes& out) {
+    std::vector<std::string> ReflectDeclaredStructs(slang::ProgramLayout* layout, const std::span<const std::string> names, const std::string_view origin, StructRegistry& registry, ReflectedTypes& out, const StructScopes& scopes) {
         std::vector<std::string> skipped;
         for (const std::string& name: names) {
             if (out.find(name))
@@ -278,7 +286,7 @@ namespace mythril {
             // walk into scratch state so a struct that cannot be generated leaves no half-added nested structs behind
             StructRegistry scratchRegistry = registry;
             ReflectedTypes scratch;
-            TypeWalker{ origin, scratchRegistry, scratch }.visitStruct(typeLayout);
+            TypeWalker{ origin, scratchRegistry, scratch, scopes }.visitStruct(typeLayout);
             if (const std::vector<std::string> errors = CheckCodegenRules(scratch); !errors.empty()) {
                 skipped.push_back(fmt::format("struct '{}' is not generated: {}", name, errors.front()));
                 continue;
@@ -433,7 +441,7 @@ namespace mythril {
                 if (type.scalar == S::Float32)
                     base = fmt::format("::{}::{}{}x{}", options.typesNamespace, Scalar(type.scalar).slang, type.rows, type.columns);
                 break;
-            case Kind::Struct: base = type.name; break;
+            case Kind::Struct: base = options.fileNamespaces && !type.scope.empty() ? fmt::format("::{}::{}::{}", options.ns, type.scope, type.name) : type.name; break;
             case Kind::SampledTexture: base = "::mythril::SampledTextureSlot"; break;
             case Kind::StorageTexture: base = "::mythril::StorageTextureSlot"; break;
             case Kind::Sampler: base = "::mythril::SamplerSlot"; break;
@@ -485,7 +493,8 @@ namespace mythril {
             out += fmt::format("#include \"{}\"\n", include);
         if (types.structs.empty())
             return out;
-        out += fmt::format("\nnamespace {} {{\n", options.ns);
+        const std::string ns = options.fileNamespaces && !types.structs.front().scope.empty() ? fmt::format("{}::{}", options.ns, types.structs.front().scope) : options.ns;
+        out += fmt::format("\nnamespace {} {{\n", ns);
         out += EmitMatrixChecks(types, options);
         for (const ReflectedStruct& type: types.structs)
             out += fmt::format("\tstruct {};\n", type.name);
@@ -495,7 +504,7 @@ namespace mythril {
                 const std::string array = field.type.arrayCount ? fmt::format("[{}]", field.type.arrayCount) : "";
                 out += fmt::format("\t\t{} {}{};\n", CppType(field.type, options), field.name, array);
             }
-            if (const auto layout = pushLayouts.find(type.name); layout != pushLayouts.end()) {
+            if (const auto layout = pushLayouts.find(QualifiedName(type.scope, type.name)); layout != pushLayouts.end()) {
                 out += fmt::format("\n\t\tstatic constexpr uint64_t kLayoutHash = 0x{:016x}ull;\n#ifdef DEBUG\n\t\tstatic constexpr const char* kLayout = \"{}\";\n#endif\n", layout->second.hash, Escape(layout->second.description));
             }
             out += "\t};\n";
@@ -506,7 +515,7 @@ namespace mythril {
             }
             out += fmt::format("\tstatic_assert(sizeof({0}) == {1} && alignof({0}) == {2}, \"{0} is not {1} bytes aligned to {2} as in Slang, check the types header\");\n", type.name, type.stride, type.alignment);
         }
-        return out + fmt::format("}} // namespace {}\n", options.ns);
+        return out + fmt::format("}} // namespace {}\n", ns);
     }
 
     std::string EmitModuleData(const ModuleData& data, const HeaderOptions& options) {
@@ -544,7 +553,7 @@ namespace mythril {
                     continue;
                 }
                 comparison.compareStruct(*types.find(block.type), spirvBlock->type);
-                pushLayouts.try_emplace(block.type, spirvBlock->layout);
+                pushLayouts.try_emplace(QualifiedName(types.find(block.type)->scope, block.type), spirvBlock->layout);
             }
         }
         const bool sessionRowMajor = options.matrixMode == SLANG_MATRIX_LAYOUT_ROW_MAJOR;

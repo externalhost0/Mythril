@@ -26,7 +26,7 @@ struct Camera {
     float farPlane;
 };
 
-const std::vector<shaders::Vertex> cubeVertices = {
+const std::vector<shaders::BasicRed::Vertex> cubeVertices = {
     // front face
     { { -1.f, -1.f, -1.f } }, // A 0
     { { 1.f, -1.f, -1.f } }, // B 1
@@ -142,7 +142,7 @@ int main() {
         });
 
         mythril::Buffer cubeVertexBuffer = ctx->createBuffer({
-            .size = sizeof(shaders::Vertex) * cubeVertices.size(),
+            .size = sizeof(shaders::BasicRed::Vertex) * cubeVertices.size(),
             .usage = mythril::BufferUsageBits::BufferUsageBits_Storage,
             .storage = mythril::StorageType::Device,
             .initialData = cubeVertices,
@@ -237,7 +237,7 @@ int main() {
             },
                 [](const MainPass& d, mythril::GraphicsCmd& cmd) {
                     cmd.cmdBindGraphicsPipeline(d.pipeline);
-                    const shaders::GeometryPushConstant push = {
+                    const shaders::BasicRed::GeometryPushConstant push = {
                         .mvp = d.mvp,
                         .vertexBufferAddress = d.vertices,
                     };
@@ -258,7 +258,7 @@ int main() {
             },
                 [](const PostPass& d, mythril::GraphicsCmd& cmd) {
                     cmd.cmdBindGraphicsPipeline(d.pipeline);
-                    const shaders::FullscreenPushConstant push{
+                    const shaders::FullscreenPost::FullscreenPushConstant push{
                         .colorTexture = cmd.texture(d.color),
                         .time = d.time,
                     };

@@ -336,3 +336,34 @@ TEST_CASE("push resource handles keep their kind through struct copies and local
     });
 }
 #endif
+
+TEST_CASE("file namespaces put each struct in its declaring file's namespace and qualify references to it") {
+    const Slang::ComPtr<slang::IComponentType> linked = Link(kCorpus / "valid.slang");
+    StructScopes scopes;
+    scopes.fallback = "valid";
+    scopes.byName["Inner"] = "shared";
+    ReflectedTypes types;
+    StructRegistry structs;
+    ReflectPushTypes(linked->getLayout(0), "valid.slang", structs, types, scopes);
+    REQUIRE(types.find("Inner"));
+    CHECK(types.find("Inner")->scope == "shared");
+    CHECK(types.find("Push")->scope == "valid");
+    CHECK(structs.contains("shared::Inner"));
+    CHECK(structs.contains("valid::Push"));
+
+    ReflectedTypes shared;
+    shared.structs.push_back(*types.find("Inner"));
+    HeaderOptions options;
+    options.fileNamespaces = true;
+    const std::string sharedHeader = EmitHeader("shared.slang", shared, {}, {}, options);
+    CHECK(sharedHeader.find("namespace shaders::shared {") != std::string::npos);
+    CHECK(sharedHeader.find("struct Inner {") != std::string::npos);
+
+    ReflectedTypes own = types;
+    std::erase_if(own.structs, [](const ReflectedStruct& type) {
+        return type.scope != "valid";
+    });
+    const std::string header = EmitHeader("valid.slang", own, {}, {}, options);
+    CHECK(header.find("namespace shaders::valid {") != std::string::npos);
+    CHECK(header.find("::shaders::shared::Inner ") != std::string::npos);
+}

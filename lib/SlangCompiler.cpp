@@ -211,6 +211,29 @@ export T getDescriptorFromHandle<T : IOpaqueDescriptor>(DescriptorHandle<T> hand
         }
     }
 
+    SlangCompiler::Declarations SlangCompiler::declarationsReachableFrom(const std::filesystem::path& shader) const {
+        const auto same = [](const std::filesystem::path& a, const std::filesystem::path& b) {
+            return std::filesystem::weakly_canonical(a) == std::filesystem::weakly_canonical(b);
+        };
+        std::vector<std::filesystem::path> reachable = { shader };
+        for (SlangInt i = 0; i < _slangSession->getLoadedModuleCount(); ++i) {
+            slang::IModule* loaded = _slangSession->getLoadedModule(i);
+            if (loaded == _bindlessModule.get() || !loaded->getFilePath() || !same(loaded->getFilePath(), shader))
+                continue;
+            for (SlangInt32 file = 0; file < loaded->getDependencyFileCount(); ++file)
+                reachable.emplace_back(loaded->getDependencyFilePath(file));
+        }
+        Declarations declarations;
+        for (SlangInt i = 0; i < _slangSession->getLoadedModuleCount(); ++i) {
+            slang::IModule* loaded = _slangSession->getLoadedModule(i);
+            if (loaded != _bindlessModule.get() && loaded->getFilePath() && std::ranges::any_of(reachable, [&](const std::filesystem::path& path) {
+                    return same(path, loaded->getFilePath());
+                }))
+                CollectDeclarations(loaded->getModuleReflection(), loaded->getFilePath(), true, declarations);
+        }
+        return declarations;
+    }
+
     SlangCompiler::Declarations SlangCompiler::loadedDeclarations() const {
         Declarations declarations;
         for (SlangInt i = 0; i < _slangSession->getLoadedModuleCount(); ++i) {

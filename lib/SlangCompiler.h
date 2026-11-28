@@ -38,6 +38,8 @@ namespace mythril {
             std::vector<Constant> constants;
         };
         Declarations loadedDeclarations() const;
+        // only the modules a loaded shader file reaches, so same-named structs of unrelated shaders stay apart
+        Declarations declarationsReachableFrom(const std::filesystem::path& shader) const;
 
     private:
         SlangCompiler() = default;

@@ -74,6 +74,8 @@ namespace {
                 options.modules.push_back(std::filesystem::weakly_canonical(next));
             else if (arg == "--debug")
                 options.debug = true;
+            else if (arg == "--file-namespaces")
+                options.header.fileNamespaces = true;
             else if (arg == "--untyped" && (next = value()))
                 options.sources.push_back({ next, false });
             else if (!arg.starts_with("--"))
@@ -170,13 +172,19 @@ namespace {
         if (std::string error = CheckSPIRVRules(spirvLayout); !error.empty())
             errors.push_back(std::move(error));
         else if (input.typed) {
-            ReflectPushTypes(layout, source.string(), structs, shader.types);
+            StructScopes scopes;
+            if (options.fileNamespaces) {
+                scopes.fallback = Stem(source);
+                for (const auto& [structName, file]: compiler.declarationsReachableFrom(source).structs)
+                    scopes.byName[structName] = Stem(file);
+            }
+            ReflectPushTypes(layout, source.string(), structs, shader.types, scopes);
             // only structs from files that get a header, a struct from any other module has nowhere to go
             std::vector<std::string> declared;
             for (const auto& [structName, file]: compiler.loadedDeclarations().structs)
                 if (std::ranges::find(generatedFiles, std::filesystem::weakly_canonical(file)) != generatedFiles.end())
                     declared.push_back(structName);
-            for (const std::string& skipped: ReflectDeclaredStructs(layout, declared, source.string(), structs, shader.types))
+            for (const std::string& skipped: ReflectDeclaredStructs(layout, declared, source.string(), structs, shader.types, scopes))
                 fmt::print(stderr, "{}: warning: {}\n", source.string(), skipped);
             PushLayouts shaderLayouts;
             errors = CheckHeader(shader.types, spirvLayout, options, shaderLayouts);
@@ -190,16 +198,17 @@ namespace {
     }
 
     // a struct declared in a module goes in that module's header, and every header that uses it includes that one
-    bool AssignOwners(const SlangCompiler::Declarations& declarations, const std::vector<Compiled>& compiled, const StructRegistry& structs, std::map<std::string, std::filesystem::path>& ownerByStruct) {
+    bool AssignOwners(const SlangCompiler::Declarations& declarations, const std::vector<Compiled>& compiled, const StructRegistry& structs, const bool fileNamespaces, std::map<std::string, std::filesystem::path>& ownerByStruct) {
         for (const auto& [structName, file]: declarations.structs) {
-            if (!structs.contains(structName))
+            const std::string key = QualifiedName(fileNamespaces ? Stem(file) : std::string(), structName);
+            if (!structs.contains(key))
                 continue;
             const std::filesystem::path owner = std::filesystem::weakly_canonical(file);
-            if (std::ranges::any_of(compiled, [&](const Compiled& shader) {
+            if (!fileNamespaces && std::ranges::any_of(compiled, [&](const Compiled& shader) {
                     return !shader.typed && shader.source == owner;
                 }))
                 continue;
-            if (const auto [it, inserted] = ownerByStruct.try_emplace(structName, owner); !inserted && it->second != owner)
+            if (const auto [it, inserted] = ownerByStruct.try_emplace(key, owner); !inserted && it->second != owner)
                 return Fail("struct '{}' is declared in '{}' and '{}', and each generated struct is defined once. Move it into one module that both import, or rename one.", structName, it->second.string(), owner.string());
         }
         return true;
@@ -233,7 +242,7 @@ namespace {
         };
         for (const Compiled& shader: compiled) {
             for (const ReflectedStruct& type: shader.types.structs) {
-                const auto it = ownerByStruct.find(type.name);
+                const auto it = ownerByStruct.find(QualifiedName(type.scope, type.name));
                 const std::filesystem::path& owner = it == ownerByStruct.end() ? shader.source : it->second;
                 Header& header = headers[owner];
                 if (!header.types.find(type.name))
@@ -245,7 +254,7 @@ namespace {
         for (auto& [owner, header]: headers)
             for (const ReflectedStruct& type: header.types.structs)
                 for (const ReflectedField& field: type.fields)
-                    if (const auto it = ownerByStruct.find(field.type.name); field.type.kind == ReflectedType::Kind::Struct && it != ownerByStruct.end() && it->second != owner)
+                    if (const auto it = ownerByStruct.find(QualifiedName(field.type.scope, field.type.name)); field.type.kind == ReflectedType::Kind::Struct && it != ownerByStruct.end() && it->second != owner)
                         include(header, it->second);
         return true;
     }
@@ -305,7 +314,7 @@ namespace {
     bool Run(const int argc, char** argv) {
         Options options;
         if (!ParseArgs(argc, argv, options))
-            return Fail("usage: mythril-reflect --out-dir <dir> [--spirv-dir <dir>] [--depfile <file>] [--stamp <file>] [--types-header <header>] [--types-namespace <ns>] [--namespace <ns>] [--matrix-layout row|column] [--debug] [--search-path <dir>]... [--module <module.slang>]... [--untyped <shader.slang>]... <shader.slang>...");
+            return Fail("bad or missing arguments (--out-dir and at least one shader are required). CMake runs this tool, build the <target>_shaders target from mythril_reflect_shaders instead of running it directly.\nusage: mythril-reflect --out-dir <dir> [--spirv-dir <dir>] [--depfile <file>] [--stamp <file>] [--types-header <header>] [--types-namespace <ns>] [--namespace <ns>] [--matrix-layout row|column] [--debug] [--file-namespaces] [--search-path <dir>]... [--module <module.slang>]... [--untyped <shader.slang>]... <shader.slang>...");
         std::string diagnostics;
         std::optional<SlangCompiler> compiler = SlangCompiler::Create({
                                                                           .searchPaths = options.searchPaths,
@@ -332,7 +341,7 @@ namespace {
         std::map<std::filesystem::path, Header> headers;
         Outputs outputs;
         Outputs spirvFiles;
-        return AssignOwners(declarations, compiled, structs, ownerByStruct) && PlanHeaders(compiled, options.modules, ownerByStruct, headers) &&
+        return AssignOwners(declarations, compiled, structs, options.header.fileNamespaces, ownerByStruct) && PlanHeaders(compiled, options.modules, ownerByStruct, headers) &&
                RenderOutputs(headers, declarations.constants, pushLayouts, options, outputs, spirvFiles) && WriteOutputs(options, outputs, spirvFiles, compiler->loadedDependencyFiles());
     }
 } // namespace

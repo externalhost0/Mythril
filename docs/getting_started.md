@@ -202,6 +202,8 @@ Shaders are written in [Slang](https://shader-slang.com/) and compiled to SPIR-V
 
 A struct declared in an imported module goes in `<module>.shadergen.h`, and each shader header that uses it includes that header. Add each such module to `MODULES`, so CMake knows about its header. If a module is missing from `MODULES`, the build fails with an error that names it.
 
+Two files that declare a struct with the same name are an error, because generated structs share one namespace. Add `FILE_NAMESPACES` to generate each file's structs in `shaders::<file stem>` instead, for example `shaders::Shared::Camera`. It applies to every file in the target. To run only the shader step without compiling C++, build the `<target>_shaders` target.
+
 ```cmake
 mythril_reflect_shaders(my_app SOURCES shaders/PBR.slang SPIRV_DIR "$<TARGET_FILE_DIR:my_app>/shaders"
         TYPES_HEADER shader_types.h TYPES_NAMESPACE my_app::gpu MATRIX_LAYOUT COLUMN)
